@@ -1,19 +1,33 @@
+import asyncio
+
 import boto3
 from botocore.client import Config
 
 from cadprice.config import settings
 
+_s3_client = None
 
-class S3Storage:
-    def __init__(self) -> None:
-        self._client = boto3.client(
+
+def get_s3_client():
+    """Return a reusable boto3 S3 client (module-level singleton)."""
+    global _s3_client
+    if _s3_client is None:
+        _s3_client = boto3.client(
             "s3",
             endpoint_url=f"{'https' if settings.MINIO_USE_SSL else 'http'}://{settings.MINIO_ENDPOINT}",
             aws_access_key_id=settings.MINIO_ACCESS_KEY,
             aws_secret_access_key=settings.MINIO_SECRET_KEY,
             config=Config(signature_version="s3v4"),
         )
+    return _s3_client
+
+
+class S3Storage:
+    def __init__(self) -> None:
+        self._client = get_s3_client()
         self._bucket = settings.MINIO_BUCKET
+
+    # ── sync interface (Celery workers) ──────────────────────
 
     def upload(self, key: str, data: bytes) -> None:
         self._client.put_object(Bucket=self._bucket, Key=key, Body=data)
@@ -31,3 +45,17 @@ class S3Storage:
 
     def delete(self, key: str) -> None:
         self._client.delete_object(Bucket=self._bucket, Key=key)
+
+    # ── async interface (FastAPI handlers) ───────────────────
+
+    async def async_upload(self, key: str, data: bytes) -> None:
+        await asyncio.to_thread(self.upload, key, data)
+
+    async def async_download(self, key: str) -> bytes:
+        return await asyncio.to_thread(self.download, key)
+
+    async def async_exists(self, key: str) -> bool:
+        return await asyncio.to_thread(self.exists, key)
+
+    async def async_delete(self, key: str) -> None:
+        await asyncio.to_thread(self.delete, key)

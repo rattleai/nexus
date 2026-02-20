@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from cadprice import __version__
 from cadprice.api.middleware import SecurityHeadersMiddleware
 from cadprice.api.v1 import v1_router
 from cadprice.config import settings
@@ -16,11 +17,12 @@ logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+templates.env.globals["version"] = __version__
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("CADPrice starting up — debug=%s", settings.DEBUG)
+    logger.info("CADPrice %s starting up — debug=%s", __version__, settings.DEBUG)
     yield
     logger.info("CADPrice shutting down")
 
@@ -28,19 +30,21 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="CADPrice",
-        version="0.1.0",
+        version=__version__,
         description="Manufacturing intelligence platform",
         lifespan=lifespan,
+        docs_url="/api/docs" if settings.DEBUG else None,
+        redoc_url="/api/redoc" if settings.DEBUG else None,
     )
 
-    # Middleware
+    # Middleware (outermost first)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",")],
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Request-ID"],
     )
 
     # Static files

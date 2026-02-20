@@ -2,8 +2,10 @@ import logging
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter
+from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 
+from cadprice import __version__
 from cadprice.api.schemas import HealthResponse
 from cadprice.config import settings
 from cadprice.db.session import async_engine
@@ -11,6 +13,15 @@ from cadprice.db.session import async_engine
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_redis_pool: aioredis.Redis | None = None
+
+
+def _get_redis() -> aioredis.Redis:
+    global _redis_pool
+    if _redis_pool is None:
+        _redis_pool = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    return _redis_pool
 
 
 async def _check_db() -> bool:
@@ -25,9 +36,8 @@ async def _check_db() -> bool:
 
 async def _check_redis() -> bool:
     try:
-        r = aioredis.from_url(settings.REDIS_URL)
+        r = _get_redis()
         await r.ping()
-        await r.aclose()
         return True
     except Exception:
         logger.warning("Redis health check failed", exc_info=True)
@@ -36,16 +46,9 @@ async def _check_redis() -> bool:
 
 async def _check_minio() -> bool:
     try:
-        import boto3
-        from botocore.client import Config
+        from cadprice.storage.s3 import get_s3_client
 
-        client = boto3.client(
-            "s3",
-            endpoint_url=f"{'https' if settings.MINIO_USE_SSL else 'http'}://{settings.MINIO_ENDPOINT}",
-            aws_access_key_id=settings.MINIO_ACCESS_KEY,
-            aws_secret_access_key=settings.MINIO_SECRET_KEY,
-            config=Config(signature_version="s3v4"),
-        )
+        client = get_s3_client()
         client.list_buckets()
         return True
     except Exception:
@@ -62,6 +65,35 @@ async def health_check():
     all_ok = db_ok and redis_ok
     return HealthResponse(
         status="ok" if all_ok else "degraded",
-        version="0.1.0",
+        version=__version__,
         services={"db": db_ok, "redis": redis_ok, "minio": minio_ok},
     )
+
+
+def _status_card(label: str, ok: bool) -> str:
+    if ok:
+        border = "border-green-200"
+        dot = '<span class="inline-block w-2 h-2 rounded-full bg-green-500 mr-2"></span>'
+        text = "Connected"
+        text_color = "text-green-700"
+    else:
+        border = "border-red-200"
+        dot = '<span class="inline-block w-2 h-2 rounded-full bg-red-500 mr-2"></span>'
+        text = "Unavailable"
+        text_color = "text-red-700"
+    return (
+        f'<div class="bg-white rounded-lg shadow p-4 border {border}">'
+        f'<h3 class="text-sm font-medium text-gray-500">{label}</h3>'
+        f'<p class="mt-1 text-lg font-semibold {text_color} flex items-center">{dot}{text}</p>'
+        f"</div>"
+    )
+
+
+@router.get("/health/fragment", response_class=HTMLResponse, include_in_schema=False)
+async def health_fragment():
+    db_ok = await _check_db()
+    redis_ok = await _check_redis()
+    minio_ok = await _check_minio()
+
+    html = _status_card("Database", db_ok) + _status_card("Redis", redis_ok) + _status_card("MinIO", minio_ok)
+    return HTMLResponse(content=html)
