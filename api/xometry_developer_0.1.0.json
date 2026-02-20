@@ -1,0 +1,1294 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Xometry Developer API",
+    "description": "Supplier-side REST API for the Xometry manufacturing marketplace. Provides job/offer management and webhook integration for suppliers connected to Xometry's on-demand manufacturing network.\n\nIMPORTANT LIMITATION: This API covers supplier-side operations only (job tracking, offer acceptance, webhooks). Instant quoting (CAD upload → price) is NOT exposed via REST — it is only available through the Xometry web UI and CAD add-ins (SolidWorks, Autodesk Fusion). There is no programmatic way to submit a CAD file and receive a manufacturing quote via this API.\n\nUse cases: Monitor incoming manufacturing jobs, accept/reject offers with pricing, track job milestones and line item statuses, download manufacturing files (drawings, models), receive real-time notifications via webhooks.",
+    "contact": {
+      "url": "https://developer.xometry.com"
+    },
+    "license": {
+      "name": "commercial"
+    },
+    "version": "0.1.0",
+    "x-cadprice-relevance": "Xometry is the largest on-demand manufacturing marketplace. While the Developer API does not expose instant quoting programmatically, it provides: (1) real-world manufacturing pricing data through accepted offers, (2) material/finish/spec combinations for market intelligence, (3) webhook-driven integration for tracking manufacturing orders. For CADPrice, Xometry data serves as market price benchmarks to validate should-cost calculations.",
+    "x-api-coverage": {
+      "available_via_api": "Job management, offer acceptance/rejection, file downloads, webhook notifications",
+      "NOT_available_via_api": "Instant quoting (CAD → price), account creation, payment processing, supplier onboarding",
+      "instant_quoting_alternatives": "Web UI at xometry.com, SolidWorks add-in, Autodesk Fusion add-in"
+    },
+    "x-pricing": {
+      "api_access": "Free for registered Xometry suppliers",
+      "marketplace_fees": "Xometry takes a margin on manufacturing orders; suppliers see net pricing in offers"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.developer.xometry.com",
+      "description": "Xometry Developer API production server"
+    }
+  ],
+  "security": [
+    {
+      "apiKeyAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Jobs",
+      "description": "Manufacturing jobs assigned to the supplier. A job contains line items (individual parts), milestones (workflow stages), files, and status tracking."
+    },
+    {
+      "name": "Offers",
+      "description": "Pricing offers from Xometry for manufacturing work. Suppliers can accept or reject offers. Each offer contains line items with material specs, quantities, and pricing."
+    },
+    {
+      "name": "Webhooks",
+      "description": "Real-time event notifications. Subscribe to job lifecycle events (created, revised, status changes) to receive HTTP callbacks."
+    }
+  ],
+  "paths": {
+    "/v0/jobs": {
+      "get": {
+        "tags": ["Jobs"],
+        "operationId": "listJobs",
+        "summary": "List all jobs",
+        "description": "Returns a paginated list of all manufacturing jobs assigned to the authenticated supplier. Jobs include status, line items, materials, pricing, files, and milestone information.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number for pagination",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Number of results per page",
+            "schema": {
+              "type": "integer",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of jobs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Job"
+                      }
+                    },
+                    "pagination": {
+                      "$ref": "#/components/schemas/Pagination"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/v0/jobs/{id}": {
+      "get": {
+        "tags": ["Jobs"],
+        "operationId": "getJob",
+        "summary": "Get job details",
+        "description": "Returns full details of a specific job including status, line items with materials and specifications, pricing breakdown, associated files (drawings, models), and milestone progress.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Job ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Jobs"],
+        "operationId": "updateJob",
+        "summary": "Update job",
+        "description": "Updates mutable fields on a job. Typically used for adding supplier notes or updating internal tracking references.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Job ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/v0/jobs/{id}/advance-milestone": {
+      "post": {
+        "tags": ["Jobs"],
+        "operationId": "advanceJobMilestone",
+        "summary": "Advance job milestone",
+        "description": "Advances the job to the next milestone in the manufacturing workflow. Milestones represent key stages: material procurement, manufacturing start, quality check, shipping, etc.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Job ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "milestone": {
+                    "type": "string",
+                    "description": "The milestone to advance to"
+                  },
+                  "notes": {
+                    "type": "string",
+                    "description": "Optional notes about the milestone advancement"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Milestone advanced successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/v0/jobs/{id}/line-items/{lineitemid}/advance-status": {
+      "post": {
+        "tags": ["Jobs"],
+        "operationId": "advanceLineItemStatus",
+        "summary": "Advance line item status",
+        "description": "Advances the status of a specific line item within a job. Line items represent individual parts being manufactured.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Job ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lineitemid",
+            "in": "path",
+            "required": true,
+            "description": "Line item ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "description": "The status to advance to"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Line item status advanced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LineItem"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/v0/offers": {
+      "get": {
+        "tags": ["Offers"],
+        "operationId": "listOffers",
+        "summary": "List offers",
+        "description": "Returns a paginated list of manufacturing offers available to the supplier. Each offer includes pricing, due dates, exclusivity windows, and line item details with material specifications.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number for pagination",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Number of results per page",
+            "schema": {
+              "type": "integer",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of offers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Offer"
+                      }
+                    },
+                    "pagination": {
+                      "$ref": "#/components/schemas/Pagination"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/v0/offers/{offerid}/accept": {
+      "post": {
+        "tags": ["Offers"],
+        "operationId": "acceptOffer",
+        "summary": "Accept offer",
+        "description": "Accepts a manufacturing offer. Once accepted, the offer becomes a job and the supplier is committed to manufacturing the parts according to the specified terms.",
+        "parameters": [
+          {
+            "name": "offerid",
+            "in": "path",
+            "required": true,
+            "description": "Offer ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Offer accepted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Offer"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Offer already accepted, rejected, or expired"
+          }
+        }
+      }
+    },
+    "/v0/offers/{offerid}/reject": {
+      "post": {
+        "tags": ["Offers"],
+        "operationId": "rejectOffer",
+        "summary": "Reject offer",
+        "description": "Rejects a manufacturing offer. The offer will no longer be available for acceptance.",
+        "parameters": [
+          {
+            "name": "offerid",
+            "in": "path",
+            "required": true,
+            "description": "Offer ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "description": "Optional reason for rejecting the offer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Offer rejected successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Offer"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Offer already accepted, rejected, or expired"
+          }
+        }
+      }
+    },
+    "/v0/offers/{offerid}/line-items/{lineitemid}/{filetype}": {
+      "get": {
+        "tags": ["Offers"],
+        "operationId": "getOfferFile",
+        "summary": "Get offer files",
+        "description": "Downloads a file associated with a specific line item in an offer. File types include CAD models, engineering drawings, and specification documents.",
+        "parameters": [
+          {
+            "name": "offerid",
+            "in": "path",
+            "required": true,
+            "description": "Offer ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lineitemid",
+            "in": "path",
+            "required": true,
+            "description": "Line item ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filetype",
+            "in": "path",
+            "required": true,
+            "description": "Type of file to download",
+            "schema": {
+              "type": "string",
+              "enum": ["model", "drawing", "specification"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File content",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v0/webhooks": {
+      "get": {
+        "tags": ["Webhooks"],
+        "operationId": "listWebhooks",
+        "summary": "List webhooks",
+        "description": "Returns all registered webhook subscriptions for the authenticated supplier.",
+        "responses": {
+          "200": {
+            "description": "List of webhooks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Webhook"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "createWebhook",
+        "summary": "Create webhook",
+        "description": "Registers a new webhook subscription. The specified URL will receive HTTP POST requests when subscribed events occur.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Webhook created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/v0/webhooks/{webhookid}": {
+      "get": {
+        "tags": ["Webhooks"],
+        "operationId": "getWebhook",
+        "summary": "Get webhook",
+        "description": "Returns details of a specific webhook subscription.",
+        "parameters": [
+          {
+            "name": "webhookid",
+            "in": "path",
+            "required": true,
+            "description": "Webhook ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Webhooks"],
+        "operationId": "updateWebhook",
+        "summary": "Update webhook",
+        "description": "Updates a webhook subscription's URL or subscribed events.",
+        "parameters": [
+          {
+            "name": "webhookid",
+            "in": "path",
+            "required": true,
+            "description": "Webhook ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Webhooks"],
+        "operationId": "archiveWebhook",
+        "summary": "Archive webhook",
+        "description": "Archives (soft-deletes) a webhook subscription. Archived webhooks stop receiving events but can be restored via the unarchive endpoint.",
+        "parameters": [
+          {
+            "name": "webhookid",
+            "in": "path",
+            "required": true,
+            "description": "Webhook ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook archived"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v0/webhooks/{id}/unarchive": {
+      "patch": {
+        "tags": ["Webhooks"],
+        "operationId": "unarchiveWebhook",
+        "summary": "Unarchive webhook",
+        "description": "Restores a previously archived webhook subscription. The webhook will resume receiving events.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Webhook ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook unarchived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v0/webhooks/events": {
+      "get": {
+        "tags": ["Webhooks"],
+        "operationId": "listWebhookEvents",
+        "summary": "List webhook events",
+        "description": "Returns a history of webhook delivery events. Useful for debugging failed deliveries and monitoring webhook health.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number for pagination",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Number of results per page",
+            "schema": {
+              "type": "integer",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of webhook events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookEvent"
+                      }
+                    },
+                    "pagination": {
+                      "$ref": "#/components/schemas/Pagination"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/v0/webhooks/events/{webhookeventid}/retry": {
+      "get": {
+        "tags": ["Webhooks"],
+        "operationId": "retryWebhookEvent",
+        "summary": "Retry webhook event delivery",
+        "description": "Retries delivery of a specific webhook event. Useful when the receiving endpoint was temporarily unavailable.",
+        "parameters": [
+          {
+            "name": "webhookeventid",
+            "in": "path",
+            "required": true,
+            "description": "Webhook event ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Retry initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEvent"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "apiKeyAuth": {
+        "type": "apiKey",
+        "name": "X-API-Key",
+        "in": "header",
+        "description": "API key obtained from the Xometry Developer Portal (developer.xometry.com)"
+      }
+    },
+    "schemas": {
+      "Job": {
+        "type": "object",
+        "description": "A manufacturing job assigned to a supplier. Contains line items (individual parts), milestone tracking, file references, and pricing.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique job identifier"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["incomplete", "pending", "progress", "complete", "error"],
+            "description": "Current job status. incomplete=missing info, pending=awaiting start, progress=in manufacturing, complete=delivered, error=problem encountered"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the job was created"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of last update"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Required delivery date"
+          },
+          "line_items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LineItem"
+            },
+            "description": "Parts to be manufactured"
+          },
+          "milestones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Milestone"
+            },
+            "description": "Workflow stages and their completion status"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileReference"
+            },
+            "description": "Associated CAD files, drawings, and documents"
+          },
+          "total_price": {
+            "type": "number",
+            "format": "double",
+            "description": "Total price for the job in USD"
+          },
+          "currency": {
+            "type": "string",
+            "default": "USD",
+            "description": "Currency code"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Supplier notes on the job"
+          }
+        }
+      },
+      "JobUpdate": {
+        "type": "object",
+        "description": "Mutable fields for updating a job",
+        "properties": {
+          "notes": {
+            "type": "string",
+            "description": "Supplier notes"
+          }
+        }
+      },
+      "LineItem": {
+        "type": "object",
+        "description": "An individual part within a job or offer. Contains material specifications, finish requirements, quantity, and pricing.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique line item identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Part name or filename"
+          },
+          "status": {
+            "type": "string",
+            "description": "Current manufacturing status of this line item"
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Number of units to manufacture"
+          },
+          "material": {
+            "type": "string",
+            "description": "Material specification (e.g., 'Aluminum 6061-T6', 'Stainless Steel 304')",
+            "example": "Aluminum 6061-T6"
+          },
+          "finish": {
+            "type": "string",
+            "description": "Surface finish requirement (e.g., 'As Machined', 'Anodize Type II')",
+            "example": "As Machined"
+          },
+          "process": {
+            "type": "string",
+            "description": "Manufacturing process (e.g., 'CNC Machining', '3D Printing (SLS)', 'Sheet Metal')",
+            "example": "CNC Machining"
+          },
+          "specifications": {
+            "type": "object",
+            "description": "Additional part specifications (tolerances, threading, certifications, etc.)",
+            "additionalProperties": true
+          },
+          "unit_price": {
+            "type": "number",
+            "format": "double",
+            "description": "Price per unit in the job's currency"
+          },
+          "total_price": {
+            "type": "number",
+            "format": "double",
+            "description": "Total price for this line item (unit_price × quantity)"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileReference"
+            },
+            "description": "CAD models and drawings for this specific part"
+          }
+        }
+      },
+      "Offer": {
+        "type": "object",
+        "description": "A manufacturing offer from Xometry. Contains pricing, delivery requirements, exclusivity information, and line items describing the parts to be manufactured.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique offer identifier"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "accepted", "rejected", "expired", "revised"],
+            "description": "Current offer status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the offer was created"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the offer expires if not accepted"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Required delivery date"
+          },
+          "price": {
+            "type": "number",
+            "format": "double",
+            "description": "Total offer price"
+          },
+          "currency": {
+            "type": "string",
+            "default": "USD"
+          },
+          "exclusive": {
+            "type": "boolean",
+            "description": "Whether this is an exclusive offer (only sent to this supplier)"
+          },
+          "revised": {
+            "type": "boolean",
+            "description": "Whether this offer has been revised from a previous version"
+          },
+          "line_items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LineItem"
+            },
+            "description": "Parts included in the offer"
+          }
+        }
+      },
+      "Milestone": {
+        "type": "object",
+        "description": "A workflow stage in the manufacturing process",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Milestone name (e.g., 'Material Procurement', 'Manufacturing', 'Quality Check', 'Shipping')"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "in_progress", "completed"],
+            "description": "Milestone completion status"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the milestone was completed"
+          }
+        }
+      },
+      "FileReference": {
+        "type": "object",
+        "description": "Reference to an associated file (CAD model, drawing, specification)",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string",
+            "description": "Original filename"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["model", "drawing", "specification", "other"],
+            "description": "File category"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Download URL (time-limited signed URL)"
+          }
+        }
+      },
+      "Webhook": {
+        "type": "object",
+        "description": "A webhook subscription for receiving real-time event notifications",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique webhook identifier"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The URL that will receive POST requests when events occur"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["job.created", "job.revised", "job.statusUpdated"]
+            },
+            "description": "Event types this webhook is subscribed to"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Whether the webhook is active (non-archived)"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WebhookCreate": {
+        "type": "object",
+        "required": ["url", "events"],
+        "description": "Payload for creating a new webhook subscription",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The URL to receive webhook POST requests"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["job.created", "job.revised", "job.statusUpdated"]
+            },
+            "description": "Event types to subscribe to"
+          }
+        }
+      },
+      "WebhookUpdate": {
+        "type": "object",
+        "description": "Payload for updating an existing webhook subscription",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Updated URL"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["job.created", "job.revised", "job.statusUpdated"]
+            },
+            "description": "Updated event subscriptions"
+          }
+        }
+      },
+      "WebhookEvent": {
+        "type": "object",
+        "description": "A webhook delivery event record, tracking the payload sent and delivery status",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique event identifier"
+          },
+          "webhook_id": {
+            "type": "string",
+            "description": "The webhook subscription that triggered this event"
+          },
+          "event_type": {
+            "type": "string",
+            "enum": ["job.created", "job.revised", "job.statusUpdated"],
+            "description": "Type of event"
+          },
+          "payload": {
+            "type": "object",
+            "description": "The event payload that was/will be sent to the webhook URL",
+            "additionalProperties": true
+          },
+          "delivered": {
+            "type": "boolean",
+            "description": "Whether the event was successfully delivered"
+          },
+          "delivered_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "response_status": {
+            "type": "integer",
+            "nullable": true,
+            "description": "HTTP status code from the receiving endpoint"
+          },
+          "attempts": {
+            "type": "integer",
+            "description": "Number of delivery attempts"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "description": "Pagination metadata for list endpoints",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Current page number"
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Number of items per page"
+          },
+          "total": {
+            "type": "integer",
+            "description": "Total number of items"
+          },
+          "total_pages": {
+            "type": "integer",
+            "description": "Total number of pages"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "description": "Standard error response",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Machine-readable error code"
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable error description"
+              }
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "description": "Validation error response with field-level details",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "example": "validation_error"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Authentication failed. Verify your X-API-Key header.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "The requested resource was not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Request validation failed. Check the details for specific field errors.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}
