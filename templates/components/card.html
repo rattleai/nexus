@@ -1,0 +1,24 @@
+{#
+  Generic card component.
+
+  Usage:
+    {% call(slot) card(title="My Title") %}
+      {% if slot == "body" %}
+        <p>Card body content here.</p>
+      {% endif %}
+    {% endcall %}
+
+  Parameters:
+    title  (str, optional) — heading shown at the top
+    id     (str, optional) — HTML id attribute
+    class  (str, optional) — extra CSS classes appended to the wrapper
+#}
+{% macro card(title="", id="", class="") %}
+<div{% if id %} id="{{ id }}"{% endif %}
+    class="bg-surface rounded-card shadow-card border border-gray-200 p-4 {{ class }}">
+  {% if title %}
+  <h3 class="text-sm font-medium text-gray-500">{{ title }}</h3>
+  {% endif %}
+  {{ caller("body") }}
+</div>
+{% endmacro %}

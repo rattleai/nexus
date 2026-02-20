@@ -7,7 +7,7 @@ name = "cadprice"
 version = "0.1.0"
 description = "Manufacturing intelligence platform — STEP file analysis, costing, and 2D drawing generation"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.34,<1",
@@ -37,8 +37,11 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"cadprice/api/deps.py" = ["B008"]  # Depends() in defaults is idiomatic FastAPI

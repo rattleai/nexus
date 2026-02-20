@@ -1,0 +1,30 @@
+{#
+  Status badge — small coloured indicator with label.
+
+  Usage:
+    {% from "components/status_badge.html" import status_badge %}
+    {{ status_badge(status="healthy", label="Connected") }}
+
+  Parameters:
+    status (str) — "healthy" | "degraded" | "down" | "checking"
+    label  (str) — display text
+#}
+{% macro status_badge(status="checking", label="Checking…") %}
+{% set dot_colors = {
+  "healthy":  "bg-green-500",
+  "degraded": "bg-yellow-500",
+  "down":     "bg-red-500",
+  "checking": "bg-gray-300 animate-pulse"
+} %}
+{% set text_colors = {
+  "healthy":  "text-green-700",
+  "degraded": "text-yellow-700",
+  "down":     "text-red-700",
+  "checking": "text-gray-400"
+} %}
+<p class="mt-1 text-lg font-semibold {{ text_colors.get(status, 'text-gray-400') }} flex items-center">
+  <span class="inline-block w-2 h-2 rounded-badge {{ dot_colors.get(status, 'bg-gray-300 animate-pulse') }} mr-2"
+        aria-hidden="true"></span>
+  {{ label }}
+</p>
+{% endmacro %}
