@@ -7,7 +7,8 @@ WORKDIR /app
 
 FROM base AS deps
 
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
+COPY cadprice/__init__.py cadprice/
 RUN pip install --no-cache-dir .
 
 FROM deps AS runtime
