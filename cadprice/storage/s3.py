@@ -9,23 +9,26 @@ _s3_client = None
 
 
 def get_s3_client():
-    """Return a reusable boto3 S3 client (module-level singleton)."""
+    """Return a reusable boto3 S3 client configured for Cloudflare R2."""
     global _s3_client
     if _s3_client is None:
         _s3_client = boto3.client(
             "s3",
-            endpoint_url=f"{'https' if settings.MINIO_USE_SSL else 'http'}://{settings.MINIO_ENDPOINT}",
-            aws_access_key_id=settings.MINIO_ACCESS_KEY,
-            aws_secret_access_key=settings.MINIO_SECRET_KEY,
+            endpoint_url=settings.S3_ENDPOINT_URL,
+            aws_access_key_id=settings.S3_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.S3_SECRET_ACCESS_KEY,
+            region_name=settings.S3_REGION,
             config=Config(signature_version="s3v4"),
         )
     return _s3_client
 
 
 class S3Storage:
+    """S3-compatible object storage (Cloudflare R2)."""
+
     def __init__(self) -> None:
         self._client = get_s3_client()
-        self._bucket = settings.MINIO_BUCKET
+        self._bucket = settings.S3_BUCKET
 
     # ── sync interface (Celery workers) ──────────────────────
 
