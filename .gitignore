@@ -1,41 +1,109 @@
+# ──────────────────────────────────────────────
 # Python
+# ──────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+*.egg
 *.egg-info/
+.eggs/
 dist/
 build/
-.eggs/
-*.egg
+wheels/
+*.whl
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+MANIFEST
 
 # Virtual environments
 .venv/
 venv/
 env/
+ENV/
 
-# IDE
+# Type checking / linting
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.ruff_cache/
+
+# ──────────────────────────────────────────────
+# Testing & Coverage
+# ──────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+.nox/
+.tox/
+
+# ──────────────────────────────────────────────
+# Environment & Secrets
+# ──────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ──────────────────────────────────────────────
+# Node / Frontend
+# ──────────────────────────────────────────────
+node_modules/
+static/css/output.css
+
+# ──────────────────────────────────────────────
+# IDE & Editors
+# ──────────────────────────────────────────────
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
+*.sublime-project
+*.sublime-workspace
 
-# Environment
-.env
-
-# Node
-node_modules/
-
-# Tailwind compiled output
-static/css/output.css
-
+# ──────────────────────────────────────────────
 # Docker
-*.log
+# ──────────────────────────────────────────────
+docker-compose.override.yml
 
+# ──────────────────────────────────────────────
+# Database
+# ──────────────────────────────────────────────
+*.sqlite3
+*.db
+
+# ──────────────────────────────────────────────
+# Celery
+# ──────────────────────────────────────────────
+celerybeat-schedule
+celerybeat-schedule.*
+celerybeat.pid
+
+# ──────────────────────────────────────────────
+# Logs
+# ──────────────────────────────────────────────
+*.log
+logs/
+
+# ──────────────────────────────────────────────
 # OS
+# ──────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+Desktop.ini
+ehthumbs.db
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
+# ──────────────────────────────────────────────
+# Misc
+# ──────────────────────────────────────────────
+*.bak
+*.tmp
+*.temp
+.cache/
