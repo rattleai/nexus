@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% from "components/status_badge.html" import status_badge %}
 
 {% block title %}Dashboard — CADPrice{% endblock %}
 
@@ -11,37 +13,34 @@
          hx-trigger="load, every 30s"
          hx-target="#service-status"
          hx-swap="innerHTML">
-        <div id="service-status" class="contents">
-            <div class="bg-white rounded-lg shadow p-4 border border-gray-200">
-                <h3 class="text-sm font-medium text-gray-500">Database</h3>
-                <p class="mt-1 text-lg font-semibold text-gray-400 flex items-center">
-                    <span class="inline-block w-2 h-2 rounded-full bg-gray-300 mr-2 animate-pulse"></span>
-                    Checking&hellip;
-                </p>
-            </div>
-            <div class="bg-white rounded-lg shadow p-4 border border-gray-200">
-                <h3 class="text-sm font-medium text-gray-500">Redis</h3>
-                <p class="mt-1 text-lg font-semibold text-gray-400 flex items-center">
-                    <span class="inline-block w-2 h-2 rounded-full bg-gray-300 mr-2 animate-pulse"></span>
-                    Checking&hellip;
-                </p>
-            </div>
-            <div class="bg-white rounded-lg shadow p-4 border border-gray-200">
-                <h3 class="text-sm font-medium text-gray-500">MinIO</h3>
-                <p class="mt-1 text-lg font-semibold text-gray-400 flex items-center">
-                    <span class="inline-block w-2 h-2 rounded-full bg-gray-300 mr-2 animate-pulse"></span>
-                    Checking&hellip;
-                </p>
-            </div>
+        <div id="service-status" class="contents" role="status" aria-label="Service health status">
+            {% call(slot) card(title="Database") %}
+              {% if slot == "body" %}
+                {{ status_badge(status="checking", label="Checking…") }}
+              {% endif %}
+            {% endcall %}
+
+            {% call(slot) card(title="Redis") %}
+              {% if slot == "body" %}
+                {{ status_badge(status="checking", label="Checking…") }}
+              {% endif %}
+            {% endcall %}
+
+            {% call(slot) card(title="MinIO") %}
+              {% if slot == "body" %}
+                {{ status_badge(status="checking", label="Checking…") }}
+              {% endif %}
+            {% endcall %}
         </div>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-6">
-        <h2 class="text-lg font-semibold mb-2">Getting Started</h2>
-        <p class="text-gray-600">
+    {% call(slot) card(title="Getting Started", class="p-6") %}
+      {% if slot == "body" %}
+        <p class="text-gray-600 mt-2">
             CADPrice is a manufacturing intelligence platform for STEP file analysis, costing, and 2D drawing generation.
             Use the API to submit jobs and retrieve results.
         </p>
-    </div>
+      {% endif %}
+    {% endcall %}
 </div>
 {% endblock %}

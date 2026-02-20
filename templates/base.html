@@ -6,22 +6,25 @@
     <title>{% block title %}CADPrice{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/output.css">
     <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+    <script src="/static/js/components.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
     {% block head %}{% endblock %}
 </head>
-<body class="bg-gray-50 text-gray-900 min-h-screen flex flex-col" hx-boost="true">
-    <nav class="bg-white border-b border-gray-200 shadow-sm">
+<body class="bg-surface-muted text-gray-900 min-h-screen flex flex-col" hx-boost="true">
+    {% from "components/nav_link.html" import nav_link %}
+
+    <nav class="bg-surface border-b border-gray-200 shadow-nav" aria-label="Main navigation">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-16 items-center">
-                <a href="/" class="text-xl font-bold text-indigo-600">CADPrice</a>
+                <a href="/" class="text-xl font-bold text-brand-600">CADPrice</a>
                 <div class="flex items-center gap-4">
-                    <a href="/" class="text-gray-600 hover:text-gray-900 text-sm font-medium">Dashboard</a>
+                    {{ nav_link(href="/", label="Dashboard", current_path=request.url.path) }}
                 </div>
             </div>
         </div>
     </nav>
 
-    <div id="flash-messages">
+    <div id="flash-messages" aria-live="polite">
         {% include "components/flash.html" %}
     </div>
 
