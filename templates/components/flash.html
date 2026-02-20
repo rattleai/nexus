@@ -1,0 +1,9 @@
+<div x-data="{ show: true }" x-show="show" x-transition class="hidden">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+        <div class="rounded-md p-4 flex items-center justify-between"
+             :class="{ 'bg-green-50 text-green-800': level === 'success', 'bg-red-50 text-red-800': level === 'error', 'bg-yellow-50 text-yellow-800': level === 'warning' }">
+            <span x-text="message"></span>
+            <button @click="show = false" class="ml-4 text-sm underline">Dismiss</button>
+        </div>
+    </div>
+</div>
