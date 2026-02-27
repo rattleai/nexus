@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import redis.asyncio as aioredis
@@ -43,13 +44,17 @@ async def _check_redis() -> bool:
         return False
 
 
+def _check_storage_sync() -> bool:
+    from cadprice.storage.s3 import get_s3_client
+
+    client = get_s3_client()
+    client.head_bucket(Bucket=settings.S3_BUCKET)
+    return True
+
+
 async def _check_storage() -> bool:
     try:
-        from cadprice.storage.s3 import get_s3_client
-
-        client = get_s3_client()
-        client.head_bucket(Bucket=settings.S3_BUCKET)
-        return True
+        return await asyncio.to_thread(_check_storage_sync)
     except Exception:
         logger.warning("Storage (R2) health check failed", exc_info=True)
         return False

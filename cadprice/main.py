@@ -31,8 +31,8 @@ def create_app() -> FastAPI:
         version=__version__,
         description="Manufacturing intelligence platform",
         lifespan=lifespan,
-        docs_url="/api/docs" if settings.DEBUG else None,
-        redoc_url="/api/redoc" if settings.DEBUG else None,
+        docs_url="/api_vendors/docs" if settings.DEBUG else None,
+        redoc_url="/api_vendors/redoc" if settings.DEBUG else None,
     )
 
     # Middleware (outermost first)
@@ -53,9 +53,11 @@ def create_app() -> FastAPI:
         app.mount("/assets", StaticFiles(directory=str(SPA_DIR / "assets")), name="assets")
 
     # SPA catch-all — serves index.html for all non-API routes
+    api_root = settings.API_V1_PREFIX.strip("/").split("/")[0]  # e.g. "api" from "api/v1"
+
     @app.get("/{full_path:path}")
     async def spa_catch_all(request: Request, full_path: str):
-        if full_path.startswith("api/"):
+        if full_path == api_root or full_path.startswith(api_root + "/"):
             return JSONResponse({"detail": "Not found"}, status_code=404)
         index = SPA_DIR / "index.html"
         if not index.is_file():
