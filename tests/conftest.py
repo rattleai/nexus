@@ -22,7 +22,7 @@ async def client(app) -> AsyncGenerator[AsyncClient]:
 @pytest.fixture(autouse=True)
 def mock_db_engine():
     """Prevent real DB connections in unit tests."""
-    with patch("cadprice.api_vendors.v1.health.async_engine") as mock_engine:
+    with patch("cadprice.api.v1.health.async_engine") as mock_engine:
         mock_conn = AsyncMock()
         mock_conn.execute = AsyncMock()
         mock_cm = AsyncMock()
