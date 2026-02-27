@@ -4,7 +4,8 @@
 .pytest_cache
 .ruff_cache
 __pycache__
-node_modules
+frontend/node_modules
+frontend/dist
 *.pyc
 .env
 .agents
