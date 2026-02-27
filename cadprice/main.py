@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from cadprice import __version__
@@ -55,7 +55,12 @@ def create_app() -> FastAPI:
     # SPA catch-all — serves index.html for all non-API routes
     @app.get("/{full_path:path}")
     async def spa_catch_all(request: Request, full_path: str):
-        return FileResponse(str(SPA_DIR / "index.html"))
+        if full_path.startswith("api/"):
+            return JSONResponse({"detail": "Not found"}, status_code=404)
+        index = SPA_DIR / "index.html"
+        if not index.is_file():
+            return JSONResponse({"detail": "Frontend not built"}, status_code=503)
+        return FileResponse(str(index))
 
     return app
 

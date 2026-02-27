@@ -8,7 +8,7 @@ const services = [
 ] as const
 
 export function ServiceStatusGrid() {
-  const { data, isLoading } = useHealth()
+  const { data, isLoading, isError } = useHealth()
 
   return (
     <div
@@ -18,7 +18,9 @@ export function ServiceStatusGrid() {
     >
       {services.map(({ key, label }) => {
         let status: "connected" | "unavailable" | "checking" = "checking"
-        if (!isLoading && data) {
+        if (isError) {
+          status = "unavailable"
+        } else if (!isLoading && data) {
           status = data.services[key] ? "connected" : "unavailable"
         }
         return <ServiceStatusCard key={key} label={label} status={status} />
