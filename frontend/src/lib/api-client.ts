@@ -5,9 +5,13 @@ export const api = ky.create({
   hooks: {
     beforeRequest: [
       (request) => {
-        const apiKey = localStorage.getItem("cadprice-api-key")
-        if (apiKey) {
-          request.headers.set("X-API-Key", apiKey)
+        try {
+          const apiKey = localStorage.getItem("cadprice-api-key")
+          if (apiKey) {
+            request.headers.set("X-API-Key", apiKey)
+          }
+        } catch {
+          // localStorage may be unavailable (e.g. Safari private mode)
         }
       },
     ],

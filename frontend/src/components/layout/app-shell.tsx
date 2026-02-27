@@ -1,14 +1,13 @@
 import type { ReactNode } from "react"
 import { NavLink } from "./nav-link"
-import { useHealth } from "@/hooks/use-health"
+
+const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? "0.1.0"
 
 interface AppShellProps {
   children: ReactNode
 }
 
 export function AppShell({ children }: AppShellProps) {
-  const { data } = useHealth()
-
   return (
     <div className="min-h-screen flex flex-col">
       <nav className="bg-surface border-b border-gray-200 shadow-nav" aria-label="Main navigation">
@@ -29,7 +28,7 @@ export function AppShell({ children }: AppShellProps) {
       </main>
 
       <footer className="border-t border-gray-200 py-4 text-center text-sm text-gray-500">
-        CADPrice v{data?.version ?? "0.1.0"}
+        CADPrice v{APP_VERSION}
       </footer>
     </div>
   )

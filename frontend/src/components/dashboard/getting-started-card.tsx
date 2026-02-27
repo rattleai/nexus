@@ -2,7 +2,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 
 export function GettingStartedCard() {
   return (
-    <Card className="p-6">
+    <Card>
       <CardHeader>
         <CardTitle>Getting Started</CardTitle>
       </CardHeader>
