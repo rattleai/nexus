@@ -20,13 +20,11 @@ async def client(app) -> AsyncGenerator[AsyncClient]:
 
 
 @pytest.fixture(autouse=True)
-def mock_db_engine():
-    """Prevent real DB connections in unit tests."""
-    with patch("cadprice.api.v1.health.async_engine") as mock_engine:
-        mock_conn = AsyncMock()
-        mock_conn.execute = AsyncMock()
-        mock_cm = AsyncMock()
-        mock_cm.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_cm.__aexit__ = AsyncMock(return_value=False)
-        mock_engine.connect.return_value = mock_cm
-        yield mock_engine
+def mock_service_checks():
+    """Prevent real DB, Redis, and storage connections in unit tests."""
+    with (
+        patch("cadprice.api.v1.health._check_db", new_callable=AsyncMock, return_value=True),
+        patch("cadprice.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
+        patch("cadprice.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
+    ):
+        yield

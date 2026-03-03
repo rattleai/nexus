@@ -4,9 +4,8 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 from cadprice import __version__
 from cadprice.api.middleware import SecurityHeadersMiddleware
@@ -16,8 +15,7 @@ from cadprice.config import settings
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-templates.env.globals["version"] = __version__
+SPA_DIR = BASE_DIR / "frontend" / "dist"
 
 
 @asynccontextmanager
@@ -33,8 +31,8 @@ def create_app() -> FastAPI:
         version=__version__,
         description="Manufacturing intelligence platform",
         lifespan=lifespan,
-        docs_url="/api/docs" if settings.DEBUG else None,
-        redoc_url="/api/redoc" if settings.DEBUG else None,
+        docs_url="/api_vendors/docs" if settings.DEBUG else None,
+        redoc_url="/api_vendors/redoc" if settings.DEBUG else None,
     )
 
     # Middleware (outermost first)
@@ -47,16 +45,24 @@ def create_app() -> FastAPI:
         allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Request-ID"],
     )
 
-    # Static files
-    app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-
-    # API routes
+    # API routes (must be before SPA catch-all)
     app.include_router(v1_router, prefix=settings.API_V1_PREFIX)
 
-    # Page routes
-    @app.get("/", response_class=HTMLResponse)
-    async def dashboard(request: Request):
-        return templates.TemplateResponse(request, "dashboard/index.html")
+    # SPA static assets
+    if (SPA_DIR / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=str(SPA_DIR / "assets")), name="assets")
+
+    # SPA catch-all — serves index.html for all non-API routes
+    api_root = settings.API_V1_PREFIX.strip("/").split("/")[0]  # e.g. "api" from "api/v1"
+
+    @app.get("/{full_path:path}")
+    async def spa_catch_all(request: Request, full_path: str):
+        if full_path == api_root or full_path.startswith(api_root + "/"):
+            return JSONResponse({"detail": "Not found"}, status_code=404)
+        index = SPA_DIR / "index.html"
+        if not index.is_file():
+            return JSONResponse({"detail": "Frontend not built"}, status_code=503)
+        return FileResponse(str(index))
 
     return app
 

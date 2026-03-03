@@ -1,13 +1,9 @@
 @import "tailwindcss";
 
-/* Scan Jinja2 templates for class usage */
-@source "../../templates";
+@source "../";
 
 /*
- * CADPrice Design Tokens
- * ──────────────────────
- * Central place for brand colours, typography, spacing, and elevation.
- * Use these via Tailwind utilities: bg-brand-600, font-sans, shadow-card, etc.
+ * CADPrice Design Tokens + shadcn/ui theme
  */
 @theme {
   /* ── Brand palette (indigo-based) ── */
@@ -27,6 +23,25 @@
   --color-surface:       #ffffff;
   --color-surface-muted: #f9fafb;
 
+  /* ── shadcn/ui semantic colours ── */
+  --color-background: oklch(1 0 0);
+  --color-foreground: oklch(0.145 0 0);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.145 0 0);
+  --color-primary: oklch(0.448 0.119 277.023);
+  --color-primary-foreground: oklch(0.985 0.002 247.839);
+  --color-secondary: oklch(0.961 0.003 264.542);
+  --color-secondary-foreground: oklch(0.205 0.006 264.542);
+  --color-muted: oklch(0.961 0.003 264.542);
+  --color-muted-foreground: oklch(0.556 0.009 264.542);
+  --color-accent: oklch(0.961 0.003 264.542);
+  --color-accent-foreground: oklch(0.205 0.006 264.542);
+  --color-destructive: oklch(0.577 0.245 27.325);
+  --color-destructive-foreground: oklch(0.577 0.245 27.325);
+  --color-border: oklch(0.922 0.004 264.542);
+  --color-input: oklch(0.922 0.004 264.542);
+  --color-ring: oklch(0.448 0.119 277.023);
+
   /* ── Typography ── */
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
@@ -42,12 +57,16 @@
   --shadow-nav:  0 1px 2px 0 rgb(0 0 0 / 0.05);
 }
 
-/*
- * Base layer overrides
- * Apply design tokens to the document root so everything inherits them.
- */
 @layer base {
   html {
     font-family: var(--font-sans);
+  }
+
+  body {
+    @apply bg-surface-muted text-gray-900;
+  }
+
+  * {
+    @apply border-border;
   }
 }

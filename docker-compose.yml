@@ -11,8 +11,29 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api_vendors/v1/health\")'"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     command: uvicorn cadprice.main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app/frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://api:8000
+    volumes:
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      api:
+        condition: service_healthy
 
   db:
     image: postgres:16-alpine

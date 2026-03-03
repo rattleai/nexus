@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     # Application
     SECRET_KEY: str = "change-me-in-production"
     DEBUG: bool = False
-    CORS_ORIGINS: str = "http://localhost:8000"
-    API_V1_PREFIX: str = "/api/v1"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
+    API_V1_PREFIX: str = "/api_vendors/v1"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
