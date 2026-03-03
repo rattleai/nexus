@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { Link } from "@tanstack/react-router"
 import { NavLink } from "./nav-link"
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? "0.1.0"
@@ -13,9 +14,9 @@ export function AppShell({ children }: AppShellProps) {
       <nav className="bg-surface border-b border-gray-200 shadow-nav" aria-label="Main navigation">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
-            <a href="/" className="text-xl font-bold text-brand-600">
+            <Link to="/" className="text-xl font-bold text-brand-600">
               CADPrice
-            </a>
+            </Link>
             <div className="flex items-center gap-4">
               <NavLink href="/" label="Dashboard" />
             </div>

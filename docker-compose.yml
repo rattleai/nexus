@@ -26,7 +26,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - VITE_API_URL=http://api_vendors:8000
+      - VITE_API_URL=http://api:8000
     volumes:
       - ./frontend:/app/frontend
       - /app/frontend/node_modules

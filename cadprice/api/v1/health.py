@@ -66,7 +66,7 @@ async def health_check():
     redis_ok = await _check_redis()
     storage_ok = await _check_storage()
 
-    all_ok = db_ok and redis_ok
+    all_ok = db_ok and redis_ok and storage_ok
     return HealthResponse(
         status="ok" if all_ok else "degraded",
         version=__version__,
