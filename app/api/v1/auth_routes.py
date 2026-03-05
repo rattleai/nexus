@@ -22,6 +22,7 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     hash_password,
+    needs_rehash,
     verify_password,
 )
 from app.db.models import RefreshToken, Tenant, TenantMembership, User, UserRole
@@ -142,6 +143,10 @@ async def login(body: UserLogin, response: Response, db: AsyncSession = Depends(
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
+
+    # Auto-rehash legacy bcrypt passwords to argon2id on successful login
+    if needs_rehash(user.password_hash):
+        user.password_hash = hash_password(body.password)
 
     # Update last login
     user.last_login_at = datetime.now(UTC)
