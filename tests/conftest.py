@@ -26,5 +26,6 @@ def mock_service_checks():
         patch("app.api.v1.health._check_db", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
+        patch("app.core.redis.redis_pool", new_callable=AsyncMock),
     ):
         yield

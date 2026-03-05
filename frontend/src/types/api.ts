@@ -7,6 +7,7 @@ export interface HealthResponse {
 export interface ErrorResponse {
   detail: string
   code?: string
+  errors?: Array<{ field: string; message: string; type: string }>
 }
 
 export interface PaginatedResponse<T> {
@@ -15,4 +16,10 @@ export interface PaginatedResponse<T> {
   page: number
   page_size: number
   pages: number
+}
+
+export interface CursorPaginatedResponse<T> {
+  items: T[]
+  next_cursor: string | null
+  has_more: boolean
 }

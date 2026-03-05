@@ -38,6 +38,7 @@ async def test_unregistered_api_route_returns_json_404(client):
     assert response.status_code == 404
     data = response.json()
     assert data["detail"] == "Not found"
+    assert data["code"] == "HTTP_404"
 
 
 @pytest.mark.asyncio
@@ -71,11 +72,17 @@ async def test_security_headers_present(client):
 @pytest.mark.asyncio
 async def test_security_headers_include_hsts_in_production():
     """HSTS header should be present when DEBUG is off."""
-    with patch("app.api.middleware.settings") as mock_settings:
+    with (
+        patch("app.api.middleware.settings") as mock_settings,
+        patch("app.core.redis.redis_pool"),
+    ):
         mock_settings.DEBUG = False
         mock_settings.CORS_ORIGINS = "http://localhost:3000"
         mock_settings.API_V1_PREFIX = "/api/v1"
         mock_settings.SECRET_KEY = "test"
+        mock_settings.RATE_LIMIT_DEFAULT = 100
+        mock_settings.RATE_LIMIT_WINDOW_SECONDS = 60
+        mock_settings.RATE_LIMIT_AUTH_ENDPOINTS = 10
         from app.main import create_app
 
         app = create_app()

@@ -21,6 +21,7 @@ dependencies = [
     "httpx>=0.28,<1",
     "python-multipart>=0.0.18,<1",
     "passlib>=1.7,<2",
+    "structlog>=24.4,<26",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +31,9 @@ dev = [
     "httpx>=0.28,<1",
     "ruff>=0.9,<1",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

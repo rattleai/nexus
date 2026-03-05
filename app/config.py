@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
     API_V1_PREFIX: str = "/api/v1"
 
+    # Rate limiting (requests per window)
+    RATE_LIMIT_DEFAULT: int = 100
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_AUTH_ENDPOINTS: int = 10
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

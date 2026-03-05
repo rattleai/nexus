@@ -6,7 +6,7 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, Stri
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, TimestampMixin
+from app.db.base import Base, SoftDeleteMixin, TimestampMixin, VersionMixin
 
 
 class JobStatus(enum.StrEnum):
@@ -16,7 +16,7 @@ class JobStatus(enum.StrEnum):
     FAILED = "failed"
 
 
-class Tenant(TimestampMixin, Base):
+class Tenant(SoftDeleteMixin, TimestampMixin, Base):
     __tablename__ = "tenants"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -46,7 +46,7 @@ class ApiKey(TimestampMixin, Base):
     __table_args__ = (Index("ix_api_keys_hash_active", "key_hash", "active"),)
 
 
-class Job(TimestampMixin, Base):
+class Job(SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
     __tablename__ = "jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

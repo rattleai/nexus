@@ -1,18 +1,22 @@
-import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.api.exceptions import register_exception_handlers
 from app.api.middleware import SecurityHeadersMiddleware
 from app.api.v1 import v1_router
 from app.config import settings
+from app.core.logging import setup_logging
+from app.core.redis import redis_pool
 
-logger = logging.getLogger(__name__)
+setup_logging()
+logger = structlog.stdlib.get_logger()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SPA_DIR = BASE_DIR / "frontend" / "dist"
@@ -20,9 +24,20 @@ SPA_DIR = BASE_DIR / "frontend" / "dist"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("App %s starting up — debug=%s", __version__, settings.DEBUG)
+    logger.info("app_starting", version=__version__, debug=settings.DEBUG)
+
+    # Warm up Redis connection pool
+    try:
+        await redis_pool.ping()
+        logger.info("redis_connected")
+    except Exception:
+        logger.warning("redis_unavailable_at_startup")
+
     yield
-    logger.info("App shutting down")
+
+    # Graceful shutdown
+    await redis_pool.aclose()
+    logger.info("app_shutdown")
 
 
 def create_app() -> FastAPI:
@@ -34,6 +49,9 @@ def create_app() -> FastAPI:
         docs_url="/api/docs" if settings.DEBUG else None,
         redoc_url="/api/redoc" if settings.DEBUG else None,
     )
+
+    # Exception handlers (fail-closed)
+    register_exception_handlers(app)
 
     # Middleware (outermost first)
     app.add_middleware(SecurityHeadersMiddleware)
@@ -58,10 +76,10 @@ def create_app() -> FastAPI:
     @app.get("/{full_path:path}")
     async def spa_catch_all(request: Request, full_path: str):
         if full_path == api_root or full_path.startswith(api_root + "/"):
-            return JSONResponse({"detail": "Not found"}, status_code=404)
+            return JSONResponse({"detail": "Not found", "code": "HTTP_404"}, status_code=404)
         index = SPA_DIR / "index.html"
         if not index.is_file():
-            return JSONResponse({"detail": "Frontend not built"}, status_code=503)
+            return JSONResponse({"detail": "Frontend not built", "code": "SERVICE_UNAVAILABLE"}, status_code=503)
         return FileResponse(str(index))
 
     return app

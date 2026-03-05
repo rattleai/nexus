@@ -1,27 +1,18 @@
 import asyncio
-import logging
 
-import redis.asyncio as aioredis
+import structlog
 from fastapi import APIRouter
 from sqlalchemy import text
 
 from app import __version__
 from app.api.schemas import HealthResponse
 from app.config import settings
+from app.core.redis import redis_pool
 from app.db.session import async_engine
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger()
 
 router = APIRouter()
-
-_redis_pool: aioredis.Redis | None = None
-
-
-def _get_redis() -> aioredis.Redis:
-    global _redis_pool
-    if _redis_pool is None:
-        _redis_pool = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-    return _redis_pool
 
 
 async def _check_db() -> bool:
@@ -30,17 +21,16 @@ async def _check_db() -> bool:
             await conn.execute(text("SELECT 1"))
         return True
     except Exception:
-        logger.warning("DB health check failed", exc_info=True)
+        logger.warning("db_health_check_failed", exc_info=True)
         return False
 
 
 async def _check_redis() -> bool:
     try:
-        r = _get_redis()
-        await r.ping()
+        await redis_pool.ping()
         return True
     except Exception:
-        logger.warning("Redis health check failed", exc_info=True)
+        logger.warning("redis_health_check_failed", exc_info=True)
         return False
 
 
@@ -56,15 +46,37 @@ async def _check_storage() -> bool:
     try:
         return await asyncio.to_thread(_check_storage_sync)
     except Exception:
-        logger.warning("Storage health check failed", exc_info=True)
+        logger.warning("storage_health_check_failed", exc_info=True)
         return False
+
+
+@router.get("/health/live")
+async def liveness():
+    """Kubernetes liveness probe — is the process alive?"""
+    return {"status": "ok"}
+
+
+@router.get("/health/ready", response_model=HealthResponse)
+async def readiness():
+    """Kubernetes readiness probe — are all dependencies reachable?"""
+    db_ok, redis_ok, storage_ok = await asyncio.gather(
+        _check_db(), _check_redis(), _check_storage()
+    )
+
+    all_ok = db_ok and redis_ok and storage_ok
+    return HealthResponse(
+        status="ok" if all_ok else "degraded",
+        version=__version__,
+        services={"db": db_ok, "redis": redis_ok, "storage": storage_ok},
+    )
 
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
-    db_ok = await _check_db()
-    redis_ok = await _check_redis()
-    storage_ok = await _check_storage()
+    """Combined health check (backward compatible)."""
+    db_ok, redis_ok, storage_ok = await asyncio.gather(
+        _check_db(), _check_redis(), _check_storage()
+    )
 
     all_ok = db_ok and redis_ok and storage_ok
     return HealthResponse(
