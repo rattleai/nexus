@@ -111,6 +111,36 @@ class OAuthAccount(TimestampMixin, Base):
 
     __table_args__ = (UniqueConstraint("provider", "provider_user_id", name="uq_oauth_provider_user"),)
 
+    def set_access_token(self, plaintext: str) -> None:
+        """Encrypt and store the OAuth access token."""
+        from app.core.encryption import encrypt
+        self.access_token = encrypt(plaintext)
+
+    def get_access_token(self) -> str | None:
+        """Decrypt and return the OAuth access token."""
+        if not self.access_token:
+            return None
+        from app.core.encryption import decrypt
+        try:
+            return decrypt(self.access_token)
+        except ValueError:
+            return self.access_token  # Legacy unencrypted fallback
+
+    def set_refresh_token(self, plaintext: str) -> None:
+        """Encrypt and store the OAuth refresh token."""
+        from app.core.encryption import encrypt
+        self.refresh_token = encrypt(plaintext)
+
+    def get_refresh_token(self) -> str | None:
+        """Decrypt and return the OAuth refresh token."""
+        if not self.refresh_token:
+            return None
+        from app.core.encryption import decrypt
+        try:
+            return decrypt(self.refresh_token)
+        except ValueError:
+            return self.refresh_token  # Legacy unencrypted fallback
+
 
 class TenantMembership(TimestampMixin, Base):
     __tablename__ = "tenant_memberships"
@@ -254,7 +284,12 @@ class Notification(TimestampMixin, Base):
 
 
 class WebhookEndpoint(TimestampMixin, Base):
-    """Tenant-configured webhook endpoint for event subscriptions."""
+    """Tenant-configured webhook endpoint for event subscriptions.
+
+    The ``secret`` column stores the signing key encrypted at rest via
+    :mod:`app.core.encryption`.  Use :meth:`set_secret` / :meth:`get_secret`
+    to transparently encrypt/decrypt.
+    """
 
     __tablename__ = "webhook_endpoints"
 
@@ -265,6 +300,19 @@ class WebhookEndpoint(TimestampMixin, Base):
     secret: Mapped[str] = mapped_column(String(255), nullable=False)
     events: Mapped[list] = mapped_column(JSONB, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    def set_secret(self, plaintext: str) -> None:
+        """Encrypt and store the webhook signing secret."""
+        from app.core.encryption import encrypt
+        self.secret = encrypt(plaintext)
+
+    def get_secret(self) -> str:
+        """Decrypt and return the webhook signing secret."""
+        from app.core.encryption import decrypt
+        try:
+            return decrypt(self.secret)
+        except ValueError:
+            return self.secret  # Legacy unencrypted fallback
 
 
 class WebhookDelivery(Base):

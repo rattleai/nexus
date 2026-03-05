@@ -36,6 +36,7 @@ dependencies = [
     "opentelemetry-instrumentation-celery>=0.45b,<1",
     "prometheus-client>=0.20,<1",
     "stripe>=8.0,<12",
+    "cryptography>=42.0,<45",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +47,9 @@ dev = [
     "httpx>=0.28,<1",
     "ruff>=0.9,<1",
     "mypy>=1.8,<2",
+]
+perf = [
+    "locust>=2.20,<3",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -67,7 +71,7 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "PIE", "RUF", "C4", "DTZ", "T20"
 "app/db/migrations/**" = ["E501", "I001"]  # Auto-generated migrations
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true

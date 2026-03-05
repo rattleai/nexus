@@ -177,7 +177,7 @@ async def require_admin_key(
 ) -> None:
     """Validate that the request carries a valid admin key.
 
-    Uses a dedicated ADMIN_KEY setting (falls back to SECRET_KEY in debug mode).
+    Uses a dedicated ADMIN_KEY setting. Rejects requests when ADMIN_KEY is not configured.
     Comparison is constant-time to prevent timing side-channel attacks.
     """
     if not settings.ADMIN_KEY:

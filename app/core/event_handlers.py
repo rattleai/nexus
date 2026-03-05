@@ -76,7 +76,11 @@ async def _dispatch_webhooks(tenant_id: str, event_name: str, payload: dict) -> 
                     try:
                         from app.workers.tasks import deliver_webhook
 
-                        deliver_webhook.delay(endpoint.url, {"event": event_name, **payload})
+                        deliver_webhook.delay(
+                            endpoint.url,
+                            {"event": event_name, **payload},
+                            signing_secret=endpoint.get_secret(),
+                        )
                     except Exception:
                         logger.error(
                             "webhook_dispatch_failed",
@@ -102,7 +106,7 @@ async def _get_tenant_owner_id(tenant_id: str) -> str | None:
                     TenantMembership.role == UserRole.OWNER,
                 )
             )
-            row = result.scalar_one_or_none()
+            row = result.scalars().first()
             return str(row) if row else None
     except Exception:
         logger.error("tenant_owner_lookup_failed", tenant_id=tenant_id, exc_info=True)

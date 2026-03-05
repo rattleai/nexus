@@ -209,16 +209,17 @@ def upgrade() -> None:
 
     # ── Row-Level Security Policies ──────────────────────────
     # Enable RLS on tenant-scoped tables as defense-in-depth
+    # Use quoted identifiers to prevent SQL injection if table names ever contain special chars
     tenant_tables = ["jobs", "api_keys", "users", "tenant_memberships"]
     for table in tenant_tables:
-        op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
-        op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
+        op.execute(f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY')
+        op.execute(f'ALTER TABLE "{table}" FORCE ROW LEVEL SECURITY')
         op.execute(
-            f"CREATE POLICY tenant_isolation_{table} ON {table} "
+            f'CREATE POLICY "tenant_isolation_{table}" ON "{table}" '
             f"USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)"
         )
 
-    # Seed default plans
+    # Seed default plans (idempotent — skip if names already exist)
     op.execute("""
         INSERT INTO plans (id, name, tier, price_cents, billing_period, limits, features) VALUES
         (gen_random_uuid(), 'Free', 'free', 0, 'monthly',
@@ -233,6 +234,7 @@ def upgrade() -> None:
         (gen_random_uuid(), 'Enterprise', 'enterprise', 0, 'custom',
          '{"api_calls": -1, "jobs_month": -1, "storage_bytes": -1, "users": -1, "api_keys": -1}',
          '["basic_jobs", "file_storage", "webhooks", "team_management", "sso", "audit_logs", "priority_support", "custom_integrations", "sla"]')
+        ON CONFLICT (name) DO NOTHING
     """)
 
 
@@ -240,8 +242,8 @@ def downgrade() -> None:
     # Drop RLS policies
     tenant_tables = ["jobs", "api_keys", "users", "tenant_memberships"]
     for table in tenant_tables:
-        op.execute(f"DROP POLICY IF EXISTS tenant_isolation_{table} ON {table}")
-        op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
+        op.execute(f'DROP POLICY IF EXISTS "tenant_isolation_{table}" ON "{table}"')
+        op.execute(f'ALTER TABLE "{table}" DISABLE ROW LEVEL SECURITY')
 
     # Drop tables in reverse dependency order
     op.drop_table("email_verification_tokens")

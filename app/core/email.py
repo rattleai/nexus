@@ -258,16 +258,26 @@ TEMPLATES: dict[str, dict[str, str]] = {
 }
 
 
+def _sanitize_template_value(value: object) -> str:
+    """Escape braces in template values to prevent format string injection."""
+    s = str(value)
+    return s.replace("{", "{{").replace("}", "}}")
+
+
 def render_template(template: EmailTemplate, context: dict) -> tuple[str, str, str]:
     """Render an email template with the given context.
 
     Returns (subject, text_body, html_body) tuple.
+    All user-supplied context values are sanitized to prevent format string injection.
     """
     tmpl = TEMPLATES.get(template)
     if not tmpl:
         raise ValueError(f"Unknown email template: {template}")
 
-    ctx = {**context, "app_name": settings.OTEL_SERVICE_NAME}
+    # Sanitize all user-supplied context values to prevent format string injection.
+    # Only app_name is controlled internally and safe to pass through.
+    ctx = {k: _sanitize_template_value(v) for k, v in context.items()}
+    ctx["app_name"] = settings.OTEL_SERVICE_NAME
     subject = tmpl["subject"].format_map(ctx)
     body = tmpl["body"].format_map(ctx)
     html = tmpl["html"].format_map(ctx)

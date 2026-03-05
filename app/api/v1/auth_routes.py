@@ -445,6 +445,14 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
         raise HTTPException(status_code=404, detail="User not found")
 
     user.password_hash = hash_password(body.new_password)
+
+    # Revoke all existing refresh tokens to invalidate sessions after password reset
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False))
+        .values(revoked=True)
+    )
+
     await db.commit()
 
     logger.info("password_reset_completed", user_id=str(user.id))
@@ -478,6 +486,10 @@ async def accept_invitation(
     invitation = result.scalar_one_or_none()
     if not invitation or invitation.expires_at < datetime.now(UTC):
         raise HTTPException(status_code=400, detail="Invalid or expired invitation")
+
+    # Defense-in-depth: reject owner role in invitation acceptance
+    if invitation.role == UserRole.OWNER:
+        raise HTTPException(status_code=403, detail="Cannot assign owner role via invitation")
 
     # Check if user already exists
     user_result = await db.execute(
