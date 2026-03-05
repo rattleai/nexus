@@ -7,7 +7,6 @@ from sqlalchemy import text
 from app import __version__
 from app.api.schemas import HealthResponse
 from app.config import settings
-from app.core.cache import cached
 from app.core.redis import redis_pool
 from app.db.session import async_engine
 
@@ -70,9 +69,8 @@ async def liveness():
     return {"status": "ok"}
 
 
-@cached(group="health", key="health:ready")
 async def _readiness_check() -> dict:
-    """Cached readiness check result (10s TTL)."""
+    """Readiness check — not cached so K8s probes reflect real-time status."""
     db_ok, redis_ok, storage_ok, celery_ok = await asyncio.gather(
         _check_db(), _check_redis(), _check_storage(), _check_celery()
     )

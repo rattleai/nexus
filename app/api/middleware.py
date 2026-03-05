@@ -64,7 +64,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         request.state.request_id = request_id
 
         # ── Cache bypass detection ──
-        cache_control = request.headers.get("Cache-Control", "")
+        cache_control = request.headers.get("Cache-Control", "").lower()
         request.state.cache_bypass = "no-cache" in cache_control
 
         # Bind request context for all downstream log calls

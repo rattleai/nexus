@@ -34,7 +34,7 @@ def _build_key(template: str, args: tuple, kwargs: dict) -> str:
         return f"{_PREFIX}{template.format(*args, **kwargs)}"
     except (KeyError, IndexError):
         raw = json.dumps({"a": args, "k": kwargs}, sort_keys=True, default=str)
-        h = hashlib.sha256(raw.encode()).hexdigest()[:16]
+        h = hashlib.sha256(raw.encode()).hexdigest()[:32]
         return f"{_PREFIX}{template}:{h}"
 
 

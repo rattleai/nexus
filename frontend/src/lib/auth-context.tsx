@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
-import { api, parseApiError } from "./api-client"
+import { api, parseApiError, setAccessToken as setApiClientToken } from "./api-client"
 
 interface AuthUser {
   id: string
@@ -24,10 +24,24 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
+/**
+ * Update both React state and api-client module-level token.
+ * The api-client reads from its module-level variable for Bearer auth.
+ */
+function syncToken(token: string | null, setter: (t: string | null) => void) {
+  setter(token)
+  setApiClientToken(token)
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [accessToken, setAccessToken] = useState<string | null>(null)
+  const [accessToken, _setAccessToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+
+  // Keep api-client in sync whenever React state changes
+  useEffect(() => {
+    setApiClientToken(accessToken)
+  }, [accessToken])
 
   const login = useCallback(async (email: string, password: string) => {
     setIsLoading(true)
@@ -36,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         access_token: string
         user: AuthUser
       }>()
-      setAccessToken(res.access_token)
+      syncToken(res.access_token, _setAccessToken)
       setUser(res.user)
       window.dispatchEvent(new Event("auth-change"))
     } finally {
@@ -54,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             credentials: "include",
           })
           .json<{ access_token: string; user: AuthUser }>()
-        setAccessToken(res.access_token)
+        syncToken(res.access_token, _setAccessToken)
         setUser(res.user)
         window.dispatchEvent(new Event("auth-change"))
       } finally {
@@ -70,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore logout errors
     }
-    setAccessToken(null)
+    syncToken(null, _setAccessToken)
     setUser(null)
     window.dispatchEvent(new Event("auth-change"))
   }, [])

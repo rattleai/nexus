@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import hash_api_key
@@ -36,7 +37,11 @@ async def create_tenant(body: TenantCreate, db: AsyncSession = Depends(get_db)):
 
     tenant = Tenant(**body.model_dump(exclude_none=True))
     db.add(tenant)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Slug already taken")
     await db.refresh(tenant)
     logger.info("audit.tenant_created", tenant_id=str(tenant.id), slug=tenant.slug)
     return tenant

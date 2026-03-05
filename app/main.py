@@ -39,6 +39,11 @@ async def lifespan(app: FastAPI):
     yield
 
     # Graceful shutdown
+    if settings.OTEL_ENABLED:
+        from app.core.telemetry import shutdown_telemetry
+
+        shutdown_telemetry()
+
     await redis_pool.aclose()
     logger.info("app_shutdown")
 

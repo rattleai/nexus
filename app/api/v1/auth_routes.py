@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 import structlog
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user_from_token, get_db
@@ -94,7 +95,11 @@ async def register(body: UserRegister, response: Response, db: AsyncSession = De
     )
     db.add(rt)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Email or tenant slug already taken")
     await db.refresh(user)
 
     # Create access token
@@ -127,7 +132,12 @@ async def login(body: UserLogin, response: Response, db: AsyncSession = Depends(
     )
     user = result.scalar_one_or_none()
 
-    if not user or not user.password_hash or not verify_password(body.password, user.password_hash):
+    # Always run verify_password to prevent timing attacks that reveal whether an email exists
+    _DUMMY_HASH = "$2b$12$LJ3m4ys3Lg2RqFONxLwAyOSJjGxTPiOVGP6XB7mT7lNH3.WIOQWGK"
+    stored_hash = user.password_hash if (user and user.password_hash) else _DUMMY_HASH
+    password_valid = verify_password(body.password, stored_hash)
+
+    if not user or not user.password_hash or not password_valid:
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not user.is_active:
@@ -199,9 +209,6 @@ async def refresh(
         _clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
-    # Revoke old token
-    rt.revoked = True
-
     # Load user
     user_result = await db.execute(select(User).where(User.id == rt.user_id, User.deleted_at.is_(None)))
     user = user_result.scalar_one_or_none()
@@ -209,7 +216,7 @@ async def refresh(
         _clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="User not found or inactive")
 
-    # Issue new refresh token (rotation)
+    # Issue new refresh token BEFORE revoking old (atomicity: if commit fails, old token still works)
     raw_refresh, refresh_hash = create_refresh_token()
     new_rt = RefreshToken(
         user_id=user.id,
@@ -217,6 +224,9 @@ async def refresh(
         expires_at=datetime.now(UTC) + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS),
     )
     db.add(new_rt)
+
+    # Revoke old token
+    rt.revoked = True
     await db.commit()
 
     access_token = create_access_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})

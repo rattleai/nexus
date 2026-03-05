@@ -81,6 +81,26 @@ def _instrument_libraries() -> None:
         logger.debug("otel_celery_instrumentation_skipped")
 
 
+def shutdown_telemetry() -> None:
+    """Flush and shut down OTEL providers. Call during application shutdown."""
+    if not _initialized:
+        return
+    try:
+        from opentelemetry import metrics, trace
+
+        tracer_provider = trace.get_tracer_provider()
+        if hasattr(tracer_provider, "shutdown"):
+            tracer_provider.shutdown()
+
+        meter_provider = metrics.get_meter_provider()
+        if hasattr(meter_provider, "shutdown"):
+            meter_provider.shutdown()
+
+        logger.info("otel_shutdown")
+    except Exception:
+        logger.warning("otel_shutdown_error", exc_info=True)
+
+
 def get_tracer():
     """Return the application tracer (or a no-op tracer if OTEL is disabled)."""
     if _tracer is not None:

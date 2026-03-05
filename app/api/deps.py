@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import AsyncGenerator
 from typing import Optional
 
@@ -78,8 +79,13 @@ async def get_current_user_from_token(
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    user_id = payload.get("sub")
-    if not user_id:
+    user_id_str = payload.get("sub")
+    if not user_id_str:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    try:
+        user_id = uuid.UUID(user_id_str)
+    except (ValueError, AttributeError):
         raise HTTPException(status_code=401, detail="Invalid token payload")
 
     result = await db.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))

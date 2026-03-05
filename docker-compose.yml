@@ -82,6 +82,8 @@ services:
     volumes:
       - .:/app
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A app.workers.celery_app beat --loglevel=info
