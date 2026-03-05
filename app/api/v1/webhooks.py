@@ -32,6 +32,7 @@ VALID_WEBHOOK_EVENTS = [
     "member.removed",
     "invitation.sent",
     "subscription.changed",
+    "export.completed",
 ]
 
 

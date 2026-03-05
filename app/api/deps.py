@@ -106,6 +106,9 @@ async def get_current_user_from_token(
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
 
+    # Set RLS tenant context for defense-in-depth isolation (mirrors API key auth path)
+    await set_tenant_context(db, str(user.tenant_id))
+
     return user
 
 

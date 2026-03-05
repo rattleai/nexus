@@ -121,6 +121,29 @@ def export_tenant_data(self, tenant_id: str, user_id: str, export_id: str, forma
                 },
             )
 
+        # Dispatch webhook for export completion
+        try:
+            from app.workers.tasks import deliver_webhook
+
+            with _SyncSession() as webhook_db:
+                from app.db.models import WebhookEndpoint
+
+                endpoints = webhook_db.execute(
+                    select(WebhookEndpoint).where(
+                        WebhookEndpoint.tenant_id == tid,
+                        WebhookEndpoint.active.is_(True),
+                    )
+                ).scalars().all()
+                for ep in endpoints:
+                    if "export.completed" in (ep.events or []):
+                        deliver_webhook.delay(ep.url, {
+                            "event": "export.completed",
+                            "export_id": export_id,
+                            "tenant_id": tenant_id,
+                        })
+        except Exception:
+            logger.warning("export_webhook_dispatch_failed", export_id=export_id, exc_info=True)
+
         return {"status": "completed", "key": key}
     except Exception as exc:
         logger.error("tenant_export_failed", export_id=export_id, error=str(exc))
