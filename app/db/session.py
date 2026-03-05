@@ -43,6 +43,16 @@ async def get_read_session() -> AsyncGenerator[AsyncSession]:
         yield session
 
 
+async def dispose_engines() -> None:
+    """Dispose all database engines, releasing connection pools.
+
+    Called during graceful shutdown to ensure connections are returned to the OS.
+    """
+    await async_engine.dispose()
+    if _read_engine is not None:
+        await _read_engine.dispose()
+
+
 async def set_tenant_context(session: AsyncSession, tenant_id: str) -> None:
     """Set the tenant context for Row-Level Security.
 

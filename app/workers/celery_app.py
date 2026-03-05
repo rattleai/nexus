@@ -35,6 +35,14 @@ celery.conf.update(
             "task": "app.workers.periodic.storage_usage_report",
             "schedule": crontab(hour=6, minute=0),
         },
+        "cleanup-expired-tokens": {
+            "task": "app.workers.periodic.cleanup_expired_tokens",
+            "schedule": crontab(hour=3, minute=0),
+        },
+        "cleanup-expired-invitations": {
+            "task": "app.workers.periodic.cleanup_expired_invitations",
+            "schedule": crontab(hour=3, minute=30),
+        },
     },
     beat_max_loop_interval=60,
     beat_scheduler="redbeat.RedBeatScheduler",

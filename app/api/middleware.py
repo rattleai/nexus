@@ -125,14 +125,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         duration_ms = round((time.perf_counter() - start) * 1000, 2)
 
-        # Log every request with timing
-        logger.info(
+        # Log every request with timing — warn on server errors
+        log_level = "warning" if response.status_code >= 500 else "info"
+        getattr(logger, log_level)(
             "request_completed",
             status_code=response.status_code,
             duration_ms=duration_ms,
+            client_ip=request.client.host if request.client else "unknown",
         )
 
-        # ── Security headers ──
+        # ── Security headers & timing ──
         _add_security_headers(response, request_id)
+        response.headers["X-Response-Time"] = f"{duration_ms}ms"
 
         return response
