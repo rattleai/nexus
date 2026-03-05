@@ -8,8 +8,8 @@ export function GettingStartedCard() {
       </CardHeader>
       <CardContent>
         <p className="text-gray-600 mt-2">
-          CADPrice is a manufacturing intelligence platform for STEP file analysis, costing, and 2D
-          drawing generation. Use the API to submit jobs and retrieve results.
+          Welcome to your multi-tenant SaaS platform. Use the dashboard to monitor service health
+          and manage your application.
         </p>
       </CardContent>
     </Card>

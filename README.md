@@ -1,6 +1,6 @@
-# CADPrice
+# SaaS Platform
 
-Manufacturing intelligence platform — STEP file analysis, costing, and 2D drawing generation.
+Generic multi-tenant SaaS platform template — FastAPI backend with React frontend.
 
 ## Quick Start
 
@@ -34,7 +34,7 @@ pip install -e ".[dev]"
 alembic upgrade head
 
 # Start the API server
-uvicorn cadprice.main:app --reload
+uvicorn app.main:app --reload
 
 # In a separate terminal — start the frontend dev server
 cd frontend
