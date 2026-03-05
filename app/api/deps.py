@@ -22,9 +22,7 @@ async def get_current_tenant(
     key_hash = hash_api_key(x_api_key)
 
     result = await db.execute(
-        select(ApiKey)
-        .options(selectinload(ApiKey.tenant))
-        .where(ApiKey.key_hash == key_hash, ApiKey.active.is_(True))
+        select(ApiKey).options(selectinload(ApiKey.tenant)).where(ApiKey.key_hash == key_hash, ApiKey.active.is_(True))
     )
     api_key = result.scalar_one_or_none()
 

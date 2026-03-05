@@ -19,6 +19,9 @@ export function AppShell({ children }: AppShellProps) {
             </Link>
             <div className="flex items-center gap-4">
               <NavLink href="/" label="Dashboard" />
+              <NavLink href="/jobs" label="Jobs" />
+              <NavLink href="/api-keys" label="API Keys" />
+              <NavLink href="/settings" label="Settings" />
             </div>
           </div>
         </div>

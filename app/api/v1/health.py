@@ -59,9 +59,7 @@ async def liveness():
 @router.get("/health/ready", response_model=HealthResponse)
 async def readiness():
     """Kubernetes readiness probe — are all dependencies reachable?"""
-    db_ok, redis_ok, storage_ok = await asyncio.gather(
-        _check_db(), _check_redis(), _check_storage()
-    )
+    db_ok, redis_ok, storage_ok = await asyncio.gather(_check_db(), _check_redis(), _check_storage())
 
     all_ok = db_ok and redis_ok and storage_ok
     return HealthResponse(
@@ -74,9 +72,7 @@ async def readiness():
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
     """Combined health check (backward compatible)."""
-    db_ok, redis_ok, storage_ok = await asyncio.gather(
-        _check_db(), _check_redis(), _check_storage()
-    )
+    db_ok, redis_ok, storage_ok = await asyncio.gather(_check_db(), _check_redis(), _check_storage())
 
     all_ok = db_ok and redis_ok and storage_ok
     return HealthResponse(
