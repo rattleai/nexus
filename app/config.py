@@ -58,11 +58,36 @@ class Settings(BaseSettings):
     OAUTH_GITHUB_CLIENT_ID: str = ""
     OAUTH_GITHUB_CLIENT_SECRET: str = ""
 
+    # Email / SMTP
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
+    EMAIL_FROM: str = "noreply@example.com"
+    EMAIL_VERIFICATION_EXPIRE_HOURS: int = 24
+    PASSWORD_RESET_EXPIRE_HOURS: int = 1
+
+    # Billing (Stripe)
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_PUBLISHABLE_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+
+    # Database sync URL (for Celery workers — avoids fragile string replacement)
+    DATABASE_SYNC_URL: str = ""
+
+    # Read replica (optional, for read-write splitting)
+    DATABASE_READ_URL: str = ""
+
     # Allowed scope values for API keys
     VALID_SCOPES: list[str] = [
         "jobs:read", "jobs:write",
         "files:read", "files:write",
         "api-keys:read", "api-keys:write",
+        "team:read", "team:write",
+        "webhooks:read", "webhooks:write",
+        "billing:read", "billing:write",
+        "audit:read",
     ]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
@@ -70,6 +95,25 @@ class Settings(BaseSettings):
     @property
     def storage_configured(self) -> bool:
         return bool(self.S3_ENDPOINT_URL and self.S3_ACCESS_KEY_ID and self.S3_SECRET_ACCESS_KEY)
+
+    @property
+    def sync_database_url(self) -> str:
+        """Get synchronous DB URL for Celery workers.
+
+        Uses DATABASE_SYNC_URL if set, otherwise derives from DATABASE_URL
+        by replacing the asyncpg driver with psycopg2.
+        """
+        if self.DATABASE_SYNC_URL:
+            return self.DATABASE_SYNC_URL
+        return self.DATABASE_URL.replace("+asyncpg", "")
+
+    @property
+    def email_configured(self) -> bool:
+        return bool(self.SMTP_HOST)
+
+    @property
+    def stripe_configured(self) -> bool:
+        return bool(self.STRIPE_SECRET_KEY)
 
 
 settings = Settings()

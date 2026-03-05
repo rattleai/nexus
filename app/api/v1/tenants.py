@@ -22,6 +22,7 @@ from app.api.schemas import (
     TenantUpdate,
 )
 from app.config import settings
+from app.core.audit import AuditAction, emit_audit_event
 from app.core.cache import cached, invalidate
 from app.core.pagination import CursorPage, paginate
 from app.db.models import ApiKey, Tenant
@@ -43,7 +44,13 @@ async def create_tenant(body: TenantCreate, db: AsyncSession = Depends(get_db)):
         await db.rollback()
         raise HTTPException(status_code=409, detail="Slug already taken")
     await db.refresh(tenant)
-    logger.info("audit.tenant_created", tenant_id=str(tenant.id), slug=tenant.slug)
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="tenant",
+        resource_id=str(tenant.id), tenant_id=tenant.id,
+        metadata={"slug": tenant.slug, "plan": tenant.plan},
+    )
+    await db.commit()
+    logger.info("tenant_created", tenant_id=str(tenant.id), slug=tenant.slug)
     return tenant
 
 
@@ -86,10 +93,15 @@ async def update_tenant(tenant_id: uuid.UUID, body: TenantUpdate, db: AsyncSessi
             continue
         setattr(tenant, field, value)
 
+    changes = body.model_dump(exclude_unset=True)
+    await emit_audit_event(
+        db, action=AuditAction.UPDATE, resource_type="tenant",
+        resource_id=str(tenant.id), tenant_id=tenant.id, changes=changes,
+    )
     await db.commit()
     await db.refresh(tenant)
     await invalidate(f"tenants:{tenant_id}")
-    logger.info("audit.tenant_updated", tenant_id=str(tenant.id))
+    logger.info("tenant_updated", tenant_id=str(tenant.id))
     return tenant
 
 
@@ -101,9 +113,14 @@ async def delete_tenant(tenant_id: uuid.UUID, db: AsyncSession = Depends(get_db)
         raise HTTPException(status_code=404, detail="Tenant not found")
 
     tenant.deleted_at = datetime.now(UTC)
+    await emit_audit_event(
+        db, action=AuditAction.DELETE, resource_type="tenant",
+        resource_id=str(tenant.id), tenant_id=tenant.id,
+        metadata={"slug": tenant.slug},
+    )
     await db.commit()
     await invalidate(f"tenants:{tenant_id}")
-    logger.info("audit.tenant_deleted", tenant_id=str(tenant.id), slug=tenant.slug)
+    logger.info("tenant_deleted", tenant_id=str(tenant.id), slug=tenant.slug)
 
 
 @router.post("/{tenant_id}/api-keys", response_model=ApiKeyCreatedResponse, status_code=201)
@@ -128,7 +145,12 @@ async def create_api_key_for_tenant(
     await db.commit()
     await db.refresh(api_key)
 
-    logger.info("audit.api_key_created_for_tenant", tenant_id=str(tenant.id), key_id=str(api_key.id))
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="api_key",
+        resource_id=str(api_key.id), tenant_id=tenant.id,
+    )
+    await db.commit()
+    logger.info("api_key_created_for_tenant", tenant_id=str(tenant.id), key_id=str(api_key.id))
     return ApiKeyCreatedResponse(
         id=api_key.id,
         name=api_key.name,

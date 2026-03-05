@@ -9,12 +9,24 @@ from app.config import settings
 from app.db.base import Base
 from app.db.models import (  # noqa: F401 — register models
     ApiKey,
+    AuditLog,
+    EmailVerificationToken,
+    FeatureFlag,
+    Invitation,
     Job,
+    Notification,
     OAuthAccount,
+    Plan,
     RefreshToken,
+    SSOConfiguration,
+    Subscription,
     Tenant,
+    TenantFeatureOverride,
     TenantMembership,
+    UsageRecord,
     User,
+    WebhookDelivery,
+    WebhookEndpoint,
 )
 
 config = context.config

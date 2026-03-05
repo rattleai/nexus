@@ -19,9 +19,10 @@ from app.workers.celery_app import celery
 
 logger = structlog.stdlib.get_logger()
 
-# Sync engine for Celery workers (asyncpg → psycopg2)
-_sync_url = settings.DATABASE_URL.replace("+asyncpg", "")
-_sync_engine = create_engine(_sync_url, pool_size=3, max_overflow=5, pool_pre_ping=True, pool_recycle=300)
+# Sync engine for Celery workers (uses dedicated sync URL or derived from async URL)
+_sync_engine = create_engine(
+    settings.sync_database_url, pool_size=3, max_overflow=5, pool_pre_ping=True, pool_recycle=300
+)
 _SyncSession = sessionmaker(_sync_engine)
 
 
