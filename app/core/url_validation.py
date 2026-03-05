@@ -5,6 +5,7 @@ rejecting private/internal IP ranges, link-local, loopback, and
 cloud metadata endpoints.
 """
 
+import asyncio
 import ipaddress
 import socket
 from urllib.parse import urlparse
@@ -61,9 +62,18 @@ def validate_webhook_url(url: str) -> str | None:
     if hostname.lower() in _BLOCKED_HOSTS:
         return "Webhook URL points to a blocked host"
 
-    # Resolve hostname and check all resulting IPs
+    # Resolve hostname and check all resulting IPs (use async-safe resolution)
     try:
-        results = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
+        loop = asyncio.get_running_loop()
+        results = asyncio.get_event_loop().run_until_complete(
+            loop.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
+        )
+    except RuntimeError:
+        # Not in async context — use sync fallback
+        try:
+            results = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
+        except socket.gaierror:
+            return "Could not resolve webhook URL hostname"
     except socket.gaierror:
         return "Could not resolve webhook URL hostname"
 

@@ -57,6 +57,16 @@ function CreateKeyButton() {
     setCreatedKey(null)
   }
 
+  const handleCopy = async () => {
+    if (!createdKey) return
+    try {
+      await navigator.clipboard.writeText(createdKey)
+      toast.success("Copied to clipboard")
+    } catch {
+      toast.error("Failed to copy — please select and copy manually")
+    }
+  }
+
   return (
     <>
       <Button onClick={() => setOpen(true)} aria-label="Create new API key">
@@ -78,10 +88,7 @@ function CreateKeyButton() {
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={() => {
-                  navigator.clipboard.writeText(createdKey)
-                  toast.success("Copied to clipboard")
-                }}
+                onClick={handleCopy}
               >
                 Copy to clipboard
               </Button>
@@ -187,7 +194,7 @@ function ApiKeysTable() {
                   {key.scopes?.length ? (
                     <span className="text-xs text-muted-foreground">{key.scopes.join(", ")}</span>
                   ) : (
-                    <span className="text-xs text-muted-foreground">All</span>
+                    <span className="text-xs text-muted-foreground">None</span>
                   )}
                 </TableCell>
                 <TableCell>{key.rate_limit ?? "Unlimited"}/min</TableCell>
@@ -200,6 +207,7 @@ function ApiKeysTable() {
                       disabled={revokeKey.isPending}
                       aria-label={`Revoke API key ${key.name}`}
                       onClick={() => {
+                        if (!window.confirm(`Revoke API key "${key.name}"? This cannot be undone.`)) return
                         revokeKey.mutate(key.id, {
                           onSuccess: () => toast.success("Key revoked"),
                           onError: () => toast.error("Failed to revoke key"),

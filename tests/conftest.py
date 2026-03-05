@@ -25,7 +25,7 @@ async def admin_client(app) -> AsyncGenerator[AsyncClient]:
     from app.config import settings
 
     transport = ASGITransport(app=app)
-    headers = {"X-Admin-Key": settings.SECRET_KEY}
+    headers = {"X-Admin-Key": settings.ADMIN_KEY or settings.SECRET_KEY}
     async with AsyncClient(transport=transport, base_url="http://test", headers=headers) as ac:
         yield ac
 

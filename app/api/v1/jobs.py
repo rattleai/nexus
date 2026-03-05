@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +38,7 @@ async def create_job(
     body: JobCreate,
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
+    x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
 ):
     webhook_url = str(body.webhook_url) if body.webhook_url else None
     if webhook_url:
@@ -45,12 +46,25 @@ async def create_job(
         if ssrf_error:
             raise HTTPException(status_code=422, detail=f"Invalid webhook URL: {ssrf_error}")
 
+    # Idempotency: if a key is provided, check for existing job with same input_hash
+    input_hash = None
+    if x_idempotency_key:
+        import hashlib
+        input_hash = hashlib.sha256(f"{tenant.id}:{x_idempotency_key}".encode()).hexdigest()
+        existing = await db.execute(
+            select(Job).where(Job.tenant_id == tenant.id, Job.input_hash == input_hash, Job.deleted_at.is_(None))
+        )
+        existing_job = existing.scalar_one_or_none()
+        if existing_job:
+            return existing_job
+
     job = Job(
         tenant_id=tenant.id,
         type=body.type,
         webhook_url=webhook_url,
         payload=body.payload,
         status=JobStatus.PENDING,
+        input_hash=input_hash,
     )
     db.add(job)
     await db.commit()
@@ -125,13 +139,26 @@ async def cancel_job(
     if job.status not in (JobStatus.PENDING, JobStatus.PROCESSING):
         return JobCancelResponse(id=job.id, status=job.status.value, cancelled=False)
 
-    job.status = JobStatus.FAILED
-    job.error = "Cancelled by user"
-    job.completed_at = datetime.now(UTC)
+    # Use optimistic locking to prevent race with worker completion
+    from sqlalchemy import update
+    cancel_result = await db.execute(
+        update(Job)
+        .where(Job.id == job_id, Job.version == job.version)
+        .values(
+            status=JobStatus.FAILED,
+            error="Cancelled by user",
+            completed_at=datetime.now(UTC),
+            version=job.version + 1,
+        )
+    )
+    if cancel_result.rowcount == 0:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Job state changed concurrently, please retry")
+
     await db.commit()
     await invalidate(f"jobs:{job_id}")
     logger.info("job_cancelled", job_id=str(job_id), tenant_id=str(tenant.id))
-    return JobCancelResponse(id=job.id, status=job.status.value, cancelled=True)
+    return JobCancelResponse(id=job.id, status=JobStatus.FAILED.value, cancelled=True)
 
 
 @router.delete(

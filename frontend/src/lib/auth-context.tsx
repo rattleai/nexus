@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
-import { api, parseApiError, setAccessToken as setApiClientToken } from "./api-client"
+import { api, parseApiError, setAccessToken as setApiClientToken, getAccessToken } from "./api-client"
 
 interface AuthUser {
   id: string
@@ -36,12 +36,42 @@ function syncToken(token: string | null, setter: (t: string | null) => void) {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [accessToken, _setAccessToken] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   // Keep api-client in sync whenever React state changes
   useEffect(() => {
     setApiClientToken(accessToken)
   }, [accessToken])
+
+  // Attempt session restoration on mount via refresh token cookie
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await api
+          .post("auth/refresh", { credentials: "include", timeout: 10_000 })
+          .json<{ access_token: string }>()
+        if (!cancelled) {
+          syncToken(res.access_token, _setAccessToken)
+          // Fetch user profile with the new token
+          try {
+            setApiClientToken(res.access_token)
+            const profile = await api.get("auth/me").json<AuthUser>()
+            if (!cancelled) setUser(profile)
+          } catch {
+            // Token works but profile fetch failed — still authenticated
+          }
+        }
+      } catch {
+        // No valid refresh token — user is not authenticated
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const login = useCallback(async (email: string, password: string) => {
     setIsLoading(true)

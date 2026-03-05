@@ -49,6 +49,7 @@ async def job_client():
         patch("app.api.v1.health._check_db", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
+        patch("app.api.v1.health._check_celery", new_callable=AsyncMock, return_value=True),
         patch("app.core.redis.redis_pool", new_callable=AsyncMock),
     ):
         app = create_app()
@@ -127,12 +128,17 @@ async def test_cancel_pending_job(job_client):
     client, app = job_client
     tenant = _make_tenant()
     job = _make_job(tenant.id, status=JobStatus.PENDING)
-    job.status = JobStatus.PENDING  # make mutable
 
     mock_db = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = job
-    mock_db.execute.return_value = mock_result
+
+    # First execute call returns the job (SELECT), second returns UPDATE result
+    select_result = MagicMock()
+    select_result.scalar_one_or_none.return_value = job
+
+    update_result = MagicMock()
+    update_result.rowcount = 1  # Optimistic lock succeeded
+
+    mock_db.execute = AsyncMock(side_effect=[select_result, update_result])
     mock_db.commit = AsyncMock()
 
     async def _override_db():
@@ -142,7 +148,8 @@ async def test_cancel_pending_job(job_client):
     app.dependency_overrides[get_current_tenant] = lambda: tenant
 
     try:
-        response = await client.post(f"/api/v1/jobs/{job.id}/cancel")
+        with patch("app.api.v1.jobs.invalidate", new_callable=AsyncMock):
+            response = await client.post(f"/api/v1/jobs/{job.id}/cancel")
         assert response.status_code == 200
         data = response.json()
         assert data["cancelled"] is True

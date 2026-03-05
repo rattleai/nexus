@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # Application
     SECRET_KEY: str = "change-me-in-production"
+    ADMIN_KEY: str = ""  # Separate admin key — do NOT reuse SECRET_KEY
     DEBUG: bool = False
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
     API_V1_PREFIX: str = "/api/v1"
@@ -56,6 +57,13 @@ class Settings(BaseSettings):
     OAUTH_GITHUB_CLIENT_ID: str = ""
     OAUTH_GITHUB_CLIENT_SECRET: str = ""
 
+    # Allowed scope values for API keys
+    VALID_SCOPES: list[str] = [
+        "jobs:read", "jobs:write",
+        "files:read", "files:write",
+        "api-keys:read", "api-keys:write",
+    ]
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @property
@@ -73,6 +81,16 @@ def validate_settings() -> None:
             warnings.warn("SECRET_KEY is using the default value — not safe for production", stacklevel=2)
         else:
             raise RuntimeError("SECRET_KEY must be set to a unique value in production (DEBUG=false)")
+
+    if not settings.ADMIN_KEY:
+        if settings.DEBUG:
+            warnings.warn("ADMIN_KEY is not set — using SECRET_KEY as fallback (not safe for production)", stacklevel=2)
+        else:
+            raise RuntimeError("ADMIN_KEY must be set in production (DEBUG=false)")
+
+    origins = [o.strip() for o in settings.CORS_ORIGINS.split(",")]
+    if "*" in origins:
+        raise RuntimeError("CORS_ORIGINS must not be '*' — specify explicit origins")
 
     if not settings.storage_configured:
         warnings.warn(

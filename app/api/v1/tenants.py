@@ -1,6 +1,6 @@
 """Tenant management endpoints — admin-only.
 
-All endpoints require the X-Admin-Key header matching the application SECRET_KEY.
+All endpoints require the X-Admin-Key header.
 """
 
 import secrets
@@ -21,6 +21,7 @@ from app.api.schemas import (
     TenantResponse,
     TenantUpdate,
 )
+from app.config import settings
 from app.core.cache import cached, invalidate
 from app.core.pagination import CursorPage, paginate
 from app.db.models import ApiKey, Tenant
@@ -28,13 +29,12 @@ from app.db.models import ApiKey, Tenant
 router = APIRouter(prefix="/tenants", dependencies=[Depends(require_admin_key)])
 logger = structlog.stdlib.get_logger()
 
+# Explicit allowlist of fields that can be updated via PATCH
+_TENANT_MUTABLE_FIELDS = {"name", "plan", "is_active", "settings"}
+
 
 @router.post("", response_model=TenantResponse, status_code=201)
 async def create_tenant(body: TenantCreate, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(Tenant).where(Tenant.slug == body.slug))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Slug already taken")
-
     tenant = Tenant(**body.model_dump(exclude_none=True))
     db.add(tenant)
     try:
@@ -82,6 +82,8 @@ async def update_tenant(tenant_id: uuid.UUID, body: TenantUpdate, db: AsyncSessi
         raise HTTPException(status_code=404, detail="Tenant not found")
 
     for field, value in body.model_dump(exclude_unset=True).items():
+        if field not in _TENANT_MUTABLE_FIELDS:
+            continue
         setattr(tenant, field, value)
 
     await db.commit()
@@ -120,6 +122,7 @@ async def create_api_key_for_tenant(
         tenant_id=tenant.id,
         key_hash=hash_api_key(raw_key),
         name="default",
+        scopes=list(settings.VALID_SCOPES),  # Grant all valid scopes by default
     )
     db.add(api_key)
     await db.commit()

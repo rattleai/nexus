@@ -26,6 +26,11 @@ services:
         reservations:
           cpus: "0.25"
           memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     restart: always
 
   worker:
@@ -86,9 +91,17 @@ services:
     volumes:
       - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./infra/nginx/common.conf:/etc/nginx/conf.d/common.conf:ro
+      # Uncomment when TLS is configured:
+      # - /etc/letsencrypt/live/${DOMAIN}/fullchain.pem:/etc/ssl/certs/fullchain.pem:ro
+      # - /etc/letsencrypt/live/${DOMAIN}/privkey.pem:/etc/ssl/private/privkey.pem:ro
     depends_on:
       api:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: always
 
   db:
@@ -117,9 +130,9 @@ services:
     image: redis:7-alpine
     expose:
       - "6379"
-    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
