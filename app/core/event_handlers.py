@@ -79,7 +79,7 @@ async def _dispatch_webhooks(tenant_id: str, event_name: str, payload: dict) -> 
                         deliver_webhook.delay(
                             endpoint.url,
                             {"event": event_name, **payload},
-                            signing_secret=endpoint.secret,
+                            signing_secret=endpoint.get_secret(),
                         )
                     except Exception:
                         logger.error(

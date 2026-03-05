@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import hash_api_key
 from app.api.deps import get_db, require_admin_key
 from app.api.schemas import (
+    ApiKeyCreate,
     ApiKeyCreatedResponse,
     TenantCreate,
     TenantResponse,
@@ -126,20 +127,32 @@ async def delete_tenant(tenant_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 @router.post("/{tenant_id}/api-keys", response_model=ApiKeyCreatedResponse, status_code=201)
 async def create_api_key_for_tenant(
     tenant_id: uuid.UUID,
+    body: ApiKeyCreate | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a new API key for a tenant. Returns the raw key once."""
+    """Create a new API key for a tenant. Returns the raw key once.
+
+    Accepts an optional body with name, scopes, and rate_limit.
+    Defaults to read-only scopes if none specified (least privilege).
+    """
     result = await db.execute(select(Tenant).where(Tenant.id == tenant_id, Tenant.deleted_at.is_(None)))
     tenant = result.scalar_one_or_none()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
+    # Default to read-only scopes (least privilege) if none specified
+    default_read_scopes = [s for s in settings.VALID_SCOPES if s.endswith(":read")]
+    key_name = body.name if body else "default"
+    key_scopes = body.scopes if body and body.scopes else default_read_scopes
+    key_rate_limit = body.rate_limit if body else 100
+
     raw_key = f"sk_{secrets.token_urlsafe(32)}"
     api_key = ApiKey(
         tenant_id=tenant.id,
         key_hash=hash_api_key(raw_key),
-        name="default",
-        scopes=list(settings.VALID_SCOPES),  # Grant all valid scopes by default
+        name=key_name,
+        scopes=key_scopes,
+        rate_limit=key_rate_limit,
     )
     db.add(api_key)
     await db.commit()

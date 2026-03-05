@@ -143,7 +143,7 @@ def export_tenant_data(self, tenant_id: str, user_id: str, export_id: str, forma
                                 "export_id": export_id,
                                 "tenant_id": tenant_id,
                             },
-                            signing_secret=ep.secret,
+                            signing_secret=ep.get_secret(),
                         )
         except Exception:
             logger.warning("export_webhook_dispatch_failed", export_id=export_id, exc_info=True)

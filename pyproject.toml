@@ -36,6 +36,7 @@ dependencies = [
     "opentelemetry-instrumentation-celery>=0.45b,<1",
     "prometheus-client>=0.20,<1",
     "stripe>=8.0,<12",
+    "cryptography>=42.0,<45",
 ]
 
 [project.optional-dependencies]

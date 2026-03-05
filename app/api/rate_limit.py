@@ -76,11 +76,14 @@ class RateLimiter:
         self.key_prefix = key_prefix
 
     async def __call__(self, request: Request) -> None:
-        # Use X-Real-IP (set by trusted nginx) or fall back to direct client IP.
-        # X-Forwarded-For is not used directly as it can be spoofed without proxy validation.
-        client_ip = request.headers.get("X-Real-IP", "").strip()
-        if not client_ip:
-            client_ip = request.client.host if request.client else "unknown"
+        # Use direct connection IP to prevent rate-limit bypass via X-Real-IP spoofing.
+        # Only trust X-Real-IP when the direct connection is from a known proxy (localhost).
+        direct_ip = request.client.host if request.client else "unknown"
+        forwarded_ip = request.headers.get("X-Real-IP", "").strip()
+        if forwarded_ip and direct_ip in ("127.0.0.1", "::1"):
+            client_ip = forwarded_ip
+        else:
+            client_ip = direct_ip
 
         key = f"{self.key_prefix}:{client_ip}:{request.url.path}"
         now = time.time()

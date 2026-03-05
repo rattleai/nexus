@@ -104,15 +104,16 @@ async def create_webhook_endpoint(
     if ssrf_error:
         raise HTTPException(status_code=422, detail=f"Invalid webhook URL: {ssrf_error}")
 
-    secret = f"whsec_{secrets.token_urlsafe(32)}"
+    raw_secret = f"whsec_{secrets.token_urlsafe(32)}"
 
     endpoint = WebhookEndpoint(
         tenant_id=tenant.id,
         url=url,
         description=body.description,
-        secret=secret,
+        secret=raw_secret,  # Placeholder, encrypted below
         events=body.events,
     )
+    endpoint.set_secret(raw_secret)  # Encrypt at rest
     db.add(endpoint)
 
     await emit_audit_event(
@@ -133,7 +134,7 @@ async def create_webhook_endpoint(
         description=endpoint.description,
         events=endpoint.events,
         active=endpoint.active,
-        secret=secret,
+        secret=raw_secret,
         created_at=endpoint.created_at,
         updated_at=endpoint.updated_at,
     )
@@ -319,7 +320,7 @@ async def test_webhook_endpoint(
             "endpoint_id": str(endpoint_id),
             "message": "This is a test webhook delivery.",
         }
-        deliver_webhook.delay(endpoint.url, test_payload)
+        deliver_webhook.delay(endpoint.url, test_payload, signing_secret=endpoint.get_secret())
     except Exception:
         logger.error("webhook_test_dispatch_failed", endpoint_id=str(endpoint_id), exc_info=True)
         raise HTTPException(status_code=503, detail="Failed to dispatch test webhook") from None

@@ -91,8 +91,20 @@ async def emit_audit_event(
 
 
 def get_client_ip(request) -> str:
-    """Extract client IP from request, preferring X-Real-IP from trusted proxy."""
-    ip = request.headers.get("X-Real-IP", "").strip()
-    if not ip:
-        ip = request.client.host if request.client else "unknown"
-    return ip
+    """Extract client IP from request.
+
+    Uses the direct connection IP (request.client.host) which is reliable.
+    X-Real-IP is only trusted when set by a known reverse proxy. Since we
+    cannot validate the proxy here, we prefer the direct connection IP and
+    log X-Real-IP as supplementary info when available.
+    """
+    direct_ip = request.client.host if request.client else "unknown"
+    # If behind a trusted proxy, X-Real-IP may be more accurate, but we
+    # always have the direct IP as a fallback to prevent spoofing.
+    forwarded_ip = request.headers.get("X-Real-IP", "").strip()
+    if forwarded_ip and forwarded_ip != direct_ip:
+        # Log both for forensic purposes; return direct IP as the canonical one
+        # unless the connection is from localhost (common proxy setup)
+        if direct_ip in ("127.0.0.1", "::1"):
+            return forwarded_ip
+    return direct_ip
