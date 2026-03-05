@@ -12,9 +12,20 @@ BACKUP_FILE="$BACKUP_DIR/db_backup_$TIMESTAMP.sql.gz"
 mkdir -p "$BACKUP_DIR"
 
 echo "Creating database backup: $BACKUP_FILE"
-docker compose -f "$COMPOSE_FILE" exec -T db \
+if ! docker compose -f "$COMPOSE_FILE" exec -T db \
     pg_dump -U "${DB_USER:-app}" "${DB_NAME:-app}" --no-owner --clean \
-    | gzip > "$BACKUP_FILE"
+    | gzip > "$BACKUP_FILE"; then
+    echo "ERROR: Database backup failed" >&2
+    rm -f "$BACKUP_FILE"
+    exit 1
+fi
+
+# Verify the backup is non-empty
+if [ ! -s "$BACKUP_FILE" ]; then
+    echo "ERROR: Backup file is empty" >&2
+    rm -f "$BACKUP_FILE"
+    exit 1
+fi
 
 SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
 echo "Backup complete: $BACKUP_FILE ($SIZE)"

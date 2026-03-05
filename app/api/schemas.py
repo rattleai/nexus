@@ -121,6 +121,7 @@ class JobResponse(BaseModel):
     type: str
     status: str
     webhook_url: str | None
+    payload: dict | None
     started_at: datetime | None
     completed_at: datetime | None
     error: str | None

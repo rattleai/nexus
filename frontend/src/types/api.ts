@@ -61,6 +61,7 @@ export interface Job {
   type: string
   status: JobStatus
   webhook_url: string | null
+  payload: Record<string, unknown> | null
   started_at: string | null
   completed_at: string | null
   error: string | null

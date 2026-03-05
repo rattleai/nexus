@@ -29,6 +29,7 @@ def upgrade() -> None:
         sa.Column("plan", sa.String(length=50), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.Column("settings", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True, index=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
@@ -65,7 +66,10 @@ def upgrade() -> None:
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("error", sa.Text(), nullable=True),
+        sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("result", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True, index=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(

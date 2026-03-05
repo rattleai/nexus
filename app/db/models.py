@@ -55,6 +55,7 @@ class Job(SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.PENDING, index=True)
     input_hash: Mapped[str | None] = mapped_column(String(64))
     webhook_url: Mapped[str | None] = mapped_column(String(2048))
+    payload: Mapped[dict | None] = mapped_column(JSONB)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)

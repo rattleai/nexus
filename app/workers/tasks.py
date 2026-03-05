@@ -14,7 +14,7 @@ logger = structlog.stdlib.get_logger()
 
 # Sync engine for Celery workers (asyncpg → psycopg2)
 _sync_url = settings.DATABASE_URL.replace("+asyncpg", "")
-_sync_engine = create_engine(_sync_url, pool_size=3, max_overflow=5, pool_pre_ping=True)
+_sync_engine = create_engine(_sync_url, pool_size=3, max_overflow=5, pool_pre_ping=True, pool_recycle=300)
 _SyncSession = sessionmaker(_sync_engine)
 
 
@@ -43,7 +43,7 @@ def process_job(self, job_id: str) -> dict:
             # ── YOUR DOMAIN LOGIC HERE ──
             # Replace this block with actual processing logic.
             # Access job.type to determine what to do.
-            # Access job.result for input payload.
+            # Access job.payload for input data.
             result = {"message": f"Job {job.type} processed successfully"}
             # ── END DOMAIN LOGIC ──
 

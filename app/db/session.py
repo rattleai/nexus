@@ -10,6 +10,7 @@ async_engine = create_async_engine(
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_pre_ping=True,
+    pool_recycle=300,
 )
 async_session_factory = async_sessionmaker(async_engine, expire_on_commit=False)
 

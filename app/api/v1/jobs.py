@@ -36,7 +36,7 @@ async def create_job(
         tenant_id=tenant.id,
         type=body.type,
         webhook_url=str(body.webhook_url) if body.webhook_url else None,
-        result=body.payload,
+        payload=body.payload,
         status=JobStatus.PENDING,
     )
     db.add(job)
