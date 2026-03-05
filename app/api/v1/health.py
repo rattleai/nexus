@@ -5,10 +5,10 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter
 from sqlalchemy import text
 
-from cadprice import __version__
-from cadprice.api.schemas import HealthResponse
-from cadprice.config import settings
-from cadprice.db.session import async_engine
+from app import __version__
+from app.api.schemas import HealthResponse
+from app.config import settings
+from app.db.session import async_engine
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ async def _check_redis() -> bool:
 
 
 def _check_storage_sync() -> bool:
-    from cadprice.storage.s3 import get_s3_client
+    from app.storage.s3 import get_s3_client
 
     client = get_s3_client()
     client.head_bucket(Bucket=settings.S3_BUCKET)
@@ -56,7 +56,7 @@ async def _check_storage() -> bool:
     try:
         return await asyncio.to_thread(_check_storage_sync)
     except Exception:
-        logger.warning("Storage (R2) health check failed", exc_info=True)
+        logger.warning("Storage health check failed", exc_info=True)
         return False
 
 

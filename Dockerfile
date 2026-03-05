@@ -16,7 +16,7 @@ WORKDIR /app
 FROM base AS deps
 
 COPY pyproject.toml README.md ./
-COPY cadprice/__init__.py cadprice/
+COPY app/__init__.py app/
 RUN pip install --no-cache-dir .
 
 FROM deps AS runtime
@@ -26,4 +26,4 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
 EXPOSE 8000
 
-CMD ["uvicorn", "cadprice.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

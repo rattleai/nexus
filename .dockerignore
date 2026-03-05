@@ -9,4 +9,3 @@ frontend/dist
 *.pyc
 .env
 .agents
-api_vendors

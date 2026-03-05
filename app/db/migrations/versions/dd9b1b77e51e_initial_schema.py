@@ -55,8 +55,6 @@ def upgrade() -> None:
     sa.Column('status', sa.Enum('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', name='jobstatus'), nullable=False),
     sa.Column('input_hash', sa.String(length=64), nullable=True),
     sa.Column('webhook_url', sa.String(length=2048), nullable=True),
-    sa.Column('step_file_key', sa.String(length=512), nullable=True),
-    sa.Column('drawing_file_key', sa.String(length=512), nullable=True),
     sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('error', sa.Text(), nullable=True),

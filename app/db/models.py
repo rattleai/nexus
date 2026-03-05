@@ -6,7 +6,7 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, Stri
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from cadprice.db.base import Base, TimestampMixin
+from app.db.base import Base, TimestampMixin
 
 
 class JobStatus(enum.StrEnum):
@@ -55,8 +55,6 @@ class Job(TimestampMixin, Base):
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.PENDING, index=True)
     input_hash: Mapped[str | None] = mapped_column(String(64))
     webhook_url: Mapped[str | None] = mapped_column(String(2048))
-    step_file_key: Mapped[str | None] = mapped_column(String(512))
-    drawing_file_key: Mapped[str | None] = mapped_column(String(512))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)

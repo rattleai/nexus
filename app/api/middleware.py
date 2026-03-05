@@ -4,7 +4,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import Response
 
-from cadprice.config import settings
+from app.config import settings
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

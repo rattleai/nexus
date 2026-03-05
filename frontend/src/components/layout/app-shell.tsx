@@ -15,7 +15,7 @@ export function AppShell({ children }: AppShellProps) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
             <Link to="/" className="text-xl font-bold text-brand-600">
-              CADPrice
+              SaaS Platform
             </Link>
             <div className="flex items-center gap-4">
               <NavLink href="/" label="Dashboard" />
@@ -29,7 +29,7 @@ export function AppShell({ children }: AppShellProps) {
       </main>
 
       <footer className="border-t border-gray-200 py-4 text-center text-sm text-gray-500">
-        CADPrice v{APP_VERSION}
+        SaaS Platform v{APP_VERSION}
       </footer>
     </div>
   )

@@ -5,9 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from cadprice.api.auth import hash_api_key
-from cadprice.db.models import ApiKey, Tenant
-from cadprice.db.session import get_session
+from app.api.auth import hash_api_key
+from app.db.models import ApiKey, Tenant
+from app.db.session import get_session
 
 
 async def get_db() -> AsyncGenerator[AsyncSession]:

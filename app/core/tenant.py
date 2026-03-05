@@ -2,7 +2,7 @@
 
 Usage in route handlers:
 
-    from cadprice.core.tenant import tenant_query
+    from app.core.tenant import tenant_query
 
     @router.get("/jobs")
     async def list_jobs(

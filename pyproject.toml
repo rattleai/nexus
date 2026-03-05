@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "cadprice"
+name = "saas-platform"
 version = "0.1.0"
-description = "Manufacturing intelligence platform — STEP file analysis, costing, and 2D drawing generation"
+description = "Generic multi-tenant SaaS platform template — FastAPI backend with React frontend"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -43,4 +43,4 @@ line-length = 120
 select = ["E", "F", "I", "N", "UP", "B", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
-"cadprice/api/deps.py" = ["B008"]  # Depends() in defaults is idiomatic FastAPI
+"app/api/deps.py" = ["B008"]  # Depends() in defaults is idiomatic FastAPI

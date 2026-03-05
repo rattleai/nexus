@@ -12,12 +12,12 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api_vendors/v1/health\")'"]
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/v1/health\")'"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 15s
-    command: uvicorn cadprice.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
 
   frontend:
@@ -40,13 +40,13 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: cadprice
-      POSTGRES_PASSWORD: cadprice
-      POSTGRES_DB: cadprice
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cadprice"]
+      test: ["CMD-SHELL", "pg_isready -U app"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -73,7 +73,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A cadprice.workers.celery_app worker --loglevel=info
+    command: celery -A app.workers.celery_app worker --loglevel=info
     restart: unless-stopped
 
 volumes:

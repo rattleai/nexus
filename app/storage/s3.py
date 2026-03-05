@@ -3,13 +3,13 @@ import asyncio
 import boto3
 from botocore.client import Config
 
-from cadprice.config import settings
+from app.config import settings
 
 _s3_client = None
 
 
 def get_s3_client():
-    """Return a reusable boto3 S3 client configured for Cloudflare R2."""
+    """Return a reusable boto3 S3 client configured for S3-compatible storage."""
     global _s3_client
     if _s3_client is None:
         _s3_client = boto3.client(
@@ -24,7 +24,7 @@ def get_s3_client():
 
 
 class S3Storage:
-    """S3-compatible object storage (Cloudflare R2)."""
+    """S3-compatible object storage."""
 
     def __init__(self) -> None:
         self._client = get_s3_client()

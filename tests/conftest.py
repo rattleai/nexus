@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from cadprice.main import create_app
+from app.main import create_app
 
 
 @pytest.fixture
@@ -23,8 +23,8 @@ async def client(app) -> AsyncGenerator[AsyncClient]:
 def mock_service_checks():
     """Prevent real DB, Redis, and storage connections in unit tests."""
     with (
-        patch("cadprice.api.v1.health._check_db", new_callable=AsyncMock, return_value=True),
-        patch("cadprice.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
-        patch("cadprice.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
+        patch("app.api.v1.health._check_db", new_callable=AsyncMock, return_value=True),
+        patch("app.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
+        patch("app.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
     ):
         yield

@@ -7,10 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from cadprice import __version__
-from cadprice.api.middleware import SecurityHeadersMiddleware
-from cadprice.api.v1 import v1_router
-from cadprice.config import settings
+from app import __version__
+from app.api.middleware import SecurityHeadersMiddleware
+from app.api.v1 import v1_router
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,19 +20,19 @@ SPA_DIR = BASE_DIR / "frontend" / "dist"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("CADPrice %s starting up — debug=%s", __version__, settings.DEBUG)
+    logger.info("App %s starting up — debug=%s", __version__, settings.DEBUG)
     yield
-    logger.info("CADPrice shutting down")
+    logger.info("App shutting down")
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="CADPrice",
+        title="SaaS Platform",
         version=__version__,
-        description="Manufacturing intelligence platform",
+        description="Multi-tenant SaaS platform",
         lifespan=lifespan,
-        docs_url="/api_vendors/docs" if settings.DEBUG else None,
-        redoc_url="/api_vendors/redoc" if settings.DEBUG else None,
+        docs_url="/api/docs" if settings.DEBUG else None,
+        redoc_url="/api/redoc" if settings.DEBUG else None,
     )
 
     # Middleware (outermost first)
