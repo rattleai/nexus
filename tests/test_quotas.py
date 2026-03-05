@@ -56,7 +56,7 @@ class TestRedisQuotaOperations:
         """Increment gracefully returns 0 when Redis is unavailable."""
         tid = uuid4()
         with patch("app.core.quotas.redis_pool") as mock_redis:
-            mock_redis.pipeline.side_effect = Exception("Redis down")
+            mock_redis.incrby = AsyncMock(side_effect=Exception("Redis down"))
             result = await increment_usage(tid, QuotaMetric.JOBS_PER_MONTH)
             assert result == 0
 

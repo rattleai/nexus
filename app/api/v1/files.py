@@ -124,8 +124,7 @@ async def download_file(
 
     try:
         storage = _get_storage()
-        if not await storage.async_exists(file_key):
-            raise HTTPException(status_code=404, detail="File not found")
+        # Download directly — avoid TOCTOU race from separate exists check
         data = await storage.async_download(file_key)
     except StorageError as exc:
         raise handle_storage_error(exc) from exc
@@ -159,8 +158,7 @@ async def delete_file(
 
     try:
         storage = _get_storage()
-        if not await storage.async_exists(file_key):
-            raise HTTPException(status_code=404, detail="File not found")
+        # Delete directly — avoid TOCTOU race from separate exists check
         await storage.async_delete(file_key)
     except StorageError as exc:
         raise handle_storage_error(exc) from exc

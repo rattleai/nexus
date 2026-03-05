@@ -4,7 +4,7 @@ import uuid
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireRole, get_current_user_from_token, get_db
@@ -16,7 +16,7 @@ logger = structlog.stdlib.get_logger()
 
 
 class ExportRequest(BaseModel):
-    format: str = "json"
+    format: str = Field(default="json", pattern=r"^(json|csv)$")
 
 
 class ExportResponse(BaseModel):

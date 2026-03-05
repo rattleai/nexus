@@ -135,12 +135,17 @@ def validate_settings() -> None:
     if "*" in origins:
         raise RuntimeError("CORS_ORIGINS must not be '*' — specify explicit origins")
 
-    if not settings.WEBHOOK_SIGNING_KEY and not settings.DEBUG:
-        warnings.warn(
-            "WEBHOOK_SIGNING_KEY is not set — falling back to SECRET_KEY for webhook signatures. "
-            "Set a dedicated WEBHOOK_SIGNING_KEY in production.",
-            stacklevel=2,
-        )
+    if not settings.WEBHOOK_SIGNING_KEY:
+        if settings.DEBUG:
+            warnings.warn(
+                "WEBHOOK_SIGNING_KEY is not set — webhook signing will be unavailable.",
+                stacklevel=2,
+            )
+        else:
+            raise RuntimeError(
+                "WEBHOOK_SIGNING_KEY must be set in production (DEBUG=false). "
+                "Never reuse SECRET_KEY for webhook signatures."
+            )
 
     if not settings.storage_configured:
         warnings.warn(

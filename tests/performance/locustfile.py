@@ -20,8 +20,12 @@ class SaaSPlatformUser(HttpUser):
     wait_time = between(0.5, 2)
 
     def on_start(self):
-        self.api_key = os.environ.get("API_KEY", "sk_test_key")
-        self.admin_key = os.environ.get("ADMIN_KEY", "test_admin_key")
+        self.api_key = os.environ.get("API_KEY")
+        if not self.api_key:
+            raise ValueError("API_KEY environment variable must be set for load testing")
+        self.admin_key = os.environ.get("ADMIN_KEY")
+        if not self.admin_key:
+            raise ValueError("ADMIN_KEY environment variable must be set for load testing")
         self.headers = {"X-API-Key": self.api_key}
         self.admin_headers = {"X-Admin-Key": self.admin_key}
 
@@ -63,7 +67,9 @@ class AdminUser(HttpUser):
     weight = 1  # Less frequent than regular users
 
     def on_start(self):
-        self.admin_key = os.environ.get("ADMIN_KEY", "test_admin_key")
+        self.admin_key = os.environ.get("ADMIN_KEY")
+        if not self.admin_key:
+            raise ValueError("ADMIN_KEY environment variable must be set for load testing")
         self.headers = {"X-Admin-Key": self.admin_key}
 
     @task(3)

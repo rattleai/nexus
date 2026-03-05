@@ -4,7 +4,7 @@ import uuid
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,9 +47,23 @@ class CreateCheckoutRequest(BaseModel):
     plan_id: uuid.UUID
     return_url: str
 
+    @field_validator("return_url")
+    @classmethod
+    def validate_return_url(cls, v: str) -> str:
+        if not v.startswith(settings.APP_BASE_URL):
+            raise ValueError("return_url must be on the application domain")
+        return v
+
 
 class BillingPortalRequest(BaseModel):
     return_url: str
+
+    @field_validator("return_url")
+    @classmethod
+    def validate_return_url(cls, v: str) -> str:
+        if not v.startswith(settings.APP_BASE_URL):
+            raise ValueError("return_url must be on the application domain")
+        return v
 
 
 class CheckoutResponse(BaseModel):
@@ -184,7 +198,7 @@ async def create_checkout(
     return CheckoutResponse(url=url)
 
 
-@router.post("/portal")
+@router.post("/portal", dependencies=[Depends(RequireRole("owner"))])
 async def create_billing_portal(
     body: BillingPortalRequest,
     user: User = Depends(get_current_user_from_token),

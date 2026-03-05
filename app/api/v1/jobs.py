@@ -14,7 +14,7 @@ from app.api.schemas import JobCancelResponse, JobCreate, JobResponse
 from app.billing.enforcement import enforce_plan_limit, get_effective_plan
 from app.core.cache import cached, invalidate
 from app.core.pagination import CursorPage, paginate
-from app.core.quotas import QuotaMetric, increment_usage
+from app.core.quotas import QuotaMetric, decrement_usage, increment_usage
 from app.core.tenant import tenant_query
 from app.core.url_validation import validate_webhook_url
 from app.db.models import Job, JobStatus, Tenant
@@ -73,11 +73,16 @@ async def create_job(
         input_hash=input_hash,
     )
     db.add(job)
-    await db.commit()
-    await db.refresh(job)
 
-    # Track usage
+    # Track usage before commit so failures roll back together.
+    # Redis increment happens first; if DB commit fails, we decrement to compensate.
     await increment_usage(tenant.id, QuotaMetric.JOBS_PER_MONTH)
+    try:
+        await db.commit()
+    except Exception:
+        await decrement_usage(tenant.id, QuotaMetric.JOBS_PER_MONTH)
+        raise
+    await db.refresh(job)
 
     # Dispatch to Celery — if the broker is unreachable, log the error but
     # still return the job (it stays PENDING and will be picked up by the

@@ -31,7 +31,7 @@ def export_tenant_data(self, tenant_id: str, user_id: str, export_id: str, forma
         ).scalars().all()
 
         jobs = db.execute(
-            select(Job).where(Job.tenant_id == tid, Job.deleted_at.is_(None))
+            select(Job).where(Job.tenant_id == tid, Job.deleted_at.is_(None)).yield_per(500)
         ).scalars().all()
 
         api_keys = db.execute(
@@ -136,11 +136,15 @@ def export_tenant_data(self, tenant_id: str, user_id: str, export_id: str, forma
                 ).scalars().all()
                 for ep in endpoints:
                     if "export.completed" in (ep.events or []):
-                        deliver_webhook.delay(ep.url, {
-                            "event": "export.completed",
-                            "export_id": export_id,
-                            "tenant_id": tenant_id,
-                        })
+                        deliver_webhook.delay(
+                            ep.url,
+                            {
+                                "event": "export.completed",
+                                "export_id": export_id,
+                                "tenant_id": tenant_id,
+                            },
+                            signing_secret=ep.secret,
+                        )
         except Exception:
             logger.warning("export_webhook_dispatch_failed", export_id=export_id, exc_info=True)
 

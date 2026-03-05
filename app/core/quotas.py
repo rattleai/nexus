@@ -89,33 +89,41 @@ async def get_current_usage(tenant_id: uuid.UUID, metric: QuotaMetric) -> int:
 
 
 async def increment_usage(tenant_id: uuid.UUID, metric: QuotaMetric, amount: int = 1) -> int:
-    """Increment a usage counter. Returns the new value."""
+    """Increment a usage counter. Returns the new value.
+
+    Only sets TTL when the key is newly created (INCRBY returns the amount),
+    preventing the expiry from being pushed forward on every call.
+    """
     key = _quota_key(tenant_id, metric)
     try:
-        pipe = redis_pool.pipeline()
-        pipe.incrby(key, amount)
-        # Set TTL based on metric period (daily or monthly)
-        if "day" in metric.value:
-            pipe.expire(key, 86400)  # 24 hours
-        else:
-            pipe.expire(key, 2592000)  # 30 days
-        results = await pipe.execute()
-        return results[0]
+        new_value = await redis_pool.incrby(key, amount)
+        # Only set TTL when the key was just created (value equals the increment)
+        if new_value == amount:
+            ttl = 86400 if "day" in metric.value else 2592000  # 24h or 30d
+            await redis_pool.expire(key, ttl)
+        return new_value
     except Exception:
         logger.warning("quota_increment_error", tenant_id=str(tenant_id), metric=metric.value)
         return 0
 
 
+# Lua script for atomic decrement-and-floor-at-zero
+_DECR_FLOOR_SCRIPT = """
+local val = redis.call('decrby', KEYS[1], ARGV[1])
+if val < 0 then
+    redis.call('set', KEYS[1], 0)
+    return 0
+end
+return val
+"""
+
+
 async def decrement_usage(tenant_id: uuid.UUID, metric: QuotaMetric, amount: int = 1) -> int:
-    """Decrement a usage counter (e.g., when a resource is deleted)."""
+    """Atomically decrement a usage counter, flooring at zero."""
     key = _quota_key(tenant_id, metric)
     try:
-        result = await redis_pool.decrby(key, amount)
-        # Don't let it go negative
-        if result < 0:
-            await redis_pool.set(key, 0)
-            return 0
-        return result
+        result = await redis_pool.eval(_DECR_FLOOR_SCRIPT, 1, key, amount)
+        return int(result)
     except Exception:
         logger.warning("quota_decrement_error", tenant_id=str(tenant_id), metric=metric.value)
         return 0
@@ -135,8 +143,8 @@ class QuotaEnforcer:
         # Get tenant from request state (set by auth middleware)
         tenant = getattr(request.state, "tenant", None)
         if tenant is None:
-            # Try to get from the dependency chain via the resolved API key
-            return  # Skip quota check if no tenant context (will be caught by auth)
+            # Fail closed — don't skip quota check if tenant context is missing
+            raise HTTPException(status_code=401, detail="Authentication required")
 
         plan = getattr(tenant, "plan", "free")
         limit = get_plan_limit(plan, self.metric)
