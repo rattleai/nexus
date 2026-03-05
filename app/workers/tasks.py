@@ -12,7 +12,8 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
-from app.core.circuit_breaker import CircuitBreaker, webhook_breaker as _webhook_breaker
+from app.core.circuit_breaker import CircuitBreaker
+from app.core.circuit_breaker import webhook_breaker as _webhook_breaker
 from app.workers.celery_app import celery
 
 logger = structlog.stdlib.get_logger()
@@ -63,9 +64,11 @@ def ping() -> str:
     return "pong"
 
 
-@celery.task(name="app.workers.process_job", bind=True, max_retries=3)
+@celery.task(name="app.workers.process_job", bind=True, max_retries=3, soft_time_limit=300, time_limit=330)
 def process_job(self, job_id: str) -> dict:
     """Process a job. Override this with your domain-specific logic."""
+    from celery.exceptions import SoftTimeLimitExceeded
+
     from app.db.models import Job, JobStatus
 
     with _SyncSession() as db:
@@ -131,6 +134,33 @@ def process_job(self, job_id: str) -> dict:
                 deliver_webhook.delay(job.webhook_url, webhook_payload)
 
             return {"status": "completed", "job_id": job_id}
+
+        except SoftTimeLimitExceeded:
+            # Graceful timeout — mark job as failed with a clear reason
+            _optimistic_update(
+                db,
+                Job,
+                job.id,
+                job.version,
+                status=JobStatus.FAILED,
+                completed_at=datetime.now(UTC),
+                error="Job timed out",
+            )
+            db.commit()
+            logger.error("job_timed_out", job_id=job_id, type=job.type)
+
+            if job.webhook_url:
+                webhook_payload = {
+                    "event": "job.failed",
+                    "job_id": job_id,
+                    "type": job.type,
+                    "status": "failed",
+                    "error": "Job timed out",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+                deliver_webhook.delay(job.webhook_url, webhook_payload)
+
+            return {"status": "timed_out", "job_id": job_id}
 
         except Exception as exc:
             is_final_attempt = self.request.retries >= self.max_retries

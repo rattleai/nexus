@@ -1,9 +1,21 @@
 """Auth-related Pydantic schemas."""
 
+import re
 import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+def _validate_password_strength(password: str) -> str:
+    """Enforce minimum password complexity: lowercase, uppercase, digit."""
+    if not re.search(r"[a-z]", password):
+        raise ValueError("Password must contain at least one lowercase letter")
+    if not re.search(r"[A-Z]", password):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not re.search(r"\d", password):
+        raise ValueError("Password must contain at least one digit")
+    return password
 
 
 class UserRegister(BaseModel):
@@ -22,6 +34,11 @@ class UserRegister(BaseModel):
     @classmethod
     def normalize_email(cls, v: str) -> str:
         return v.strip().lower()
+
+    @field_validator("password")
+    @classmethod
+    def check_password_strength(cls, v: str) -> str:
+        return _validate_password_strength(v)
 
 
 class UserLogin(BaseModel):

@@ -10,16 +10,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireScopes, get_current_tenant, get_db
+from app.api.rate_limit import ApiKeyRateLimiter
 from app.api.schemas import JobCancelResponse, JobCreate, JobResponse
 from app.billing.enforcement import enforce_plan_limit, get_effective_plan
 from app.core.cache import cached, invalidate
 from app.core.pagination import CursorPage, paginate
 from app.core.quotas import QuotaMetric, decrement_usage, increment_usage
 from app.core.tenant import tenant_query
-from app.core.url_validation import validate_webhook_url
+from app.core.url_validation import validate_webhook_url_async
 from app.db.models import Job, JobStatus, Tenant
 
-router = APIRouter(prefix="/jobs")
+_api_key_rate_limit = ApiKeyRateLimiter()
+router = APIRouter(prefix="/jobs", dependencies=[Depends(_api_key_rate_limit)])
 logger = structlog.stdlib.get_logger()
 
 
@@ -48,7 +50,7 @@ async def create_job(
 
     webhook_url = str(body.webhook_url) if body.webhook_url else None
     if webhook_url:
-        ssrf_error = validate_webhook_url(webhook_url)
+        ssrf_error = await validate_webhook_url_async(webhook_url)
         if ssrf_error:
             raise HTTPException(status_code=422, detail=f"Invalid webhook URL: {ssrf_error}")
 

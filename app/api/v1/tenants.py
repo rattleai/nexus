@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import hash_api_key
 from app.api.deps import get_db, require_admin_key
+from app.api.rate_limit import RateLimiter
 from app.api.schemas import (
     ApiKeyCreate,
     ApiKeyCreatedResponse,
@@ -28,7 +29,8 @@ from app.core.cache import cached, invalidate
 from app.core.pagination import CursorPage, paginate
 from app.db.models import ApiKey, Tenant
 
-router = APIRouter(prefix="/tenants", dependencies=[Depends(require_admin_key)])
+_admin_rate_limit = RateLimiter(max_requests=60, window=60, key_prefix="rl:admin")
+router = APIRouter(prefix="/tenants", dependencies=[Depends(require_admin_key), Depends(_admin_rate_limit)])
 logger = structlog.stdlib.get_logger()
 
 # Explicit allowlist of fields that can be updated via PATCH

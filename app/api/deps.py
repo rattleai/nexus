@@ -32,10 +32,15 @@ async def get_read_db() -> AsyncGenerator[AsyncSession]:
 
 
 async def get_current_api_key(
+    request: Request,
     x_api_key: str = Header(..., alias="X-API-Key"),
     db: AsyncSession = Depends(get_db),
 ) -> ApiKey:
-    """Resolve and validate the API key from the request header."""
+    """Resolve and validate the API key from the request header.
+
+    Stores the resolved key on request.state.api_key for downstream
+    dependencies (e.g. ApiKeyRateLimiter).
+    """
     key_hash = hash_api_key(x_api_key)
 
     result = await db.execute(
@@ -49,6 +54,9 @@ async def get_current_api_key(
     tenant = api_key.tenant
     if tenant is None or not tenant.is_active:
         raise HTTPException(status_code=403, detail="Tenant not found or inactive")
+
+    # Store on request state for ApiKeyRateLimiter
+    request.state.api_key = api_key
 
     return api_key
 

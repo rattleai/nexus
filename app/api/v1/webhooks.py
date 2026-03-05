@@ -16,7 +16,7 @@ from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.core.audit import AuditAction, emit_audit_event
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
-from app.core.url_validation import validate_webhook_url
+from app.core.url_validation import validate_webhook_url_async
 from app.db.models import Tenant, WebhookDelivery, WebhookEndpoint
 
 router = APIRouter(prefix="/webhooks")
@@ -100,7 +100,7 @@ async def create_webhook_endpoint(
 ):
     """Register a new webhook endpoint."""
     url = str(body.url)
-    ssrf_error = validate_webhook_url(url)
+    ssrf_error = await validate_webhook_url_async(url)
     if ssrf_error:
         raise HTTPException(status_code=422, detail=f"Invalid webhook URL: {ssrf_error}")
 
@@ -202,7 +202,7 @@ async def update_webhook_endpoint(
     changes = {}
     if body.url is not None:
         url = str(body.url)
-        ssrf_error = validate_webhook_url(url)
+        ssrf_error = await validate_webhook_url_async(url)
         if ssrf_error:
             raise HTTPException(status_code=422, detail=f"Invalid webhook URL: {ssrf_error}")
         changes["url"] = [endpoint.url, url]
