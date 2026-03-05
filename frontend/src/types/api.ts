@@ -7,6 +7,7 @@ export interface HealthResponse {
 export interface ErrorResponse {
   detail: string
   code?: string
+  request_id?: string
   errors?: Array<{ field: string; message: string; type: string }>
 }
 

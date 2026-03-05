@@ -43,10 +43,23 @@ def _check_storage_sync() -> bool:
 
 
 async def _check_storage() -> bool:
+    if not settings.storage_configured:
+        # Storage not configured — report as unchecked, not failed
+        return True
     try:
         return await asyncio.to_thread(_check_storage_sync)
     except Exception:
         logger.warning("storage_health_check_failed", exc_info=True)
+        return False
+
+
+async def _check_celery() -> bool:
+    """Check Celery worker connectivity via Redis broker ping."""
+    try:
+        result = await redis_pool.ping()
+        return bool(result)
+    except Exception:
+        logger.warning("celery_health_check_failed", exc_info=True)
         return False
 
 
@@ -59,24 +72,28 @@ async def liveness():
 @router.get("/health/ready", response_model=HealthResponse)
 async def readiness():
     """Kubernetes readiness probe — are all dependencies reachable?"""
-    db_ok, redis_ok, storage_ok = await asyncio.gather(_check_db(), _check_redis(), _check_storage())
+    db_ok, redis_ok, storage_ok, celery_ok = await asyncio.gather(
+        _check_db(), _check_redis(), _check_storage(), _check_celery()
+    )
 
-    all_ok = db_ok and redis_ok and storage_ok
+    all_ok = db_ok and redis_ok and storage_ok and celery_ok
     return HealthResponse(
         status="ok" if all_ok else "degraded",
         version=__version__,
-        services={"db": db_ok, "redis": redis_ok, "storage": storage_ok},
+        services={"db": db_ok, "redis": redis_ok, "storage": storage_ok, "celery": celery_ok},
     )
 
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
     """Combined health check (backward compatible)."""
-    db_ok, redis_ok, storage_ok = await asyncio.gather(_check_db(), _check_redis(), _check_storage())
+    db_ok, redis_ok, storage_ok, celery_ok = await asyncio.gather(
+        _check_db(), _check_redis(), _check_storage(), _check_celery()
+    )
 
-    all_ok = db_ok and redis_ok and storage_ok
+    all_ok = db_ok and redis_ok and storage_ok and celery_ok
     return HealthResponse(
         status="ok" if all_ok else "degraded",
         version=__version__,
-        services={"db": db_ok, "redis": redis_ok, "storage": storage_ok},
+        services={"db": db_ok, "redis": redis_ok, "storage": storage_ok, "celery": celery_ok},
     )

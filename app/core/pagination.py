@@ -25,6 +25,7 @@ from typing import Any, Generic, TypeVar
 from pydantic import BaseModel
 from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 T = TypeVar("T")
 
@@ -58,22 +59,22 @@ def decode_cursor(cursor: str, value_type: type) -> Any:
 
 async def paginate(
     db: AsyncSession,
-    stmt: Select,
-    sort_column,
+    stmt: Select[Any],
+    sort_column: InstrumentedAttribute[Any],
     *,
     limit: int = 20,
     cursor: str | None = None,
     descending: bool = True,
-) -> CursorPage:
+) -> CursorPage[Any]:
     """Apply cursor-based pagination to a SQLAlchemy SELECT.
 
     Args:
-        db: Async database session
-        stmt: Base SELECT statement (with filters already applied)
-        sort_column: The SQLAlchemy column to sort/paginate by (e.g. Job.created_at)
-        limit: Max items per page
-        cursor: Opaque cursor from a previous response
-        descending: Sort direction
+        db: Async database session.
+        stmt: Base SELECT statement (with filters already applied).
+        sort_column: The SQLAlchemy column to sort/paginate by (e.g. Job.created_at).
+        limit: Max items per page.
+        cursor: Opaque cursor from a previous response.
+        descending: Sort direction.
     """
     # Determine the Python type of the sort column for cursor decoding
     col_type = sort_column.type.python_type

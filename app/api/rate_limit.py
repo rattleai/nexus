@@ -1,7 +1,10 @@
-"""Redis sliding-window rate limiter.
+"""Redis sliding-window rate limiter with in-memory fallback.
 
 Uses a sorted set per client key with timestamps as scores.
 Each request adds the current timestamp and prunes entries outside the window.
+
+When Redis is unavailable, falls back to a process-local in-memory counter
+to maintain basic rate limiting (less precise, but still enforced).
 
 Usage as a FastAPI dependency:
     from app.api.rate_limit import RateLimiter
@@ -11,7 +14,9 @@ Usage as a FastAPI dependency:
         ...
 """
 
+import threading
 import time
+from collections import defaultdict
 
 import structlog
 from fastapi import HTTPException, Request
@@ -20,6 +25,34 @@ from app.config import settings
 from app.core.redis import redis_pool
 
 logger = structlog.stdlib.get_logger()
+
+
+class _InMemoryRateLimitStore:
+    """Thread-safe in-memory fallback for when Redis is unavailable.
+
+    Uses a dict of lists of timestamps per key. Periodically prunes old entries.
+    This is a best-effort fallback — it is per-process and not shared across
+    multiple API server instances.
+    """
+
+    def __init__(self) -> None:
+        self._store: dict[str, list[float]] = defaultdict(list)
+        self._lock = threading.Lock()
+
+    def check_and_increment(self, key: str, window: float) -> int:
+        """Return the current request count after adding one. Prunes old entries."""
+        now = time.time()
+        cutoff = now - window
+
+        with self._lock:
+            entries = self._store[key]
+            # Prune entries outside the window
+            self._store[key] = [t for t in entries if t > cutoff]
+            self._store[key].append(now)
+            return len(self._store[key])
+
+
+_fallback_store = _InMemoryRateLimitStore()
 
 
 class RateLimiter:
@@ -58,9 +91,9 @@ class RateLimiter:
             results = await pipe.execute()
             request_count = results[1]
         except Exception:
-            # If Redis is down, allow the request (fail-open for rate limiting)
-            logger.warning("rate_limit_redis_error", client_ip=client_ip)
-            return
+            # Redis unavailable — fall back to in-memory rate limiting
+            logger.warning("rate_limit_redis_fallback", client_ip=client_ip)
+            request_count = _fallback_store.check_and_increment(key, self.window)
 
         if request_count >= self.max_requests:
             retry_after = int(self.window - (now - window_start))

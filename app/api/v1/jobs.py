@@ -13,6 +13,7 @@ from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.schemas import JobCancelResponse, JobCreate, JobResponse
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
+from app.core.url_validation import validate_webhook_url
 from app.db.models import Job, JobStatus, Tenant
 
 router = APIRouter(prefix="/jobs")
@@ -37,10 +38,16 @@ async def create_job(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
+    webhook_url = str(body.webhook_url) if body.webhook_url else None
+    if webhook_url:
+        ssrf_error = validate_webhook_url(webhook_url)
+        if ssrf_error:
+            raise HTTPException(status_code=422, detail=f"Invalid webhook URL: {ssrf_error}")
+
     job = Job(
         tenant_id=tenant.id,
         type=body.type,
-        webhook_url=str(body.webhook_url) if body.webhook_url else None,
+        webhook_url=webhook_url,
         payload=body.payload,
         status=JobStatus.PENDING,
     )

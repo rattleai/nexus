@@ -1,13 +1,17 @@
 from collections.abc import AsyncGenerator
 
+import structlog
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.auth import hash_api_key
+from app.config import settings
 from app.db.models import ApiKey, Tenant
 from app.db.session import get_session
+
+logger = structlog.stdlib.get_logger()
 
 
 async def get_db() -> AsyncGenerator[AsyncSession]:
@@ -69,3 +73,20 @@ class RequireScopes:
                 status_code=403,
                 detail=f"API key missing required scopes: {', '.join(sorted(missing))}",
             )
+
+
+async def require_admin_key(
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
+) -> None:
+    """Validate that the request carries a valid admin key.
+
+    The admin key is compared against the application SECRET_KEY.
+    This protects tenant-management endpoints that are not scoped to any tenant.
+
+    In production, replace this with a dedicated admin auth system (OAuth, JWT,
+    or a separate admin API key table). This implementation provides a basic
+    guard that is strictly better than no authentication at all.
+    """
+    if not x_admin_key or x_admin_key != settings.SECRET_KEY:
+        logger.warning("admin_auth_failed")
+        raise HTTPException(status_code=401, detail="Invalid admin key")

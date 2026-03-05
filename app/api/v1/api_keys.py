@@ -44,7 +44,7 @@ async def create_api_key(
     await db.commit()
     await db.refresh(api_key)
 
-    logger.info("api_key_created", tenant_id=str(tenant.id), key_id=str(api_key.id))
+    logger.info("audit.api_key_created", tenant_id=str(tenant.id), key_id=str(api_key.id), name=body.name, scopes=scopes)
     return ApiKeyCreatedResponse(
         id=api_key.id,
         name=api_key.name,
@@ -88,5 +88,5 @@ async def revoke_api_key(
 
     api_key.active = False
     await db.commit()
-    logger.info("api_key_revoked", tenant_id=str(tenant.id), key_id=str(key_id))
+    logger.info("audit.api_key_revoked", tenant_id=str(tenant.id), key_id=str(key_id))
     return ApiKeyRevokeResponse(id=key_id)

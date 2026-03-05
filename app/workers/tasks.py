@@ -3,9 +3,12 @@
 import hashlib
 import hmac
 import json
+import threading
 import time
 import uuid
+from collections import defaultdict
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 
 import structlog
 from sqlalchemy import create_engine, select, update
@@ -20,6 +23,64 @@ logger = structlog.stdlib.get_logger()
 _sync_url = settings.DATABASE_URL.replace("+asyncpg", "")
 _sync_engine = create_engine(_sync_url, pool_size=3, max_overflow=5, pool_pre_ping=True, pool_recycle=300)
 _SyncSession = sessionmaker(_sync_engine)
+
+
+# ── Circuit Breaker ──────────────────────────────────────────────────────────
+
+
+class CircuitBreaker:
+    """Per-host circuit breaker for webhook delivery.
+
+    States:
+      - CLOSED: normal operation, requests pass through.
+      - OPEN: too many recent failures, requests are rejected immediately.
+      - HALF_OPEN: after a cooldown, allow one probe request.
+
+    Thread-safe for use by concurrent Celery workers.
+    """
+
+    FAILURE_THRESHOLD = 5
+    RECOVERY_TIMEOUT = 300  # seconds before trying again
+
+    def __init__(self) -> None:
+        self._failures: dict[str, int] = defaultdict(int)
+        self._last_failure_time: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def _host_key(self, url: str) -> str:
+        return urlparse(url).netloc
+
+    def is_open(self, url: str) -> bool:
+        """Return True if the circuit is open (should NOT attempt delivery)."""
+        host = self._host_key(url)
+        with self._lock:
+            failures = self._failures.get(host, 0)
+            if failures < self.FAILURE_THRESHOLD:
+                return False
+            # Check if recovery timeout has elapsed
+            last_fail = self._last_failure_time.get(host, 0)
+            if time.time() - last_fail > self.RECOVERY_TIMEOUT:
+                # Half-open: allow a probe
+                return False
+            return True
+
+    def record_success(self, url: str) -> None:
+        host = self._host_key(url)
+        with self._lock:
+            self._failures.pop(host, None)
+            self._last_failure_time.pop(host, None)
+
+    def record_failure(self, url: str) -> None:
+        host = self._host_key(url)
+        with self._lock:
+            self._failures[host] = self._failures.get(host, 0) + 1
+            self._last_failure_time[host] = time.time()
+
+
+_webhook_breaker = CircuitBreaker()
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 
 def _optimistic_update(db, model, record_id: uuid.UUID, expected_version: int, **values) -> bool:
@@ -37,6 +98,9 @@ def _sign_webhook_payload(payload: dict) -> str:
     """Create an HMAC-SHA256 signature for a webhook payload."""
     body = json.dumps(payload, sort_keys=True, default=str)
     return hmac.new(settings.SECRET_KEY.encode(), body.encode(), hashlib.sha256).hexdigest()
+
+
+# ── Tasks ────────────────────────────────────────────────────────────────────
 
 
 @celery.task(name="app.workers.ping")
@@ -133,8 +197,14 @@ def process_job(self, job_id: str) -> dict:
 
 @celery.task(name="app.workers.deliver_webhook", bind=True, max_retries=5)
 def deliver_webhook(self, url: str, payload: dict) -> dict:
-    """Deliver a webhook with HMAC-SHA256 signature and exponential backoff retries."""
+    """Deliver a webhook with HMAC-SHA256 signature, circuit breaker, and exponential backoff."""
     import httpx
+
+    # Check circuit breaker before attempting delivery
+    if _webhook_breaker.is_open(url):
+        logger.warning("webhook_circuit_open", url=url)
+        # Don't retry — the circuit is open. It will auto-recover after RECOVERY_TIMEOUT.
+        return {"status": "circuit_open", "url": url}
 
     signature = _sign_webhook_payload(payload)
     timestamp = str(int(time.time()))
@@ -149,8 +219,10 @@ def deliver_webhook(self, url: str, payload: dict) -> dict:
         with httpx.Client(timeout=10) as client:
             response = client.post(url, json=payload, headers=headers)
             response.raise_for_status()
+        _webhook_breaker.record_success(url)
         logger.info("webhook_delivered", url=url, status=response.status_code)
         return {"status": "delivered", "url": url}
     except Exception as exc:
+        _webhook_breaker.record_failure(url)
         logger.warning("webhook_delivery_failed", url=url, error=str(exc), attempt=self.request.retries + 1)
         raise self.retry(exc=exc, countdown=2**self.request.retries * 5) from exc
