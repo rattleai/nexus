@@ -1,6 +1,7 @@
 """File upload/download endpoints — scoped to the authenticated tenant."""
 
 import re
+import threading
 import uuid
 
 import structlog
@@ -21,7 +22,6 @@ _SAFE_FILENAME_RE = re.compile(r"[^a-zA-Z0-9._-]")
 
 # Shared S3 storage instance (reuses connection pool).
 # Thread-safe via double-checked locking (matches s3.py pattern).
-import threading
 
 _storage: S3Storage | None = None
 _storage_lock = threading.Lock()

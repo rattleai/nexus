@@ -77,9 +77,23 @@ async def liveness():
 
 
 async def _readiness_check() -> dict:
-    """Readiness check — not cached so K8s probes reflect real-time status."""
+    """Readiness check — not cached so K8s probes reflect real-time status.
+
+    Each check is wrapped in asyncio.wait_for to prevent a slow dependency
+    from blocking the entire health endpoint (e.g. if S3 hangs for 30s).
+    """
+
+    async def _with_timeout(coro, timeout: float = 5.0) -> bool:
+        try:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        except asyncio.TimeoutError:
+            return False
+
     db_ok, redis_ok, storage_ok, celery_ok = await asyncio.gather(
-        _check_db(), _check_redis(), _check_storage(), _check_celery()
+        _with_timeout(_check_db()),
+        _with_timeout(_check_redis()),
+        _with_timeout(_check_storage()),
+        _with_timeout(_check_celery()),
     )
     all_ok = db_ok and redis_ok and storage_ok and celery_ok
     return {
