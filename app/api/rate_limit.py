@@ -1,7 +1,10 @@
-"""Redis sliding-window rate limiter.
+"""Redis sliding-window rate limiter with in-memory fallback.
 
 Uses a sorted set per client key with timestamps as scores.
 Each request adds the current timestamp and prunes entries outside the window.
+
+When Redis is unavailable, falls back to a process-local in-memory counter
+to maintain basic rate limiting (less precise, but still enforced).
 
 Usage as a FastAPI dependency:
     from app.api.rate_limit import RateLimiter
@@ -11,7 +14,9 @@ Usage as a FastAPI dependency:
         ...
 """
 
+import threading
 import time
+from collections import defaultdict
 
 import structlog
 from fastapi import HTTPException, Request
@@ -20,6 +25,41 @@ from app.config import settings
 from app.core.redis import redis_pool
 
 logger = structlog.stdlib.get_logger()
+
+_MAX_TRACKED_KEYS = 100_000
+
+
+class _InMemoryRateLimitStore:
+    """Thread-safe in-memory fallback for when Redis is unavailable.
+
+    Uses a dict of lists of timestamps per key. Prunes old entries and evicts
+    stale keys to prevent unbounded memory growth.
+    """
+
+    def __init__(self) -> None:
+        self._store: dict[str, list[float]] = defaultdict(list)
+        self._lock = threading.Lock()
+
+    def check_and_increment(self, key: str, window: float) -> int:
+        """Return the current request count after adding one. Prunes old entries."""
+        now = time.time()
+        cutoff = now - window
+
+        with self._lock:
+            # Evict stale keys periodically to prevent memory leak
+            if len(self._store) > _MAX_TRACKED_KEYS:
+                stale_keys = [k for k, v in self._store.items() if not v or v[-1] < cutoff]
+                for k in stale_keys:
+                    del self._store[k]
+
+            entries = self._store[key]
+            # Prune entries outside the window
+            self._store[key] = [t for t in entries if t > cutoff]
+            self._store[key].append(now)
+            return len(self._store[key])
+
+
+_fallback_store = _InMemoryRateLimitStore()
 
 
 class RateLimiter:
@@ -36,8 +76,9 @@ class RateLimiter:
         self.key_prefix = key_prefix
 
     async def __call__(self, request: Request) -> None:
-        # Identify client by IP (or X-Forwarded-For behind a proxy)
-        client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        # Use X-Real-IP (set by trusted nginx) or fall back to direct client IP.
+        # X-Forwarded-For is not used directly as it can be spoofed without proxy validation.
+        client_ip = request.headers.get("X-Real-IP", "").strip()
         if not client_ip:
             client_ip = request.client.host if request.client else "unknown"
 
@@ -49,21 +90,20 @@ class RateLimiter:
             pipe = redis_pool.pipeline()
             # Remove entries outside the window
             pipe.zremrangebyscore(key, 0, window_start)
-            # Count remaining entries
-            pipe.zcard(key)
             # Add current request
             pipe.zadd(key, {str(now): now})
+            # Count entries (after adding)
+            pipe.zcard(key)
             # Set TTL on the key
             pipe.expire(key, self.window)
             results = await pipe.execute()
-            request_count = results[1]
+            request_count = results[2]  # zcard result after zadd
         except Exception:
-            # If Redis is down, allow the request (fail-open for rate limiting)
-            logger.warning("rate_limit_redis_error", client_ip=client_ip)
-            return
+            # Redis unavailable — fall back to in-memory rate limiting
+            logger.warning("rate_limit_redis_fallback", client_ip=client_ip)
+            request_count = _fallback_store.check_and_increment(key, self.window)
 
-        if request_count >= self.max_requests:
-            retry_after = int(self.window - (now - window_start))
+        if request_count > self.max_requests:
             logger.warning(
                 "rate_limit_exceeded",
                 client_ip=client_ip,
@@ -74,5 +114,5 @@ class RateLimiter:
             raise HTTPException(
                 status_code=429,
                 detail="Too many requests",
-                headers={"Retry-After": str(max(1, retry_after))},
+                headers={"Retry-After": str(self.window)},
             )

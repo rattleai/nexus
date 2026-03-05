@@ -3,40 +3,33 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import APIRouter, Query
+from fastapi import Query
 from httpx import ASGITransport, AsyncClient
-
-# We need test routes registered on the v1 router BEFORE the SPA catch-all
-_test_router = APIRouter()
-
-
-@_test_router.get("/_test_validation")
-async def _test_validation(num: int = Query(...)):
-    return {"num": num}
-
-
-@_test_router.get("/_test_crash")
-async def _test_crash():
-    raise RuntimeError("Something broke")
 
 
 @pytest.fixture
 async def exc_client():
-    """Client with test routes on the v1 router to avoid SPA catch-all."""
+    """Client with test routes added to a fresh app to avoid router pollution."""
     with (
         patch("app.api.v1.health._check_db", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
+        patch("app.api.v1.health._check_celery", new_callable=AsyncMock, return_value=True),
         patch("app.core.redis.redis_pool", new_callable=AsyncMock),
     ):
-        from app.api.v1 import v1_router
-
-        # Temporarily include test routes
-        v1_router.include_router(_test_router, tags=["test"])
-
         from app.main import create_app
 
         app = create_app()
+
+        # Add test routes directly to the app (not to the shared v1_router)
+        @app.get("/api/v1/_test_validation")
+        async def _test_validation(num: int = Query(...)):
+            return {"num": num}
+
+        @app.get("/api/v1/_test_crash")
+        async def _test_crash():
+            raise RuntimeError("Something broke")
+
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             yield ac

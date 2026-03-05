@@ -13,4 +13,6 @@ redis_pool: aioredis.Redis = aioredis.from_url(
     settings.REDIS_URL,
     decode_responses=True,
     max_connections=20,
+    socket_connect_timeout=5,
+    socket_timeout=5,
 )

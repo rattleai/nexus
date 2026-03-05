@@ -83,6 +83,8 @@ async def test_security_headers_include_hsts_in_production():
         mock_settings.RATE_LIMIT_DEFAULT = 100
         mock_settings.RATE_LIMIT_WINDOW_SECONDS = 60
         mock_settings.RATE_LIMIT_AUTH_ENDPOINTS = 10
+        mock_settings.MAX_REQUEST_BODY_BYTES = 1048576
+        mock_settings.MAX_UPLOAD_SIZE_BYTES = 52428800
         from app.main import create_app
 
         app = create_app()

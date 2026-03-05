@@ -57,6 +57,16 @@ function CreateKeyButton() {
     setCreatedKey(null)
   }
 
+  const handleCopy = async () => {
+    if (!createdKey) return
+    try {
+      await navigator.clipboard.writeText(createdKey)
+      toast.success("Copied to clipboard")
+    } catch {
+      toast.error("Failed to copy — please select and copy manually")
+    }
+  }
+
   return (
     <>
       <Button onClick={() => setOpen(true)} aria-label="Create new API key">
@@ -69,19 +79,16 @@ function CreateKeyButton() {
         <DialogContent>
           {createdKey ? (
             <div className="space-y-3">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 Copy this key now. You won't be able to see it again.
               </p>
-              <code className="block p-3 bg-gray-100 rounded text-sm break-all font-mono" role="textbox" aria-label="New API key">
+              <code className="block p-3 bg-muted rounded text-sm break-all font-mono" aria-label="New API key">
                 {createdKey}
               </code>
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={() => {
-                  navigator.clipboard.writeText(createdKey)
-                  toast.success("Copied to clipboard")
-                }}
+                onClick={handleCopy}
               >
                 Copy to clipboard
               </Button>
@@ -117,7 +124,7 @@ function CreateKeyButton() {
 }
 
 function ApiKeysTable() {
-  const { data: keys, isLoading, error, refetch } = useApiKeys()
+  const { data, isLoading, error, refetch } = useApiKeys()
   const revokeKey = useRevokeApiKey()
 
   if (isLoading) {
@@ -136,7 +143,7 @@ function ApiKeysTable() {
     return (
       <Card>
         <CardContent className="p-6 text-center space-y-3">
-          <p className="text-gray-500">Failed to load API keys</p>
+          <p className="text-muted-foreground">Failed to load API keys</p>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
             Retry
           </Button>
@@ -145,10 +152,12 @@ function ApiKeysTable() {
     )
   }
 
-  if (!keys?.length) {
+  const keys = data?.items ?? []
+
+  if (!keys.length) {
     return (
       <Card>
-        <CardContent className="p-6 text-center text-gray-500">
+        <CardContent className="p-6 text-center text-muted-foreground">
           No API keys yet. Create one to get started.
         </CardContent>
       </Card>
@@ -166,6 +175,7 @@ function ApiKeysTable() {
             <TableRow>
               <TableHead scope="col">Name</TableHead>
               <TableHead scope="col">Status</TableHead>
+              <TableHead scope="col">Scopes</TableHead>
               <TableHead scope="col">Rate Limit</TableHead>
               <TableHead scope="col">Created</TableHead>
               <TableHead scope="col" className="text-right">Actions</TableHead>
@@ -180,6 +190,13 @@ function ApiKeysTable() {
                     {key.active ? "Active" : "Revoked"}
                   </Badge>
                 </TableCell>
+                <TableCell>
+                  {key.scopes?.length ? (
+                    <span className="text-xs text-muted-foreground">{key.scopes.join(", ")}</span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">None</span>
+                  )}
+                </TableCell>
                 <TableCell>{key.rate_limit ?? "Unlimited"}/min</TableCell>
                 <TableCell>{new Date(key.created_at).toLocaleDateString()}</TableCell>
                 <TableCell className="text-right">
@@ -190,6 +207,7 @@ function ApiKeysTable() {
                       disabled={revokeKey.isPending}
                       aria-label={`Revoke API key ${key.name}`}
                       onClick={() => {
+                        if (!window.confirm(`Revoke API key "${key.name}"? This cannot be undone.`)) return
                         revokeKey.mutate(key.id, {
                           onSuccess: () => toast.success("Key revoked"),
                           onError: () => toast.error("Failed to revoke key"),
@@ -204,6 +222,11 @@ function ApiKeysTable() {
             ))}
           </TableBody>
         </Table>
+        {data?.has_more && (
+          <div className="text-center pt-4">
+            <p className="text-sm text-muted-foreground">More keys available. Use the API with cursor pagination to view all.</p>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

@@ -8,7 +8,10 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import get_db
+from app.config import settings
 from app.main import create_app
+
+ADMIN_HEADERS = {"X-Admin-Key": settings.ADMIN_KEY or settings.SECRET_KEY}
 
 
 def _make_tenant(**overrides):
@@ -34,12 +37,36 @@ async def tenant_client():
         patch("app.api.v1.health._check_db", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
+        patch("app.api.v1.health._check_celery", new_callable=AsyncMock, return_value=True),
         patch("app.core.redis.redis_pool", new_callable=AsyncMock),
     ):
         app = create_app()
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        async with AsyncClient(transport=transport, base_url="http://test", headers=ADMIN_HEADERS) as ac:
             yield ac, app
+
+
+@pytest.mark.asyncio
+async def test_tenant_requires_admin_key():
+    """Tenant endpoints should reject requests without admin key."""
+    with (
+        patch("app.api.v1.health._check_db", new_callable=AsyncMock, return_value=True),
+        patch("app.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
+        patch("app.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
+        patch("app.api.v1.health._check_celery", new_callable=AsyncMock, return_value=True),
+        patch("app.core.redis.redis_pool", new_callable=AsyncMock),
+    ):
+        app = create_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/v1/tenants")
+            assert response.status_code == 422  # Missing header
+
+            response = await client.get(
+                "/api/v1/tenants",
+                headers={"X-Admin-Key": "wrong-key"},
+            )
+            assert response.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -66,15 +93,13 @@ async def test_create_tenant_slug_too_short(tenant_client):
 
 @pytest.mark.asyncio
 async def test_list_tenants(tenant_client):
-    """Tenant listing returns paginated response."""
+    """Tenant listing returns cursor-paginated response."""
     client, app = tenant_client
 
     mock_db = AsyncMock()
-    mock_total = MagicMock()
-    mock_total.scalar.return_value = 0
-    mock_list = MagicMock()
-    mock_list.scalars.return_value.all.return_value = []
-    mock_db.execute = AsyncMock(side_effect=[mock_total, mock_list])
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []
+    mock_db.execute = AsyncMock(return_value=mock_result)
 
     async def _override_db():
         yield mock_db
@@ -86,8 +111,8 @@ async def test_list_tenants(tenant_client):
         assert response.status_code == 200
         data = response.json()
         assert "items" in data
-        assert "total" in data
-        assert data["total"] == 0
+        assert "has_more" in data
+        assert data["items"] == []
     finally:
         app.dependency_overrides.clear()
 

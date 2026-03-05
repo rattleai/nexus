@@ -1,10 +1,17 @@
 """Celery tasks — background job processing and webhook delivery."""
 
+import hashlib
+import hmac
+import json
+import threading
+import time
 import uuid
+from collections import defaultdict
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 
 import structlog
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
@@ -16,6 +23,86 @@ logger = structlog.stdlib.get_logger()
 _sync_url = settings.DATABASE_URL.replace("+asyncpg", "")
 _sync_engine = create_engine(_sync_url, pool_size=3, max_overflow=5, pool_pre_ping=True, pool_recycle=300)
 _SyncSession = sessionmaker(_sync_engine)
+
+
+# ── Circuit Breaker ──────────────────────────────────────────────────────────
+
+
+class CircuitBreaker:
+    """Per-host circuit breaker for webhook delivery.
+
+    States:
+      - CLOSED: normal operation, requests pass through.
+      - OPEN: too many recent failures, requests are rejected immediately.
+      - HALF_OPEN: after a cooldown, allow one probe request.
+
+    Thread-safe for use by concurrent Celery workers.
+    """
+
+    FAILURE_THRESHOLD = 5
+    RECOVERY_TIMEOUT = 300  # seconds before trying again
+
+    def __init__(self) -> None:
+        self._failures: dict[str, int] = defaultdict(int)
+        self._last_failure_time: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def _host_key(self, url: str) -> str:
+        return urlparse(url).netloc
+
+    def is_open(self, url: str) -> bool:
+        """Return True if the circuit is open (should NOT attempt delivery)."""
+        host = self._host_key(url)
+        with self._lock:
+            failures = self._failures.get(host, 0)
+            if failures < self.FAILURE_THRESHOLD:
+                return False
+            # Check if recovery timeout has elapsed
+            last_fail = self._last_failure_time.get(host, 0)
+            if time.time() - last_fail > self.RECOVERY_TIMEOUT:
+                # Half-open: allow a probe
+                return False
+            return True
+
+    def record_success(self, url: str) -> None:
+        host = self._host_key(url)
+        with self._lock:
+            self._failures.pop(host, None)
+            self._last_failure_time.pop(host, None)
+
+    def record_failure(self, url: str) -> None:
+        host = self._host_key(url)
+        with self._lock:
+            self._failures[host] = self._failures.get(host, 0) + 1
+            self._last_failure_time[host] = time.time()
+
+
+_webhook_breaker = CircuitBreaker()
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _optimistic_update(db, model, record_id: uuid.UUID, expected_version: int, **values) -> bool:
+    """Perform an optimistic-locking UPDATE. Returns True if the row was updated.
+
+    Note: does NOT commit — caller is responsible for committing.
+    """
+    result = db.execute(
+        update(model)
+        .where(model.id == record_id, model.version == expected_version)
+        .values(version=expected_version + 1, **values)
+    )
+    return result.rowcount > 0
+
+
+def _sign_webhook_payload(payload: dict) -> str:
+    """Create an HMAC-SHA256 signature for a webhook payload."""
+    body = json.dumps(payload, sort_keys=True, default=str)
+    return hmac.new(settings.SECRET_KEY.encode(), body.encode(), hashlib.sha256).hexdigest()
+
+
+# ── Tasks ────────────────────────────────────────────────────────────────────
 
 
 @celery.task(name="app.workers.ping")
@@ -34,10 +121,24 @@ def process_job(self, job_id: str) -> dict:
             logger.error("job_not_found", job_id=job_id)
             return {"status": "error", "detail": "Job not found"}
 
-        # Mark as processing
-        job.status = JobStatus.PROCESSING
-        job.started_at = datetime.now(UTC)
+        # Optimistic lock: only transition PENDING → PROCESSING
+        if not _optimistic_update(
+            db,
+            Job,
+            job.id,
+            job.version,
+            status=JobStatus.PROCESSING,
+            started_at=datetime.now(UTC),
+        ):
+            db.rollback()
+            logger.warning("job_version_conflict", job_id=job_id, expected_version=job.version)
+            return {"status": "skipped", "detail": "Job was already picked up by another worker"}
+
         db.commit()
+
+        # Re-read after version bump
+        db.expire(job)
+        db.refresh(job)
 
         try:
             # ── YOUR DOMAIN LOGIC HERE ──
@@ -47,61 +148,108 @@ def process_job(self, job_id: str) -> dict:
             result = {"message": f"Job {job.type} processed successfully"}
             # ── END DOMAIN LOGIC ──
 
-            job.status = JobStatus.COMPLETED
-            job.completed_at = datetime.now(UTC)
-            job.result = result
+            updated = _optimistic_update(
+                db,
+                Job,
+                job.id,
+                job.version,
+                status=JobStatus.COMPLETED,
+                completed_at=datetime.now(UTC),
+                result=result,
+            )
             db.commit()
+
+            if not updated:
+                logger.warning("job_completion_conflict", job_id=job_id)
+                return {"status": "conflict", "detail": "Job was modified concurrently"}
 
             logger.info("job_completed", job_id=job_id, type=job.type)
 
             # Fire webhook if configured
             if job.webhook_url:
-                deliver_webhook.delay(
-                    job.webhook_url,
-                    {
-                        "event": "job.completed",
-                        "job_id": job_id,
-                        "type": job.type,
-                        "status": "completed",
-                        "result": result,
-                    },
-                )
+                webhook_payload = {
+                    "event": "job.completed",
+                    "job_id": job_id,
+                    "type": job.type,
+                    "status": "completed",
+                    "result": result,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+                deliver_webhook.delay(job.webhook_url, webhook_payload)
 
             return {"status": "completed", "job_id": job_id}
 
         except Exception as exc:
-            job.status = JobStatus.FAILED
-            job.completed_at = datetime.now(UTC)
-            job.error = str(exc)
-            db.commit()
-            logger.error("job_failed", job_id=job_id, error=str(exc))
+            is_final_attempt = self.request.retries >= self.max_retries
 
-            if job.webhook_url:
-                deliver_webhook.delay(
-                    job.webhook_url,
-                    {
+            if is_final_attempt:
+                # Only mark as FAILED on final retry
+                _optimistic_update(
+                    db,
+                    Job,
+                    job.id,
+                    job.version,
+                    status=JobStatus.FAILED,
+                    completed_at=datetime.now(UTC),
+                    error="Processing failed",  # Sanitized error for DB
+                )
+                db.commit()
+                logger.error("job_failed", job_id=job_id, error=str(exc))
+
+                if job.webhook_url:
+                    webhook_payload = {
                         "event": "job.failed",
                         "job_id": job_id,
                         "type": job.type,
                         "status": "failed",
-                        "error": str(exc),
-                    },
-                )
+                        "error": "Processing failed",  # Sanitized — don't leak internals
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                    deliver_webhook.delay(job.webhook_url, webhook_payload)
 
-            raise self.retry(exc=exc, countdown=2**self.request.retries) from exc
+                return {"status": "failed", "job_id": job_id}
+            else:
+                # Reset to PENDING for retry
+                _optimistic_update(
+                    db,
+                    Job,
+                    job.id,
+                    job.version,
+                    status=JobStatus.PENDING,
+                )
+                db.commit()
+                logger.warning("job_retrying", job_id=job_id, attempt=self.request.retries + 1, error=str(exc))
+                raise self.retry(exc=exc, countdown=2**self.request.retries) from exc
 
 
 @celery.task(name="app.workers.deliver_webhook", bind=True, max_retries=5)
 def deliver_webhook(self, url: str, payload: dict) -> dict:
-    """Deliver a webhook with exponential backoff retries."""
+    """Deliver a webhook with HMAC-SHA256 signature, circuit breaker, and exponential backoff."""
     import httpx
+
+    # Check circuit breaker before attempting delivery
+    if _webhook_breaker.is_open(url):
+        logger.warning("webhook_circuit_open", url=url)
+        # Don't retry — the circuit is open. It will auto-recover after RECOVERY_TIMEOUT.
+        return {"status": "circuit_open", "url": url}
+
+    signature = _sign_webhook_payload(payload)
+    timestamp = str(int(time.time()))
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Webhook-Signature": signature,
+        "X-Webhook-Timestamp": timestamp,
+    }
 
     try:
         with httpx.Client(timeout=10) as client:
-            response = client.post(url, json=payload, headers={"Content-Type": "application/json"})
+            response = client.post(url, json=payload, headers=headers)
             response.raise_for_status()
+        _webhook_breaker.record_success(url)
         logger.info("webhook_delivered", url=url, status=response.status_code)
         return {"status": "delivered", "url": url}
     except Exception as exc:
+        _webhook_breaker.record_failure(url)
         logger.warning("webhook_delivery_failed", url=url, error=str(exc), attempt=self.request.retries + 1)
         raise self.retry(exc=exc, countdown=2**self.request.retries * 5) from exc

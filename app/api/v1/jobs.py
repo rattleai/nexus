@@ -5,14 +5,16 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_tenant, get_db
+from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.schemas import JobCancelResponse, JobCreate, JobResponse
+from app.core.cache import cached, invalidate
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
+from app.core.url_validation import validate_webhook_url
 from app.db.models import Job, JobStatus, Tenant
 
 router = APIRouter(prefix="/jobs")
@@ -26,18 +28,43 @@ class JobStatusFilter(StrEnum):
     FAILED = "failed"
 
 
-@router.post("", response_model=JobResponse, status_code=201)
+@router.post(
+    "",
+    response_model=JobResponse,
+    status_code=201,
+    dependencies=[Depends(RequireScopes("jobs:write"))],
+)
 async def create_job(
     body: JobCreate,
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
+    x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
 ):
+    webhook_url = str(body.webhook_url) if body.webhook_url else None
+    if webhook_url:
+        ssrf_error = validate_webhook_url(webhook_url)
+        if ssrf_error:
+            raise HTTPException(status_code=422, detail=f"Invalid webhook URL: {ssrf_error}")
+
+    # Idempotency: if a key is provided, check for existing job with same input_hash
+    input_hash = None
+    if x_idempotency_key:
+        import hashlib
+        input_hash = hashlib.sha256(f"{tenant.id}:{x_idempotency_key}".encode()).hexdigest()
+        existing = await db.execute(
+            select(Job).where(Job.tenant_id == tenant.id, Job.input_hash == input_hash, Job.deleted_at.is_(None))
+        )
+        existing_job = existing.scalar_one_or_none()
+        if existing_job:
+            return existing_job
+
     job = Job(
         tenant_id=tenant.id,
         type=body.type,
-        webhook_url=str(body.webhook_url) if body.webhook_url else None,
+        webhook_url=webhook_url,
         payload=body.payload,
         status=JobStatus.PENDING,
+        input_hash=input_hash,
     )
     db.add(job)
     await db.commit()
@@ -51,7 +78,11 @@ async def create_job(
     return job
 
 
-@router.get("", response_model=CursorPage[JobResponse])
+@router.get(
+    "",
+    response_model=CursorPage[JobResponse],
+    dependencies=[Depends(RequireScopes("jobs:read"))],
+)
 async def list_jobs(
     cursor: str | None = None,
     limit: int = Query(default=20, ge=1, le=100),
@@ -65,20 +96,36 @@ async def list_jobs(
     return await paginate(db, stmt, Job.created_at, limit=limit, cursor=cursor, descending=True)
 
 
-@router.get("/{job_id}", response_model=JobResponse)
+@cached(group="job_status", key="jobs:{job_id}")
+async def _get_job_cached(job_id: uuid.UUID, tenant_id: uuid.UUID, db: AsyncSession) -> dict | None:
+    result = await db.execute(select(Job).where(Job.id == job_id, Job.tenant_id == tenant_id, Job.deleted_at.is_(None)))
+    job = result.scalar_one_or_none()
+    if not job:
+        return None
+    return JobResponse.model_validate(job).model_dump(mode="json")
+
+
+@router.get(
+    "/{job_id}",
+    response_model=JobResponse,
+    dependencies=[Depends(RequireScopes("jobs:read"))],
+)
 async def get_job(
     job_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Job).where(Job.id == job_id, Job.tenant_id == tenant.id, Job.deleted_at.is_(None)))
-    job = result.scalar_one_or_none()
-    if not job:
+    data = await _get_job_cached(job_id, tenant.id, db)
+    if not data:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job
+    return data
 
 
-@router.post("/{job_id}/cancel", response_model=JobCancelResponse)
+@router.post(
+    "/{job_id}/cancel",
+    response_model=JobCancelResponse,
+    dependencies=[Depends(RequireScopes("jobs:write"))],
+)
 async def cancel_job(
     job_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),
@@ -92,15 +139,33 @@ async def cancel_job(
     if job.status not in (JobStatus.PENDING, JobStatus.PROCESSING):
         return JobCancelResponse(id=job.id, status=job.status.value, cancelled=False)
 
-    job.status = JobStatus.FAILED
-    job.error = "Cancelled by user"
-    job.completed_at = datetime.now(UTC)
+    # Use optimistic locking to prevent race with worker completion
+    from sqlalchemy import update
+    cancel_result = await db.execute(
+        update(Job)
+        .where(Job.id == job_id, Job.version == job.version)
+        .values(
+            status=JobStatus.FAILED,
+            error="Cancelled by user",
+            completed_at=datetime.now(UTC),
+            version=job.version + 1,
+        )
+    )
+    if cancel_result.rowcount == 0:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Job state changed concurrently, please retry")
+
     await db.commit()
+    await invalidate(f"jobs:{job_id}")
     logger.info("job_cancelled", job_id=str(job_id), tenant_id=str(tenant.id))
-    return JobCancelResponse(id=job.id, status=job.status.value, cancelled=True)
+    return JobCancelResponse(id=job.id, status=JobStatus.FAILED.value, cancelled=True)
 
 
-@router.delete("/{job_id}", status_code=204)
+@router.delete(
+    "/{job_id}",
+    status_code=204,
+    dependencies=[Depends(RequireScopes("jobs:write"))],
+)
 async def delete_job(
     job_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),
@@ -113,4 +178,5 @@ async def delete_job(
 
     job.deleted_at = datetime.now(UTC)
     await db.commit()
+    await invalidate(f"jobs:{job_id}")
     logger.info("job_soft_deleted", job_id=str(job_id), tenant_id=str(tenant.id))

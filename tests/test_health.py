@@ -11,6 +11,7 @@ async def test_health_returns_200(client):
         patch("app.api.v1.health._check_db", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
+        patch("app.api.v1.health._check_celery", new_callable=AsyncMock, return_value=True),
     ):
         response = await client.get("/api/v1/health")
 
@@ -21,6 +22,7 @@ async def test_health_returns_200(client):
     assert data["services"]["db"] is True
     assert data["services"]["redis"] is True
     assert data["services"]["storage"] is True
+    assert data["services"]["celery"] is True
 
 
 @pytest.mark.asyncio
@@ -29,6 +31,7 @@ async def test_health_degraded_when_db_down(client):
         patch("app.api.v1.health._check_db", new_callable=AsyncMock, return_value=False),
         patch("app.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
+        patch("app.api.v1.health._check_celery", new_callable=AsyncMock, return_value=True),
     ):
         response = await client.get("/api/v1/health")
 
@@ -51,6 +54,7 @@ async def test_readiness_probe(client):
         patch("app.api.v1.health._check_db", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
+        patch("app.api.v1.health._check_celery", new_callable=AsyncMock, return_value=True),
     ):
         response = await client.get("/api/v1/health/ready")
 

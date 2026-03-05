@@ -2,23 +2,44 @@
 set -euo pipefail
 
 # Production deployment script
-# Usage: ./infra/scripts/deploy.sh [--build] [--migrate]
+# Usage: ./infra/scripts/deploy.sh [--build] [--migrate] [--skip-backup]
 
 APP_NAME="saas-platform"
 COMPOSE_FILE="docker-compose.prod.yml"
+BACKUP_DIR="./backups"
+HEALTH_CHECK_TIMEOUT=60  # seconds
+HEALTH_CHECK_INTERVAL=2  # seconds
 
 log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"; }
+err() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $*" >&2; }
 
 # Parse flags
 BUILD=false
 MIGRATE=false
+SKIP_BACKUP=false
 for arg in "$@"; do
     case $arg in
-        --build)   BUILD=true ;;
-        --migrate) MIGRATE=true ;;
-        *)         echo "Unknown option: $arg"; exit 1 ;;
+        --build)       BUILD=true ;;
+        --migrate)     MIGRATE=true ;;
+        --skip-backup) SKIP_BACKUP=true ;;
+        *)             echo "Unknown option: $arg"; exit 1 ;;
     esac
 done
+
+# Rollback function — restore previous state on failure
+rollback() {
+    err "Deployment failed. Initiating rollback..."
+    docker compose -f "$COMPOSE_FILE" logs api --tail=100
+    docker compose -f "$COMPOSE_FILE" logs worker --tail=50
+
+    # Restart previous containers (docker compose keeps previous image)
+    log "Restarting previous service versions..."
+    docker compose -f "$COMPOSE_FILE" up -d api worker nginx || true
+    err "Rollback attempted. Please verify service state manually."
+    exit 1
+}
+
+trap rollback ERR
 
 log "Deploying $APP_NAME..."
 
@@ -33,6 +54,22 @@ docker compose -f "$COMPOSE_FILE" up -d db redis
 log "Waiting for database to be ready..."
 docker compose -f "$COMPOSE_FILE" exec -T db sh -c 'until pg_isready -U ${POSTGRES_USER:-app}; do sleep 1; done'
 
+# Pre-migration backup
+if [ "$MIGRATE" = true ] && [ "$SKIP_BACKUP" = false ]; then
+    log "Creating pre-migration database backup..."
+    mkdir -p "$BACKUP_DIR"
+    BACKUP_FILE="$BACKUP_DIR/pre_deploy_$(date +'%Y%m%d_%H%M%S').sql.gz"
+    if docker compose -f "$COMPOSE_FILE" exec -T db \
+        pg_dump -U "${DB_USER:-app}" "${DB_NAME:-app}" --no-owner --clean \
+        | gzip > "$BACKUP_FILE"; then
+        log "Backup created: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
+    else
+        err "Backup failed! Aborting deployment. Use --skip-backup to override."
+        rm -f "$BACKUP_FILE"
+        exit 1
+    fi
+fi
+
 if [ "$MIGRATE" = true ]; then
     log "Running database migrations..."
     docker compose -f "$COMPOSE_FILE" run --rm api alembic upgrade head
@@ -41,19 +78,20 @@ fi
 log "Starting application services..."
 docker compose -f "$COMPOSE_FILE" up -d api worker nginx
 
-log "Waiting for API health check..."
-for i in $(seq 1 30); do
+log "Waiting for API health check (timeout: ${HEALTH_CHECK_TIMEOUT}s)..."
+max_attempts=$((HEALTH_CHECK_TIMEOUT / HEALTH_CHECK_INTERVAL))
+for i in $(seq 1 "$max_attempts"); do
     if docker compose -f "$COMPOSE_FILE" exec -T nginx curl -sf http://api:8000/api/v1/health/live > /dev/null 2>&1; then
         log "API is healthy!"
         break
     fi
-    if [ "$i" -eq 30 ]; then
-        log "ERROR: API failed to become healthy"
-        docker compose -f "$COMPOSE_FILE" logs api --tail=50
-        exit 1
+    if [ "$i" -eq "$max_attempts" ]; then
+        err "API failed to become healthy within ${HEALTH_CHECK_TIMEOUT}s"
+        rollback
     fi
-    sleep 2
+    sleep "$HEALTH_CHECK_INTERVAL"
 done
 
+trap - ERR
 log "Deployment complete!"
 docker compose -f "$COMPOSE_FILE" ps

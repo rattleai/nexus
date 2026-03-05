@@ -7,6 +7,7 @@ export interface HealthResponse {
 export interface ErrorResponse {
   detail: string
   code?: string
+  request_id?: string
   errors?: Array<{ field: string; message: string; type: string }>
 }
 
@@ -50,6 +51,29 @@ export interface ApiKey {
 
 export interface ApiKeyCreated extends ApiKey {
   raw_key: string
+}
+
+// ── User / Auth ──────────────────────────────────────
+
+export interface User {
+  id: string
+  email: string
+  display_name: string | null
+  email_verified: boolean
+  is_active: boolean
+  tenant_id: string
+  role: string | null
+  created_at: string
+}
+
+export interface TokenResponse {
+  access_token: string
+  token_type: string
+  expires_in: number
+}
+
+export interface AuthResponse extends TokenResponse {
+  user: User
 }
 
 // ── Job ───────────────────────────────────────────────

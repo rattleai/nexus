@@ -22,9 +22,11 @@ import uuid
 from datetime import datetime
 from typing import Any, Generic, TypeVar
 
+from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 T = TypeVar("T")
 
@@ -48,32 +50,35 @@ def encode_cursor(value: Any) -> str:
 
 def decode_cursor(cursor: str, value_type: type) -> Any:
     """Decode an opaque cursor back into a sort-key value."""
-    raw = base64.urlsafe_b64decode(cursor.encode()).decode()
-    if value_type is datetime:
-        return datetime.fromisoformat(raw)
-    if value_type is uuid.UUID:
-        return uuid.UUID(raw)
-    return raw
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+        if value_type is datetime:
+            return datetime.fromisoformat(raw)
+        if value_type is uuid.UUID:
+            return uuid.UUID(raw)
+        return raw
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid cursor")
 
 
 async def paginate(
     db: AsyncSession,
-    stmt: Select,
-    sort_column,
+    stmt: Select[Any],
+    sort_column: InstrumentedAttribute[Any],
     *,
     limit: int = 20,
     cursor: str | None = None,
     descending: bool = True,
-) -> CursorPage:
+) -> CursorPage[Any]:
     """Apply cursor-based pagination to a SQLAlchemy SELECT.
 
     Args:
-        db: Async database session
-        stmt: Base SELECT statement (with filters already applied)
-        sort_column: The SQLAlchemy column to sort/paginate by (e.g. Job.created_at)
-        limit: Max items per page
-        cursor: Opaque cursor from a previous response
-        descending: Sort direction
+        db: Async database session.
+        stmt: Base SELECT statement (with filters already applied).
+        sort_column: The SQLAlchemy column to sort/paginate by (e.g. Job.created_at).
+        limit: Max items per page.
+        cursor: Opaque cursor from a previous response.
+        descending: Sort direction.
     """
     # Determine the Python type of the sort column for cursor decoding
     col_type = sort_column.type.python_type

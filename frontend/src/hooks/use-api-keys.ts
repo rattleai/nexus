@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api-client"
-import type { ApiKey, ApiKeyCreated } from "@/types/api"
+import { queryKeys } from "@/lib/query-keys"
+import type { CursorPaginatedResponse, ApiKey, ApiKeyCreated } from "@/types/api"
 
 export function useApiKeys() {
   return useQuery({
-    queryKey: ["api-keys"],
-    queryFn: () => api.get("api-keys").json<ApiKey[]>(),
+    queryKey: queryKeys.apiKeys.list(),
+    queryFn: () => api.get("api-keys").json<CursorPaginatedResponse<ApiKey>>(),
   })
 }
 
@@ -15,7 +16,7 @@ export function useCreateApiKey() {
     mutationFn: (body: { name: string; scopes?: string[] }) =>
       api.post("api-keys", { json: body }).json<ApiKeyCreated>(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["api-keys"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all })
     },
   })
 }
@@ -26,7 +27,7 @@ export function useRevokeApiKey() {
     mutationFn: (keyId: string) =>
       api.delete(`api-keys/${keyId}`).json<{ id: string; revoked: boolean }>(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["api-keys"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all })
     },
   })
 }

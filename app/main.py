@@ -9,9 +9,9 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.exceptions import register_exception_handlers
-from app.api.middleware import SecurityHeadersMiddleware
+from app.api.middleware import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
 from app.api.v1 import v1_router
-from app.config import settings
+from app.config import settings, validate_settings
 from app.core.logging import setup_logging
 from app.core.redis import redis_pool
 
@@ -24,6 +24,9 @@ SPA_DIR = BASE_DIR / "frontend" / "dist"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Validate configuration before anything else
+    validate_settings()
+
     logger.info("app_starting", version=__version__, debug=settings.DEBUG)
 
     # Warm up Redis connection pool
@@ -36,6 +39,11 @@ async def lifespan(app: FastAPI):
     yield
 
     # Graceful shutdown
+    if settings.OTEL_ENABLED:
+        from app.core.telemetry import shutdown_telemetry
+
+        shutdown_telemetry()
+
     await redis_pool.aclose()
     logger.info("app_shutdown")
 
@@ -54,14 +62,21 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # Middleware (outermost first)
+    app.add_middleware(RequestSizeLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",")],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Request-ID"],
+        allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Admin-Key", "X-Request-ID", "Cookie"],
     )
+
+    # OpenTelemetry (must be before routes so instrumentation hooks are in place)
+    if settings.OTEL_ENABLED:
+        from app.core.telemetry import setup_telemetry
+
+        setup_telemetry(settings.OTEL_SERVICE_NAME)
 
     # API routes (must be before SPA catch-all)
     app.include_router(v1_router, prefix=settings.API_V1_PREFIX)

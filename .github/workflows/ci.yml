@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,9 +28,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - run: pip install ruff
       - run: ruff check app/ tests/
       - run: ruff format --check app/ tests/
+
+  backend-typecheck:
+    name: Backend Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]" mypy types-passlib types-redis
+      - run: mypy app/ --ignore-missing-imports
 
   backend-test:
     name: Backend Tests
@@ -51,6 +73,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
       REDIS_URL: redis://localhost:6379/0
       SECRET_KEY: ci-test-secret
+      ADMIN_KEY: ci-test-admin-key
       DEBUG: "true"
     steps:
       - uses: actions/checkout@v4
@@ -58,8 +81,43 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[dev]"
-      - run: pytest tests/ -v --tb=short
+      - run: pip install -e ".[dev]" pytest-cov
+      - run: pytest tests/ -v --tb=short --cov=app --cov-report=xml --cov-fail-under=70
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  migration-check:
+    name: Migration Validation
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
+      SECRET_KEY: ci-test-secret
+      ADMIN_KEY: ci-test-admin-key
+      DEBUG: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e "."
+      - run: alembic upgrade head
 
   frontend-lint:
     name: Frontend Lint
@@ -110,16 +168,59 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-  docker-build:
-    name: Docker Build
+  docker-build-push:
+    name: Docker Build & Push
     runs-on: ubuntu-latest
-    needs: [backend-test, frontend-build]
+    needs: [backend-test, backend-typecheck, frontend-build, migration-check]
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  security-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    needs: [docker-build-push]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
           context: .
-          push: false
+          load: true
+          tags: cadprice:scan
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: cadprice:scan
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: [docker-build-push, security-scan]
+    if: github.event_name == 'workflow_dispatch'
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Deploying to ${{ github.event.inputs.environment }}"
+      # Placeholder: Add actual deployment steps (SSH, kubectl, AWS ECS, etc.)

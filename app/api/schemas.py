@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 T = TypeVar("T")
 
@@ -51,16 +51,36 @@ class CursorPaginatedResponse(BaseModel, Generic[T]):
 
 class TenantCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    slug: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    slug: str = Field(..., min_length=2, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
     plan: str = Field(default="free", max_length=50)
-    settings: dict | None = None
+    settings: dict[str, Any] | None = Field(default=None, max_length=50)
+
+    @field_validator("settings")
+    @classmethod
+    def validate_settings_depth(cls, v: dict | None) -> dict | None:
+        if v is not None:
+            import json
+            serialized = json.dumps(v)
+            if len(serialized) > 10_000:
+                raise ValueError("settings JSON too large (max 10KB)")
+        return v
 
 
 class TenantUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     plan: str | None = Field(default=None, max_length=50)
     is_active: bool | None = None
-    settings: dict | None = None
+    settings: dict[str, Any] | None = None
+
+    @field_validator("settings")
+    @classmethod
+    def validate_settings_depth(cls, v: dict | None) -> dict | None:
+        if v is not None:
+            import json
+            serialized = json.dumps(v)
+            if len(serialized) > 10_000:
+                raise ValueError("settings JSON too large (max 10KB)")
+        return v
 
 
 class TenantResponse(BaseModel):
@@ -82,7 +102,17 @@ class TenantResponse(BaseModel):
 class ApiKeyCreate(BaseModel):
     name: str = Field(default="default", max_length=255)
     rate_limit: int | None = Field(default=100, ge=1, le=10000)
-    scopes: list[str] | None = None
+    scopes: list[str] | None = Field(default=None, max_length=20)
+
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None:
+            from app.config import settings
+            invalid = [s for s in v if s not in settings.VALID_SCOPES]
+            if invalid:
+                raise ValueError(f"Invalid scopes: {', '.join(invalid)}. Valid scopes: {', '.join(settings.VALID_SCOPES)}")
+        return v
 
 
 class ApiKeyResponse(BaseModel):
@@ -114,6 +144,16 @@ class JobCreate(BaseModel):
     type: str = Field(..., min_length=1, max_length=50, pattern=r"^[a-z0-9][a-z0-9_-]*$")
     webhook_url: HttpUrl | None = None
     payload: dict | None = None
+
+    @field_validator("payload")
+    @classmethod
+    def validate_payload_size(cls, v: dict | None) -> dict | None:
+        if v is not None:
+            import json
+            serialized = json.dumps(v)
+            if len(serialized) > 1_000_000:
+                raise ValueError("payload too large (max 1MB)")
+        return v
 
 
 class JobResponse(BaseModel):
