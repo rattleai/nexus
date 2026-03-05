@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -58,7 +59,9 @@ function CreateKeyButton() {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)}>Create Key</Button>
+      <Button onClick={() => setOpen(true)} aria-label="Create new API key">
+        Create Key
+      </Button>
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogHeader>
           <DialogTitle>{createdKey ? "Key Created" : "Create API Key"}</DialogTitle>
@@ -69,7 +72,7 @@ function CreateKeyButton() {
               <p className="text-sm text-gray-600">
                 Copy this key now. You won't be able to see it again.
               </p>
-              <code className="block p-3 bg-gray-100 rounded text-sm break-all font-mono">
+              <code className="block p-3 bg-gray-100 rounded text-sm break-all font-mono" role="textbox" aria-label="New API key">
                 {createdKey}
               </code>
               <Button
@@ -85,10 +88,13 @@ function CreateKeyButton() {
             </div>
           ) : (
             <div className="space-y-3">
+              <Label htmlFor="key-name">Key name</Label>
               <Input
-                placeholder="Key name (optional)"
+                id="key-name"
+                placeholder="e.g. production, staging"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                maxLength={255}
               />
             </div>
           )}
@@ -111,7 +117,7 @@ function CreateKeyButton() {
 }
 
 function ApiKeysTable() {
-  const { data: keys, isLoading, error } = useApiKeys()
+  const { data: keys, isLoading, error, refetch } = useApiKeys()
   const revokeKey = useRevokeApiKey()
 
   if (isLoading) {
@@ -129,8 +135,11 @@ function ApiKeysTable() {
   if (error) {
     return (
       <Card>
-        <CardContent className="p-6 text-center text-gray-500">
-          Failed to load API keys
+        <CardContent className="p-6 text-center space-y-3">
+          <p className="text-gray-500">Failed to load API keys</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            Retry
+          </Button>
         </CardContent>
       </Card>
     )
@@ -155,11 +164,11 @@ function ApiKeysTable() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Rate Limit</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead scope="col">Name</TableHead>
+              <TableHead scope="col">Status</TableHead>
+              <TableHead scope="col">Rate Limit</TableHead>
+              <TableHead scope="col">Created</TableHead>
+              <TableHead scope="col" className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -178,6 +187,8 @@ function ApiKeysTable() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      disabled={revokeKey.isPending}
+                      aria-label={`Revoke API key ${key.name}`}
                       onClick={() => {
                         revokeKey.mutate(key.id, {
                           onSuccess: () => toast.success("Key revoked"),

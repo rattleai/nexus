@@ -1,19 +1,25 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAuth } from "@/hooks/use-auth"
 
 export function ApiKeyPrompt() {
   const { setApiKey } = useAuth()
   const [value, setValue] = useState("")
+  const [error, setError] = useState("")
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const trimmed = value.trim()
-    if (trimmed) {
-      setApiKey(trimmed)
+    if (!trimmed) return
+    if (trimmed.length < 10) {
+      setError("API key is too short")
+      return
     }
+    setError("")
+    setApiKey(trimmed)
   }
 
   return (
@@ -28,13 +34,27 @@ export function ApiKeyPrompt() {
               <p className="text-sm text-gray-600">
                 Enter your API key to access the platform. You can find it in your tenant settings.
               </p>
+              <Label htmlFor="api-key-input" className="sr-only">
+                API Key
+              </Label>
               <Input
+                id="api-key-input"
                 type="password"
                 placeholder="sk_..."
                 value={value}
-                onChange={(e) => setValue(e.target.value)}
+                onChange={(e) => {
+                  setValue(e.target.value)
+                  if (error) setError("")
+                }}
+                aria-invalid={!!error}
+                aria-describedby={error ? "api-key-error" : undefined}
                 autoFocus
               />
+              {error && (
+                <p id="api-key-error" className="text-sm text-destructive" role="alert">
+                  {error}
+                </p>
+              )}
             </div>
             <Button type="submit" className="w-full" disabled={!value.trim()}>
               Connect

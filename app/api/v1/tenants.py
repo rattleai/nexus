@@ -6,7 +6,7 @@ with an admin API key or internal-only network rules.
 
 import secrets
 import uuid
-from datetime import UTC
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -97,8 +97,6 @@ async def delete_tenant(tenant_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     tenant = result.scalar_one_or_none()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-
-    from datetime import datetime
 
     tenant.deleted_at = datetime.now(UTC)
     await db.commit()

@@ -1,7 +1,8 @@
 """Job management endpoints — scoped to the authenticated tenant."""
 
 import uuid
-from datetime import UTC
+from datetime import UTC, datetime
+from enum import StrEnum
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,6 +19,13 @@ router = APIRouter(prefix="/jobs")
 logger = structlog.stdlib.get_logger()
 
 
+class JobStatusFilter(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 @router.post("", response_model=JobResponse, status_code=201)
 async def create_job(
     body: JobCreate,
@@ -27,7 +35,7 @@ async def create_job(
     job = Job(
         tenant_id=tenant.id,
         type=body.type,
-        webhook_url=body.webhook_url,
+        webhook_url=str(body.webhook_url) if body.webhook_url else None,
         result=body.payload,
         status=JobStatus.PENDING,
     )
@@ -47,13 +55,13 @@ async def create_job(
 async def list_jobs(
     cursor: str | None = None,
     limit: int = Query(default=20, ge=1, le=100),
-    status: str | None = None,
+    status: JobStatusFilter | None = None,
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     stmt = tenant_query(select(Job).where(Job.deleted_at.is_(None)), tenant)
     if status:
-        stmt = stmt.where(Job.status == status)
+        stmt = stmt.where(Job.status == status.value)
     return await paginate(db, stmt, Job.created_at, limit=limit, cursor=cursor, descending=True)
 
 
@@ -86,6 +94,7 @@ async def cancel_job(
 
     job.status = JobStatus.FAILED
     job.error = "Cancelled by user"
+    job.completed_at = datetime.now(UTC)
     await db.commit()
     logger.info("job_cancelled", job_id=str(job_id), tenant_id=str(tenant.id))
     return JobCancelResponse(id=job.id, status=job.status.value, cancelled=True)
@@ -101,8 +110,6 @@ async def delete_job(
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    from datetime import datetime
 
     job.deleted_at = datetime.now(UTC)
     await db.commit()

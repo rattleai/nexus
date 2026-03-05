@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 
 T = TypeVar("T")
 
@@ -111,8 +111,8 @@ class ApiKeyRevokeResponse(BaseModel):
 
 
 class JobCreate(BaseModel):
-    type: str = Field(..., min_length=1, max_length=50)
-    webhook_url: str | None = Field(default=None, max_length=2048)
+    type: str = Field(..., min_length=1, max_length=50, pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    webhook_url: HttpUrl | None = None
     payload: dict | None = None
 
 

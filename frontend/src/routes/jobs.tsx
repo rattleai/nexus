@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -52,23 +53,35 @@ function CreateJobButton() {
     }
   }
 
+  const handleClose = () => {
+    setOpen(false)
+    setType("")
+  }
+
   return (
     <>
-      <Button onClick={() => setOpen(true)}>Create Job</Button>
-      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setType("") }}>
+      <Button onClick={() => setOpen(true)} aria-label="Create new job">
+        Create Job
+      </Button>
+      <Dialog open={open} onOpenChange={handleClose}>
         <DialogHeader>
           <DialogTitle>Create Job</DialogTitle>
         </DialogHeader>
         <DialogContent>
-          <Input
-            placeholder="Job type (e.g. data-export, report)"
-            value={type}
-            onChange={(e) => setType(e.target.value)}
-            autoFocus
-          />
+          <div className="space-y-2">
+            <Label htmlFor="job-type">Job type</Label>
+            <Input
+              id="job-type"
+              placeholder="e.g. data-export, report"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              maxLength={50}
+              autoFocus
+            />
+          </div>
         </DialogContent>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={handleClose}>Cancel</Button>
           <Button onClick={handleCreate} disabled={createJob.isPending || !type.trim()}>
             {createJob.isPending ? "Creating..." : "Create"}
           </Button>
@@ -86,7 +99,7 @@ const statusColor: Record<JobStatus, "default" | "secondary" | "destructive" | "
 }
 
 function JobsTable() {
-  const { data, isLoading, error } = useJobs()
+  const { data, isLoading, error, refetch } = useJobs()
   const cancelJob = useCancelJob()
 
   if (isLoading) {
@@ -104,8 +117,11 @@ function JobsTable() {
   if (error) {
     return (
       <Card>
-        <CardContent className="p-6 text-center text-gray-500">
-          Failed to load jobs
+        <CardContent className="p-6 text-center space-y-3">
+          <p className="text-gray-500">Failed to load jobs</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            Retry
+          </Button>
         </CardContent>
       </Card>
     )
@@ -132,11 +148,11 @@ function JobsTable() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Type</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead>Completed</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead scope="col">Type</TableHead>
+              <TableHead scope="col">Status</TableHead>
+              <TableHead scope="col">Created</TableHead>
+              <TableHead scope="col">Completed</TableHead>
+              <TableHead scope="col" className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -150,13 +166,15 @@ function JobsTable() {
                 </TableCell>
                 <TableCell>{new Date(job.created_at).toLocaleString()}</TableCell>
                 <TableCell>
-                  {job.completed_at ? new Date(job.completed_at).toLocaleString() : "—"}
+                  {job.completed_at ? new Date(job.completed_at).toLocaleString() : "\u2014"}
                 </TableCell>
                 <TableCell className="text-right">
                   {(job.status === "pending" || job.status === "processing") && (
                     <Button
                       variant="ghost"
                       size="sm"
+                      disabled={cancelJob.isPending}
+                      aria-label={`Cancel job ${job.type}`}
                       onClick={() => {
                         cancelJob.mutate(job.id, {
                           onSuccess: (r) => {
