@@ -63,6 +63,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
         request.state.request_id = request_id
 
+        # ── Cache bypass detection ──
+        cache_control = request.headers.get("Cache-Control", "")
+        request.state.cache_bypass = "no-cache" in cache_control
+
         # Bind request context for all downstream log calls
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(

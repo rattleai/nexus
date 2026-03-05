@@ -60,6 +60,14 @@ export function ApiKeyPrompt() {
               Connect
             </Button>
           </form>
+          <div className="mt-4 pt-4 border-t text-center">
+            <p className="text-sm text-gray-600">
+              Or{" "}
+              <a href="/login" className="text-primary underline">
+                sign in with email
+              </a>
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>

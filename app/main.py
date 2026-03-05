@@ -64,8 +64,14 @@ def create_app() -> FastAPI:
         allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",")],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Admin-Key", "X-Request-ID"],
+        allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Admin-Key", "X-Request-ID", "Cookie"],
     )
+
+    # OpenTelemetry (must be before routes so instrumentation hooks are in place)
+    if settings.OTEL_ENABLED:
+        from app.core.telemetry import setup_telemetry
+
+        setup_telemetry(settings.OTEL_SERVICE_NAME)
 
     # API routes (must be before SPA catch-all)
     app.include_router(v1_router, prefix=settings.API_V1_PREFIX)

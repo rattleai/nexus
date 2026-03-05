@@ -1,14 +1,16 @@
 from collections.abc import AsyncGenerator
+from typing import Optional
 
+import jwt
 import structlog
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.auth import hash_api_key
 from app.config import settings
-from app.db.models import ApiKey, Tenant
+from app.db.models import ApiKey, Tenant, TenantMembership, User, UserRole
 from app.db.session import get_session
 
 logger = structlog.stdlib.get_logger()
@@ -17,6 +19,9 @@ logger = structlog.stdlib.get_logger()
 async def get_db() -> AsyncGenerator[AsyncSession]:
     async for session in get_session():
         yield session
+
+
+# ── API Key auth (existing) ─────────────────────────────
 
 
 async def get_current_api_key(
@@ -46,6 +51,75 @@ async def get_current_tenant(
 ) -> Tenant:
     """Return the tenant associated with the current API key."""
     return api_key.tenant
+
+
+# ── JWT auth (new, opt-in via AUTH_ENABLED) ──────────────
+
+
+async def get_current_user_from_token(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Extract and validate JWT Bearer token, return the authenticated user.
+
+    Raises 401 if the token is missing, expired, or invalid.
+    """
+    from app.core.security import decode_access_token
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    token = auth_header[7:]
+    try:
+        payload = decode_access_token(token)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    result = await db.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))
+    user = result.scalar_one_or_none()
+
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    return user
+
+
+class RequireRole:
+    """FastAPI dependency that enforces user roles via tenant membership.
+
+    Usage:
+        @router.get("/admin", dependencies=[Depends(RequireRole("admin", "owner"))])
+        async def admin_only(...): ...
+    """
+
+    def __init__(self, *required_roles: str):
+        self.required_roles = set(required_roles)
+
+    async def __call__(
+        self,
+        user: User = Depends(get_current_user_from_token),
+        db: AsyncSession = Depends(get_db),
+    ) -> None:
+        result = await db.execute(
+            select(TenantMembership).where(
+                TenantMembership.user_id == user.id,
+                TenantMembership.tenant_id == user.tenant_id,
+            )
+        )
+        membership = result.scalar_one_or_none()
+
+        if not membership or membership.role.value not in self.required_roles:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Requires one of: {', '.join(sorted(self.required_roles))}",
+            )
 
 
 class RequireScopes:

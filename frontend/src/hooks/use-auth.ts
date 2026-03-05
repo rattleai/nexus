@@ -1,5 +1,6 @@
 import { useCallback, useSyncExternalStore } from "react"
 import { AUTH_STORAGE_KEY } from "@/lib/constants"
+import { getAccessToken } from "@/lib/api-client"
 
 const AUTH_KEY = AUTH_STORAGE_KEY
 
@@ -24,6 +25,10 @@ function subscribe(callback: () => void): () => void {
   }
 }
 
+/**
+ * Hook for API key authentication (existing).
+ * Also reports isAuthenticated=true when a JWT access token is in memory.
+ */
 export function useAuth() {
   const apiKey = useSyncExternalStore(subscribe, getSnapshot, () => null)
 
@@ -47,7 +52,7 @@ export function useAuth() {
 
   return {
     apiKey,
-    isAuthenticated: !!apiKey,
+    isAuthenticated: !!apiKey || !!getAccessToken(),
     setApiKey,
     clearApiKey,
   }

@@ -37,6 +37,25 @@ class Settings(BaseSettings):
     # Rate limiting for file uploads (per window)
     RATE_LIMIT_UPLOADS: int = 20
 
+    # Caching
+    CACHE_ENABLED: bool = True
+    CACHE_DEFAULT_TTL: int = 300
+
+    # OpenTelemetry
+    OTEL_ENABLED: bool = False
+    OTEL_SERVICE_NAME: str = "cadprice"
+    OTEL_EXPORTER_ENDPOINT: str = "http://localhost:4317"
+
+    # User authentication (opt-in)
+    AUTH_ENABLED: bool = False
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    JWT_ALGORITHM: str = "HS256"
+    OAUTH_GOOGLE_CLIENT_ID: str = ""
+    OAUTH_GOOGLE_CLIENT_SECRET: str = ""
+    OAUTH_GITHUB_CLIENT_ID: str = ""
+    OAUTH_GITHUB_CLIENT_SECRET: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @property

@@ -8,10 +8,28 @@ Provides:
 
 import logging
 import sys
+from typing import Any
 
 import structlog
 
 from app.config import settings
+
+
+def _add_otel_context(
+    logger: Any, method: str, event_dict: dict[str, Any]
+) -> dict[str, Any]:
+    """Inject OpenTelemetry trace_id and span_id into log entries."""
+    try:
+        from opentelemetry import trace
+
+        span = trace.get_current_span()
+        ctx = span.get_span_context()
+        if ctx and ctx.trace_id:
+            event_dict["trace_id"] = format(ctx.trace_id, "032x")
+            event_dict["span_id"] = format(ctx.span_id, "016x")
+    except Exception:
+        pass
+    return event_dict
 
 
 def setup_logging() -> None:
@@ -25,6 +43,9 @@ def setup_logging() -> None:
         structlog.processors.StackInfoRenderer(),
         structlog.processors.UnicodeDecoder(),
     ]
+
+    if settings.OTEL_ENABLED:
+        shared_processors.append(_add_otel_context)
 
     if settings.DEBUG:
         # Pretty console output for local development
