@@ -45,6 +45,13 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
                             "code": "PAYLOAD_TOO_LARGE",
                         },
                     )
+            elif not is_upload:
+                # No Content-Length header (chunked transfer) — require it for
+                # non-upload requests to prevent unbounded body reads.
+                return JSONResponse(
+                    status_code=411,
+                    content={"detail": "Content-Length header is required", "code": "LENGTH_REQUIRED"},
+                )
         return await call_next(request)
 
 
