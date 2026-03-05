@@ -17,20 +17,32 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(plain: str) -> str:
-    """Hash a plaintext password using bcrypt."""
-    return pwd_context.hash(plain)
+    """Hash a plaintext password using bcrypt.
+
+    Pre-hashes with SHA-256 to handle passwords >72 bytes (bcrypt truncation limit).
+    """
+    sha_digest = hashlib.sha256(plain.encode("utf-8")).hexdigest()
+    return pwd_context.hash(sha_digest)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     """Verify a plaintext password against its hash."""
-    return pwd_context.verify(plain, hashed)
+    sha_digest = hashlib.sha256(plain.encode("utf-8")).hexdigest()
+    return pwd_context.verify(sha_digest, hashed)
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    """Create a signed JWT access token."""
+    """Create a signed JWT access token with jti, iss, and aud claims."""
     to_encode = data.copy()
     expire = datetime.now(UTC) + (expires_delta or timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire, "iat": datetime.now(UTC), "type": "access"})
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.now(UTC),
+        "type": "access",
+        "jti": uuid.uuid4().hex,
+        "iss": "saas-platform",
+        "aud": "saas-platform",
+    })
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
@@ -41,7 +53,13 @@ def decode_access_token(token: str) -> dict:
         jwt.ExpiredSignatureError: Token has expired.
         jwt.InvalidTokenError: Token is malformed or signature is invalid.
     """
-    payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    payload = jwt.decode(
+        token,
+        settings.SECRET_KEY,
+        algorithms=[settings.JWT_ALGORITHM],
+        issuer="saas-platform",
+        audience="saas-platform",
+    )
     if payload.get("type") != "access":
         raise jwt.InvalidTokenError("Not an access token")
     return payload

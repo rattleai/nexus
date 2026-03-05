@@ -19,6 +19,16 @@ logger = structlog.stdlib.get_logger()
 
 _SAFE_FILENAME_RE = re.compile(r"[^a-zA-Z0-9._-]")
 
+# Shared S3 storage instance (reuses connection pool)
+_storage: S3Storage | None = None
+
+
+def _get_storage() -> S3Storage:
+    global _storage
+    if _storage is None:
+        _storage = S3Storage()
+    return _storage
+
 
 def _sanitize_filename(name: str) -> str:
     """Strip path components and unsafe characters from a filename."""
@@ -44,19 +54,29 @@ async def upload_file(
     file: UploadFile,
     tenant: Tenant = Depends(get_current_tenant),
 ):
-    content = await file.read()
-    if len(content) > settings.MAX_UPLOAD_SIZE_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large (max {settings.MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB)",
-        )
+    # Read in chunks to enforce size limit without loading entire file into memory
+    chunks = []
+    total_size = 0
+    while True:
+        chunk = await file.read(65_536)  # 64KB chunks
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > settings.MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large (max {settings.MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB)",
+            )
+        chunks.append(chunk)
+
+    content = b"".join(chunks)
 
     safe_name = _sanitize_filename(file.filename or "upload")
     unique_name = f"{uuid.uuid4().hex}_{safe_name}"
     key = _tenant_key(tenant, unique_name)
 
     try:
-        storage = S3Storage()
+        storage = _get_storage()
         await storage.async_upload(key, content)
     except StorageError as exc:
         raise handle_storage_error(exc) from exc
@@ -85,7 +105,7 @@ async def download_file(
         raise HTTPException(status_code=400, detail="Invalid file key")
 
     try:
-        storage = S3Storage()
+        storage = _get_storage()
         if not await storage.async_exists(file_key):
             raise HTTPException(status_code=404, detail="File not found")
         data = await storage.async_download(file_key)
@@ -94,8 +114,15 @@ async def download_file(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    # Extract original filename from key for Content-Disposition
+    filename = file_key.rsplit("/", 1)[-1] if "/" in file_key else file_key
+
     logger.info("file_downloaded", tenant_id=str(tenant.id), key=file_key)
-    return Response(content=data, media_type="application/octet-stream")
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.delete("/{file_key:path}", status_code=204, dependencies=[Depends(RequireScopes("files:write"))])
@@ -111,7 +138,7 @@ async def delete_file(
         raise HTTPException(status_code=400, detail="Invalid file key")
 
     try:
-        storage = S3Storage()
+        storage = _get_storage()
         if not await storage.async_exists(file_key):
             raise HTTPException(status_code=404, detail="File not found")
         await storage.async_delete(file_key)

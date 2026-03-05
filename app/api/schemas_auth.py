@@ -8,19 +8,20 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 class UserRegister(BaseModel):
     email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+    display_name: str | None = Field(default=None, max_length=255)
+    tenant_slug: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=63,
+        pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+        description="If provided, creates a new tenant. Otherwise requires an invitation.",
+    )
 
     @field_validator("email")
     @classmethod
     def normalize_email(cls, v: str) -> str:
         return v.strip().lower()
-    password: str = Field(..., min_length=8, max_length=128)
-    display_name: str | None = Field(default=None, max_length=255)
-    tenant_slug: str | None = Field(
-        default=None,
-        max_length=63,
-        pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$",
-        description="If provided, creates a new tenant. Otherwise requires an invitation.",
-    )
 
 
 class UserLogin(BaseModel):

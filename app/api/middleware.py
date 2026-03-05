@@ -1,3 +1,4 @@
+import re
 import time
 import uuid
 
@@ -10,6 +11,8 @@ from app.config import settings
 
 logger = structlog.stdlib.get_logger()
 
+_REQUEST_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,128}$")
+
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
     """Reject oversized request bodies to prevent memory exhaustion.
@@ -21,12 +24,19 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if request.method in {"POST", "PUT", "PATCH"}:
+            content_type = request.headers.get("content-type", "")
+            is_upload = "multipart/form-data" in content_type
+            limit = settings.MAX_UPLOAD_SIZE_BYTES if is_upload else settings.MAX_REQUEST_BODY_BYTES
+
             content_length = request.headers.get("content-length")
             if content_length is not None:
-                length = int(content_length)
-                content_type = request.headers.get("content-type", "")
-                is_upload = "multipart/form-data" in content_type
-                limit = settings.MAX_UPLOAD_SIZE_BYTES if is_upload else settings.MAX_REQUEST_BODY_BYTES
+                try:
+                    length = int(content_length)
+                except (ValueError, OverflowError):
+                    return JSONResponse(
+                        status_code=400,
+                        content={"detail": "Invalid Content-Length header", "code": "BAD_REQUEST"},
+                    )
                 if length > limit:
                     return JSONResponse(
                         status_code=413,
@@ -35,6 +45,13 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
                             "code": "PAYLOAD_TOO_LARGE",
                         },
                     )
+            elif not is_upload:
+                # No Content-Length header (chunked transfer) — require it for
+                # non-upload requests to prevent unbounded body reads.
+                return JSONResponse(
+                    status_code=411,
+                    content={"detail": "Content-Length header is required", "code": "LENGTH_REQUIRED"},
+                )
         return await call_next(request)
 
 
@@ -59,8 +76,12 @@ def _add_security_headers(response: Response, request_id: str) -> None:
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        # ── Request ID propagation ──
-        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        # ── Request ID propagation (validate to prevent log injection) ──
+        client_request_id = request.headers.get("X-Request-ID", "")
+        if client_request_id and _REQUEST_ID_RE.match(client_request_id):
+            request_id = client_request_id
+        else:
+            request_id = str(uuid.uuid4())
         request.state.request_id = request_id
 
         # ── Cache bypass detection ──

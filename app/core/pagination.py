@@ -22,6 +22,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Generic, TypeVar
 
+from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,12 +50,15 @@ def encode_cursor(value: Any) -> str:
 
 def decode_cursor(cursor: str, value_type: type) -> Any:
     """Decode an opaque cursor back into a sort-key value."""
-    raw = base64.urlsafe_b64decode(cursor.encode()).decode()
-    if value_type is datetime:
-        return datetime.fromisoformat(raw)
-    if value_type is uuid.UUID:
-        return uuid.UUID(raw)
-    return raw
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+        if value_type is datetime:
+            return datetime.fromisoformat(raw)
+        if value_type is uuid.UUID:
+            return uuid.UUID(raw)
+        return raw
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid cursor")
 
 
 async def paginate(

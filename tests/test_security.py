@@ -56,10 +56,12 @@ class TestJWT:
         """A token without type=access should be rejected."""
         import jwt as pyjwt
 
+        from app.config import settings
+
         token = pyjwt.encode(
-            {"sub": "user-123", "type": "refresh"},
-            "change-me-in-production",
-            algorithm="HS256",
+            {"sub": "user-123", "type": "refresh", "iss": "saas-platform", "aud": "saas-platform"},
+            settings.SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
         )
         with pytest.raises(jwt.InvalidTokenError, match="Not an access token"):
             decode_access_token(token)

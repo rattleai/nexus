@@ -31,6 +31,7 @@ async def auth_client():
         patch("app.api.v1.health._check_db", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
+        patch("app.api.v1.health._check_celery", new_callable=AsyncMock, return_value=True),
         patch("app.core.redis.redis_pool", new_callable=AsyncMock),
     ):
         app = create_app()
@@ -79,8 +80,8 @@ async def test_revoke_nonexistent_key(auth_client):
 
 
 @pytest.mark.asyncio
-async def test_list_api_keys_returns_list(auth_client):
-    """Listing API keys returns a list."""
+async def test_list_api_keys_returns_paginated(auth_client):
+    """Listing API keys returns cursor-paginated response."""
     client, app = auth_client
     tenant = _make_tenant()
 
@@ -98,6 +99,9 @@ async def test_list_api_keys_returns_list(auth_client):
     try:
         response = await client.get("/api/v1/api-keys")
         assert response.status_code == 200
-        assert isinstance(response.json(), list)
+        data = response.json()
+        assert "items" in data
+        assert "has_more" in data
+        assert data["items"] == []
     finally:
         app.dependency_overrides.clear()

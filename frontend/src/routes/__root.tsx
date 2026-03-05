@@ -3,12 +3,12 @@ import { AppShell } from "@/components/layout/app-shell"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "sonner"
 
-function RootErrorComponent({ error, reset }: ErrorComponentProps) {
+function RootErrorComponent({ reset }: ErrorComponentProps) {
   return (
     <div role="alert" className="min-h-screen flex items-center justify-center p-8">
       <div className="max-w-md text-center space-y-4">
         <h1 className="text-2xl font-bold text-gray-900">Something went wrong</h1>
-        <p className="text-gray-600">{error?.message ?? "An unexpected error occurred."}</p>
+        <p className="text-gray-600">An unexpected error occurred. Please try again.</p>
         <div className="flex gap-2 justify-center">
           <Button variant="outline" onClick={reset}>
             Try again

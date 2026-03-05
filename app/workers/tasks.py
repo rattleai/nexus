@@ -84,13 +84,15 @@ _webhook_breaker = CircuitBreaker()
 
 
 def _optimistic_update(db, model, record_id: uuid.UUID, expected_version: int, **values) -> bool:
-    """Perform an optimistic-locking UPDATE. Returns True if the row was updated."""
+    """Perform an optimistic-locking UPDATE. Returns True if the row was updated.
+
+    Note: does NOT commit — caller is responsible for committing.
+    """
     result = db.execute(
         update(model)
         .where(model.id == record_id, model.version == expected_version)
         .values(version=expected_version + 1, **values)
     )
-    db.commit()
     return result.rowcount > 0
 
 
@@ -128,8 +130,11 @@ def process_job(self, job_id: str) -> dict:
             status=JobStatus.PROCESSING,
             started_at=datetime.now(UTC),
         ):
+            db.rollback()
             logger.warning("job_version_conflict", job_id=job_id, expected_version=job.version)
             return {"status": "skipped", "detail": "Job was already picked up by another worker"}
+
+        db.commit()
 
         # Re-read after version bump
         db.expire(job)
@@ -143,7 +148,7 @@ def process_job(self, job_id: str) -> dict:
             result = {"message": f"Job {job.type} processed successfully"}
             # ── END DOMAIN LOGIC ──
 
-            _optimistic_update(
+            updated = _optimistic_update(
                 db,
                 Job,
                 job.id,
@@ -152,6 +157,11 @@ def process_job(self, job_id: str) -> dict:
                 completed_at=datetime.now(UTC),
                 result=result,
             )
+            db.commit()
+
+            if not updated:
+                logger.warning("job_completion_conflict", job_id=job_id)
+                return {"status": "conflict", "detail": "Job was modified concurrently"}
 
             logger.info("job_completed", job_id=job_id, type=job.type)
 
@@ -170,29 +180,46 @@ def process_job(self, job_id: str) -> dict:
             return {"status": "completed", "job_id": job_id}
 
         except Exception as exc:
-            _optimistic_update(
-                db,
-                Job,
-                job.id,
-                job.version,
-                status=JobStatus.FAILED,
-                completed_at=datetime.now(UTC),
-                error=str(exc),
-            )
-            logger.error("job_failed", job_id=job_id, error=str(exc))
+            is_final_attempt = self.request.retries >= self.max_retries
 
-            if job.webhook_url:
-                webhook_payload = {
-                    "event": "job.failed",
-                    "job_id": job_id,
-                    "type": job.type,
-                    "status": "failed",
-                    "error": str(exc),
-                    "timestamp": datetime.now(UTC).isoformat(),
-                }
-                deliver_webhook.delay(job.webhook_url, webhook_payload)
+            if is_final_attempt:
+                # Only mark as FAILED on final retry
+                _optimistic_update(
+                    db,
+                    Job,
+                    job.id,
+                    job.version,
+                    status=JobStatus.FAILED,
+                    completed_at=datetime.now(UTC),
+                    error="Processing failed",  # Sanitized error for DB
+                )
+                db.commit()
+                logger.error("job_failed", job_id=job_id, error=str(exc))
 
-            raise self.retry(exc=exc, countdown=2**self.request.retries) from exc
+                if job.webhook_url:
+                    webhook_payload = {
+                        "event": "job.failed",
+                        "job_id": job_id,
+                        "type": job.type,
+                        "status": "failed",
+                        "error": "Processing failed",  # Sanitized — don't leak internals
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                    deliver_webhook.delay(job.webhook_url, webhook_payload)
+
+                return {"status": "failed", "job_id": job_id}
+            else:
+                # Reset to PENDING for retry
+                _optimistic_update(
+                    db,
+                    Job,
+                    job.id,
+                    job.version,
+                    status=JobStatus.PENDING,
+                )
+                db.commit()
+                logger.warning("job_retrying", job_id=job_id, attempt=self.request.retries + 1, error=str(exc))
+                raise self.retry(exc=exc, countdown=2**self.request.retries) from exc
 
 
 @celery.task(name="app.workers.deliver_webhook", bind=True, max_retries=5)

@@ -11,7 +11,7 @@ from app.api.deps import get_db
 from app.config import settings
 from app.main import create_app
 
-ADMIN_HEADERS = {"X-Admin-Key": settings.SECRET_KEY}
+ADMIN_HEADERS = {"X-Admin-Key": settings.ADMIN_KEY or settings.SECRET_KEY}
 
 
 def _make_tenant(**overrides):

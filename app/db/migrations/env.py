@@ -7,7 +7,15 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import settings
 from app.db.base import Base
-from app.db.models import ApiKey, Job, Tenant  # noqa: F401 — register models
+from app.db.models import (  # noqa: F401 — register models
+    ApiKey,
+    Job,
+    OAuthAccount,
+    RefreshToken,
+    Tenant,
+    TenantMembership,
+    User,
+)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
@@ -26,7 +34,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
     with context.begin_transaction():
         context.run_migrations()
 

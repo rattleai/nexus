@@ -64,10 +64,13 @@ async def create_api_key(
 async def list_api_keys(
     cursor: str | None = None,
     limit: int = Query(default=20, ge=1, le=100),
+    active: bool | None = Query(default=None, description="Filter by active/revoked status"),
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(ApiKey).where(ApiKey.tenant_id == tenant.id)
+    if active is not None:
+        stmt = stmt.where(ApiKey.active == active)
     return await paginate(db, stmt, ApiKey.created_at, limit=limit, cursor=cursor, descending=True)
 
 
@@ -85,6 +88,9 @@ async def revoke_api_key(
     api_key = result.scalar_one_or_none()
     if not api_key:
         raise HTTPException(status_code=404, detail="API key not found")
+
+    if not api_key.active:
+        return ApiKeyRevokeResponse(id=key_id)
 
     api_key.active = False
     await db.commit()

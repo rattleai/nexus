@@ -189,7 +189,7 @@ function JobsTable() {
                     </Button>
                   )}
                   {job.error && (
-                    <span className="text-xs text-destructive ml-2" title={job.error}>
+                    <span className="text-xs text-destructive ml-2" title="Job encountered an error">
                       Error
                     </span>
                   )}

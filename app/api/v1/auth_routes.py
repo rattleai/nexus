@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 import structlog
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,6 @@ _auth_rate_limit = RateLimiter(max_requests=settings.RATE_LIMIT_AUTH_ENDPOINTS, 
 from app.core.security import (
     create_access_token,
     create_refresh_token,
-    decode_access_token,
     hash_password,
     verify_password,
 )
@@ -32,6 +31,7 @@ logger = structlog.stdlib.get_logger()
 
 _REFRESH_COOKIE = "refresh_token"
 _REFRESH_COOKIE_PATH = "/api/v1/auth"
+_MAX_REFRESH_TOKENS_PER_USER = 10
 
 
 def _set_refresh_cookie(response: Response, raw_token: str) -> None:
@@ -155,6 +155,17 @@ async def login(body: UserLogin, response: Response, db: AsyncSession = Depends(
     member = membership.scalar_one_or_none()
     role = member.role.value if member else None
 
+    # Revoke oldest tokens if exceeding limit
+    existing_tokens = await db.execute(
+        select(RefreshToken)
+        .where(RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False))
+        .order_by(RefreshToken.created_at.asc())
+    )
+    active_tokens = existing_tokens.scalars().all()
+    if len(active_tokens) >= _MAX_REFRESH_TOKENS_PER_USER:
+        for old_token in active_tokens[: len(active_tokens) - _MAX_REFRESH_TOKENS_PER_USER + 1]:
+            old_token.revoked = True
+
     # Create refresh token
     raw_refresh, refresh_hash = create_refresh_token()
     rt = RefreshToken(
@@ -187,7 +198,7 @@ async def login(body: UserLogin, response: Response, db: AsyncSession = Depends(
     )
 
 
-@router.post("/refresh", response_model=TokenResponse)
+@router.post("/refresh", response_model=TokenResponse, dependencies=[Depends(_auth_rate_limit)])
 async def refresh(
     response: Response,
     refresh_token: str | None = Cookie(default=None),
@@ -197,26 +208,32 @@ async def refresh(
         raise HTTPException(status_code=401, detail="No refresh token")
 
     token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
-    result = await db.execute(
-        select(RefreshToken).where(
+
+    # Atomic compare-and-swap: only revoke if not already revoked
+    revoke_result = await db.execute(
+        update(RefreshToken)
+        .where(
             RefreshToken.token_hash == token_hash,
             RefreshToken.revoked.is_(False),
         )
+        .values(revoked=True)
+        .returning(RefreshToken.id, RefreshToken.user_id, RefreshToken.expires_at)
     )
-    rt = result.scalar_one_or_none()
+    row = revoke_result.first()
 
-    if not rt or rt.expires_at < datetime.now(UTC):
+    if not row or row.expires_at < datetime.now(UTC):
         _clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
     # Load user
-    user_result = await db.execute(select(User).where(User.id == rt.user_id, User.deleted_at.is_(None)))
+    user_result = await db.execute(select(User).where(User.id == row.user_id, User.deleted_at.is_(None)))
     user = user_result.scalar_one_or_none()
     if not user or not user.is_active:
+        await db.commit()
         _clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="User not found or inactive")
 
-    # Issue new refresh token BEFORE revoking old (atomicity: if commit fails, old token still works)
+    # Issue new refresh token
     raw_refresh, refresh_hash = create_refresh_token()
     new_rt = RefreshToken(
         user_id=user.id,
@@ -224,9 +241,6 @@ async def refresh(
         expires_at=datetime.now(UTC) + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS),
     )
     db.add(new_rt)
-
-    # Revoke old token
-    rt.revoked = True
     await db.commit()
 
     access_token = create_access_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})
@@ -238,7 +252,7 @@ async def refresh(
     )
 
 
-@router.post("/logout")
+@router.post("/logout", dependencies=[Depends(_auth_rate_limit)])
 async def logout(
     response: Response,
     refresh_token: str | None = Cookie(default=None),

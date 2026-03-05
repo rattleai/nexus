@@ -1,6 +1,6 @@
+import hmac
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Optional
 
 import jwt
 import structlog
@@ -135,18 +135,20 @@ class RequireScopes:
         @router.post("/jobs", dependencies=[Depends(RequireScopes("jobs:write"))])
         async def create_job(...): ...
 
-    If the API key has an empty scopes list, all scopes are granted (superkey).
+    API keys must have explicit scopes granted. Empty scopes = no access.
     """
 
     def __init__(self, *required: str):
         self.required = set(required)
 
     async def __call__(self, api_key: ApiKey = Depends(get_current_api_key)) -> None:
-        # Empty/null scopes = unrestricted access (superkey)
-        if not api_key.scopes:
-            return
+        granted = set(api_key.scopes) if api_key.scopes else set()
+        if not granted:
+            raise HTTPException(
+                status_code=403,
+                detail="API key has no scopes granted",
+            )
 
-        granted = set(api_key.scopes)
         missing = self.required - granted
         if missing:
             raise HTTPException(
@@ -160,13 +162,10 @@ async def require_admin_key(
 ) -> None:
     """Validate that the request carries a valid admin key.
 
-    The admin key is compared against the application SECRET_KEY.
-    This protects tenant-management endpoints that are not scoped to any tenant.
-
-    In production, replace this with a dedicated admin auth system (OAuth, JWT,
-    or a separate admin API key table). This implementation provides a basic
-    guard that is strictly better than no authentication at all.
+    Uses a dedicated ADMIN_KEY setting (falls back to SECRET_KEY in debug mode).
+    Comparison is constant-time to prevent timing side-channel attacks.
     """
-    if not x_admin_key or x_admin_key != settings.SECRET_KEY:
+    expected = settings.ADMIN_KEY or settings.SECRET_KEY
+    if not x_admin_key or not hmac.compare_digest(x_admin_key, expected):
         logger.warning("admin_auth_failed")
         raise HTTPException(status_code=401, detail="Invalid admin key")

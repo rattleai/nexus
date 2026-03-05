@@ -53,6 +53,20 @@ class StorageError(Exception):
         self.status_code = status_code
 
 
+def _validate_key(key: str) -> str:
+    """Sanitize and validate an S3 object key to prevent path traversal."""
+    # Normalize path separators and resolve traversal
+    normalized = key.replace("\\", "/")
+    # Reject any traversal attempts
+    if ".." in normalized or normalized.startswith("/"):
+        raise StorageError("Invalid storage key", status_code=400)
+    # Strip leading/trailing whitespace
+    normalized = normalized.strip()
+    if not normalized:
+        raise StorageError("Storage key cannot be empty", status_code=400)
+    return normalized
+
+
 class S3Storage:
     """S3-compatible object storage with proper error handling."""
 
@@ -63,6 +77,7 @@ class S3Storage:
     # ── sync interface (Celery workers) ──────────────────────
 
     def upload(self, key: str, data: bytes) -> None:
+        key = _validate_key(key)
         try:
             self._client.put_object(Bucket=self._bucket, Key=key, Body=data)
         except ClientError as exc:
@@ -74,9 +89,14 @@ class S3Storage:
             raise StorageError("Upload failed: storage service unavailable") from exc
 
     def download(self, key: str) -> bytes:
+        key = _validate_key(key)
         try:
             response = self._client.get_object(Bucket=self._bucket, Key=key)
-            return response["Body"].read()
+            body = response["Body"]
+            try:
+                return body.read()
+            finally:
+                body.close()
         except ClientError as exc:
             error_code = exc.response.get("Error", {}).get("Code", "Unknown")
             if error_code == "NoSuchKey":
@@ -88,6 +108,7 @@ class S3Storage:
             raise StorageError("Download failed: storage service unavailable") from exc
 
     def exists(self, key: str) -> bool:
+        key = _validate_key(key)
         try:
             self._client.head_object(Bucket=self._bucket, Key=key)
             return True
@@ -102,6 +123,7 @@ class S3Storage:
             raise StorageError("Storage check failed: service unavailable") from exc
 
     def delete(self, key: str) -> None:
+        key = _validate_key(key)
         try:
             self._client.delete_object(Bucket=self._bucket, Key=key)
         except (ClientError, BotoCoreError) as exc:
