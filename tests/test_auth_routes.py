@@ -1,6 +1,5 @@
 """Tests for authentication endpoints."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,31 +16,55 @@ class TestAuthEndpointSignatures:
         from app.api.v1.auth_routes import router
 
         routes = [r.path for r in router.routes]
-        assert "/register" in routes
+        assert "/auth/register" in routes
 
     def test_login_endpoint_exists(self):
         from app.api.v1.auth_routes import router
 
         routes = [r.path for r in router.routes]
-        assert "/login" in routes
+        assert "/auth/login" in routes
 
     def test_refresh_endpoint_exists(self):
         from app.api.v1.auth_routes import router
 
         routes = [r.path for r in router.routes]
-        assert "/refresh" in routes
+        assert "/auth/refresh" in routes
 
     def test_logout_endpoint_exists(self):
         from app.api.v1.auth_routes import router
 
         routes = [r.path for r in router.routes]
-        assert "/logout" in routes
+        assert "/auth/logout" in routes
 
     def test_me_endpoint_exists(self):
         from app.api.v1.auth_routes import router
 
         routes = [r.path for r in router.routes]
-        assert "/me" in routes
+        assert "/auth/me" in routes
+
+    def test_verify_email_endpoint_exists(self):
+        from app.api.v1.auth_routes import router
+
+        routes = [r.path for r in router.routes]
+        assert "/auth/verify-email" in routes
+
+    def test_forgot_password_endpoint_exists(self):
+        from app.api.v1.auth_routes import router
+
+        routes = [r.path for r in router.routes]
+        assert "/auth/forgot-password" in routes
+
+    def test_reset_password_endpoint_exists(self):
+        from app.api.v1.auth_routes import router
+
+        routes = [r.path for r in router.routes]
+        assert "/auth/reset-password" in routes
+
+    def test_accept_invitation_endpoint_exists(self):
+        from app.api.v1.auth_routes import router
+
+        routes = [r.path for r in router.routes]
+        assert "/auth/accept-invitation" in routes
 
 
 class TestAuthSchemas:

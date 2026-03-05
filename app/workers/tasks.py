@@ -90,9 +90,7 @@ class CircuitBreaker:
                 if failures < self.FAILURE_THRESHOLD:
                     return False
                 last_fail = float(r.get(self._redis_last_fail_key(host)) or 0)
-                if time.time() - last_fail > self.RECOVERY_TIMEOUT:
-                    return False
-                return True
+                return time.time() - last_fail <= self.RECOVERY_TIMEOUT
             except Exception:
                 logger.warning("circuit_breaker_redis_read_error_using_fallback")
 
@@ -102,9 +100,7 @@ class CircuitBreaker:
             if failures < self.FAILURE_THRESHOLD:
                 return False
             last_fail = self._last_failure_time.get(host, 0)
-            if time.time() - last_fail > self.RECOVERY_TIMEOUT:
-                return False
-            return True
+            return time.time() - last_fail <= self.RECOVERY_TIMEOUT
 
     def record_success(self, url: str) -> None:
         host = self._host_key(url)

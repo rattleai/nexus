@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.api.deps import get_current_tenant, get_db
+from app.api.deps import get_current_api_key, get_current_tenant, get_db
 from app.main import create_app
 
 
@@ -22,6 +22,18 @@ def _make_tenant():
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
         deleted_at=None,
+    )
+
+
+def _make_api_key(tenant):
+    return MagicMock(
+        id=uuid.uuid4(),
+        tenant_id=tenant.id,
+        key_hash="fake_hash",
+        name="test-key",
+        scopes=["jobs:read", "jobs:write", "api-keys:read", "api-keys:write"],
+        active=True,
+        tenant=tenant,
     )
 
 
@@ -60,6 +72,7 @@ async def test_revoke_nonexistent_key(auth_client):
     """Revoking a non-existent key should return 404."""
     client, app = auth_client
     tenant = _make_tenant()
+    api_key = _make_api_key(tenant)
 
     mock_db = AsyncMock()
     mock_result = MagicMock()
@@ -71,6 +84,7 @@ async def test_revoke_nonexistent_key(auth_client):
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_tenant] = lambda: tenant
+    app.dependency_overrides[get_current_api_key] = lambda: api_key
 
     try:
         response = await client.delete(f"/api/v1/api-keys/{uuid.uuid4()}")
@@ -84,6 +98,7 @@ async def test_list_api_keys_returns_paginated(auth_client):
     """Listing API keys returns cursor-paginated response."""
     client, app = auth_client
     tenant = _make_tenant()
+    api_key = _make_api_key(tenant)
 
     mock_db = AsyncMock()
     mock_result = MagicMock()
@@ -95,6 +110,7 @@ async def test_list_api_keys_returns_paginated(auth_client):
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_tenant] = lambda: tenant
+    app.dependency_overrides[get_current_api_key] = lambda: api_key
 
     try:
         response = await client.get("/api/v1/api-keys")

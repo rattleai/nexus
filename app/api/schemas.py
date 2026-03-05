@@ -111,7 +111,8 @@ class ApiKeyCreate(BaseModel):
             from app.config import settings
             invalid = [s for s in v if s not in settings.VALID_SCOPES]
             if invalid:
-                raise ValueError(f"Invalid scopes: {', '.join(invalid)}. Valid scopes: {', '.join(settings.VALID_SCOPES)}")
+                valid = ', '.join(settings.VALID_SCOPES)
+                raise ValueError(f"Invalid scopes: {', '.join(invalid)}. Valid: {valid}")
         return v
 
 

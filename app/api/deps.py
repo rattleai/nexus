@@ -87,9 +87,9 @@ async def get_current_user_from_token(
     try:
         payload = decode_access_token(token)
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired")
+        raise HTTPException(status_code=401, detail="Token has expired") from None
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid token") from None
 
     user_id_str = payload.get("sub")
     if not user_id_str:
@@ -98,7 +98,7 @@ async def get_current_user_from_token(
     try:
         user_id = uuid.UUID(user_id_str)
     except (ValueError, AttributeError):
-        raise HTTPException(status_code=401, detail="Invalid token payload")
+        raise HTTPException(status_code=401, detail="Invalid token payload") from None
 
     result = await db.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))
     user = result.scalar_one_or_none()

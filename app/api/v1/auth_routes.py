@@ -115,7 +115,7 @@ async def register(body: UserRegister, response: Response, db: AsyncSession = De
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Email or tenant slug already taken")
+        raise HTTPException(status_code=409, detail="Email or tenant slug already taken") from None
     await db.refresh(user)
 
     # Create access token
@@ -168,8 +168,8 @@ async def login(body: UserLogin, response: Response, db: AsyncSession = Depends(
     user = result.scalar_one_or_none()
 
     # Always run verify_password to prevent timing attacks that reveal whether an email exists
-    _DUMMY_HASH = "$2b$12$LJ3m4ys3Lg2RqFONxLwAyOSJjGxTPiOVGP6XB7mT7lNH3.WIOQWGK"
-    stored_hash = user.password_hash if (user and user.password_hash) else _DUMMY_HASH
+    _dummy_hash = "$2b$12$LJ3m4ys3Lg2RqFONxLwAyOSJjGxTPiOVGP6XB7mT7lNH3.WIOQWGK"
+    stored_hash = user.password_hash if (user and user.password_hash) else _dummy_hash
     password_valid = verify_password(body.password, stored_hash)
 
     if not user or not user.password_hash or not password_valid:
@@ -520,6 +520,7 @@ async def accept_invitation(
 
     # Mark invitation as accepted
     invitation.status = InvitationStatus.ACCEPTED
+    invitation.accepted_at = datetime.now(UTC)
 
     # Create refresh token
     raw_refresh, refresh_hash = create_refresh_token()

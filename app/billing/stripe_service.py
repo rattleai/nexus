@@ -222,9 +222,10 @@ async def handle_webhook_event(
     handler = handlers.get(event_type)
     if handler:
         await handler(event_data, db)
+    else:
+        logger.debug("stripe_webhook_unhandled", event_type=event_type)
 
     await _mark_event_processed(event_id)
-    logger.debug("stripe_webhook_unhandled", event_type=event_type)
 
 
 async def _handle_subscription_updated(data: dict, db: AsyncSession) -> None:

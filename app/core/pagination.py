@@ -58,7 +58,7 @@ def decode_cursor(cursor: str, value_type: type) -> Any:
             return uuid.UUID(raw)
         return raw
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid cursor")
+        raise HTTPException(status_code=400, detail="Invalid cursor") from None
 
 
 async def paginate(

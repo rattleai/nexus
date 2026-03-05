@@ -49,4 +49,8 @@ async def set_tenant_context(session: AsyncSession, tenant_id: str) -> None:
     Must be called at the start of each request that uses tenant-scoped tables.
     Uses SET LOCAL so the setting is scoped to the current transaction.
     """
-    await session.execute(text(f"SET LOCAL app.tenant_id = '{tenant_id}'"))
+    # Use parameterized set_config() to prevent SQL injection via tenant_id
+    await session.execute(
+        text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+        {"tenant_id": tenant_id},
+    )

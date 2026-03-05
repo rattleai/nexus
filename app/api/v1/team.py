@@ -295,6 +295,7 @@ async def create_invitation(
         email=body.email,
         role=body.role,
         invited_by=str(user.id),
+        token=raw_token,
     ))
     logger.info(
         "invitation_created",

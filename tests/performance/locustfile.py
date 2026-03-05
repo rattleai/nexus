@@ -10,7 +10,6 @@ Configuration:
 """
 
 import os
-import uuid
 
 from locust import HttpUser, between, task
 

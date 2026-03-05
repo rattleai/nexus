@@ -70,7 +70,7 @@ def validate_webhook_url(url: str) -> str | None:
     except socket.gaierror:
         return "Could not resolve webhook URL hostname"
 
-    for family, _, _, _, sockaddr in results:
+    for _family, _, _, _, sockaddr in results:
         ip_str = sockaddr[0]
         if _is_private_ip(ip_str):
             logger.warning(

@@ -35,6 +35,7 @@ dependencies = [
     "opentelemetry-instrumentation-redis>=0.45b,<1",
     "opentelemetry-instrumentation-celery>=0.45b,<1",
     "prometheus-client>=0.20,<1",
+    "stripe>=8.0,<12",
 ]
 
 [project.optional-dependencies]
@@ -59,10 +60,11 @@ target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "PIE", "RUF", "C4", "DTZ", "T20"]
 
 [tool.ruff.lint.per-file-ignores]
 "app/api/**/*.py" = ["B008"]  # Depends() in defaults is idiomatic FastAPI
+"app/db/migrations/**" = ["E501", "I001"]  # Auto-generated migrations
 
 [tool.mypy]
 python_version = "3.12"

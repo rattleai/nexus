@@ -36,7 +36,7 @@ class TestRenderTemplate:
         assert "https://example.com/reset" in html
 
     def test_render_invitation(self):
-        subject, body, html = render_template(
+        subject, body, _html = render_template(
             EmailTemplate.INVITATION,
             {
                 "inviter_name": "Alice",
@@ -54,14 +54,14 @@ class TestRenderTemplate:
             render_template("nonexistent_template", {})
 
     def test_render_payment_templates(self):
-        subject, body, html = render_template(
+        subject, body, _html = render_template(
             EmailTemplate.PAYMENT_RECEIVED,
             {"display_name": "Charlie", "amount": "$49.00", "plan_name": "Pro"},
         )
         assert "Payment received" in subject
         assert "$49.00" in body
 
-        subject, body, html = render_template(
+        subject, body, _html = render_template(
             EmailTemplate.PAYMENT_FAILED,
             {"display_name": "Charlie", "plan_name": "Pro", "billing_url": "https://billing"},
         )

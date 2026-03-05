@@ -88,6 +88,27 @@ async def _dispatch_webhooks(tenant_id: str, event_name: str, payload: dict) -> 
         logger.error("webhook_dispatch_error", tenant_id=tenant_id, event=event_name, exc_info=True)
 
 
+async def _get_tenant_owner_id(tenant_id: str) -> str | None:
+    """Get the owner user ID for a tenant."""
+    import uuid
+
+    from app.db.models import TenantMembership, UserRole
+
+    try:
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(TenantMembership.user_id).where(
+                    TenantMembership.tenant_id == uuid.UUID(tenant_id),
+                    TenantMembership.role == UserRole.OWNER,
+                )
+            )
+            row = result.scalar_one_or_none()
+            return str(row) if row else None
+    except Exception:
+        logger.error("tenant_owner_lookup_failed", tenant_id=tenant_id, exc_info=True)
+        return None
+
+
 # ── Event handlers ──────────────────────────────────────
 
 
@@ -131,7 +152,7 @@ async def handle_invitation_sent(event: InvitationSent) -> None:
         inviter = inviter_result.scalar_one_or_none()
         inviter_name = inviter.display_name or inviter.email if inviter else "A team member"
 
-    invite_url = f"{settings.APP_BASE_URL}/accept-invitation?token={event.email}"
+    invite_url = f"{settings.APP_BASE_URL}/accept-invitation?token={event.token}"
     await send_email(
         to=event.email,
         template=EmailTemplate.INVITATION,
@@ -147,6 +168,18 @@ async def handle_invitation_sent(event: InvitationSent) -> None:
 @on(JobCompleted)
 async def handle_job_completed(event: JobCompleted) -> None:
     """Create in-app notification and dispatch webhook for job completion."""
+    # Notify tenant owner
+    owner_id = await _get_tenant_owner_id(event.tenant_id)
+    if owner_id:
+        await _create_notification(
+            user_id=owner_id,
+            tenant_id=event.tenant_id,
+            notification_type="job.completed",
+            title=f"Job completed: {event.job_type}",
+            body=f"Job {event.job_id} has completed successfully.",
+            data={"job_id": event.job_id, "job_type": event.job_type},
+        )
+
     await _dispatch_webhooks(event.tenant_id, "job.completed", {
         "job_id": event.job_id,
         "job_type": event.job_type,
@@ -156,6 +189,17 @@ async def handle_job_completed(event: JobCompleted) -> None:
 @on(JobFailed)
 async def handle_job_failed(event: JobFailed) -> None:
     """Create in-app notification and dispatch webhook for job failure."""
+    owner_id = await _get_tenant_owner_id(event.tenant_id)
+    if owner_id:
+        await _create_notification(
+            user_id=owner_id,
+            tenant_id=event.tenant_id,
+            notification_type="job.failed",
+            title=f"Job failed: {event.job_type}",
+            body=f"Job {event.job_id} failed: {event.error}",
+            data={"job_id": event.job_id, "job_type": event.job_type, "error": event.error},
+        )
+
     await _dispatch_webhooks(event.tenant_id, "job.failed", {
         "job_id": event.job_id,
         "job_type": event.job_type,

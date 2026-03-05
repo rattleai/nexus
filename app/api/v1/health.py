@@ -86,7 +86,7 @@ async def _readiness_check() -> dict:
     async def _with_timeout(coro, timeout: float = 5.0) -> bool:
         try:
             return await asyncio.wait_for(coro, timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return False
 
     db_ok, redis_ok, storage_ok, celery_ok = await asyncio.gather(

@@ -42,7 +42,7 @@ async def create_tenant(body: TenantCreate, db: AsyncSession = Depends(get_db)):
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Slug already taken")
+        raise HTTPException(status_code=409, detail="Slug already taken") from None
     await db.refresh(tenant)
     await emit_audit_event(
         db, action=AuditAction.CREATE, resource_type="tenant",

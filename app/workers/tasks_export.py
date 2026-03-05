@@ -106,7 +106,8 @@ def export_tenant_data(self, tenant_id: str, user_id: str, export_id: str, forma
         from app.core.email import EmailTemplate, send_email_sync
         from app.db.models import User
 
-        user = db.execute(select(User).where(User.id == uuid.UUID(user_id))).scalar_one_or_none()
+        with _SyncSession() as notify_db:
+            user = notify_db.execute(select(User).where(User.id == uuid.UUID(user_id))).scalar_one_or_none()
         if user:
             from app.config import settings
 
