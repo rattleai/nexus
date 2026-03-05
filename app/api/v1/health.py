@@ -54,10 +54,17 @@ async def _check_storage() -> bool:
 
 
 async def _check_celery() -> bool:
-    """Check Celery worker connectivity via Redis broker ping."""
+    """Check Celery worker connectivity by inspecting active workers via Redis.
+
+    Pings actual Celery workers rather than just the Redis broker, so we
+    detect the scenario where Redis is up but no workers are running.
+    """
     try:
-        result = await redis_pool.ping()
-        return bool(result)
+        from app.workers.celery_app import celery as celery_app
+
+        inspect = celery_app.control.inspect(timeout=2)
+        result = await asyncio.to_thread(inspect.ping)
+        return bool(result)  # None or empty dict means no workers responded
     except Exception:
         logger.warning("celery_health_check_failed", exc_info=True)
         return False

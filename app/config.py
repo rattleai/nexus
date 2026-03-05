@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # Application
     SECRET_KEY: str = "change-me-in-production"
+    WEBHOOK_SIGNING_KEY: str = ""  # Dedicated key for webhook HMAC signatures
     ADMIN_KEY: str = ""  # Separate admin key — do NOT reuse SECRET_KEY
     DEBUG: bool = False
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
@@ -44,7 +45,7 @@ class Settings(BaseSettings):
 
     # OpenTelemetry
     OTEL_ENABLED: bool = False
-    OTEL_SERVICE_NAME: str = "cadprice"
+    OTEL_SERVICE_NAME: str = "saas-platform"
     OTEL_EXPORTER_ENDPOINT: str = "http://localhost:4317"
 
     # User authentication (opt-in)
@@ -91,6 +92,13 @@ def validate_settings() -> None:
     origins = [o.strip() for o in settings.CORS_ORIGINS.split(",")]
     if "*" in origins:
         raise RuntimeError("CORS_ORIGINS must not be '*' — specify explicit origins")
+
+    if not settings.WEBHOOK_SIGNING_KEY and not settings.DEBUG:
+        warnings.warn(
+            "WEBHOOK_SIGNING_KEY is not set — falling back to SECRET_KEY for webhook signatures. "
+            "Set a dedicated WEBHOOK_SIGNING_KEY in production.",
+            stacklevel=2,
+        )
 
     if not settings.storage_configured:
         warnings.warn(

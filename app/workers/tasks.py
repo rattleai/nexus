@@ -97,9 +97,13 @@ def _optimistic_update(db, model, record_id: uuid.UUID, expected_version: int, *
 
 
 def _sign_webhook_payload(payload: dict) -> str:
-    """Create an HMAC-SHA256 signature for a webhook payload."""
+    """Create an HMAC-SHA256 signature for a webhook payload.
+
+    Uses a dedicated WEBHOOK_SIGNING_KEY to avoid sharing the JWT SECRET_KEY.
+    """
+    signing_key = settings.WEBHOOK_SIGNING_KEY or settings.SECRET_KEY
     body = json.dumps(payload, sort_keys=True, default=str)
-    return hmac.new(settings.SECRET_KEY.encode(), body.encode(), hashlib.sha256).hexdigest()
+    return hmac.new(signing_key.encode(), body.encode(), hashlib.sha256).hexdigest()
 
 
 # ── Tasks ────────────────────────────────────────────────────────────────────

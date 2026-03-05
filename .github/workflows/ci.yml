@@ -205,11 +205,11 @@ jobs:
         with:
           context: .
           load: true
-          tags: cadprice:scan
+          tags: saas-platform:scan
           cache-from: type=gha
       - uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: cadprice:scan
+          image-ref: saas-platform:scan
           format: table
           exit-code: 1
           severity: CRITICAL,HIGH

@@ -107,7 +107,7 @@ def get_tracer():
         return _tracer
     from opentelemetry import trace
 
-    return trace.get_tracer("cadprice")
+    return trace.get_tracer(settings.OTEL_SERVICE_NAME)
 
 
 def get_meter():
@@ -116,4 +116,4 @@ def get_meter():
         return _meter
     from opentelemetry import metrics
 
-    return metrics.get_meter("cadprice")
+    return metrics.get_meter(settings.OTEL_SERVICE_NAME)
