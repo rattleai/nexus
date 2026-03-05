@@ -7,6 +7,7 @@ from sqlalchemy import text
 from app import __version__
 from app.api.schemas import HealthResponse
 from app.config import settings
+from app.core.cache import cached
 from app.core.redis import redis_pool
 from app.db.session import async_engine
 
@@ -69,31 +70,29 @@ async def liveness():
     return {"status": "ok"}
 
 
-@router.get("/health/ready", response_model=HealthResponse)
-async def readiness():
-    """Kubernetes readiness probe — are all dependencies reachable?"""
+@cached(group="health", key="health:ready")
+async def _readiness_check() -> dict:
+    """Cached readiness check result (10s TTL)."""
     db_ok, redis_ok, storage_ok, celery_ok = await asyncio.gather(
         _check_db(), _check_redis(), _check_storage(), _check_celery()
     )
-
     all_ok = db_ok and redis_ok and storage_ok and celery_ok
-    return HealthResponse(
-        status="ok" if all_ok else "degraded",
-        version=__version__,
-        services={"db": db_ok, "redis": redis_ok, "storage": storage_ok, "celery": celery_ok},
-    )
+    return {
+        "status": "ok" if all_ok else "degraded",
+        "version": __version__,
+        "services": {"db": db_ok, "redis": redis_ok, "storage": storage_ok, "celery": celery_ok},
+    }
+
+
+@router.get("/health/ready", response_model=HealthResponse)
+async def readiness():
+    """Kubernetes readiness probe — are all dependencies reachable?"""
+    data = await _readiness_check()
+    return HealthResponse(**data)
 
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
     """Combined health check (backward compatible)."""
-    db_ok, redis_ok, storage_ok, celery_ok = await asyncio.gather(
-        _check_db(), _check_redis(), _check_storage(), _check_celery()
-    )
-
-    all_ok = db_ok and redis_ok and storage_ok and celery_ok
-    return HealthResponse(
-        status="ok" if all_ok else "degraded",
-        version=__version__,
-        services={"db": db_ok, "redis": redis_ok, "storage": storage_ok, "celery": celery_ok},
-    )
+    data = await _readiness_check()
+    return HealthResponse(**data)

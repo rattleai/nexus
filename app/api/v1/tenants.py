@@ -20,6 +20,7 @@ from app.api.schemas import (
     TenantResponse,
     TenantUpdate,
 )
+from app.core.cache import cached, invalidate
 from app.core.pagination import CursorPage, paginate
 from app.db.models import ApiKey, Tenant
 
@@ -51,13 +52,21 @@ async def list_tenants(
     return await paginate(db, stmt, Tenant.created_at, limit=limit, cursor=cursor, descending=True)
 
 
-@router.get("/{tenant_id}", response_model=TenantResponse)
-async def get_tenant(tenant_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+@cached(group="tenant", key="tenants:{tenant_id}")
+async def _get_tenant_cached(tenant_id: uuid.UUID, db: AsyncSession) -> dict | None:
     result = await db.execute(select(Tenant).where(Tenant.id == tenant_id, Tenant.deleted_at.is_(None)))
     tenant = result.scalar_one_or_none()
     if not tenant:
+        return None
+    return TenantResponse.model_validate(tenant).model_dump(mode="json")
+
+
+@router.get("/{tenant_id}", response_model=TenantResponse)
+async def get_tenant(tenant_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    data = await _get_tenant_cached(tenant_id, db)
+    if not data:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    return tenant
+    return data
 
 
 @router.patch("/{tenant_id}", response_model=TenantResponse)
@@ -72,6 +81,7 @@ async def update_tenant(tenant_id: uuid.UUID, body: TenantUpdate, db: AsyncSessi
 
     await db.commit()
     await db.refresh(tenant)
+    await invalidate(f"tenants:{tenant_id}")
     logger.info("audit.tenant_updated", tenant_id=str(tenant.id))
     return tenant
 
@@ -85,6 +95,7 @@ async def delete_tenant(tenant_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 
     tenant.deleted_at = datetime.now(UTC)
     await db.commit()
+    await invalidate(f"tenants:{tenant_id}")
     logger.info("audit.tenant_deleted", tenant_id=str(tenant.id), slug=tenant.slug)
 
 

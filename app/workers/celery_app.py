@@ -35,6 +35,14 @@ celery.conf.update(
         },
     },
     beat_max_loop_interval=60,
+    beat_scheduler="redbeat.RedBeatScheduler",
+    redbeat_redis_url=settings.REDIS_URL,
 )
 
 celery.autodiscover_tasks(["app.workers"])
+
+# Initialize OpenTelemetry for workers (if enabled)
+if settings.OTEL_ENABLED:
+    from app.core.telemetry import setup_telemetry
+
+    setup_telemetry(settings.OTEL_SERVICE_NAME)

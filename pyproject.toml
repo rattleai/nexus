@@ -17,6 +17,7 @@ dependencies = [
     "pydantic[email]>=2.7,<3",
     "pydantic-settings>=2.7,<3",
     "celery[redis]>=5.4,<6",
+    "celery-redbeat>=2.2,<3",
     "redis>=5.2,<6",
     "boto3>=1.36,<2",
     "httpx>=0.28,<1",

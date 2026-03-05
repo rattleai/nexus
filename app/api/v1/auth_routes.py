@@ -12,8 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user_from_token, get_db
+from app.api.rate_limit import RateLimiter
 from app.api.schemas_auth import AuthResponse, TokenResponse, UserLogin, UserRegister, UserResponse
 from app.config import settings
+
+_auth_rate_limit = RateLimiter(max_requests=settings.RATE_LIMIT_AUTH_ENDPOINTS, window=60, key_prefix="rl:auth")
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -47,7 +50,7 @@ def _clear_refresh_cookie(response: Response) -> None:
     response.delete_cookie(key=_REFRESH_COOKIE, path=_REFRESH_COOKIE_PATH)
 
 
-@router.post("/register", response_model=AuthResponse, status_code=201)
+@router.post("/register", response_model=AuthResponse, status_code=201, dependencies=[Depends(_auth_rate_limit)])
 async def register(body: UserRegister, response: Response, db: AsyncSession = Depends(get_db)):
     # Check for existing user
     existing = await db.execute(
@@ -117,7 +120,7 @@ async def register(body: UserRegister, response: Response, db: AsyncSession = De
     )
 
 
-@router.post("/login", response_model=AuthResponse)
+@router.post("/login", response_model=AuthResponse, dependencies=[Depends(_auth_rate_limit)])
 async def login(body: UserLogin, response: Response, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(User).where(User.email == body.email, User.deleted_at.is_(None))

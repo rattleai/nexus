@@ -69,11 +69,25 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         # Bind request context for all downstream log calls
         structlog.contextvars.clear_contextvars()
-        structlog.contextvars.bind_contextvars(
-            request_id=request_id,
-            method=request.method,
-            path=request.url.path,
-        )
+        log_ctx: dict = {
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+        }
+
+        # Bind OTEL trace_id if available
+        if settings.OTEL_ENABLED:
+            try:
+                from opentelemetry import trace
+
+                span = trace.get_current_span()
+                ctx = span.get_span_context()
+                if ctx and ctx.trace_id:
+                    log_ctx["trace_id"] = format(ctx.trace_id, "032x")
+            except Exception:
+                pass
+
+        structlog.contextvars.bind_contextvars(**log_ctx)
 
         start = time.perf_counter()
 

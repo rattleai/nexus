@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.schemas import JobCancelResponse, JobCreate, JobResponse
+from app.core.cache import cached, invalidate
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
 from app.core.url_validation import validate_webhook_url
@@ -81,6 +82,15 @@ async def list_jobs(
     return await paginate(db, stmt, Job.created_at, limit=limit, cursor=cursor, descending=True)
 
 
+@cached(group="job_status", key="jobs:{job_id}")
+async def _get_job_cached(job_id: uuid.UUID, tenant_id: uuid.UUID, db: AsyncSession) -> dict | None:
+    result = await db.execute(select(Job).where(Job.id == job_id, Job.tenant_id == tenant_id, Job.deleted_at.is_(None)))
+    job = result.scalar_one_or_none()
+    if not job:
+        return None
+    return JobResponse.model_validate(job).model_dump(mode="json")
+
+
 @router.get(
     "/{job_id}",
     response_model=JobResponse,
@@ -91,11 +101,10 @@ async def get_job(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Job).where(Job.id == job_id, Job.tenant_id == tenant.id, Job.deleted_at.is_(None)))
-    job = result.scalar_one_or_none()
-    if not job:
+    data = await _get_job_cached(job_id, tenant.id, db)
+    if not data:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job
+    return data
 
 
 @router.post(
@@ -120,6 +129,7 @@ async def cancel_job(
     job.error = "Cancelled by user"
     job.completed_at = datetime.now(UTC)
     await db.commit()
+    await invalidate(f"jobs:{job_id}")
     logger.info("job_cancelled", job_id=str(job_id), tenant_id=str(tenant.id))
     return JobCancelResponse(id=job.id, status=job.status.value, cancelled=True)
 
@@ -141,4 +151,5 @@ async def delete_job(
 
     job.deleted_at = datetime.now(UTC)
     await db.commit()
+    await invalidate(f"jobs:{job_id}")
     logger.info("job_soft_deleted", job_id=str(job_id), tenant_id=str(tenant.id))
