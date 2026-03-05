@@ -1,5 +1,6 @@
 import ky, { HTTPError } from "ky"
 import { toast } from "sonner"
+import { AUTH_STORAGE_KEY } from "./constants"
 
 export interface ApiError {
   detail: string
@@ -20,7 +21,7 @@ export const api = ky.create({
     beforeRequest: [
       (request) => {
         try {
-          const apiKey = localStorage.getItem("api-key")
+          const apiKey = localStorage.getItem(AUTH_STORAGE_KEY)
           if (apiKey) {
             request.headers.set("X-API-Key", apiKey)
           }

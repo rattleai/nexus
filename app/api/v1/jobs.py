@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_tenant, get_db
+from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.schemas import JobCancelResponse, JobCreate, JobResponse
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
@@ -26,7 +26,12 @@ class JobStatusFilter(StrEnum):
     FAILED = "failed"
 
 
-@router.post("", response_model=JobResponse, status_code=201)
+@router.post(
+    "",
+    response_model=JobResponse,
+    status_code=201,
+    dependencies=[Depends(RequireScopes("jobs:write"))],
+)
 async def create_job(
     body: JobCreate,
     tenant: Tenant = Depends(get_current_tenant),
@@ -51,7 +56,11 @@ async def create_job(
     return job
 
 
-@router.get("", response_model=CursorPage[JobResponse])
+@router.get(
+    "",
+    response_model=CursorPage[JobResponse],
+    dependencies=[Depends(RequireScopes("jobs:read"))],
+)
 async def list_jobs(
     cursor: str | None = None,
     limit: int = Query(default=20, ge=1, le=100),
@@ -65,7 +74,11 @@ async def list_jobs(
     return await paginate(db, stmt, Job.created_at, limit=limit, cursor=cursor, descending=True)
 
 
-@router.get("/{job_id}", response_model=JobResponse)
+@router.get(
+    "/{job_id}",
+    response_model=JobResponse,
+    dependencies=[Depends(RequireScopes("jobs:read"))],
+)
 async def get_job(
     job_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),
@@ -78,7 +91,11 @@ async def get_job(
     return job
 
 
-@router.post("/{job_id}/cancel", response_model=JobCancelResponse)
+@router.post(
+    "/{job_id}/cancel",
+    response_model=JobCancelResponse,
+    dependencies=[Depends(RequireScopes("jobs:write"))],
+)
 async def cancel_job(
     job_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),
@@ -100,7 +117,11 @@ async def cancel_job(
     return JobCancelResponse(id=job.id, status=job.status.value, cancelled=True)
 
 
-@router.delete("/{job_id}", status_code=204)
+@router.delete(
+    "/{job_id}",
+    status_code=204,
+    dependencies=[Depends(RequireScopes("jobs:write"))],
+)
 async def delete_job(
     job_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),

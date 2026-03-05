@@ -9,9 +9,9 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.exceptions import register_exception_handlers
-from app.api.middleware import SecurityHeadersMiddleware
+from app.api.middleware import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
 from app.api.v1 import v1_router
-from app.config import settings
+from app.config import settings, validate_settings
 from app.core.logging import setup_logging
 from app.core.redis import redis_pool
 
@@ -24,6 +24,9 @@ SPA_DIR = BASE_DIR / "frontend" / "dist"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Validate configuration before anything else
+    validate_settings()
+
     logger.info("app_starting", version=__version__, debug=settings.DEBUG)
 
     # Warm up Redis connection pool
@@ -54,6 +57,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # Middleware (outermost first)
+    app.add_middleware(RequestSizeLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,

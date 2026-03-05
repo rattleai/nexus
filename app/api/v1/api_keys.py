@@ -4,32 +4,41 @@ import secrets
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import hash_api_key
-from app.api.deps import get_current_tenant, get_db
+from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.schemas import ApiKeyCreate, ApiKeyCreatedResponse, ApiKeyResponse, ApiKeyRevokeResponse
+from app.core.pagination import CursorPage, paginate
 from app.db.models import ApiKey, Tenant
 
 router = APIRouter(prefix="/api-keys")
 logger = structlog.stdlib.get_logger()
 
 
-@router.post("", response_model=ApiKeyCreatedResponse, status_code=201)
+@router.post(
+    "",
+    response_model=ApiKeyCreatedResponse,
+    status_code=201,
+    dependencies=[Depends(RequireScopes("api-keys:write"))],
+)
 async def create_api_key(
     body: ApiKeyCreate,
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
+    # Deduplicate scopes
+    scopes = list(dict.fromkeys(body.scopes)) if body.scopes else []
+
     raw_key = f"sk_{secrets.token_urlsafe(32)}"
     api_key = ApiKey(
         tenant_id=tenant.id,
         key_hash=hash_api_key(raw_key),
         name=body.name,
         rate_limit=body.rate_limit,
-        scopes=body.scopes or [],
+        scopes=scopes,
     )
     db.add(api_key)
     await db.commit()
@@ -47,16 +56,26 @@ async def create_api_key(
     )
 
 
-@router.get("", response_model=list[ApiKeyResponse])
+@router.get(
+    "",
+    response_model=CursorPage[ApiKeyResponse],
+    dependencies=[Depends(RequireScopes("api-keys:read"))],
+)
 async def list_api_keys(
+    cursor: str | None = None,
+    limit: int = Query(default=20, ge=1, le=100),
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(ApiKey).where(ApiKey.tenant_id == tenant.id).order_by(ApiKey.created_at.desc()))
-    return list(result.scalars().all())
+    stmt = select(ApiKey).where(ApiKey.tenant_id == tenant.id)
+    return await paginate(db, stmt, ApiKey.created_at, limit=limit, cursor=cursor, descending=True)
 
 
-@router.delete("/{key_id}", response_model=ApiKeyRevokeResponse)
+@router.delete(
+    "/{key_id}",
+    response_model=ApiKeyRevokeResponse,
+    dependencies=[Depends(RequireScopes("api-keys:write"))],
+)
 async def revoke_api_key(
     key_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),

@@ -198,6 +198,11 @@ function JobsTable() {
             ))}
           </TableBody>
         </Table>
+        {data?.has_more && (
+          <div className="text-center pt-4">
+            <p className="text-sm text-muted-foreground">More jobs available. Use cursor pagination or filters to view all.</p>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

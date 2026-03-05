@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
+import { APP_NAME } from "@/lib/constants"
 import { NavLink } from "./nav-link"
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? "0.1.0"
@@ -21,7 +22,7 @@ export function AppShell({ children }: AppShellProps) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
             <Link to="/" className="text-xl font-bold text-brand-600">
-              SaaS Platform
+              {APP_NAME}
             </Link>
             <div className="flex items-center gap-4">
               <NavLink href="/" label="Dashboard" />
@@ -38,7 +39,7 @@ export function AppShell({ children }: AppShellProps) {
       </main>
 
       <footer className="border-t border-gray-200 py-4 text-center text-sm text-gray-500">
-        SaaS Platform v{APP_VERSION}
+        {APP_NAME} v{APP_VERSION}
       </footer>
     </div>
   )

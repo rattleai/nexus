@@ -1,6 +1,7 @@
 import { useCallback, useSyncExternalStore } from "react"
+import { AUTH_STORAGE_KEY } from "@/lib/constants"
 
-const AUTH_KEY = "api-key"
+const AUTH_KEY = AUTH_STORAGE_KEY
 
 function getSnapshot(): string | null {
   try {

@@ -11,6 +11,33 @@ from app.config import settings
 logger = structlog.stdlib.get_logger()
 
 
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Reject oversized request bodies to prevent memory exhaustion.
+
+    File upload endpoints (multipart) use a higher limit configured via
+    MAX_UPLOAD_SIZE_BYTES. All other POST/PUT/PATCH requests are capped at
+    MAX_REQUEST_BODY_BYTES (default 1 MB).
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        if request.method in {"POST", "PUT", "PATCH"}:
+            content_length = request.headers.get("content-length")
+            if content_length is not None:
+                length = int(content_length)
+                content_type = request.headers.get("content-type", "")
+                is_upload = "multipart/form-data" in content_type
+                limit = settings.MAX_UPLOAD_SIZE_BYTES if is_upload else settings.MAX_REQUEST_BODY_BYTES
+                if length > limit:
+                    return JSONResponse(
+                        status_code=413,
+                        content={
+                            "detail": f"Request body too large (max {limit // 1024} KB)",
+                            "code": "PAYLOAD_TOO_LARGE",
+                        },
+                    )
+        return await call_next(request)
+
+
 def _add_security_headers(response: Response, request_id: str) -> None:
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
