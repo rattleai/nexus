@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+import app.core.event_handlers as _event_handlers  # noqa: F401 — registers handlers on import
 from app import __version__
 from app.api.exceptions import register_exception_handlers
 from app.api.middleware import RequestSizeLimitMiddleware, SecurityHeadersMiddleware

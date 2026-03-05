@@ -176,6 +176,27 @@ class DataExportRequested(DomainEvent):
     export_type: str = ""
 
 
+@dataclass
+class ExportCompleted(DomainEvent):
+    tenant_id: str = ""
+    user_id: str = ""
+    export_id: str = ""
+    download_url: str = ""
+
+
+@dataclass
+class PaymentReceived(DomainEvent):
+    tenant_id: str = ""
+    amount_cents: int = 0
+    plan_name: str = ""
+
+
+@dataclass
+class PaymentFailed(DomainEvent):
+    tenant_id: str = ""
+    plan_name: str = ""
+
+
 def on(event_type: type) -> Callable:
     """Decorator to register an async handler for a domain event type."""
 
@@ -196,10 +217,10 @@ async def emit(event: DomainEvent) -> None:
     handlers = _handlers.get(event_type, [])
 
     if not handlers:
-        logger.debug("event_no_handlers", event=event.event_name)
+        logger.debug("event_no_handlers", event_name=event.event_name)
         return
 
-    logger.info("event_emitting", event=event.event_name, handler_count=len(handlers))
+    logger.info("event_emitting", event_name=event.event_name, handler_count=len(handlers))
 
     tasks = []
     for handler in handlers:
@@ -215,7 +236,7 @@ async def _safe_call(handler: EventHandler, event: DomainEvent) -> None:
     except Exception:
         logger.error(
             "event_handler_failed",
-            event=event.event_name,
+            event_name=event.event_name,
             handler=handler.__qualname__,
             exc_info=True,
         )

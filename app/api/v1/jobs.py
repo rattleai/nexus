@@ -11,8 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.schemas import JobCancelResponse, JobCreate, JobResponse
+from app.billing.enforcement import enforce_plan_limit, get_effective_plan
 from app.core.cache import cached, invalidate
 from app.core.pagination import CursorPage, paginate
+from app.core.quotas import QuotaMetric, increment_usage
 from app.core.tenant import tenant_query
 from app.core.url_validation import validate_webhook_url
 from app.db.models import Job, JobStatus, Tenant
@@ -40,6 +42,10 @@ async def create_job(
     db: AsyncSession = Depends(get_db),
     x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
 ):
+    # Enforce plan quota for job creation
+    plan = await get_effective_plan(tenant.id, db)
+    await enforce_plan_limit(tenant.id, plan, QuotaMetric.JOBS_PER_MONTH)
+
     webhook_url = str(body.webhook_url) if body.webhook_url else None
     if webhook_url:
         ssrf_error = validate_webhook_url(webhook_url)
@@ -69,6 +75,9 @@ async def create_job(
     db.add(job)
     await db.commit()
     await db.refresh(job)
+
+    # Track usage
+    await increment_usage(tenant.id, QuotaMetric.JOBS_PER_MONTH)
 
     # Dispatch to Celery — if the broker is unreachable, log the error but
     # still return the job (it stays PENDING and will be picked up by the

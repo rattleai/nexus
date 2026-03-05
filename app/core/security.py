@@ -89,3 +89,19 @@ def create_refresh_token() -> tuple[str, str]:
     raw_token = secrets.token_urlsafe(48)
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     return raw_token, token_hash
+
+
+def generate_secure_token() -> tuple[str, str]:
+    """Generate a secure token for email verification, password reset, etc.
+
+    Returns:
+        Tuple of (raw_token, token_hash). Send raw_token to user, store hash in DB.
+    """
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    return raw_token, token_hash
+
+
+def hash_token(raw_token: str) -> str:
+    """Hash a raw token for DB lookup."""
+    return hashlib.sha256(raw_token.encode()).hexdigest()

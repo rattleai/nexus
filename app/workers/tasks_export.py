@@ -102,7 +102,24 @@ def export_tenant_data(self, tenant_id: str, user_id: str, export_id: str, forma
         storage.upload(key, json.dumps(export_data, indent=2, default=str).encode())
         logger.info("tenant_export_completed", export_id=export_id, key=key)
 
-        # TODO: Send email notification with download link
+        # Send email notification with download link
+        from app.core.email import EmailTemplate, send_email_sync
+        from app.db.models import User
+
+        user = db.execute(select(User).where(User.id == uuid.UUID(user_id))).scalar_one_or_none()
+        if user:
+            from app.config import settings
+
+            download_url = f"{settings.APP_BASE_URL}/exports/{export_id}"
+            send_email_sync(
+                to=user.email,
+                template=EmailTemplate.DATA_EXPORT_READY,
+                context={
+                    "display_name": user.display_name or user.email,
+                    "download_url": download_url,
+                },
+            )
+
         return {"status": "completed", "key": key}
     except Exception as exc:
         logger.error("tenant_export_failed", export_id=export_id, error=str(exc))

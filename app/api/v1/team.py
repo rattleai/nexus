@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireRole, get_current_user_from_token, get_db
 from app.core.audit import AuditAction, emit_audit_event
+from app.core.events import InvitationSent, emit
 from app.db.models import Invitation, InvitationStatus, TenantMembership, User, UserRole
 
 router = APIRouter(prefix="/team")
@@ -255,7 +256,13 @@ async def create_invitation(
     if existing_invite.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Invitation already sent to this email")
 
-    # TODO: check member count against plan limits when billing is implemented
+    # Check member count against plan limits
+    from app.billing.enforcement import enforce_plan_limit, get_effective_plan
+    from app.core.quotas import QuotaMetric, get_current_usage
+
+    plan = await get_effective_plan(user.tenant_id, db)
+    current_users = await get_current_usage(user.tenant_id, QuotaMetric.USERS)
+    await enforce_plan_limit(user.tenant_id, plan, QuotaMetric.USERS, current_users)
 
     # Create invitation
     raw_token = secrets.token_urlsafe(32)
@@ -283,7 +290,12 @@ async def create_invitation(
     await db.commit()
     await db.refresh(invitation)
 
-    # TODO: Send invitation email when email system is configured
+    await emit(InvitationSent(
+        tenant_id=str(user.tenant_id),
+        email=body.email,
+        role=body.role,
+        invited_by=str(user.id),
+    ))
     logger.info(
         "invitation_created",
         tenant_id=str(user.tenant_id),

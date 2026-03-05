@@ -52,6 +52,10 @@ class BillingPortalRequest(BaseModel):
     return_url: str
 
 
+class CheckoutResponse(BaseModel):
+    url: str
+
+
 # ── Plan endpoints ───────────────────────────────────────
 
 
@@ -141,6 +145,45 @@ async def cancel_subscription(
     )
 
 
+@router.post(
+    "/checkout",
+    response_model=CheckoutResponse,
+    dependencies=[Depends(RequireRole("owner"))],
+)
+async def create_checkout(
+    body: CreateCheckoutRequest,
+    user: User = Depends(get_current_user_from_token),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a Stripe Checkout session for subscribing to a plan."""
+    if not settings.stripe_configured:
+        raise HTTPException(status_code=503, detail="Billing not configured")
+
+    from app.billing.stripe_service import create_checkout_session
+
+    try:
+        url = await create_checkout_session(
+            user.tenant_id, body.plan_id, body.return_url, db
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    except Exception:
+        logger.error("checkout_session_failed", exc_info=True)
+        raise HTTPException(status_code=503, detail="Failed to create checkout session") from None
+
+    await emit_audit_event(
+        db,
+        action=AuditAction.CREATE,
+        resource_type="checkout_session",
+        tenant_id=user.tenant_id,
+        actor_id=str(user.id),
+        metadata={"plan_id": str(body.plan_id)},
+    )
+    await db.commit()
+
+    return CheckoutResponse(url=url)
+
+
 @router.post("/portal")
 async def create_billing_portal(
     body: BillingPortalRequest,
@@ -193,7 +236,7 @@ async def stripe_webhook(
 
     from app.billing.stripe_service import handle_webhook_event
 
-    await handle_webhook_event(event["type"], event["data"], db)
+    await handle_webhook_event(event["id"], event["type"], event["data"], db)
 
     logger.info("stripe_webhook_processed", event_type=event["type"])
     return {"status": "ok"}

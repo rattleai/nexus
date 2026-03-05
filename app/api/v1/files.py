@@ -7,11 +7,14 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import RequireScopes, get_current_tenant
+from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.rate_limit import RateLimiter
 from app.api.schemas import FileUploadResponse
+from app.billing.enforcement import enforce_plan_limit, get_effective_plan
 from app.config import settings
+from app.core.quotas import QuotaMetric, increment_usage
 from app.db.models import Tenant
 from app.storage.s3 import S3Storage, StorageError, handle_storage_error
 
@@ -59,7 +62,12 @@ def _tenant_key(tenant: Tenant, filename: str) -> str:
 async def upload_file(
     file: UploadFile,
     tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
 ):
+    # Enforce plan quota for uploads
+    plan = await get_effective_plan(tenant.id, db)
+    await enforce_plan_limit(tenant.id, plan, QuotaMetric.FILE_UPLOADS_PER_DAY)
+
     # Read in chunks to enforce size limit without loading entire file into memory
     chunks = []
     total_size = 0
@@ -88,6 +96,10 @@ async def upload_file(
         raise handle_storage_error(exc) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    # Track usage
+    await increment_usage(tenant.id, QuotaMetric.FILE_UPLOADS_PER_DAY)
+    await increment_usage(tenant.id, QuotaMetric.STORAGE_BYTES, len(content))
 
     logger.info("file_uploaded", tenant_id=str(tenant.id), key=key, size=len(content))
     return FileUploadResponse(

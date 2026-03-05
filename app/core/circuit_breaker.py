@@ -93,11 +93,14 @@ class CircuitBreaker:
 
     def record_success(self, key: str) -> None:
         """Reset the circuit after a successful call."""
+        was_open = self.is_open(key)
         r = self._get_redis()
 
         if r is not None:
             try:
                 r.delete(self._redis_failures_key(key), self._redis_last_fail_key(key))
+                if was_open:
+                    logger.info("circuit_breaker_closed", breaker=self.name, key=key)
                 return
             except Exception:
                 logger.warning("circuit_breaker_redis_write_error", breaker=self.name)
@@ -106,8 +109,12 @@ class CircuitBreaker:
             self._failures.pop(key, None)
             self._last_failure_time.pop(key, None)
 
+        if was_open:
+            logger.info("circuit_breaker_closed", breaker=self.name, key=key)
+
     def record_failure(self, key: str) -> None:
         """Record a failure and potentially open the circuit."""
+        was_open = self.is_open(key)
         r = self._get_redis()
         expiry = self.recovery_timeout * 2
 
@@ -117,7 +124,16 @@ class CircuitBreaker:
                 pipe.incr(self._redis_failures_key(key))
                 pipe.expire(self._redis_failures_key(key), expiry)
                 pipe.set(self._redis_last_fail_key(key), str(time.time()), ex=expiry)
-                pipe.execute()
+                results = pipe.execute()
+                new_count = results[0]
+                if not was_open and new_count >= self.failure_threshold:
+                    logger.warning(
+                        "circuit_breaker_opened",
+                        breaker=self.name,
+                        key=key,
+                        failures=new_count,
+                        recovery_timeout=self.recovery_timeout,
+                    )
                 return
             except Exception:
                 logger.warning("circuit_breaker_redis_write_error", breaker=self.name)
@@ -125,6 +141,16 @@ class CircuitBreaker:
         with self._lock:
             self._failures[key] = self._failures.get(key, 0) + 1
             self._last_failure_time[key] = time.time()
+            new_count = self._failures[key]
+
+        if not was_open and new_count >= self.failure_threshold:
+            logger.warning(
+                "circuit_breaker_opened",
+                breaker=self.name,
+                key=key,
+                failures=new_count,
+                recovery_timeout=self.recovery_timeout,
+            )
 
     @staticmethod
     def host_key(url: str) -> str:

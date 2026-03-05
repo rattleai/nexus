@@ -58,15 +58,13 @@ class Settings(BaseSettings):
     OAUTH_GITHUB_CLIENT_ID: str = ""
     OAUTH_GITHUB_CLIENT_SECRET: str = ""
 
-    # Email / SMTP
-    SMTP_HOST: str = ""
-    SMTP_PORT: int = 587
-    SMTP_USERNAME: str = ""
-    SMTP_PASSWORD: str = ""
-    SMTP_USE_TLS: bool = True
-    EMAIL_FROM: str = "noreply@example.com"
+    # Email (Brevo / Sendinblue)
+    BREVO_API_KEY: str = ""
+    BREVO_SENDER_EMAIL: str = "noreply@example.com"
+    BREVO_SENDER_NAME: str = "SaaS Platform"
     EMAIL_VERIFICATION_EXPIRE_HOURS: int = 24
     PASSWORD_RESET_EXPIRE_HOURS: int = 1
+    APP_BASE_URL: str = "http://localhost:3000"
 
     # Billing (Stripe)
     STRIPE_SECRET_KEY: str = ""
@@ -109,7 +107,7 @@ class Settings(BaseSettings):
 
     @property
     def email_configured(self) -> bool:
-        return bool(self.SMTP_HOST)
+        return bool(self.BREVO_API_KEY)
 
     @property
     def stripe_configured(self) -> bool:

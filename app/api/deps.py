@@ -11,14 +11,20 @@ from sqlalchemy.orm import selectinload
 
 from app.api.auth import hash_api_key
 from app.config import settings
-from app.db.models import ApiKey, Tenant, TenantMembership, User, UserRole
-from app.db.session import get_session
+from app.db.models import ApiKey, Tenant, TenantMembership, User
+from app.db.session import get_read_session, get_session, set_tenant_context
 
 logger = structlog.stdlib.get_logger()
 
 
 async def get_db() -> AsyncGenerator[AsyncSession]:
     async for session in get_session():
+        yield session
+
+
+async def get_read_db() -> AsyncGenerator[AsyncSession]:
+    """Get a read-only DB session (uses read replica if configured)."""
+    async for session in get_read_session():
         yield session
 
 
@@ -49,9 +55,15 @@ async def get_current_api_key(
 
 async def get_current_tenant(
     api_key: ApiKey = Depends(get_current_api_key),
+    db: AsyncSession = Depends(get_db),
 ) -> Tenant:
-    """Return the tenant associated with the current API key."""
-    return api_key.tenant
+    """Return the tenant associated with the current API key.
+
+    Also sets PostgreSQL RLS tenant context for defense-in-depth isolation.
+    """
+    tenant = api_key.tenant
+    await set_tenant_context(db, str(tenant.id))
+    return tenant
 
 
 # ── JWT auth (new, opt-in via AUTH_ENABLED) ──────────────
