@@ -54,10 +54,17 @@ async def _check_storage() -> bool:
 
 
 async def _check_celery() -> bool:
-    """Check Celery worker connectivity via Redis broker ping."""
+    """Check Celery worker connectivity by inspecting active workers via Redis.
+
+    Pings actual Celery workers rather than just the Redis broker, so we
+    detect the scenario where Redis is up but no workers are running.
+    """
     try:
-        result = await redis_pool.ping()
-        return bool(result)
+        from app.workers.celery_app import celery as celery_app
+
+        inspect = celery_app.control.inspect(timeout=2)
+        result = await asyncio.to_thread(inspect.ping)
+        return bool(result)  # None or empty dict means no workers responded
     except Exception:
         logger.warning("celery_health_check_failed", exc_info=True)
         return False
@@ -70,9 +77,23 @@ async def liveness():
 
 
 async def _readiness_check() -> dict:
-    """Readiness check — not cached so K8s probes reflect real-time status."""
+    """Readiness check — not cached so K8s probes reflect real-time status.
+
+    Each check is wrapped in asyncio.wait_for to prevent a slow dependency
+    from blocking the entire health endpoint (e.g. if S3 hangs for 30s).
+    """
+
+    async def _with_timeout(coro, timeout: float = 5.0) -> bool:
+        try:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        except asyncio.TimeoutError:
+            return False
+
     db_ok, redis_ok, storage_ok, celery_ok = await asyncio.gather(
-        _check_db(), _check_redis(), _check_storage(), _check_celery()
+        _with_timeout(_check_db()),
+        _with_timeout(_check_redis()),
+        _with_timeout(_check_storage()),
+        _with_timeout(_check_celery()),
     )
     all_ok = db_ok and redis_ok and storage_ok and celery_ok
     return {

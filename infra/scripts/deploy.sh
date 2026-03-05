@@ -34,7 +34,10 @@ rollback() {
 
     # Restart previous containers (docker compose keeps previous image)
     log "Restarting previous service versions..."
-    docker compose -f "$COMPOSE_FILE" up -d api worker nginx || true
+    if ! docker compose -f "$COMPOSE_FILE" up -d api worker nginx; then
+        err "Rollback also failed! Services may be in a broken state."
+        err "Manual intervention required: check 'docker compose -f $COMPOSE_FILE ps'"
+    fi
     err "Rollback attempted. Please verify service state manually."
     exit 1
 }
@@ -45,7 +48,7 @@ log "Deploying $APP_NAME..."
 
 if [ "$BUILD" = true ]; then
     log "Building images..."
-    docker compose -f "$COMPOSE_FILE" build --no-cache
+    docker compose -f "$COMPOSE_FILE" build
 fi
 
 log "Starting infrastructure services..."

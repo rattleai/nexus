@@ -55,9 +55,13 @@ class StorageError(Exception):
 
 def _validate_key(key: str) -> str:
     """Sanitize and validate an S3 object key to prevent path traversal."""
-    # Normalize path separators and resolve traversal
-    normalized = key.replace("\\", "/")
-    # Reject any traversal attempts
+    from urllib.parse import unquote
+
+    # Decode percent-encoded characters first to catch %2e%2e → ..
+    normalized = unquote(key)
+    # Normalize path separators
+    normalized = normalized.replace("\\", "/")
+    # Reject any traversal attempts (check both encoded and decoded forms)
     if ".." in normalized or normalized.startswith("/"):
         raise StorageError("Invalid storage key", status_code=400)
     # Strip leading/trailing whitespace

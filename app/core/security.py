@@ -1,6 +1,8 @@
 """Password hashing and JWT token utilities.
 
-Uses passlib+bcrypt for password hashing and PyJWT for token management.
+Uses passlib+argon2id for password hashing and PyJWT for token management.
+Argon2id is the recommended KDF (OWASP, RFC 9106) — resistant to both
+GPU/ASIC attacks and side-channel attacks, with no 72-byte truncation issue.
 """
 
 import hashlib
@@ -13,22 +15,35 @@ from passlib.context import CryptContext
 
 from app.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# argon2id primary, bcrypt as deprecated fallback for existing hashes.
+# passlib auto-flags bcrypt hashes as needing rehash.
+pwd_context = CryptContext(schemes=["argon2", "bcrypt"], default="argon2", deprecated=["bcrypt"])
 
 
 def hash_password(plain: str) -> str:
-    """Hash a plaintext password using bcrypt.
-
-    Pre-hashes with SHA-256 to handle passwords >72 bytes (bcrypt truncation limit).
-    """
-    sha_digest = hashlib.sha256(plain.encode("utf-8")).hexdigest()
-    return pwd_context.hash(sha_digest)
+    """Hash a plaintext password using argon2id."""
+    return pwd_context.hash(plain)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    """Verify a plaintext password against its hash."""
-    sha_digest = hashlib.sha256(plain.encode("utf-8")).hexdigest()
-    return pwd_context.verify(sha_digest, hashed)
+    """Verify a plaintext password against its hash.
+
+    Supports both argon2id (current) and bcrypt (legacy) hashes.
+    Legacy bcrypt hashes used a SHA-256 pre-hash, so we try both forms.
+    """
+    # Try direct verification first (argon2id or plain bcrypt)
+    if pwd_context.verify(plain, hashed):
+        return True
+    # Fallback: legacy bcrypt hashes were created with SHA-256 pre-hashing
+    if hashed.startswith("$2b$"):
+        sha_digest = hashlib.sha256(plain.encode("utf-8")).hexdigest()
+        return pwd_context.verify(sha_digest, hashed)
+    return False
+
+
+def needs_rehash(hashed: str) -> bool:
+    """Return True if the hash should be upgraded (e.g. bcrypt → argon2id)."""
+    return pwd_context.needs_update(hashed)
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:

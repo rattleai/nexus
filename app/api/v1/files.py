@@ -1,6 +1,7 @@
 """File upload/download endpoints — scoped to the authenticated tenant."""
 
 import re
+import threading
 import uuid
 
 import structlog
@@ -19,14 +20,19 @@ logger = structlog.stdlib.get_logger()
 
 _SAFE_FILENAME_RE = re.compile(r"[^a-zA-Z0-9._-]")
 
-# Shared S3 storage instance (reuses connection pool)
+# Shared S3 storage instance (reuses connection pool).
+# Thread-safe via double-checked locking (matches s3.py pattern).
+
 _storage: S3Storage | None = None
+_storage_lock = threading.Lock()
 
 
 def _get_storage() -> S3Storage:
     global _storage
     if _storage is None:
-        _storage = S3Storage()
+        with _storage_lock:
+            if _storage is None:
+                _storage = S3Storage()
     return _storage
 
 
@@ -114,14 +120,16 @@ async def download_file(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    # Extract original filename from key for Content-Disposition
+    # Extract original filename from key for Content-Disposition.
+    # Escape quotes to prevent header injection.
     filename = file_key.rsplit("/", 1)[-1] if "/" in file_key else file_key
+    filename_safe = filename.replace("\\", "\\\\").replace('"', '\\"')
 
     logger.info("file_downloaded", tenant_id=str(tenant.id), key=file_key)
     return Response(
         content=data,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename_safe}"'},
     )
 
 

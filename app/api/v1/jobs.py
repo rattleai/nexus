@@ -70,10 +70,16 @@ async def create_job(
     await db.commit()
     await db.refresh(job)
 
-    # Dispatch to Celery
-    from app.workers.tasks import process_job
+    # Dispatch to Celery — if the broker is unreachable, log the error but
+    # still return the job (it stays PENDING and will be picked up by the
+    # stale-processing cleanup or can be retried manually).
+    try:
+        from app.workers.tasks import process_job
 
-    process_job.delay(str(job.id))
+        process_job.delay(str(job.id))
+    except Exception:
+        logger.error("celery_dispatch_failed", job_id=str(job.id), exc_info=True)
+
     logger.info("job_created", job_id=str(job.id), type=body.type, tenant_id=str(tenant.id))
     return job
 

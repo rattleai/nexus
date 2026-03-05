@@ -31,47 +31,111 @@ _SyncSession = sessionmaker(_sync_engine)
 class CircuitBreaker:
     """Per-host circuit breaker for webhook delivery.
 
+    Uses Redis for shared state across Celery workers, with an in-memory
+    fallback when Redis is unavailable.
+
     States:
       - CLOSED: normal operation, requests pass through.
       - OPEN: too many recent failures, requests are rejected immediately.
       - HALF_OPEN: after a cooldown, allow one probe request.
-
-    Thread-safe for use by concurrent Celery workers.
     """
 
     FAILURE_THRESHOLD = 5
     RECOVERY_TIMEOUT = 300  # seconds before trying again
 
     def __init__(self) -> None:
+        # In-memory fallback (used when Redis is unavailable)
         self._failures: dict[str, int] = defaultdict(int)
         self._last_failure_time: dict[str, float] = {}
         self._lock = threading.Lock()
+        self._redis = None
+        self._redis_init_lock = threading.Lock()
+
+    def _get_redis(self):
+        """Lazy-init a sync Redis client. Returns None if unavailable."""
+        if self._redis is None:
+            with self._redis_init_lock:
+                if self._redis is None:
+                    try:
+                        import redis as sync_redis
+                        self._redis = sync_redis.from_url(
+                            settings.REDIS_URL,
+                            socket_connect_timeout=2,
+                            socket_timeout=2,
+                        )
+                        self._redis.ping()
+                    except Exception:
+                        logger.warning("circuit_breaker_redis_unavailable_using_memory_fallback")
+                        self._redis = None
+        return self._redis
 
     def _host_key(self, url: str) -> str:
         return urlparse(url).netloc
 
+    def _redis_failures_key(self, host: str) -> str:
+        return f"cb:webhook:{host}:failures"
+
+    def _redis_last_fail_key(self, host: str) -> str:
+        return f"cb:webhook:{host}:last_fail"
+
     def is_open(self, url: str) -> bool:
         """Return True if the circuit is open (should NOT attempt delivery)."""
         host = self._host_key(url)
+        r = self._get_redis()
+
+        if r is not None:
+            try:
+                failures = int(r.get(self._redis_failures_key(host)) or 0)
+                if failures < self.FAILURE_THRESHOLD:
+                    return False
+                last_fail = float(r.get(self._redis_last_fail_key(host)) or 0)
+                if time.time() - last_fail > self.RECOVERY_TIMEOUT:
+                    return False
+                return True
+            except Exception:
+                logger.warning("circuit_breaker_redis_read_error_using_fallback")
+
+        # In-memory fallback
         with self._lock:
             failures = self._failures.get(host, 0)
             if failures < self.FAILURE_THRESHOLD:
                 return False
-            # Check if recovery timeout has elapsed
             last_fail = self._last_failure_time.get(host, 0)
             if time.time() - last_fail > self.RECOVERY_TIMEOUT:
-                # Half-open: allow a probe
                 return False
             return True
 
     def record_success(self, url: str) -> None:
         host = self._host_key(url)
+        r = self._get_redis()
+
+        if r is not None:
+            try:
+                r.delete(self._redis_failures_key(host), self._redis_last_fail_key(host))
+                return
+            except Exception:
+                logger.warning("circuit_breaker_redis_write_error_using_fallback")
+
         with self._lock:
             self._failures.pop(host, None)
             self._last_failure_time.pop(host, None)
 
     def record_failure(self, url: str) -> None:
         host = self._host_key(url)
+        r = self._get_redis()
+        expiry = self.RECOVERY_TIMEOUT * 2
+
+        if r is not None:
+            try:
+                pipe = r.pipeline()
+                pipe.incr(self._redis_failures_key(host))
+                pipe.expire(self._redis_failures_key(host), expiry)
+                pipe.set(self._redis_last_fail_key(host), str(time.time()), ex=expiry)
+                pipe.execute()
+                return
+            except Exception:
+                logger.warning("circuit_breaker_redis_write_error_using_fallback")
+
         with self._lock:
             self._failures[host] = self._failures.get(host, 0) + 1
             self._last_failure_time[host] = time.time()
@@ -97,9 +161,13 @@ def _optimistic_update(db, model, record_id: uuid.UUID, expected_version: int, *
 
 
 def _sign_webhook_payload(payload: dict) -> str:
-    """Create an HMAC-SHA256 signature for a webhook payload."""
+    """Create an HMAC-SHA256 signature for a webhook payload.
+
+    Uses a dedicated WEBHOOK_SIGNING_KEY to avoid sharing the JWT SECRET_KEY.
+    """
+    signing_key = settings.WEBHOOK_SIGNING_KEY or settings.SECRET_KEY
     body = json.dumps(payload, sort_keys=True, default=str)
-    return hmac.new(settings.SECRET_KEY.encode(), body.encode(), hashlib.sha256).hexdigest()
+    return hmac.new(signing_key.encode(), body.encode(), hashlib.sha256).hexdigest()
 
 
 # ── Tasks ────────────────────────────────────────────────────────────────────

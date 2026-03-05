@@ -165,7 +165,10 @@ async def require_admin_key(
     Uses a dedicated ADMIN_KEY setting (falls back to SECRET_KEY in debug mode).
     Comparison is constant-time to prevent timing side-channel attacks.
     """
-    expected = settings.ADMIN_KEY or settings.SECRET_KEY
-    if not x_admin_key or not hmac.compare_digest(x_admin_key, expected):
+    if not settings.ADMIN_KEY:
+        # validate_settings() blocks this in production (DEBUG=false),
+        # but guard here too for defense-in-depth.
+        raise HTTPException(status_code=503, detail="Admin key not configured")
+    if not x_admin_key or not hmac.compare_digest(x_admin_key, settings.ADMIN_KEY):
         logger.warning("admin_auth_failed")
         raise HTTPException(status_code=401, detail="Invalid admin key")

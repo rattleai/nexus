@@ -15,6 +15,8 @@ celery.conf.update(
     worker_prefetch_multiplier=1,
     task_track_started=True,
     result_expires=86400,
+    task_time_limit=600,       # Hard kill after 10 minutes
+    task_soft_time_limit=540,  # Raise SoftTimeLimitExceeded after 9 minutes
     # Beat schedule
     beat_schedule={
         "cleanup-expired-jobs": {

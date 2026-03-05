@@ -69,7 +69,8 @@ def create_app() -> FastAPI:
         allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",")],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Admin-Key", "X-Request-ID", "Cookie"],
+        allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Admin-Key", "X-Request-ID"],
+        max_age=86400,
     )
 
     # OpenTelemetry (must be before routes so instrumentation hooks are in place)
