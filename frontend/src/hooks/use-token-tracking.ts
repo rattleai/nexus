@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import type { TokenUsage } from "@/types/ai"
 
 interface UseTokenTrackingOptions {
@@ -19,18 +19,25 @@ export function useTokenTracking(options: UseTokenTrackingOptions = {}) {
 
   const [messageUsage, setMessageUsage] = useState<MessageUsage[]>([])
 
-  const totalUsage: TokenUsage = messageUsage.reduce(
-    (acc, m) => ({
-      inputTokens: acc.inputTokens + m.usage.inputTokens,
-      outputTokens: acc.outputTokens + m.usage.outputTokens,
-      totalTokens: acc.totalTokens + m.usage.totalTokens,
-    }),
-    { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+  const totalUsage = useMemo<TokenUsage>(
+    () =>
+      messageUsage.reduce(
+        (acc, m) => ({
+          inputTokens: acc.inputTokens + m.usage.inputTokens,
+          outputTokens: acc.outputTokens + m.usage.outputTokens,
+          totalTokens: acc.totalTokens + m.usage.totalTokens,
+        }),
+        { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      ),
+    [messageUsage],
   )
 
-  const estimatedCost =
-    totalUsage.inputTokens * costPerInputToken +
-    totalUsage.outputTokens * costPerOutputToken
+  const estimatedCost = useMemo(
+    () =>
+      totalUsage.inputTokens * costPerInputToken +
+      totalUsage.outputTokens * costPerOutputToken,
+    [totalUsage, costPerInputToken, costPerOutputToken],
+  )
 
   const addUsage = useCallback((messageId: string, usage: TokenUsage) => {
     setMessageUsage((prev) => [...prev, { messageId, usage }])
