@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
-import { api, parseApiError, setAccessToken as setApiClientToken, getAccessToken } from "./api-client"
+import { api, setAccessToken as setApiClientToken } from "./api-client"
 
 interface AuthUser {
   id: string

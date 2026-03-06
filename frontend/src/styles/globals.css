@@ -4,6 +4,7 @@
 
 /*
  * Design Tokens + shadcn/ui theme
+ * Uses OKLch for perceptually uniform colors
  */
 @theme {
   /* ── Brand palette (indigo-based) ── */
@@ -28,6 +29,8 @@
   --color-foreground: oklch(0.145 0 0);
   --color-card: oklch(1 0 0);
   --color-card-foreground: oklch(0.145 0 0);
+  --color-popover: oklch(1 0 0);
+  --color-popover-foreground: oklch(0.145 0 0);
   --color-primary: oklch(0.448 0.119 277.023);
   --color-primary-foreground: oklch(0.985 0.002 247.839);
   --color-secondary: oklch(0.961 0.003 264.542);
@@ -42,12 +45,30 @@
   --color-input: oklch(0.922 0.004 264.542);
   --color-ring: oklch(0.448 0.119 277.023);
 
+  /* ── Chart colors ── */
+  --color-chart-1: oklch(0.646 0.222 41.116);
+  --color-chart-2: oklch(0.6 0.118 184.704);
+  --color-chart-3: oklch(0.398 0.07 227.392);
+  --color-chart-4: oklch(0.828 0.189 84.429);
+  --color-chart-5: oklch(0.769 0.188 70.08);
+
+  /* ── Sidebar tokens ── */
+  --color-sidebar: oklch(0.985 0.002 247.839);
+  --color-sidebar-foreground: oklch(0.145 0 0);
+  --color-sidebar-primary: oklch(0.448 0.119 277.023);
+  --color-sidebar-primary-foreground: oklch(0.985 0.002 247.839);
+  --color-sidebar-accent: oklch(0.961 0.003 264.542);
+  --color-sidebar-accent-foreground: oklch(0.205 0.006 264.542);
+  --color-sidebar-border: oklch(0.922 0.004 264.542);
+  --color-sidebar-ring: oklch(0.448 0.119 277.023);
+
   /* ── Typography ── */
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 
   /* ── Border radius ── */
+  --radius: 0.625rem;
   --radius-card: 0.5rem;
   --radius-btn:  0.375rem;
   --radius-badge: 9999px;
@@ -55,6 +76,70 @@
   /* ── Elevation / shadows ── */
   --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
   --shadow-nav:  0 1px 2px 0 rgb(0 0 0 / 0.05);
+
+  /* ── Animations ── */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-collapsible-down: collapsible-down 0.2s ease-out;
+  --animate-collapsible-up: collapsible-up 0.2s ease-out;
+
+  @keyframes accordion-down {
+    from { height: 0; }
+    to { height: var(--radix-accordion-content-height); }
+  }
+  @keyframes accordion-up {
+    from { height: var(--radix-accordion-content-height); }
+    to { height: 0; }
+  }
+  @keyframes collapsible-down {
+    from { height: 0; }
+    to { height: var(--radix-collapsible-content-height); }
+  }
+  @keyframes collapsible-up {
+    from { height: var(--radix-collapsible-content-height); }
+    to { height: 0; }
+  }
+}
+
+/* ── Dark mode ── */
+.dark {
+  --color-background: oklch(0.145 0 0);
+  --color-foreground: oklch(0.985 0.002 247.839);
+  --color-card: oklch(0.205 0.006 264.542);
+  --color-card-foreground: oklch(0.985 0.002 247.839);
+  --color-popover: oklch(0.205 0.006 264.542);
+  --color-popover-foreground: oklch(0.985 0.002 247.839);
+  --color-primary: oklch(0.685 0.169 277.023);
+  --color-primary-foreground: oklch(0.205 0.006 264.542);
+  --color-secondary: oklch(0.269 0.007 264.542);
+  --color-secondary-foreground: oklch(0.985 0.002 247.839);
+  --color-muted: oklch(0.269 0.007 264.542);
+  --color-muted-foreground: oklch(0.651 0.01 264.542);
+  --color-accent: oklch(0.269 0.007 264.542);
+  --color-accent-foreground: oklch(0.985 0.002 247.839);
+  --color-destructive: oklch(0.704 0.191 22.216);
+  --color-destructive-foreground: oklch(0.269 0.007 264.542);
+  --color-border: oklch(0.313 0.009 264.542);
+  --color-input: oklch(0.313 0.009 264.542);
+  --color-ring: oklch(0.685 0.169 277.023);
+
+  --color-chart-1: oklch(0.488 0.243 264.376);
+  --color-chart-2: oklch(0.696 0.17 162.48);
+  --color-chart-3: oklch(0.769 0.188 70.08);
+  --color-chart-4: oklch(0.627 0.265 303.9);
+  --color-chart-5: oklch(0.645 0.246 16.439);
+
+  --color-sidebar: oklch(0.205 0.006 264.542);
+  --color-sidebar-foreground: oklch(0.985 0.002 247.839);
+  --color-sidebar-primary: oklch(0.685 0.169 277.023);
+  --color-sidebar-primary-foreground: oklch(0.205 0.006 264.542);
+  --color-sidebar-accent: oklch(0.269 0.007 264.542);
+  --color-sidebar-accent-foreground: oklch(0.985 0.002 247.839);
+  --color-sidebar-border: oklch(0.313 0.009 264.542);
+  --color-sidebar-ring: oklch(0.685 0.169 277.023);
+
+  --color-surface: oklch(0.205 0.006 264.542);
+  --color-surface-muted: oklch(0.145 0 0);
 }
 
 @layer base {
@@ -63,7 +148,7 @@
   }
 
   body {
-    @apply bg-surface-muted text-gray-900;
+    @apply bg-background text-foreground;
   }
 
   * {

@@ -6,7 +6,7 @@ import type { HealthResponse } from "@/types/api"
 export function useHealth() {
   return useQuery({
     queryKey: queryKeys.health,
-    queryFn: () => api.get("health").json<HealthResponse>(),
+    queryFn: ({ signal }) => api.get("health", { signal }).json<HealthResponse>(),
     refetchInterval: 30_000,
   })
 }

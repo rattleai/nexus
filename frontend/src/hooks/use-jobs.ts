@@ -4,44 +4,36 @@ import { queryKeys } from "@/lib/query-keys"
 import type { CursorPaginatedResponse, Job } from "@/types/api"
 
 export function useJobs(status?: string) {
-  const searchParams: Record<string, string> = {}
-  if (status) searchParams.status = status
-
   return useQuery({
     queryKey: queryKeys.jobs.list(status),
-    queryFn: () =>
-      api.get("jobs", { searchParams }).json<CursorPaginatedResponse<Job>>(),
-    refetchInterval: 10_000,
+    queryFn: ({ signal }) =>
+      api
+        .get("jobs", { searchParams: status ? { status } : undefined, signal })
+        .json<CursorPaginatedResponse<Job>>(),
   })
 }
 
-export function useJob(jobId: string) {
+export function useJob(id: string) {
   return useQuery({
-    queryKey: queryKeys.jobs.detail(jobId),
-    queryFn: () => api.get(`jobs/${jobId}`).json<Job>(),
-    enabled: !!jobId,
-    refetchInterval: 5_000,
+    queryKey: queryKeys.jobs.detail(id),
+    queryFn: ({ signal }) => api.get(`jobs/${id}`, { signal }).json<Job>(),
+    enabled: !!id,
   })
 }
 
 export function useCreateJob() {
-  const queryClient = useQueryClient()
+  const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { type: string; webhook_url?: string; payload?: Record<string, unknown> }) =>
+    mutationFn: (body: { type: string; payload?: Record<string, unknown>; webhook_url?: string }) =>
       api.post("jobs", { json: body }).json<Job>(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.jobs.all })
-    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.jobs.all }),
   })
 }
 
 export function useCancelJob() {
-  const queryClient = useQueryClient()
+  const qc = useQueryClient()
   return useMutation({
-    mutationFn: (jobId: string) =>
-      api.post(`jobs/${jobId}/cancel`).json<{ id: string; status: string; cancelled: boolean }>(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.jobs.all })
-    },
+    mutationFn: (id: string) => api.post(`jobs/${id}/cancel`).json<Job>(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.jobs.all }),
   })
 }
