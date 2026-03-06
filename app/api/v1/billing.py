@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import RequireRole, RequireScopes, get_current_tenant, get_current_user_from_token, get_db
 from app.config import settings
@@ -96,19 +97,17 @@ async def get_subscription(
 ):
     """Get the current tenant's subscription."""
     result = await db.execute(
-        select(Subscription).where(Subscription.tenant_id == tenant.id)
+        select(Subscription)
+        .options(selectinload(Subscription.plan))
+        .where(Subscription.tenant_id == tenant.id)
     )
     subscription = result.scalar_one_or_none()
     if not subscription:
         return None
 
-    # Load plan
-    plan_result = await db.execute(select(Plan).where(Plan.id == subscription.plan_id))
-    plan = plan_result.scalar_one_or_none()
-
     return SubscriptionResponse(
         id=subscription.id,
-        plan=PlanResponse.model_validate(plan) if plan else None,
+        plan=PlanResponse.model_validate(subscription.plan) if subscription.plan else None,
         status=subscription.status.value,
         current_period_start=subscription.current_period_start,
         current_period_end=subscription.current_period_end,

@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 import structlog
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -153,6 +153,16 @@ async def register(body: UserRegister, response: Response, db: AsyncSession = De
     )
     db.add(rt)
 
+    # Create email verification token in same transaction
+    raw_verify_token, verify_hash = generate_secure_token()
+    verification = EmailVerificationToken(
+        user_id=user.id,
+        token_hash=verify_hash,
+        token_type="email_verification",
+        expires_at=datetime.now(UTC) + timedelta(hours=settings.EMAIL_VERIFICATION_EXPIRE_HOURS),
+    )
+    db.add(verification)
+
     try:
         await db.commit()
     except IntegrityError:
@@ -164,17 +174,8 @@ async def register(body: UserRegister, response: Response, db: AsyncSession = De
     access_token = create_access_token({"sub": str(user.id), "tenant_id": str(tenant.id)})
     _set_refresh_cookie(response, raw_refresh)
 
-    # Create email verification token and send verification email
-    raw_verify_token, verify_hash = generate_secure_token()
-    verification = EmailVerificationToken(
-        user_id=user.id,
-        token_hash=verify_hash,
-        token_type="email_verification",
-        expires_at=datetime.now(UTC) + timedelta(hours=settings.EMAIL_VERIFICATION_EXPIRE_HOURS),
-    )
-    db.add(verification)
-    await db.commit()
-
+    # Send verification email AFTER commit — never hold DB locks during
+    # external I/O (email service could hang and deadlock other requests).
     verify_url = f"{settings.APP_BASE_URL}/verify-email?token={raw_verify_token}"
     await send_email(
         to=user.email,
@@ -444,6 +445,12 @@ class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str = Field(..., min_length=8, max_length=128)
 
+    @field_validator("new_password")
+    @classmethod
+    def check_password_strength(cls, v: str) -> str:
+        from app.api.schemas_auth import _validate_password_strength
+        return _validate_password_strength(v)
+
 
 @router.post("/forgot-password", dependencies=[Depends(_auth_rate_limit)])
 async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
@@ -521,6 +528,14 @@ class AcceptInvitationRequest(BaseModel):
     token: str
     password: str | None = Field(default=None, min_length=8, max_length=128)
     display_name: str | None = Field(default=None, max_length=255)
+
+    @field_validator("password")
+    @classmethod
+    def check_password_strength(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        from app.api.schemas_auth import _validate_password_strength
+        return _validate_password_strength(v)
 
 
 @router.post("/accept-invitation", response_model=AuthResponse, dependencies=[Depends(_auth_rate_limit)])
