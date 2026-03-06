@@ -22,6 +22,11 @@ v1_router.include_router(webhooks_router, tags=["webhooks"])
 v1_router.include_router(billing_router, tags=["billing"])
 v1_router.include_router(export_router, tags=["export"])
 
+if settings.AI_ENABLED:
+    from app.api.v1.ai import router as ai_router
+
+    v1_router.include_router(ai_router, tags=["ai"])
+
 if settings.OTEL_ENABLED:
     from app.api.v1.metrics import router as metrics_router
 

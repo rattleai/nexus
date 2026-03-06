@@ -28,6 +28,8 @@ class QuotaMetric(enum.StrEnum):
     USERS = "users"
     API_KEYS = "api_keys"
     FILE_UPLOADS_PER_DAY = "uploads_day"
+    AI_REQUESTS_DAY = "ai_requests_day"
+    AI_TOKENS_MONTH = "ai_tokens_month"
 
 
 # Default limits per plan tier — override via Plan.limits JSONB
@@ -39,6 +41,8 @@ DEFAULT_PLAN_LIMITS: dict[str, dict[str, int]] = {
         QuotaMetric.USERS: 3,
         QuotaMetric.API_KEYS: 2,
         QuotaMetric.FILE_UPLOADS_PER_DAY: 50,
+        QuotaMetric.AI_REQUESTS_DAY: 50,
+        QuotaMetric.AI_TOKENS_MONTH: 10_000,
     },
     "starter": {
         QuotaMetric.API_CALLS: 10_000,
@@ -47,6 +51,8 @@ DEFAULT_PLAN_LIMITS: dict[str, dict[str, int]] = {
         QuotaMetric.USERS: 10,
         QuotaMetric.API_KEYS: 10,
         QuotaMetric.FILE_UPLOADS_PER_DAY: 500,
+        QuotaMetric.AI_REQUESTS_DAY: 500,
+        QuotaMetric.AI_TOKENS_MONTH: 500_000,
     },
     "pro": {
         QuotaMetric.API_CALLS: 100_000,
@@ -55,6 +61,8 @@ DEFAULT_PLAN_LIMITS: dict[str, dict[str, int]] = {
         QuotaMetric.USERS: 50,
         QuotaMetric.API_KEYS: 50,
         QuotaMetric.FILE_UPLOADS_PER_DAY: 5_000,
+        QuotaMetric.AI_REQUESTS_DAY: 5_000,
+        QuotaMetric.AI_TOKENS_MONTH: 5_000_000,
     },
     "enterprise": {
         QuotaMetric.API_CALLS: -1,  # unlimited
@@ -63,6 +71,8 @@ DEFAULT_PLAN_LIMITS: dict[str, dict[str, int]] = {
         QuotaMetric.USERS: -1,
         QuotaMetric.API_KEYS: -1,
         QuotaMetric.FILE_UPLOADS_PER_DAY: -1,
+        QuotaMetric.AI_REQUESTS_DAY: -1,
+        QuotaMetric.AI_TOKENS_MONTH: -1,
     },
 }
 

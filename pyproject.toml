@@ -37,6 +37,9 @@ dependencies = [
     "prometheus-client>=0.20,<1",
     "stripe>=8.0,<12",
     "cryptography>=42.0,<45",
+    "litellm>=1.55,<2",
+    "tiktoken>=0.8,<1",
+    "sse-starlette>=2.0,<3",
 ]
 
 [project.optional-dependencies]

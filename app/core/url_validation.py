@@ -21,15 +21,25 @@ _BLOCKED_HOSTS = frozenset({
     "metadata.google.internal",
     "metadata.goog",
     "169.254.169.254",
+    "fd00:ec2::254",          # AWS IMDSv2 IPv6 endpoint
 })
 
 
 def _is_private_ip(ip_str: str) -> bool:
-    """Check if an IP address is in a private/reserved range."""
+    """Check if an IP address is in a private/reserved range.
+
+    Handles IPv6-mapped IPv4 addresses (e.g., ::ffff:127.0.0.1) by extracting
+    the underlying IPv4 address and checking it separately.
+    """
     try:
         addr = ipaddress.ip_address(ip_str)
     except ValueError:
         return True  # Can't parse — block to be safe
+
+    # Check IPv6-mapped IPv4 addresses (e.g., ::ffff:10.0.0.1)
+    # These can bypass is_private checks in some Python versions.
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
 
     return (
         addr.is_private

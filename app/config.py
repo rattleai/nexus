@@ -77,6 +77,37 @@ class Settings(BaseSettings):
     # Read replica (optional, for read-write splitting)
     DATABASE_READ_URL: str = ""
 
+    # ── AI Gateway ────────────────────────────────────────
+    AI_ENABLED: bool = True
+    AI_REQUEST_TIMEOUT_SECONDS: int = 30
+    AI_MAX_TOKENS_PER_REQUEST: int = 128_000
+    AI_MAX_MESSAGES_PER_REQUEST: int = 100
+    AI_MAX_MESSAGE_LENGTH: int = 200_000
+
+    # Margin multipliers — applied to raw token consumption
+    # Platform keys: platform bears provider cost, higher margin
+    # BYOK keys: tenant pays provider directly, lower infrastructure fee
+    AI_MARGIN_PLATFORM_KEYS: float = 1.20   # 20% margin on platform-managed keys
+    AI_MARGIN_BYOK_KEYS: float = 1.05       # 5% infrastructure fee on BYOK
+
+    AI_WALLET_LOW_BALANCE_THRESHOLD: int = 1000
+    AI_CACHE_ENABLED: bool = True
+    AI_CACHE_TTL_SECONDS: int = 3600
+    AI_DEFAULT_FALLBACK_ENABLED: bool = True
+
+    # Platform-managed provider API keys
+    AI_OPENAI_API_KEY: str = ""
+    AI_ANTHROPIC_API_KEY: str = ""
+    AI_GOOGLE_API_KEY: str = ""
+    AI_MISTRAL_API_KEY: str = ""
+    AI_DEEPSEEK_API_KEY: str = ""
+    AI_QWEN_API_KEY: str = ""
+    AI_QWEN_API_BASE: str = ""              # Custom base URL for Qwen (e.g. DashScope)
+    AI_ALEPH_ALPHA_API_KEY: str = ""
+
+    # Rate limiting for AI endpoints (per window)
+    RATE_LIMIT_AI_REQUESTS: int = 60
+
     # Allowed scope values for API keys
     VALID_SCOPES: list[str] = [
         "jobs:read", "jobs:write",
@@ -86,6 +117,7 @@ class Settings(BaseSettings):
         "webhooks:read", "webhooks:write",
         "billing:read", "billing:write",
         "audit:read",
+        "ai:read", "ai:write", "ai:admin",
     ]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
@@ -113,6 +145,19 @@ class Settings(BaseSettings):
     def stripe_configured(self) -> bool:
         return bool(self.STRIPE_SECRET_KEY)
 
+    @property
+    def ai_configured(self) -> bool:
+        """True if at least one platform-managed AI provider key is set."""
+        return bool(
+            self.AI_OPENAI_API_KEY
+            or self.AI_ANTHROPIC_API_KEY
+            or self.AI_GOOGLE_API_KEY
+            or self.AI_MISTRAL_API_KEY
+            or self.AI_DEEPSEEK_API_KEY
+            or self.AI_QWEN_API_KEY
+            or self.AI_ALEPH_ALPHA_API_KEY
+        )
+
 
 settings = Settings()
 
@@ -127,7 +172,7 @@ def validate_settings() -> None:
 
     if not settings.ADMIN_KEY:
         if settings.DEBUG:
-            warnings.warn("ADMIN_KEY is not set — using SECRET_KEY as fallback (not safe for production)", stacklevel=2)
+            warnings.warn("ADMIN_KEY is not set — admin endpoints will be inaccessible", stacklevel=2)
         else:
             raise RuntimeError("ADMIN_KEY must be set in production (DEBUG=false)")
 

@@ -42,8 +42,11 @@ def _optimistic_update(db, model, record_id: uuid.UUID, expected_version: int, *
     return result.rowcount > 0
 
 
-def _sign_webhook_payload(payload: dict, signing_secret: str | None = None) -> str:
+def _sign_webhook_payload(payload: dict, timestamp: str, signing_secret: str | None = None) -> str:
     """Create an HMAC-SHA256 signature for a webhook payload.
+
+    The timestamp is included in the signed message to prevent replay attacks.
+    Verifiers should reject signatures with timestamps older than a tolerance window.
 
     Uses the per-endpoint signing secret when available, falling back to
     WEBHOOK_SIGNING_KEY. Never falls back to SECRET_KEY to avoid key reuse.
@@ -54,7 +57,9 @@ def _sign_webhook_payload(payload: dict, signing_secret: str | None = None) -> s
             "No webhook signing key available. Set WEBHOOK_SIGNING_KEY or provide a per-endpoint secret."
         )
     body = json.dumps(payload, sort_keys=True, default=str)
-    return hmac.new(signing_key.encode(), body.encode(), hashlib.sha256).hexdigest()
+    # Include timestamp in HMAC input so replayed payloads with forged timestamps fail verification
+    message = f"{timestamp}.{body}"
+    return hmac.new(signing_key.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
 # ── Tasks ────────────────────────────────────────────────────────────────────
@@ -239,9 +244,9 @@ def _record_webhook_failure(url: str, payload: dict, error: str, attempts: int, 
         logger.error("webhook_failure_record_failed", url=url, exc_info=True)
 
 
-@celery.task(name="app.workers.deliver_webhook", bind=True, max_retries=5)
+@celery.task(name="app.workers.deliver_webhook", bind=True, max_retries=5, soft_time_limit=30, time_limit=60)
 def deliver_webhook(
-    self, url: str, payload: dict, signing_secret: str | None = None, endpoint_id: str | None = None
+    self, url: str, payload: dict, endpoint_id: str | None = None
 ) -> dict:
     """Deliver a webhook with HMAC-SHA256 signature, circuit breaker, and exponential backoff."""
     import httpx
@@ -255,6 +260,23 @@ def deliver_webhook(
         _record_webhook_failure(url, payload, f"SSRF blocked: {ssrf_error}", 1, endpoint_id)
         return {"status": "blocked", "url": url, "reason": ssrf_error}
 
+    # Resolve signing secret at delivery time from the endpoint record,
+    # instead of receiving it as a Celery argument (which would store the
+    # decrypted secret in plaintext on the Redis broker queue).
+    signing_secret = None
+    if endpoint_id:
+        try:
+            from app.db.models import WebhookEndpoint
+
+            with _SyncSession() as db:
+                ep = db.execute(
+                    select(WebhookEndpoint).where(WebhookEndpoint.id == uuid.UUID(endpoint_id))
+                ).scalar_one_or_none()
+                if ep:
+                    signing_secret = ep.get_secret()
+        except Exception:
+            logger.warning("webhook_secret_lookup_failed", endpoint_id=endpoint_id)
+
     host_key = CircuitBreaker.host_key(url)
 
     # Check circuit breaker before attempting delivery
@@ -264,8 +286,8 @@ def deliver_webhook(
             _record_webhook_failure(url, payload, "Circuit breaker open", self.request.retries + 1, endpoint_id)
         return {"status": "circuit_open", "url": url}
 
-    signature = _sign_webhook_payload(payload, signing_secret=signing_secret)
     timestamp = str(int(time.time()))
+    signature = _sign_webhook_payload(payload, timestamp, signing_secret=signing_secret)
 
     headers = {
         "Content-Type": "application/json",
@@ -276,7 +298,21 @@ def deliver_webhook(
     try:
         with httpx.Client(timeout=10) as client:
             response = client.post(url, json=payload, headers=headers)
-            response.raise_for_status()
+            # Only retry on 5xx server errors and network errors, not 4xx client errors.
+            # 4xx indicates a permanent problem (bad request, unauthorized, etc.)
+            if response.status_code >= 500:
+                response.raise_for_status()
+            elif response.status_code >= 400:
+                logger.warning(
+                    "webhook_client_error", url=url, status=response.status_code,
+                    body=response.text[:200],
+                )
+                _record_webhook_failure(
+                    url, payload, f"Client error {response.status_code}",
+                    self.request.retries + 1, endpoint_id,
+                )
+                WEBHOOK_DELIVERIES_TOTAL.labels(status="client_error").inc()
+                return {"status": "client_error", "url": url, "code": response.status_code}
         _webhook_breaker.record_success(host_key)
         WEBHOOK_DELIVERIES_TOTAL.labels(status="delivered").inc()
         logger.info("webhook_delivered", url=url, status=response.status_code)

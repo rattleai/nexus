@@ -61,10 +61,12 @@ class IdempotencyGuard:
                 detail="X-Idempotency-Key must be at most 255 characters",
             )
 
-        # Scope to tenant if available
+        # Scope to tenant + method + path to prevent key collisions across
+        # different endpoints that both use IdempotencyGuard.
         tenant = getattr(request.state, "tenant", None)
         scope = str(tenant.id) if tenant else "global"
-        redis_key = f"{_KEY_PREFIX}{scope}:{idem_key}"
+        path = request.url.path.rstrip("/").lower()
+        redis_key = f"{_KEY_PREFIX}{scope}:{request.method}:{path}:{idem_key}"
 
         try:
             cached = await redis_pool.get(redis_key)
