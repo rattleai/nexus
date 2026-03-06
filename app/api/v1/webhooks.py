@@ -53,7 +53,7 @@ class WebhookEndpointCreate(BaseModel):
 class WebhookEndpointUpdate(BaseModel):
     url: HttpUrl | None = None
     description: str | None = Field(default=None, max_length=255)
-    events: list[str] | None = Field(default=None, max_length=20)
+    events: list[str] | None = Field(default=None, min_length=1, max_length=20)
     active: bool | None = None
 
 
@@ -319,6 +319,8 @@ async def test_webhook_endpoint(
     endpoint = result.scalar_one_or_none()
     if not endpoint:
         raise HTTPException(status_code=404, detail="Webhook endpoint not found")
+    if not endpoint.active:
+        raise HTTPException(status_code=400, detail="Webhook endpoint is inactive")
 
     # Dispatch test webhook via Celery
     try:

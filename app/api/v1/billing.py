@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import RequireRole, RequireScopes, get_current_tenant, get_current_user_from_token, get_db
+from app.api.rate_limit import RateLimiter
 from app.config import settings
 from app.core.audit import AuditAction, emit_audit_event
 from app.db.models import Plan, Subscription, Tenant, User
@@ -44,6 +45,21 @@ class SubscriptionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+def _validate_return_url(v: str) -> str:
+    """Validate return_url is on the application domain.
+
+    Uses urlparse to compare hostnames explicitly, preventing bypasses like
+    https://app.example.com.evil.com that would pass a naive startswith check.
+    """
+    from urllib.parse import urlparse
+
+    parsed = urlparse(v)
+    expected = urlparse(settings.APP_BASE_URL)
+    if parsed.scheme != expected.scheme or parsed.hostname != expected.hostname:
+        raise ValueError("return_url must be on the application domain")
+    return v
+
+
 class CreateCheckoutRequest(BaseModel):
     plan_id: uuid.UUID
     return_url: str
@@ -51,9 +67,7 @@ class CreateCheckoutRequest(BaseModel):
     @field_validator("return_url")
     @classmethod
     def validate_return_url(cls, v: str) -> str:
-        if not v.startswith(settings.APP_BASE_URL):
-            raise ValueError("return_url must be on the application domain")
-        return v
+        return _validate_return_url(v)
 
 
 class BillingPortalRequest(BaseModel):
@@ -62,9 +76,7 @@ class BillingPortalRequest(BaseModel):
     @field_validator("return_url")
     @classmethod
     def validate_return_url(cls, v: str) -> str:
-        if not v.startswith(settings.APP_BASE_URL):
-            raise ValueError("return_url must be on the application domain")
-        return v
+        return _validate_return_url(v)
 
 
 class CheckoutResponse(BaseModel):
@@ -224,7 +236,10 @@ async def create_billing_portal(
 # ── Stripe Webhook ───────────────────────────────────────
 
 
-@router.post("/webhooks/stripe")
+_webhook_rate_limit = RateLimiter(max_requests=100, window=60, key_prefix="rl:stripe-wh")
+
+
+@router.post("/webhooks/stripe", dependencies=[Depends(_webhook_rate_limit)])
 async def stripe_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -253,10 +268,11 @@ async def stripe_webhook(
     try:
         await handle_webhook_event(event["id"], event["type"], event["data"], db)
     except Exception:
-        # Return 200 to prevent Stripe from retrying permanently on unrecoverable errors.
-        # The error is logged for investigation.
+        # Return 500 so Stripe retries the webhook for transient failures (DB down, etc.).
+        # Stripe has exponential backoff with a 3-day retry window, and our idempotency
+        # guard (SET NX) ensures successful re-processing is safe.
         logger.error("stripe_webhook_handler_failed", event_type=event["type"], exc_info=True)
-        return {"status": "error", "message": "Event processing failed"}
+        raise HTTPException(status_code=500, detail="Webhook processing failed") from None
 
     logger.info("stripe_webhook_processed", event_type=event["type"])
     return {"status": "ok"}

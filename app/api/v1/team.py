@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireRole, get_current_user_from_token, get_db
+from app.config import settings
 from app.core.audit import AuditAction, emit_audit_event
 from app.core.events import InvitationSent, emit
 from app.db.models import Invitation, InvitationStatus, TenantMembership, User, UserRole
@@ -290,12 +291,13 @@ async def create_invitation(
     await db.commit()
     await db.refresh(invitation)
 
+    accept_url = f"{settings.APP_BASE_URL}/accept-invitation?token={raw_token}"
     await emit(InvitationSent(
         tenant_id=str(user.tenant_id),
         email=body.email,
         role=body.role,
         invited_by=str(user.id),
-        token=raw_token,
+        accept_url=accept_url,
     ))
     logger.info(
         "invitation_created",

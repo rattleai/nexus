@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user_from_token, get_db
 from app.api.rate_limit import RateLimiter
-from app.api.schemas_auth import AuthResponse, TokenResponse, UserLogin, UserRegister, UserResponse
+from app.api.schemas_auth import AuthResponse, RegisterResponse, TokenResponse, UserLogin, UserRegister, UserResponse
 from app.config import settings
 from app.core.email import EmailTemplate, send_email
 from app.core.events import InvitationAccepted, UserRegistered, emit
@@ -46,7 +46,7 @@ router = APIRouter(prefix="/auth")
 logger = structlog.stdlib.get_logger()
 
 _REFRESH_COOKIE = "refresh_token"
-_REFRESH_COOKIE_PATH = "/api/v1/auth/refresh"
+_REFRESH_COOKIE_PATH = "/api/v1/auth"
 _MAX_REFRESH_TOKENS_PER_USER = 10
 _MAX_LOGIN_ATTEMPTS = 5
 _LOGIN_LOCKOUT_SECONDS = 900  # 15 minutes
@@ -109,8 +109,8 @@ def _clear_refresh_cookie(response: Response) -> None:
     response.delete_cookie(key=_REFRESH_COOKIE, path=_REFRESH_COOKIE_PATH)
 
 
-@router.post("/register", response_model=AuthResponse, status_code=201, dependencies=[Depends(_auth_rate_limit)])
-async def register(body: UserRegister, response: Response, db: AsyncSession = Depends(get_db)):
+@router.post("/register", response_model=RegisterResponse, status_code=201, dependencies=[Depends(_auth_rate_limit)])
+async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
     # Check for existing user
     existing = await db.execute(
         select(User).where(User.email == body.email, User.deleted_at.is_(None))
@@ -144,15 +144,6 @@ async def register(body: UserRegister, response: Response, db: AsyncSession = De
     membership = TenantMembership(tenant_id=tenant.id, user_id=user.id, role=role)
     db.add(membership)
 
-    # Create refresh token
-    raw_refresh, refresh_hash = create_refresh_token()
-    rt = RefreshToken(
-        user_id=user.id,
-        token_hash=refresh_hash,
-        expires_at=datetime.now(UTC) + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS),
-    )
-    db.add(rt)
-
     # Create email verification token in same transaction
     raw_verify_token, verify_hash = generate_secure_token()
     verification = EmailVerificationToken(
@@ -170,9 +161,9 @@ async def register(body: UserRegister, response: Response, db: AsyncSession = De
         raise HTTPException(status_code=409, detail="Email or tenant slug already taken") from None
     await db.refresh(user)
 
-    # Create access token
-    access_token = create_access_token({"sub": str(user.id), "tenant_id": str(tenant.id)})
-    _set_refresh_cookie(response, raw_refresh)
+    # Do NOT issue access/refresh tokens here — the user must verify their
+    # email first, then log in.  Issuing tokens pre-verification allows
+    # unauthenticated API access with an unverified email address.
 
     # Send verification email AFTER commit — never hold DB locks during
     # external I/O (email service could hang and deadlock other requests).
@@ -186,10 +177,8 @@ async def register(body: UserRegister, response: Response, db: AsyncSession = De
 
     logger.info("user_registered", user_id=str(user.id), tenant_id=str(tenant.id))
 
-    expires_in = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
-    return AuthResponse(
-        access_token=access_token,
-        expires_in=expires_in,
+    return RegisterResponse(
+        message="Registration successful. Please check your email to verify your account.",
         user=UserResponse(
             id=user.id,
             email=user.email,
@@ -600,7 +589,18 @@ async def accept_invitation(
     user = user_result.scalar_one_or_none()
 
     if user:
-        # Existing user — check not already a member
+        # Existing user — require password to prove account ownership.
+        # Without this, anyone who intercepts an invitation token could add
+        # an arbitrary existing user to their tenant.
+        if not body.password:
+            raise HTTPException(
+                status_code=422,
+                detail="Password is required to verify your identity when joining a new tenant",
+            )
+        if not user.password_hash or not verify_password(body.password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid password")
+
+        # Check not already a member
         existing_member = await db.execute(
             select(TenantMembership).where(
                 TenantMembership.user_id == user.id,

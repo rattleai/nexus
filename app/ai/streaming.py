@@ -99,7 +99,9 @@ async def sse_stream_response(
                     yield f"data: {json.dumps(chunk_data)}\n\n"
 
         except Exception as exc:
-            error_data = {"type": "error", "error": str(exc)}
+            # Never send raw exception details to clients — they may contain
+            # internal URLs, API key fragments, or stack traces from providers.
+            error_data = {"type": "error", "error": "An error occurred during streaming. Please retry."}
             yield f"data: {json.dumps(error_data)}\n\n"
             logger.error("sse_stream_error", model=model, request_id=request_id, error=str(exc))
         finally:

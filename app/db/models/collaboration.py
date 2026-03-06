@@ -69,12 +69,15 @@ class WebhookEndpoint(TimestampMixin, Base):
         from app.core.encryption import encrypt
         self.secret = encrypt(plaintext)
 
-    def get_secret(self) -> str:
+    def get_secret(self) -> str | None:
         from app.core.encryption import decrypt
         try:
             return decrypt(self.secret)
         except ValueError:
-            return self.secret
+            # Decryption failed — return None rather than leaking ciphertext.
+            # Callers (e.g. deliver_webhook) already handle None by falling
+            # back to the global WEBHOOK_SIGNING_KEY.
+            return None
 
 
 class WebhookDelivery(Base):

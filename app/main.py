@@ -82,10 +82,14 @@ def create_app() -> FastAPI:
     # Exception handlers (fail-closed)
     register_exception_handlers(app)
 
-    # Middleware (outermost first)
+    # Middleware — Starlette executes in reverse order of registration:
+    # last added = outermost. We want:
+    #   CORS (outermost) → SecurityHeaders → RequestSizeLimit → GZip (innermost)
+    # So size limit checks Content-Length BEFORE gzip decompresses the body,
+    # preventing gzip bombs from exhausting memory.
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(RequestSizeLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",")],

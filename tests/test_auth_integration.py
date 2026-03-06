@@ -126,8 +126,9 @@ async def test_register_success(auth_client):
             )
         assert response.status_code == 201
         data = response.json()
-        assert "access_token" in data
-        assert data["token_type"] == "bearer"
+        # Registration no longer issues tokens — user must verify email first
+        assert "access_token" not in data
+        assert "message" in data
         assert "user" in data
     finally:
         app.dependency_overrides.clear()

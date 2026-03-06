@@ -172,7 +172,7 @@ def validate_settings() -> None:
 
     if not settings.ADMIN_KEY:
         if settings.DEBUG:
-            warnings.warn("ADMIN_KEY is not set — using SECRET_KEY as fallback (not safe for production)", stacklevel=2)
+            warnings.warn("ADMIN_KEY is not set — admin endpoints will be inaccessible", stacklevel=2)
         else:
             raise RuntimeError("ADMIN_KEY must be set in production (DEBUG=false)")
 

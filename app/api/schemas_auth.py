@@ -79,5 +79,12 @@ class AuthResponse(BaseModel):
     user: UserResponse
 
 
+class RegisterResponse(BaseModel):
+    """Registration response — no tokens until email is verified."""
+
+    message: str
+    user: UserResponse
+
+
 class OAuthAuthorizeResponse(BaseModel):
     url: str

@@ -140,7 +140,7 @@ class InvitationSent(DomainEvent):
     email: str = ""
     role: str = ""
     invited_by: str = ""
-    token: str = ""  # raw token for constructing the accept URL
+    accept_url: str = ""  # pre-constructed URL — never store raw tokens in events
 
 
 @dataclass

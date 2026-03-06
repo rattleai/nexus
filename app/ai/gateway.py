@@ -152,6 +152,25 @@ class AIGateway:
             candidate_provider = candidate_info.provider.value
             breaker_key = candidate_provider
 
+            # Resolve API key per-candidate: fallback models may use different
+            # providers (e.g. GPT-4o → Claude → Gemini), each needing its own key.
+            candidate_api_key = api_key
+            candidate_key_source = key_source
+            if i > 0 and candidate_info.provider != model_info.provider and db is not None:
+                try:
+                    from app.ai.key_resolver import resolve_api_key as _resolve_key
+
+                    candidate_api_key, candidate_key_source = await _resolve_key(
+                        tenant_id, candidate_info.provider, db
+                    )
+                except Exception:
+                    logger.warning(
+                        "ai_fallback_key_resolve_failed",
+                        provider=candidate_provider,
+                        model=candidate_model,
+                    )
+                    continue
+
             # Check circuit breaker
             if ai_breaker.is_open(breaker_key):
                 logger.warning(
@@ -172,8 +191,8 @@ class AIGateway:
                 result = await asyncio.wait_for(
                     self._call_litellm(
                         model_info=candidate_info,
-                        api_key=api_key,
-                        key_source=key_source,
+                        api_key=candidate_api_key,
+                        key_source=candidate_key_source,
                         messages=messages,
                         max_tokens=max_tokens,
                         temperature=temperature,
@@ -230,11 +249,11 @@ class AIGateway:
                     tenant_id=str(tenant_id),
                     model=model,
                     provider=candidate_provider,
-                    error=f"Authentication failed: {exc}",
+                    error="Authentication failed",
                     request_id=request_id,
                 ))
                 raise AIAuthenticationError(
-                    f"Authentication failed for provider '{candidate_provider}': {exc}",
+                    f"Authentication failed for provider '{candidate_provider}'. Check your API key.",
                     provider=candidate_provider,
                     model=candidate_model,
                 ) from exc
@@ -364,11 +383,11 @@ class AIGateway:
                 tenant_id=str(tenant_id),
                 model=model,
                 provider=provider,
-                error=f"Authentication failed: {exc}",
+                error="Authentication failed",
                 request_id=request_id,
             ))
             raise AIAuthenticationError(
-                f"Authentication failed for provider '{provider}': {exc}",
+                f"Authentication failed for provider '{provider}'. Check your API key.",
                 provider=provider,
                 model=model,
             ) from exc
