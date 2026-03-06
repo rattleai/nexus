@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # Application
     SECRET_KEY: str = "change-me-in-production"
+    ENCRYPTION_KEY: str = ""  # Dedicated key for data-at-rest encryption (HKDF-derived)
     WEBHOOK_SIGNING_KEY: str = ""  # Dedicated key for webhook HMAC signatures
     ADMIN_KEY: str = ""  # Separate admin key — do NOT reuse SECRET_KEY
     DEBUG: bool = False
@@ -190,6 +191,20 @@ def validate_settings() -> None:
             raise RuntimeError(
                 "WEBHOOK_SIGNING_KEY must be set in production (DEBUG=false). "
                 "Never reuse SECRET_KEY for webhook signatures."
+            )
+
+    if not settings.ENCRYPTION_KEY:
+        if settings.DEBUG:
+            warnings.warn(
+                "ENCRYPTION_KEY is not set — falling back to SECRET_KEY for encryption. "
+                "Set a dedicated ENCRYPTION_KEY in production so that JWT key rotation "
+                "does not break encrypted data at rest.",
+                stacklevel=2,
+            )
+        else:
+            raise RuntimeError(
+                "ENCRYPTION_KEY must be set in production (DEBUG=false). "
+                "Use a unique high-entropy value separate from SECRET_KEY."
             )
 
     if not settings.storage_configured:

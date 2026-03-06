@@ -49,13 +49,17 @@ class Subscription(TimestampMixin, Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, unique=True)
     plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("plans.id"), nullable=False)
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
-    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     status: Mapped[SubscriptionStatus] = mapped_column(Enum(SubscriptionStatus), default=SubscriptionStatus.ACTIVE)
     current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancel_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     plan: Mapped["Plan"] = relationship()
+
+    __table_args__ = (
+        Index("ix_subscriptions_customer_id", "stripe_customer_id"),
+    )
 
 
 class UsageRecord(Base):
