@@ -3,6 +3,7 @@
 import * as React from "react"
 import { ThumbsUp, ThumbsDown, Copy, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard"
 import {
   Dialog,
   DialogContent,
@@ -36,7 +37,7 @@ export function MessageFeedback({
   >(null)
   const [showDialog, setShowDialog] = React.useState(false)
   const [comment, setComment] = React.useState("")
-  const [copied, setCopied] = React.useState(false)
+  const { copied, copy } = useCopyToClipboard()
 
   const handlePositive = () => {
     setFeedbackGiven("positive")
@@ -54,15 +55,8 @@ export function MessageFeedback({
     setComment("")
   }
 
-  const handleCopy = async () => {
-    if (!content) return
-    try {
-      await navigator.clipboard.writeText(content)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // Clipboard API not available
-    }
+  const handleCopy = () => {
+    if (content) copy(content)
   }
 
   return (

@@ -13,7 +13,6 @@ interface DiffViewerProps {
   newValue: string
   oldTitle?: string
   newTitle?: string
-  language?: string
   mode?: "split" | "unified"
   className?: string
 }

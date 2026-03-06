@@ -66,7 +66,8 @@ export function ImageLightbox({
 
   if (!open || images.length === 0) return null
 
-  const current = images[currentIndex]
+  const clampedIndex = Math.min(currentIndex, images.length - 1)
+  const current = images[clampedIndex]
 
   return createPortal(
     <div
