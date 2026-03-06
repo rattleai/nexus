@@ -1,10 +1,5 @@
 import { useCallback, useState } from "react"
-
-interface TokenUsage {
-  inputTokens: number
-  outputTokens: number
-  totalTokens: number
-}
+import type { TokenUsage } from "@/types/ai"
 
 interface UseTokenTrackingOptions {
   costPerInputToken?: number

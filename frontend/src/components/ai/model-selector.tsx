@@ -17,15 +17,9 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import { Badge } from "@/components/ui/badge"
+import type { AIModel } from "@/types/ai"
 
-export interface AIModel {
-  id: string
-  name: string
-  provider: string
-  description?: string
-  contextWindow?: number
-  maxOutput?: number
-}
+export type { AIModel }
 
 export interface ModelSelectorProps {
   models: AIModel[]

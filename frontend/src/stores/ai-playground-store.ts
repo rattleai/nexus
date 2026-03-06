@@ -1,17 +1,10 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
+import type { ModelParameters, ParameterPresetName } from "@/types/ai"
 
-// ── Types ────────────────────────────────────────────
-
-export interface ModelParameters {
-  temperature: number
-  topP: number
-  maxTokens: number
-  frequencyPenalty: number
-  presencePenalty: number
-}
-
-export type ParameterPreset = "creative" | "balanced" | "precise"
+// Re-export shared types for backwards compatibility
+export type { ModelParameters }
+export type ParameterPreset = ParameterPresetName
 
 export interface PlaygroundResponse {
   id: string
@@ -30,7 +23,7 @@ export interface PlaygroundResponse {
 
 // ── Presets ───────────────────────────────────────────
 
-const PARAMETER_PRESETS: Record<ParameterPreset, ModelParameters> = {
+const PARAMETER_PRESETS: Record<ParameterPresetName, ModelParameters> = {
   creative: {
     temperature: 1.2,
     topP: 0.95,
@@ -72,7 +65,7 @@ interface AIPlaygroundState {
   toggleComparisonMode: () => void
   addComparisonModel: (model: string) => void
   removeComparisonModel: (model: string) => void
-  setPreset: (preset: ParameterPreset) => void
+  setPreset: (preset: ParameterPresetName) => void
   addResponse: (response: Omit<PlaygroundResponse, "id" | "createdAt">) => void
   clearHistory: () => void
 }

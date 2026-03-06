@@ -7,16 +7,9 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import type { PromptTemplate } from "@/types/ai"
 
-export interface PromptTemplate {
-  id: string
-  name: string
-  description?: string
-  template: string
-  variables: string[]
-  category?: string
-  isFavorite?: boolean
-}
+export type { PromptTemplate }
 
 export interface PromptTemplateLibraryProps {
   templates: PromptTemplate[]

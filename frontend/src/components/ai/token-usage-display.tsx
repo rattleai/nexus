@@ -4,12 +4,9 @@ import { formatCompactNumber } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
+import type { TokenUsage } from "@/types/ai"
 
-export interface TokenUsage {
-  inputTokens: number
-  outputTokens: number
-  totalTokens: number
-}
+export type { TokenUsage }
 
 export interface TokenUsageDisplayProps {
   usage: TokenUsage

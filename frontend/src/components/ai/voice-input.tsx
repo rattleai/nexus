@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { Mic, MicOff, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -40,7 +41,9 @@ export function VoiceInput({
     }
   }
 
-  if (error && onError) onError(error)
+  useEffect(() => {
+    if (error && onError) onError(error)
+  }, [error, onError])
 
   if (!isSupported) {
     return (

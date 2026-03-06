@@ -1,13 +1,5 @@
 import { useCallback, useState } from "react"
-
-interface PromptTemplate {
-  id: string
-  name: string
-  template: string
-  variables: string[]
-  category?: string
-  isFavorite?: boolean
-}
+import type { PromptTemplate } from "@/types/ai"
 
 const STORAGE_KEY = "prompt-templates"
 

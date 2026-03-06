@@ -1,21 +1,16 @@
 "use client"
 
 import * as React from "react"
+import type { AIModel } from "@/types/ai"
 
-export interface Model {
-  id: string
-  name: string
-  provider: string
-  contextWindow?: number
-  description?: string
-}
+export type { AIModel as Model }
 
 interface UseModelSelectionOptions {
   defaultModel?: string
   storageKey?: string
 }
 
-const DEFAULT_MODELS: Model[] = [
+const DEFAULT_MODELS: AIModel[] = [
   {
     id: "gpt-4o",
     name: "GPT-4o",
@@ -71,7 +66,7 @@ export function useModelSelection({
   defaultModel = "gpt-4o",
   storageKey = "cadprice-selected-model",
 }: UseModelSelectionOptions = {}) {
-  const [models] = React.useState<Model[]>(DEFAULT_MODELS)
+  const [models] = React.useState<AIModel[]>(DEFAULT_MODELS)
   const [isLoading] = React.useState(false)
 
   const [selectedModel, setSelectedModel] = React.useState<string>(() => {
@@ -96,7 +91,7 @@ export function useModelSelection({
   )
 
   const groupedModels = React.useMemo(() => {
-    const groups: Record<string, Model[]> = {}
+    const groups: Record<string, AIModel[]> = {}
     for (const model of models) {
       if (!groups[model.provider]) {
         groups[model.provider] = []
