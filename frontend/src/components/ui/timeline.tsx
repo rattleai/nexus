@@ -66,7 +66,10 @@ export function Timeline({ items, className }: TimelineProps) {
                   {item.title}
                 </p>
                 {item.date && (
-                  <time className="shrink-0 text-xs text-muted-foreground">
+                  <time
+                    dateTime={item.date}
+                    className="shrink-0 text-xs text-muted-foreground"
+                  >
                     {item.date}
                   </time>
                 )}
