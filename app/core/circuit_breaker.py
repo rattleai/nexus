@@ -39,28 +39,40 @@ class CircuitBreaker:
         self._last_failure_time: dict[str, float] = {}
         self._lock = threading.Lock()
         self._redis = None
+        self._redis_init_attempted = False
         self._redis_init_lock = threading.Lock()
 
     def _get_redis(self):
-        """Lazy-init a sync Redis client. Returns None if unavailable."""
-        if self._redis is None:
-            with self._redis_init_lock:
-                if self._redis is None:
-                    try:
-                        import redis as sync_redis
+        """Lazy-init a sync Redis client. Returns None if unavailable.
 
-                        self._redis = sync_redis.from_url(
-                            settings.REDIS_URL,
-                            socket_connect_timeout=2,
-                            socket_timeout=2,
-                        )
-                        self._redis.ping()
-                    except Exception:
-                        logger.warning(
-                            "circuit_breaker_redis_unavailable",
-                            breaker=self.name,
-                        )
-                        self._redis = None
+        Uses _redis_init_attempted to avoid retrying on every call when Redis
+        is down, preventing connection storms against an unavailable instance.
+        """
+        if self._redis is not None:
+            return self._redis
+        if self._redis_init_attempted:
+            return None
+        with self._redis_init_lock:
+            if self._redis is not None:
+                return self._redis
+            if self._redis_init_attempted:
+                return None
+            try:
+                import redis as sync_redis
+
+                client = sync_redis.from_url(
+                    settings.REDIS_URL,
+                    socket_connect_timeout=2,
+                    socket_timeout=2,
+                )
+                client.ping()
+                self._redis = client
+            except Exception:
+                logger.warning(
+                    "circuit_breaker_redis_unavailable",
+                    breaker=self.name,
+                )
+            self._redis_init_attempted = True
         return self._redis
 
     def _redis_failures_key(self, key: str) -> str:

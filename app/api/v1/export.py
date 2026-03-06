@@ -8,8 +8,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireRole, get_current_user_from_token, get_db
+from app.api.rate_limit import RateLimiter
 from app.core.audit import AuditAction, emit_audit_event
 from app.db.models import User
+
+# Exports are expensive operations — limit to 3 per hour per IP
+_export_rate_limit = RateLimiter(max_requests=3, window=3600, key_prefix="rl:export")
 
 router = APIRouter(prefix="/export")
 logger = structlog.stdlib.get_logger()
@@ -28,7 +32,7 @@ class ExportResponse(BaseModel):
 @router.post(
     "/tenant",
     response_model=ExportResponse,
-    dependencies=[Depends(RequireRole("owner", "admin"))],
+    dependencies=[Depends(RequireRole("owner", "admin")), Depends(_export_rate_limit)],
 )
 async def request_tenant_export(
     body: ExportRequest,
@@ -74,7 +78,7 @@ async def request_tenant_export(
     )
 
 
-@router.post("/account", response_model=ExportResponse)
+@router.post("/account", response_model=ExportResponse, dependencies=[Depends(_export_rate_limit)])
 async def request_account_export(
     body: ExportRequest,
     user: User = Depends(get_current_user_from_token),
@@ -108,7 +112,7 @@ async def request_account_export(
     )
 
 
-@router.delete("/account", status_code=202)
+@router.delete("/account", status_code=202, dependencies=[Depends(_export_rate_limit)])
 async def request_account_deletion(
     user: User = Depends(get_current_user_from_token),
     db: AsyncSession = Depends(get_db),

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import RequireRole, RequireScopes, get_current_tenant, get_current_user_from_token, get_db
+from app.api.rate_limit import RateLimiter
 from app.config import settings
 from app.core.audit import AuditAction, emit_audit_event
 from app.db.models import Plan, Subscription, Tenant, User
@@ -224,7 +225,10 @@ async def create_billing_portal(
 # ── Stripe Webhook ───────────────────────────────────────
 
 
-@router.post("/webhooks/stripe")
+_webhook_rate_limit = RateLimiter(max_requests=100, window=60, key_prefix="rl:stripe-wh")
+
+
+@router.post("/webhooks/stripe", dependencies=[Depends(_webhook_rate_limit)])
 async def stripe_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),

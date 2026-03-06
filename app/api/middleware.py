@@ -127,6 +127,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Internal server error", "code": "INTERNAL_ERROR"},
             )
 
+        # Check for idempotency-replayed response (set by IdempotencyGuard dependency).
+        # When a cached idempotent response exists, return it instead of the handler's response.
+        idempotency_response = getattr(request.state, "idempotency_response", None)
+        if idempotency_response is not None:
+            response = idempotency_response
+
         duration_ms = round((time.perf_counter() - start) * 1000, 2)
 
         # Log every request with timing — warn on server errors

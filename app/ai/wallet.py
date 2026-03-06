@@ -126,7 +126,12 @@ class TokenWalletService:
             raise
 
         if new_balance < 0:
-            current = await self.get_balance(tenant_id)
+            # The Lua script did NOT deduct (balance unchanged), so no rollback needed.
+            # Use the value from Redis directly rather than re-querying (avoids TOCTOU).
+            try:
+                current = int(await redis_pool.get(key) or 0)
+            except Exception:
+                current = 0
             raise InsufficientBalanceError(tenant_id, amount, current)
 
         # Step 2: Record in DB (transaction + wallet update)
@@ -187,7 +192,7 @@ class TokenWalletService:
         current_balance = await self.get_balance(tenant_id)
         expected_new = current_balance + amount
 
-        # DB first
+        # DB first: record transaction AND update wallet balance
         tx = WalletTransaction(
             tenant_id=tenant_id,
             type=WalletTransactionType.REFUND,
@@ -197,6 +202,14 @@ class TokenWalletService:
             reference_id=reference_id,
         )
         db.add(tx)
+
+        # Update the wallet record in DB to keep it consistent
+        result = await db.execute(
+            select(TokenWallet).where(TokenWallet.tenant_id == tenant_id)
+        )
+        wallet = result.scalar_one_or_none()
+        if wallet:
+            wallet.balance_tokens = expected_new
 
         try:
             await db.commit()
@@ -234,6 +247,25 @@ class TokenWalletService:
         """
         if amount_tokens <= 0:
             raise ValueError("Topup amount must be positive")
+
+        # Idempotency: reject duplicate topups with the same reference_id
+        # to prevent double-crediting from Stripe webhook retries.
+        if reference_id:
+            existing_tx = await db.execute(
+                select(WalletTransaction).where(
+                    WalletTransaction.tenant_id == tenant_id,
+                    WalletTransaction.reference_id == reference_id,
+                    WalletTransaction.type == WalletTransactionType.TOPUP,
+                )
+            )
+            if existing_tx.scalar_one_or_none():
+                logger.info(
+                    "wallet_topup_duplicate",
+                    tenant_id=str(tenant_id),
+                    reference_id=reference_id,
+                )
+                wallet = await self._get_or_create_wallet(tenant_id, db)
+                return wallet.balance_tokens
 
         # DB first: update wallet record atomically
         wallet = await self._get_or_create_wallet(tenant_id, db)

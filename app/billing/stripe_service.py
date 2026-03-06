@@ -33,34 +33,41 @@ def _get_stripe():
     return stripe
 
 
-async def _is_event_processed(event_id: str) -> bool:
-    """Check if a Stripe webhook event has already been processed (idempotency)."""
+async def _try_claim_event(event_id: str) -> bool:
+    """Atomically claim a Stripe webhook event for processing (idempotency).
+
+    Uses SET NX (set-if-not-exists) to prevent TOCTOU races where two
+    concurrent webhook deliveries both pass a GET check before either
+    marks the event as processed.
+
+    Returns True if this caller claimed the event (should process it).
+    Returns False if the event was already claimed (duplicate — skip it).
+    """
     try:
         key = f"stripe_event:{event_id}"
-        result = await redis_pool.get(key)
-        return result is not None
+        # SET NX returns True only if the key was newly set
+        claimed = await redis_pool.set(key, "1", nx=True, ex=_WEBHOOK_IDEMPOTENCY_TTL)
+        return bool(claimed)
     except Exception:
-        return False
-
-
-async def _mark_event_processed(event_id: str) -> None:
-    """Mark a Stripe webhook event as processed."""
-    try:
-        key = f"stripe_event:{event_id}"
-        await redis_pool.setex(key, _WEBHOOK_IDEMPOTENCY_TTL, "1")
-    except Exception:
-        logger.warning("stripe_idempotency_mark_failed", event_id=event_id)
+        logger.warning("stripe_idempotency_claim_failed", event_id=event_id)
+        # On Redis failure, allow processing (fail open) — the handler
+        # logic is itself idempotent via DB constraints
+        return True
 
 
 async def create_customer(tenant: Tenant, email: str, db: AsyncSession) -> str:
     """Create a Stripe customer for a tenant."""
     stripe = _get_stripe()
 
-    customer = stripe.Customer.create(
-        email=email,
-        name=tenant.name,
-        metadata={"tenant_id": str(tenant.id), "tenant_slug": tenant.slug},
-    )
+    try:
+        customer = stripe.Customer.create(
+            email=email,
+            name=tenant.name,
+            metadata={"tenant_id": str(tenant.id), "tenant_slug": tenant.slug},
+        )
+    except stripe.error.StripeError as exc:
+        logger.error("stripe_customer_create_failed", tenant_id=str(tenant.id), error=str(exc))
+        raise ValueError(f"Failed to create billing customer: {exc}") from exc
 
     logger.info("stripe_customer_created", tenant_id=str(tenant.id), customer_id=customer.id)
     return customer.id
@@ -155,15 +162,17 @@ async def create_subscription(
         current_period_end=datetime.fromtimestamp(stripe_sub.current_period_end, tz=UTC),
     )
     db.add(subscription)
-    await db.commit()
-    await db.refresh(subscription)
 
-    # Update tenant plan
+    # Update tenant plan in the same transaction to maintain atomicity.
+    # Previously used two separate commits, risking an inconsistent state
+    # where the subscription exists but the tenant plan isn't updated.
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
     tenant = tenant_result.scalar_one_or_none()
     if tenant:
         tenant.plan = plan.name
-        await db.commit()
+
+    await db.commit()
+    await db.refresh(subscription)
 
     logger.info("subscription_created", tenant_id=str(tenant_id), subscription_id=stripe_sub.id)
     return subscription
@@ -206,8 +215,8 @@ async def handle_webhook_event(
     event_id: str, event_type: str, event_data: dict, db: AsyncSession
 ) -> None:
     """Process a Stripe webhook event with idempotency protection."""
-    # Idempotency check
-    if await _is_event_processed(event_id):
+    # Atomic claim: SET NX prevents TOCTOU race on concurrent deliveries
+    if not await _try_claim_event(event_id):
         logger.info("stripe_webhook_duplicate", event_id=event_id, event_type=event_type)
         return
 
@@ -224,8 +233,6 @@ async def handle_webhook_event(
         await handler(event_data, db)
     else:
         logger.debug("stripe_webhook_unhandled", event_type=event_type)
-
-    await _mark_event_processed(event_id)
 
 
 def _validate_webhook_tenant(data: dict, subscription: Subscription) -> bool:
@@ -389,8 +396,13 @@ async def _handle_checkout_completed(data: dict, db: AsyncSession) -> None:
         logger.warning("checkout_incomplete_metadata", session_id=session["id"])
         return
 
-    tenant_id = uuid.UUID(tenant_id_str)
-    plan_id = uuid.UUID(plan_id_str)
+    try:
+        tenant_id = uuid.UUID(tenant_id_str)
+        plan_id = uuid.UUID(plan_id_str)
+    except (ValueError, AttributeError):
+        logger.error("checkout_invalid_uuid_metadata", session_id=session["id"],
+                      tenant_id=tenant_id_str, plan_id=plan_id_str)
+        return
 
     # Check if subscription already exists
     existing = await db.execute(
@@ -400,7 +412,11 @@ async def _handle_checkout_completed(data: dict, db: AsyncSession) -> None:
 
     # Load Stripe subscription for period info
     stripe = _get_stripe()
-    stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
+    try:
+        stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
+    except Exception as exc:
+        logger.error("checkout_stripe_retrieve_failed", stripe_sub_id=stripe_sub_id, error=str(exc))
+        raise
 
     if subscription:
         # Update existing

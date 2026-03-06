@@ -151,7 +151,9 @@ async def create_completion(
             raise HTTPException(status_code=500, detail=str(exc))
 
         # Build a callback that deducts tokens and logs usage after streaming completes.
-        # Captures tenant/model/db context via closure.
+        # IMPORTANT: The request-scoped DB session (`db`) may be closed by the time
+        # this callback runs (streaming responses execute outside FastAPI's dependency
+        # scope). We create a fresh session here to avoid "Session is closed" errors.
         async def _on_stream_complete(
             *,
             prompt_tokens: int,
@@ -160,52 +162,55 @@ async def create_completion(
             billed_tokens: int,
             latency_ms: int,
         ) -> None:
-            # Deduct from wallet
-            try:
-                new_balance = await wallet_service.deduct_tokens(
-                    tenant.id,
-                    billed_tokens,
-                    description=f"AI streaming: {body.model}",
-                    reference_id=request_id,
-                    db=db,
-                )
-                AI_WALLET_BALANCE.labels(tenant_id=str(tenant.id)).set(new_balance)
+            from app.db.session import async_session_factory
 
-                if new_balance < settings.AI_WALLET_LOW_BALANCE_THRESHOLD:
-                    await emit(WalletBalanceLow(
+            async with async_session_factory() as stream_db:
+                # Deduct from wallet
+                try:
+                    new_balance = await wallet_service.deduct_tokens(
+                        tenant.id,
+                        billed_tokens,
+                        description=f"AI streaming: {body.model}",
+                        reference_id=request_id,
+                        db=stream_db,
+                    )
+                    AI_WALLET_BALANCE.labels(tenant_id=str(tenant.id)).set(new_balance)
+
+                    if new_balance < settings.AI_WALLET_LOW_BALANCE_THRESHOLD:
+                        await emit(WalletBalanceLow(
+                            tenant_id=str(tenant.id),
+                            balance_tokens=new_balance,
+                            threshold=settings.AI_WALLET_LOW_BALANCE_THRESHOLD,
+                        ))
+                except InsufficientBalanceError:
+                    logger.warning(
+                        "streaming_wallet_deduction_insufficient",
                         tenant_id=str(tenant.id),
-                        balance_tokens=new_balance,
-                        threshold=settings.AI_WALLET_LOW_BALANCE_THRESHOLD,
-                    ))
-            except InsufficientBalanceError:
-                logger.warning(
-                    "streaming_wallet_deduction_insufficient",
-                    tenant_id=str(tenant.id),
+                        billed_tokens=billed_tokens,
+                        request_id=request_id,
+                    )
+
+                # Record usage in quotas
+                await increment_usage(tenant.id, QuotaMetric.AI_REQUESTS_DAY)
+                await increment_usage(tenant.id, QuotaMetric.AI_TOKENS_MONTH, total_tokens)
+
+                # Log usage to DB
+                usage_log = AIUsageLog(
+                    tenant_id=tenant.id,
+                    provider=model_info.provider.value,
+                    model=body.model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    cost_usd=0.0,  # Exact cost not available for streaming
                     billed_tokens=billed_tokens,
+                    latency_ms=latency_ms,
+                    status="success",
+                    key_source=key_source,
                     request_id=request_id,
                 )
-
-            # Record usage in quotas
-            await increment_usage(tenant.id, QuotaMetric.AI_REQUESTS_DAY)
-            await increment_usage(tenant.id, QuotaMetric.AI_TOKENS_MONTH, total_tokens)
-
-            # Log usage to DB
-            usage_log = AIUsageLog(
-                tenant_id=tenant.id,
-                provider=model_info.provider.value,
-                model=body.model,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
-                cost_usd=0.0,  # Exact cost not available for streaming
-                billed_tokens=billed_tokens,
-                latency_ms=latency_ms,
-                status="success",
-                key_source=key_source,
-                request_id=request_id,
-            )
-            db.add(usage_log)
-            await db.commit()
+                stream_db.add(usage_log)
+                await stream_db.commit()
 
         return await sse_stream_response(
             litellm_stream,
