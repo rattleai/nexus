@@ -129,10 +129,27 @@ async def request_account_deletion(
     # Soft delete — actual data purge happens via periodic task
     from datetime import UTC, datetime
 
+    from sqlalchemy import delete, update
+
+    from app.db.models import OAuthAccount, RefreshToken
+
     user.is_active = False
     user.email = f"deleted_{user.id}@anonymized.local"
     user.display_name = "Deleted User"
     user.deleted_at = datetime.now(UTC)
+    user.password_hash = None
+
+    # Revoke all refresh tokens so existing sessions can't be used
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False))
+        .values(revoked=True)
+    )
+    # Delete OAuth accounts (contain encrypted tokens)
+    await db.execute(
+        delete(OAuthAccount).where(OAuthAccount.user_id == user.id)
+    )
+
     await db.commit()
 
     logger.info("account_deletion_requested", user_id=str(user.id))

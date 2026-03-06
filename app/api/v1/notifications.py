@@ -83,6 +83,7 @@ async def mark_as_read(
         select(Notification).where(
             Notification.id == notification_id,
             Notification.user_id == user.id,
+            Notification.tenant_id == user.tenant_id,
         )
     )
     notification = result.scalar_one_or_none()

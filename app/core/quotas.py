@@ -78,13 +78,20 @@ def get_plan_limit(plan: str, metric: QuotaMetric) -> int:
     return plan_limits.get(metric, 0)
 
 
-async def get_current_usage(tenant_id: uuid.UUID, metric: QuotaMetric) -> int:
-    """Get the current usage count for a tenant metric from Redis."""
+async def get_current_usage(tenant_id: uuid.UUID, metric: QuotaMetric, *, fail_open: bool = True) -> int:
+    """Get the current usage count for a tenant metric from Redis.
+
+    Args:
+        fail_open: If True (default), returns 0 when Redis is unavailable (read paths).
+                   If False, raises so callers can fail closed (write/enforcement paths).
+    """
     try:
         value = await redis_pool.get(_quota_key(tenant_id, metric))
         return int(value) if value else 0
     except Exception:
         logger.warning("quota_read_error", tenant_id=str(tenant_id), metric=metric.value)
+        if not fail_open:
+            raise
         return 0
 
 
@@ -153,7 +160,13 @@ class QuotaEnforcer:
         if limit == -1:
             return
 
-        current = await get_current_usage(tenant.id, self.metric)
+        try:
+            current = await get_current_usage(tenant.id, self.metric, fail_open=False)
+        except Exception:
+            raise HTTPException(
+                status_code=503,
+                detail="Quota service temporarily unavailable. Please retry.",
+            ) from None
         if current >= limit:
             logger.warning(
                 "quota_exceeded",
