@@ -143,6 +143,7 @@ async def cancel_subscription(
         actor_id=str(user.id),
         changes={"action": "cancel"},
     )
+    await db.commit()
 
     # Load plan for response
     plan_result = await db.execute(select(Plan).where(Plan.id == subscription.plan_id))
@@ -244,12 +245,18 @@ async def stripe_webhook(
         )
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid payload") from None
-    except Exception:
+    except stripe.error.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Invalid signature") from None
 
     from app.billing.stripe_service import handle_webhook_event
 
-    await handle_webhook_event(event["id"], event["type"], event["data"], db)
+    try:
+        await handle_webhook_event(event["id"], event["type"], event["data"], db)
+    except Exception:
+        # Return 200 to prevent Stripe from retrying permanently on unrecoverable errors.
+        # The error is logged for investigation.
+        logger.error("stripe_webhook_handler_failed", event_type=event["type"], exc_info=True)
+        return {"status": "error", "message": "Event processing failed"}
 
     logger.info("stripe_webhook_processed", event_type=event["type"])
     return {"status": "ok"}

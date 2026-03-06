@@ -6,7 +6,7 @@ password reset, and account lockout.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -440,3 +440,79 @@ async def test_me_returns_profile(auth_client):
         assert data["role"] == "member"
     finally:
         app.dependency_overrides.clear()
+
+
+# ── Refresh Token Edge Cases ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_refresh_rejects_unverified_email(auth_client):
+    """Refresh should reject users whose email is no longer verified."""
+    client, app = auth_client
+
+    from app.api.deps import get_db
+
+    user = _mock_user(email_verified=False)
+
+    mock_db = AsyncMock()
+    # First execute: atomic revoke returns a valid row
+    revoke_result = MagicMock()
+    revoke_result.first.return_value = MagicMock(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+    )
+    # Second execute: user lookup returns user with email_verified=False
+    user_result = MagicMock()
+    user_result.scalar_one_or_none.return_value = user
+
+    mock_db.execute = AsyncMock(side_effect=[revoke_result, user_result])
+    mock_db.commit = AsyncMock()
+
+    async def _override_db():
+        yield mock_db
+
+    app.dependency_overrides[get_db] = _override_db
+
+    try:
+        client.cookies.set("refresh_token", "valid-token", domain="test")
+        response = await client.post("/api/v1/auth/refresh")
+        assert response.status_code == 401
+    finally:
+        app.dependency_overrides.clear()
+
+
+# ── Token Validation Edge Cases ──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_verify_email_rejects_overlong_token(auth_client):
+    """Verify email rejects tokens exceeding max length."""
+    client, _ = auth_client
+    response = await client.post(
+        "/api/v1/auth/verify-email",
+        json={"token": "x" * 300},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_reset_password_rejects_overlong_token(auth_client):
+    """Reset password rejects tokens exceeding max length."""
+    client, _ = auth_client
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={"token": "x" * 300, "new_password": "SecurePass123"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_accept_invitation_rejects_overlong_token(auth_client):
+    """Accept invitation rejects tokens exceeding max length."""
+    client, _ = auth_client
+    response = await client.post(
+        "/api/v1/auth/accept-invitation",
+        json={"token": "x" * 300},
+    )
+    assert response.status_code == 422

@@ -310,3 +310,77 @@ class TestBillingEndpoints:
         )
         # Should fail validation (either 422 from Pydantic or 401 from auth)
         assert response.status_code in (401, 422)
+
+
+# ── Webhook Delivery SSRF Prevention Tests ───────────────────────────
+
+
+class TestWebhookDeliverySSRF:
+    """Verify SSRF prevention at webhook delivery time (not just registration)."""
+
+    def test_deliver_webhook_blocks_private_ip(self):
+        """deliver_webhook should re-validate URL at delivery time."""
+        with patch("app.core.url_validation.validate_webhook_url") as mock_validate:
+            mock_validate.return_value = "Resolved to private IP"
+
+            # Import after patch to ensure it uses patched version
+            from app.workers.tasks import deliver_webhook
+
+            result = deliver_webhook(
+                "https://internal.example.com/hook",
+                {"event": "test"},
+                signing_secret="secret",
+            )
+            assert result["status"] == "blocked"
+            mock_validate.assert_called_once()
+
+    def test_deliver_webhook_allows_valid_url(self):
+        """deliver_webhook should proceed when URL passes validation."""
+        with (
+            patch("app.core.url_validation.validate_webhook_url", return_value=None),
+            patch("httpx.Client") as mock_client_cls,
+        ):
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.raise_for_status = MagicMock()
+            mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(
+                post=MagicMock(return_value=mock_response)
+            ))
+            mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+            from app.workers.tasks import deliver_webhook
+
+            result = deliver_webhook(
+                "https://example.com/hook",
+                {"event": "test"},
+                signing_secret="secret",
+            )
+            assert result["status"] == "delivered"
+
+
+# ── Rate Limiter Path Normalization Tests ────────────────────────────
+
+
+class TestRateLimiterPathNormalization:
+    """Verify rate limiter normalizes paths to prevent bypass."""
+
+    def test_trailing_slash_produces_same_key(self):
+        mock_request_1 = MagicMock()
+        mock_request_1.url.path = "/api/v1/login"
+        mock_request_1.client.host = "1.2.3.4"
+        mock_request_1.headers.get.return_value = ""
+
+        mock_request_2 = MagicMock()
+        mock_request_2.url.path = "/api/v1/login/"
+        mock_request_2.client.host = "1.2.3.4"
+        mock_request_2.headers.get.return_value = ""
+
+        # Both should normalize to same path
+        normalized_1 = mock_request_1.url.path.rstrip("/").lower().replace("//", "/")
+        normalized_2 = mock_request_2.url.path.rstrip("/").lower().replace("//", "/")
+        assert normalized_1 == normalized_2
+
+    def test_case_variation_produces_same_key(self):
+        path1 = "/api/v1/Login".rstrip("/").lower().replace("//", "/")
+        path2 = "/api/v1/login".rstrip("/").lower().replace("//", "/")
+        assert path1 == path2

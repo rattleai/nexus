@@ -323,7 +323,7 @@ async def refresh(
     # Load user
     user_result = await db.execute(select(User).where(User.id == row.user_id, User.deleted_at.is_(None)))
     user = user_result.scalar_one_or_none()
-    if not user or not user.is_active:
+    if not user or not user.is_active or not user.email_verified:
         await db.commit()
         _clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="User not found or inactive")
@@ -399,30 +399,35 @@ async def get_current_user_profile(
 
 
 class VerifyEmailRequest(BaseModel):
-    token: str
+    token: str = Field(..., min_length=1, max_length=256)
 
 
 @router.post("/verify-email", dependencies=[Depends(_auth_rate_limit)])
 async def verify_email(body: VerifyEmailRequest, db: AsyncSession = Depends(get_db)):
     """Verify a user's email address using the token sent to their email."""
     token_hash = hash_token(body.token)
+    now = datetime.now(UTC)
 
-    result = await db.execute(
-        select(EmailVerificationToken).where(
+    # Atomic claim: UPDATE ... WHERE used_at IS NULL prevents race conditions
+    claim_result = await db.execute(
+        update(EmailVerificationToken)
+        .where(
             EmailVerificationToken.token_hash == token_hash,
             EmailVerificationToken.token_type == "email_verification",
             EmailVerificationToken.used_at.is_(None),
+            EmailVerificationToken.expires_at >= now,
         )
+        .values(used_at=now)
+        .returning(EmailVerificationToken.user_id)
     )
-    token_record = result.scalar_one_or_none()
-    if not token_record or token_record.expires_at < datetime.now(UTC):
+    claimed = claim_result.first()
+    if not claimed:
         raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
-    # Mark token as used
-    token_record.used_at = datetime.now(UTC)
-
-    # Verify user's email
-    user_result = await db.execute(select(User).where(User.id == token_record.user_id))
+    # Verify user's email (exclude soft-deleted users)
+    user_result = await db.execute(
+        select(User).where(User.id == claimed.user_id, User.deleted_at.is_(None))
+    )
     user = user_result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -442,7 +447,7 @@ class ForgotPasswordRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    token: str
+    token: str = Field(..., min_length=1, max_length=256)
     new_password: str = Field(..., min_length=8, max_length=128)
 
     @field_validator("new_password")
@@ -461,6 +466,17 @@ async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depend
     user = result.scalar_one_or_none()
 
     if user:
+        # Invalidate any previous unused reset tokens for this user
+        await db.execute(
+            update(EmailVerificationToken)
+            .where(
+                EmailVerificationToken.user_id == user.id,
+                EmailVerificationToken.token_type == "password_reset",
+                EmailVerificationToken.used_at.is_(None),
+            )
+            .values(used_at=datetime.now(UTC))
+        )
+
         raw_token, token_hash_val = generate_secure_token()
         reset_token = EmailVerificationToken(
             user_id=user.id,
@@ -506,7 +522,9 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
     if not claimed:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
 
-    user_result = await db.execute(select(User).where(User.id == claimed.user_id))
+    user_result = await db.execute(
+        select(User).where(User.id == claimed.user_id, User.deleted_at.is_(None))
+    )
     user = user_result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -530,7 +548,7 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
 
 
 class AcceptInvitationRequest(BaseModel):
-    token: str
+    token: str = Field(..., min_length=1, max_length=256)
     password: str | None = Field(default=None, min_length=8, max_length=128)
     display_name: str | None = Field(default=None, max_length=255)
 
@@ -551,16 +569,25 @@ async def accept_invitation(
 ):
     """Accept a team invitation. Creates a new user if needed, or adds existing user to tenant."""
     token_hash_val = hash_token(body.token)
+    now = datetime.now(UTC)
 
-    result = await db.execute(
-        select(Invitation).where(
+    # Atomic claim: UPDATE ... WHERE status='PENDING' prevents race conditions
+    claim_result = await db.execute(
+        update(Invitation)
+        .where(
             Invitation.token_hash == token_hash_val,
             Invitation.status == InvitationStatus.PENDING,
+            Invitation.expires_at >= now,
         )
+        .values(status=InvitationStatus.ACCEPTED, accepted_at=now)
+        .returning(Invitation.id, Invitation.email, Invitation.tenant_id, Invitation.role, Invitation.expires_at)
     )
-    invitation = result.scalar_one_or_none()
-    if not invitation or invitation.expires_at < datetime.now(UTC):
+    claimed = claim_result.first()
+    if not claimed:
         raise HTTPException(status_code=400, detail="Invalid or expired invitation")
+
+    # Build an invitation-like object from the claimed row for downstream use
+    invitation = claimed
 
     # Defense-in-depth: reject owner role in invitation acceptance
     if invitation.role == UserRole.OWNER:
@@ -604,10 +631,6 @@ async def accept_invitation(
         role=invitation.role,
     )
     db.add(membership)
-
-    # Mark invitation as accepted
-    invitation.status = InvitationStatus.ACCEPTED
-    invitation.accepted_at = datetime.now(UTC)
 
     # Create refresh token
     raw_refresh, refresh_hash = create_refresh_token()

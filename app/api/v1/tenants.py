@@ -131,56 +131,62 @@ async def delete_tenant(tenant_id: uuid.UUID, db: AsyncSession = Depends(get_db)
         WebhookEndpoint,
     )
 
-    # Deactivate API keys
-    await db.execute(
-        update(ApiKey)
-        .where(ApiKey.tenant_id == tenant_id, ApiKey.active.is_(True))
-        .values(active=False)
-    )
-    # Deactivate users and revoke their refresh tokens
-    user_ids_result = await db.execute(
-        select(User.id).where(User.tenant_id == tenant_id)
-    )
-    user_ids = [row[0] for row in user_ids_result.all()]
-    await db.execute(
-        update(User)
-        .where(User.tenant_id == tenant_id, User.is_active.is_(True))
-        .values(is_active=False)
-    )
-    if user_ids:
+    try:
+        # Deactivate API keys
         await db.execute(
-            update(RefreshToken)
-            .where(RefreshToken.user_id.in_(user_ids), RefreshToken.revoked.is_(False))
-            .values(revoked=True)
+            update(ApiKey)
+            .where(ApiKey.tenant_id == tenant_id, ApiKey.active.is_(True))
+            .values(active=False)
         )
-    # Deactivate webhook endpoints
-    await db.execute(
-        update(WebhookEndpoint)
-        .where(WebhookEndpoint.tenant_id == tenant_id, WebhookEndpoint.active.is_(True))
-        .values(active=False)
-    )
-    # Cancel subscriptions
-    await db.execute(
-        update(Subscription)
-        .where(
-            Subscription.tenant_id == tenant_id,
-            Subscription.status != SubscriptionStatus.CANCELED,
+        # Deactivate users and revoke their refresh tokens
+        user_ids_result = await db.execute(
+            select(User.id).where(User.tenant_id == tenant_id)
         )
-        .values(status=SubscriptionStatus.CANCELED)
-    )
-    # Remove feature flag overrides
-    from sqlalchemy import delete
-    await db.execute(
-        delete(TenantFeatureOverride)
-        .where(TenantFeatureOverride.tenant_id == tenant_id)
-    )
+        user_ids = [row[0] for row in user_ids_result.all()]
+        await db.execute(
+            update(User)
+            .where(User.tenant_id == tenant_id, User.is_active.is_(True))
+            .values(is_active=False)
+        )
+        if user_ids:
+            await db.execute(
+                update(RefreshToken)
+                .where(RefreshToken.user_id.in_(user_ids), RefreshToken.revoked.is_(False))
+                .values(revoked=True)
+            )
+        # Deactivate webhook endpoints
+        await db.execute(
+            update(WebhookEndpoint)
+            .where(WebhookEndpoint.tenant_id == tenant_id, WebhookEndpoint.active.is_(True))
+            .values(active=False)
+        )
+        # Cancel subscriptions
+        await db.execute(
+            update(Subscription)
+            .where(
+                Subscription.tenant_id == tenant_id,
+                Subscription.status != SubscriptionStatus.CANCELED,
+            )
+            .values(status=SubscriptionStatus.CANCELED)
+        )
+        # Remove feature flag overrides
+        from sqlalchemy import delete as sa_delete
+        await db.execute(
+            sa_delete(TenantFeatureOverride)
+            .where(TenantFeatureOverride.tenant_id == tenant_id)
+        )
 
-    await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="tenant",
-        resource_id=str(tenant.id), tenant_id=tenant.id,
-        metadata={"slug": tenant.slug},
-    )
-    await db.commit()
+        await emit_audit_event(
+            db, action=AuditAction.DELETE, resource_type="tenant",
+            resource_id=str(tenant.id), tenant_id=tenant.id,
+            metadata={"slug": tenant.slug},
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.error("tenant_delete_cascade_failed", tenant_id=str(tenant_id), exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete tenant") from None
+
     await invalidate(f"tenants:{tenant_id}")
     logger.info("tenant_deleted", tenant_id=str(tenant.id), slug=tenant.slug)
 

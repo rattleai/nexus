@@ -252,7 +252,7 @@ async def delete_webhook_endpoint(
     if not endpoint:
         raise HTTPException(status_code=404, detail="Webhook endpoint not found")
 
-    await db.delete(endpoint)
+    endpoint.active = False
     await emit_audit_event(
         db,
         action=AuditAction.DELETE,

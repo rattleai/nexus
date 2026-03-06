@@ -104,7 +104,9 @@ class RateLimiter:
 
     async def __call__(self, request: Request) -> None:
         client_ip = _get_client_ip(request)
-        key = f"{self.key_prefix}:{client_ip}:{request.url.path}"
+        # Normalize path to prevent bypass via trailing slashes, double slashes, or casing
+        normalized_path = request.url.path.rstrip("/").lower().replace("//", "/")
+        key = f"{self.key_prefix}:{client_ip}:{normalized_path}"
         request_count = await _check_rate(key, self.max_requests, self.window)
 
         if request_count > self.max_requests:

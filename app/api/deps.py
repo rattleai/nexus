@@ -153,7 +153,7 @@ class RequireRole:
         if not membership or membership.role.value not in self.required_roles:
             raise HTTPException(
                 status_code=403,
-                detail=f"Requires one of: {', '.join(sorted(self.required_roles))}",
+                detail="Insufficient permissions",
             )
 
 
@@ -182,7 +182,7 @@ class RequireScopes:
         if missing:
             raise HTTPException(
                 status_code=403,
-                detail=f"API key missing required scopes: {', '.join(sorted(missing))}",
+                detail="Insufficient API key permissions",
             )
 
 

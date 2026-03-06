@@ -118,7 +118,11 @@ async def increment_usage(tenant_id: uuid.UUID, metric: QuotaMetric, amount: int
 _DECR_FLOOR_SCRIPT = """
 local val = redis.call('decrby', KEYS[1], ARGV[1])
 if val < 0 then
+    local ttl = redis.call('ttl', KEYS[1])
     redis.call('set', KEYS[1], 0)
+    if ttl > 0 then
+        redis.call('expire', KEYS[1], ttl)
+    end
     return 0
 end
 return val

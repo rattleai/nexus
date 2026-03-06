@@ -246,6 +246,15 @@ def deliver_webhook(
     """Deliver a webhook with HMAC-SHA256 signature, circuit breaker, and exponential backoff."""
     import httpx
 
+    from app.core.url_validation import validate_webhook_url
+
+    # Re-validate URL at delivery time to prevent DNS rebinding attacks (TOCTOU)
+    ssrf_error = validate_webhook_url(url)
+    if ssrf_error:
+        logger.warning("webhook_ssrf_blocked", url=url, error=ssrf_error)
+        _record_webhook_failure(url, payload, f"SSRF blocked: {ssrf_error}", 1, endpoint_id)
+        return {"status": "blocked", "url": url, "reason": ssrf_error}
+
     host_key = CircuitBreaker.host_key(url)
 
     # Check circuit breaker before attempting delivery
