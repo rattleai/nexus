@@ -82,7 +82,7 @@ export function VoiceInput({
               <Mic className="h-4 w-4" />
             )}
             {isListening && (
-              <span className="absolute inset-0 animate-ping rounded-md bg-red-500/20" />
+              <span className="pointer-events-none absolute inset-0 animate-ping rounded-md bg-red-500/20" />
             )}
           </Button>
         </TooltipTrigger>

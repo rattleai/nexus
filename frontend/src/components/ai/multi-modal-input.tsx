@@ -64,10 +64,11 @@ export function MultiModalInput({
       const files = Array.from(e.clipboardData.files)
       if (files.length) {
         e.preventDefault()
-        onAttach(files)
+        const remaining = maxFiles - attachments.length
+        if (remaining > 0) onAttach(files.slice(0, remaining))
       }
     },
-    [onAttach],
+    [onAttach, attachments.length, maxFiles],
   )
 
   return (

@@ -33,10 +33,17 @@ export type {
 } from "./reasoning-display"
 
 export { ToolCallDisplay } from "./tool-call-display"
+export type { ToolCall, ToolCallDisplayProps } from "./tool-call-display"
 
 export { SourceCitation, SourceCitationList } from "./source-citation"
+export type {
+  Citation,
+  SourceCitationProps,
+  SourceCitationListProps,
+} from "./source-citation"
 
 export { AgentStatus } from "./agent-status"
+export type { AgentState, AgentStatusProps } from "./agent-status"
 
 export { PromptTemplateLibrary } from "./prompt-template-library"
 export type { PromptTemplateLibraryProps } from "./prompt-template-library"
@@ -49,3 +56,8 @@ export { VoiceInput } from "./voice-input"
 export { AIPlayground } from "./ai-playground"
 
 export { RAGDocumentPanel } from "./rag-document-panel"
+export type {
+  RAGDocument,
+  RAGDocumentPanelProps,
+  DocumentChunk,
+} from "./rag-document-panel"

@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/hover-card"
 import { cn } from "@/lib/utils"
 
-interface Citation {
+export interface Citation {
   id: string
   title: string
   source: string
@@ -16,7 +16,7 @@ interface Citation {
   relevanceScore?: number
 }
 
-interface SourceCitationProps {
+export interface SourceCitationProps {
   citation: Citation
   index: number
   className?: string
@@ -31,6 +31,7 @@ export function SourceCitation({ citation, index, className }: SourceCitationPro
             "inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary/10 text-[10px] font-medium text-primary hover:bg-primary/20",
             className,
           )}
+          aria-label={`Source ${index + 1}: ${citation.title}`}
         >
           {index + 1}
         </button>
@@ -67,7 +68,7 @@ export function SourceCitation({ citation, index, className }: SourceCitationPro
   )
 }
 
-interface SourceCitationListProps {
+export interface SourceCitationListProps {
   citations: Citation[]
   className?: string
 }

@@ -17,14 +17,14 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { formatBytes } from "@/lib/format"
 
-interface DocumentChunk {
+export interface DocumentChunk {
   id: string
   content: string
   metadata?: Record<string, string>
   relevanceScore?: number
 }
 
-interface RAGDocument {
+export interface RAGDocument {
   id: string
   name: string
   type: string
@@ -34,7 +34,7 @@ interface RAGDocument {
   progress?: number
 }
 
-interface RAGDocumentPanelProps {
+export interface RAGDocumentPanelProps {
   documents: RAGDocument[]
   onUpload: (files: File[]) => void
   onDelete?: (id: string) => void
@@ -107,6 +107,7 @@ function DocumentItem({
           <button
             className="flex w-full items-center gap-1 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => setChunksOpen(!chunksOpen)}
+            aria-expanded={chunksOpen}
           >
             {chunksOpen ? (
               <ChevronDown className="h-3 w-3" />
