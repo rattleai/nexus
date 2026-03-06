@@ -183,42 +183,13 @@ class TokenWalletService:
     ) -> int:
         """Refund tokens to wallet (e.g., after failed AI call).
 
-        DB-first: record refund in DB, then credit Redis.
+        Strategy: atomic credit in Redis first (to get accurate balance_after),
+        then record in DB. On DB failure, roll back Redis.
         """
         if amount <= 0:
             return await self.get_balance(tenant_id)
 
-        # Get current balance for the transaction record
-        current_balance = await self.get_balance(tenant_id)
-        expected_new = current_balance + amount
-
-        # DB first: record transaction AND update wallet balance
-        tx = WalletTransaction(
-            tenant_id=tenant_id,
-            type=WalletTransactionType.REFUND,
-            amount_tokens=amount,
-            balance_after=expected_new,
-            description=description or "AI token refund",
-            reference_id=reference_id,
-        )
-        db.add(tx)
-
-        # Update the wallet record in DB to keep it consistent
-        result = await db.execute(
-            select(TokenWallet).where(TokenWallet.tenant_id == tenant_id)
-        )
-        wallet = result.scalar_one_or_none()
-        if wallet:
-            wallet.balance_tokens = expected_new
-
-        try:
-            await db.commit()
-        except Exception:
-            logger.error("wallet_refund_db_error", tenant_id=str(tenant_id))
-            await db.rollback()
-            raise
-
-        # Then Redis
+        # Step 1: Atomic credit in Redis to get the authoritative new balance
         key = _balance_key(tenant_id)
         try:
             new_balance = int(
@@ -226,8 +197,46 @@ class TokenWalletService:
             )
         except Exception:
             logger.error("wallet_refund_redis_error", tenant_id=str(tenant_id))
-            # DB recorded the refund; Redis will catch up on next init
-            new_balance = expected_new
+            raise
+
+        if new_balance == -2:
+            raise WalletOverflowError("Refund would exceed maximum wallet balance")
+
+        # Step 2: Record in DB using the Lua-returned balance (no TOCTOU)
+        tx = WalletTransaction(
+            tenant_id=tenant_id,
+            type=WalletTransactionType.REFUND,
+            amount_tokens=amount,
+            balance_after=new_balance,
+            description=description or "AI token refund",
+            reference_id=reference_id,
+        )
+        db.add(tx)
+
+        # Update the wallet record in DB
+        result = await db.execute(
+            select(TokenWallet).where(TokenWallet.tenant_id == tenant_id)
+        )
+        wallet = result.scalar_one_or_none()
+        if wallet:
+            wallet.balance_tokens = new_balance
+
+        try:
+            await db.commit()
+        except Exception:
+            logger.error("wallet_refund_db_error", tenant_id=str(tenant_id))
+            await db.rollback()
+            # Redis was already credited. Reverse it to stay consistent.
+            try:
+                await redis_pool.eval(_DEDUCT_SCRIPT, 1, key, str(amount))
+                logger.info("wallet_refund_redis_rollback_ok", tenant_id=str(tenant_id))
+            except Exception:
+                logger.critical(
+                    "wallet_refund_redis_rollback_failed",
+                    tenant_id=str(tenant_id),
+                    amount=amount,
+                )
+            raise
 
         return new_balance
 
@@ -295,13 +304,14 @@ class TokenWalletService:
             await db.rollback()
             raise
 
-        # Then sync to Redis
+        # Sync to Redis atomically — use CREDIT script to avoid overwriting
+        # concurrent deductions that happened between our DB read and now.
         key = _balance_key(tenant_id)
         try:
-            await redis_pool.set(key, str(new_balance))
+            await redis_pool.eval(_CREDIT_SCRIPT, 1, key, str(amount_tokens), str(_MAX_BALANCE))
         except Exception:
             logger.warning("wallet_topup_redis_sync_error", tenant_id=str(tenant_id))
-            # DB has the correct balance; Redis will catch up
+            # DB has the correct balance; Redis will catch up on next init
 
         logger.info(
             "wallet_topup",
@@ -311,10 +321,11 @@ class TokenWalletService:
         )
         return new_balance
 
-    async def initialize_balance(self, tenant_id: uuid.UUID, db: AsyncSession) -> None:
+    async def initialize_balance(self, tenant_id: uuid.UUID, db: AsyncSession) -> int:
         """Load wallet balance from DB into Redis (called on first access or startup).
 
         DB is the source of truth — this ensures Redis is consistent.
+        Returns the current balance.
         """
         wallet = await self._get_or_create_wallet(tenant_id, db)
         key = _balance_key(tenant_id)
@@ -322,6 +333,7 @@ class TokenWalletService:
             await redis_pool.set(key, str(wallet.balance_tokens))
         except Exception:
             logger.warning("wallet_init_redis_error", tenant_id=str(tenant_id))
+        return wallet.balance_tokens
 
     async def _get_or_create_wallet(
         self, tenant_id: uuid.UUID, db: AsyncSession

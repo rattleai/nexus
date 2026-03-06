@@ -73,6 +73,10 @@ async def _async_process_completion(tenant_id: str, request_data: dict, job_id: 
         messages = request_data["messages"]
 
         try:
+            # Apply input guardrails — same validation as the sync endpoint
+            from app.ai.guardrails import validate_input
+
+            validate_input(messages)
             model_info = get_model_info(model)
             if not model_info:
                 raise ValueError(f"Unknown model: {model}")
@@ -95,7 +99,10 @@ async def _async_process_completion(tenant_id: str, request_data: dict, job_id: 
                 db=db,
             )
 
-            # Deduct from wallet — distinguish insufficient balance from other errors
+            # Deduct from wallet — fail the job if balance is insufficient.
+            # The tokens were consumed at the provider, but allowing free usage
+            # incentivizes abuse. Mark the job as failed so the tenant sees they
+            # need to top up.
             try:
                 await wallet_service.deduct_tokens(
                     tid,
@@ -105,14 +112,17 @@ async def _async_process_completion(tenant_id: str, request_data: dict, job_id: 
                     db=db,
                 )
             except InsufficientBalanceError as wallet_exc:
-                # Completion succeeded but wallet deduction failed.
-                # Log it but still return the result — the tokens were consumed.
-                logger.warning(
+                logger.error(
                     "ai_task_wallet_insufficient",
                     job_id=job_id,
                     billed_tokens=completion.billed_tokens,
                     error=str(wallet_exc),
                 )
+                job.status = JobStatus.FAILED
+                job.completed_at = datetime.now(UTC)
+                job.error = "Insufficient wallet balance for this completion. Please top up."
+                await db.commit()
+                return
 
             # Log usage
             usage_log = AIUsageLog(
