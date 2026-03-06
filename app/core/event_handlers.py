@@ -137,7 +137,6 @@ async def handle_user_registered(event: UserRegistered) -> None:
 @on(InvitationSent)
 async def handle_invitation_sent(event: InvitationSent) -> None:
     """Send invitation email."""
-    from app.config import settings
     from app.db.models import Tenant, User
 
     async with async_session_factory() as db:
@@ -156,7 +155,6 @@ async def handle_invitation_sent(event: InvitationSent) -> None:
         inviter = inviter_result.scalar_one_or_none()
         inviter_name = inviter.display_name or inviter.email if inviter else "A team member"
 
-    invite_url = f"{settings.APP_BASE_URL}/accept-invitation?token={event.token}"
     await send_email(
         to=event.email,
         template=EmailTemplate.INVITATION,
@@ -164,7 +162,7 @@ async def handle_invitation_sent(event: InvitationSent) -> None:
             "inviter_name": inviter_name,
             "tenant_name": tenant_name,
             "role": event.role,
-            "invite_url": invite_url,
+            "invite_url": event.accept_url,
         },
     )
 
