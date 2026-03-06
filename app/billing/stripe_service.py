@@ -459,16 +459,19 @@ async def _notify_tenant_owner(
     context: dict,
     db: AsyncSession,
 ) -> None:
-    """Send an email to the tenant owner."""
-    from app.db.models import TenantMembership, UserRole
+    """Send an email to the tenant owner. Fire-and-forget — never fails the caller."""
+    try:
+        from app.db.models import TenantMembership, UserRole
 
-    owner_result = await db.execute(
-        select(User).join(TenantMembership).where(
-            TenantMembership.tenant_id == tenant_id,
-            TenantMembership.role == UserRole.OWNER,
+        owner_result = await db.execute(
+            select(User).join(TenantMembership).where(
+                TenantMembership.tenant_id == tenant_id,
+                TenantMembership.role == UserRole.OWNER,
+            )
         )
-    )
-    owner = owner_result.scalar_one_or_none()
-    if owner:
-        ctx = {**context, "display_name": owner.display_name or owner.email}
-        await send_email(to=owner.email, template=template, context=ctx)
+        owner = owner_result.scalar_one_or_none()
+        if owner:
+            ctx = {**context, "display_name": owner.display_name or owner.email}
+            await send_email(to=owner.email, template=template, context=ctx)
+    except Exception:
+        logger.error("notify_tenant_owner_failed", tenant_id=str(tenant_id), exc_info=True)

@@ -329,7 +329,6 @@ class TestWebhookDeliverySSRF:
             result = deliver_webhook(
                 "https://internal.example.com/hook",
                 {"event": "test"},
-                signing_secret="secret",
             )
             assert result["status"] == "blocked"
             mock_validate.assert_called_once()
@@ -353,7 +352,6 @@ class TestWebhookDeliverySSRF:
             result = deliver_webhook(
                 "https://example.com/hook",
                 {"event": "test"},
-                signing_secret="secret",
             )
             assert result["status"] == "delivered"
 

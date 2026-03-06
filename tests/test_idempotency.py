@@ -9,10 +9,13 @@ from starlette.requests import Request
 from app.core.idempotency import IdempotencyGuard
 
 
-def _make_request(headers: dict | None = None) -> MagicMock:
+def _make_request(headers: dict | None = None, method: str = "POST", path: str = "/api/v1/test") -> MagicMock:
     """Create a mock Request object."""
     req = MagicMock(spec=Request)
     req.headers = headers or {}
+    req.method = method
+    req.url = MagicMock()
+    req.url.path = path
     req.state = MagicMock()
     req.state.tenant = None
     # Clear attributes that should not exist unless set
@@ -65,7 +68,7 @@ async def test_idempotency_cache_miss():
         mock_redis.get = AsyncMock(return_value=None)
         await guard(request)
 
-    assert request.state.idempotency_key == "idempotency:global:test-key-123"
+    assert request.state.idempotency_key == "idempotency:global:POST:/api/v1/test:test-key-123"
     assert request.state.idempotency_ttl == 3600
 
 

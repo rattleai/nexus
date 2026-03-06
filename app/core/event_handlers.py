@@ -76,10 +76,13 @@ async def _dispatch_webhooks(tenant_id: str, event_name: str, payload: dict) -> 
                     try:
                         from app.workers.tasks import deliver_webhook
 
+                        # Pass endpoint_id instead of signing_secret to avoid storing
+                        # decrypted secrets in plaintext on the Redis broker queue.
+                        # The worker will look up the secret at delivery time.
                         deliver_webhook.delay(
                             endpoint.url,
                             {"event": event_name, **payload},
-                            signing_secret=endpoint.get_secret(),
+                            endpoint_id=str(endpoint.id),
                         )
                     except Exception:
                         logger.error(
