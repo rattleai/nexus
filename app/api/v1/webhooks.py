@@ -110,10 +110,10 @@ async def create_webhook_endpoint(
         tenant_id=tenant.id,
         url=url,
         description=body.description,
-        secret=raw_secret,  # Placeholder, encrypted below
+        secret="",  # Will be set via set_secret() below
         events=body.events,
     )
-    endpoint.set_secret(raw_secret)  # Encrypt at rest
+    endpoint.set_secret(raw_secret)  # Encrypt at rest — never store plaintext
     db.add(endpoint)
 
     await emit_audit_event(

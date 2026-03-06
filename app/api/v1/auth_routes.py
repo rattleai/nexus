@@ -46,7 +46,7 @@ router = APIRouter(prefix="/auth")
 logger = structlog.stdlib.get_logger()
 
 _REFRESH_COOKIE = "refresh_token"
-_REFRESH_COOKIE_PATH = "/api/v1/auth"
+_REFRESH_COOKIE_PATH = "/api/v1/auth/refresh"
 _MAX_REFRESH_TOKENS_PER_USER = 10
 _MAX_LOGIN_ATTEMPTS = 5
 _LOGIN_LOCKOUT_SECONDS = 900  # 15 minutes
@@ -488,20 +488,25 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
     """Reset password using the token from the reset email."""
     token_hash_val = hash_token(body.token)
 
-    result = await db.execute(
-        select(EmailVerificationToken).where(
+    # Atomic claim: UPDATE ... WHERE used_at IS NULL prevents race conditions
+    # where concurrent requests could both use the same reset token.
+    now = datetime.now(UTC)
+    claim_result = await db.execute(
+        update(EmailVerificationToken)
+        .where(
             EmailVerificationToken.token_hash == token_hash_val,
             EmailVerificationToken.token_type == "password_reset",
             EmailVerificationToken.used_at.is_(None),
+            EmailVerificationToken.expires_at >= now,
         )
+        .values(used_at=now)
+        .returning(EmailVerificationToken.user_id)
     )
-    token_record = result.scalar_one_or_none()
-    if not token_record or token_record.expires_at < datetime.now(UTC):
+    claimed = claim_result.first()
+    if not claimed:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
 
-    token_record.used_at = datetime.now(UTC)
-
-    user_result = await db.execute(select(User).where(User.id == token_record.user_id))
+    user_result = await db.execute(select(User).where(User.id == claimed.user_id))
     user = user_result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

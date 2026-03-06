@@ -114,6 +114,12 @@ async def get_current_user_from_token(
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
 
+    # Cross-check JWT tenant_id against the user's current tenant to detect
+    # stale tokens (e.g. user was moved to a different tenant after JWT was issued).
+    jwt_tenant_id = payload.get("tenant_id")
+    if jwt_tenant_id and str(user.tenant_id) != str(jwt_tenant_id):
+        raise HTTPException(status_code=401, detail="Token tenant mismatch — please re-authenticate")
+
     # Set RLS tenant context for defense-in-depth isolation (mirrors API key auth path)
     await set_tenant_context(db, str(user.tenant_id))
 

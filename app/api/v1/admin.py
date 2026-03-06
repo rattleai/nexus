@@ -293,7 +293,7 @@ async def update_feature_flag(
         async for key in redis_pool.scan_iter(f"ff:{flag.name}:*", count=100):
             await redis_pool.delete(key)
     except Exception:
-        pass
+        logger.error("feature_flag_cache_invalidation_failed", flag_name=flag.name, exc_info=True)
 
     logger.info("feature_flag_updated", name=flag.name)
     return flag
