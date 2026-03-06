@@ -287,7 +287,16 @@ async def list_webhook_deliveries(
     if not ep_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Webhook endpoint not found")
 
-    stmt = select(WebhookDelivery).where(WebhookDelivery.endpoint_id == endpoint_id)
+    # Join through WebhookEndpoint to enforce tenant isolation — prevents
+    # cross-tenant data access if endpoint_id is guessed/leaked.
+    stmt = (
+        select(WebhookDelivery)
+        .join(WebhookEndpoint, WebhookDelivery.endpoint_id == WebhookEndpoint.id)
+        .where(
+            WebhookDelivery.endpoint_id == endpoint_id,
+            WebhookEndpoint.tenant_id == tenant.id,
+        )
+    )
     return await paginate(db, stmt, WebhookDelivery.created_at, limit=limit, cursor=cursor, descending=True)
 
 

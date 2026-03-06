@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -115,7 +115,33 @@ async def delete_tenant(tenant_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    tenant.deleted_at = datetime.now(UTC)
+    now = datetime.now(UTC)
+    tenant.deleted_at = now
+    tenant.is_active = False
+
+    # Cascade soft-delete: deactivate all child resources so they stop
+    # working immediately.  Hard deletes happen via a background cleanup task.
+    from app.db.models import ApiKey, User, WebhookEndpoint
+
+    # Deactivate API keys
+    await db.execute(
+        update(ApiKey)
+        .where(ApiKey.tenant_id == tenant_id, ApiKey.active.is_(True))
+        .values(active=False)
+    )
+    # Deactivate users
+    await db.execute(
+        update(User)
+        .where(User.tenant_id == tenant_id, User.is_active.is_(True))
+        .values(is_active=False)
+    )
+    # Deactivate webhook endpoints
+    await db.execute(
+        update(WebhookEndpoint)
+        .where(WebhookEndpoint.tenant_id == tenant_id, WebhookEndpoint.active.is_(True))
+        .values(active=False)
+    )
+
     await emit_audit_event(
         db, action=AuditAction.DELETE, resource_type="tenant",
         resource_id=str(tenant.id), tenant_id=tenant.id,

@@ -8,7 +8,7 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 
 import structlog
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -48,6 +48,48 @@ logger = structlog.stdlib.get_logger()
 _REFRESH_COOKIE = "refresh_token"
 _REFRESH_COOKIE_PATH = "/api/v1/auth"
 _MAX_REFRESH_TOKENS_PER_USER = 10
+_MAX_LOGIN_ATTEMPTS = 5
+_LOGIN_LOCKOUT_SECONDS = 900  # 15 minutes
+
+
+async def _check_account_lockout(email: str) -> None:
+    """Check if an account is locked out due to too many failed login attempts."""
+    try:
+        from app.core.redis import redis_pool
+        key = f"lockout:{email}"
+        attempts = await redis_pool.get(key)
+        if attempts and int(attempts) >= _MAX_LOGIN_ATTEMPTS:
+            raise HTTPException(
+                status_code=429,
+                detail="Account temporarily locked due to too many failed login attempts. Try again later.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # Redis unavailable — fail open (rate limiter still applies)
+
+
+async def _record_failed_login(email: str, client_ip: str) -> None:
+    """Record a failed login attempt for lockout tracking."""
+    logger.warning("login_failed", email=email, client_ip=client_ip)
+    try:
+        from app.core.redis import redis_pool
+        key = f"lockout:{email}"
+        pipe = redis_pool.pipeline()
+        pipe.incr(key)
+        pipe.expire(key, _LOGIN_LOCKOUT_SECONDS)
+        await pipe.execute()
+    except Exception:
+        pass  # Redis unavailable — fail open
+
+
+async def _clear_login_attempts(email: str) -> None:
+    """Clear login attempt counter on successful login."""
+    try:
+        from app.core.redis import redis_pool
+        await redis_pool.delete(f"lockout:{email}")
+    except Exception:
+        pass
 
 
 def _set_refresh_cookie(response: Response, raw_token: str) -> None:
@@ -161,7 +203,12 @@ async def register(body: UserRegister, response: Response, db: AsyncSession = De
 
 
 @router.post("/login", response_model=AuthResponse, dependencies=[Depends(_auth_rate_limit)])
-async def login(body: UserLogin, response: Response, db: AsyncSession = Depends(get_db)):
+async def login(body: UserLogin, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    client_ip = request.client.host if request.client else "unknown"
+
+    # Check account lockout before expensive password verification
+    await _check_account_lockout(body.email)
+
     result = await db.execute(
         select(User).where(User.email == body.email, User.deleted_at.is_(None))
     )
@@ -173,10 +220,18 @@ async def login(body: UserLogin, response: Response, db: AsyncSession = Depends(
     password_valid = verify_password(body.password, stored_hash)
 
     if not user or not user.password_hash or not password_valid:
+        await _record_failed_login(body.email, client_ip)
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not user.is_active:
+        logger.warning("login_inactive_account", email=body.email, client_ip=client_ip)
         raise HTTPException(status_code=403, detail="Account is disabled")
+
+    if not user.email_verified:
+        raise HTTPException(status_code=403, detail="Email not verified. Please check your inbox.")
+
+    # Clear lockout counter on successful login
+    await _clear_login_attempts(body.email)
 
     # Auto-rehash legacy bcrypt passwords to argon2id on successful login
     if needs_rehash(user.password_hash):
@@ -218,7 +273,7 @@ async def login(body: UserLogin, response: Response, db: AsyncSession = Depends(
     access_token = create_access_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})
     _set_refresh_cookie(response, raw_refresh)
 
-    logger.info("user_logged_in", user_id=str(user.id))
+    logger.info("user_logged_in", user_id=str(user.id), client_ip=client_ip)
 
     expires_in = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
     return AuthResponse(

@@ -59,7 +59,9 @@ def _add_security_headers(response: Response, request_id: str) -> None:
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     if not settings.DEBUG:
-        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=63072000; includeSubDomains; preload"
+        )
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = (
@@ -69,7 +71,9 @@ def _add_security_headers(response: Response, request_id: str) -> None:
         "img-src 'self' data:; "
         "font-src 'self'; "
         "connect-src 'self'; "
-        "frame-ancestors 'none'"
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
     )
     response.headers["X-Request-ID"] = request_id
 

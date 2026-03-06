@@ -5,6 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.config import settings
 
+# PostgreSQL server-side timeouts to prevent runaway queries and idle transactions
+_PG_SERVER_SETTINGS = {
+    "statement_timeout": "30000",  # 30s max query execution
+    "idle_in_transaction_session_timeout": "60000",  # 60s idle-in-txn before kill
+}
+
 async_engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
@@ -12,6 +18,7 @@ async_engine = create_async_engine(
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_pre_ping=True,
     pool_recycle=300,
+    connect_args={"server_settings": _PG_SERVER_SETTINGS},
 )
 async_session_factory = async_sessionmaker(async_engine, expire_on_commit=False)
 
@@ -27,6 +34,7 @@ if settings.DATABASE_READ_URL:
         max_overflow=settings.DB_MAX_OVERFLOW,
         pool_pre_ping=True,
         pool_recycle=300,
+        connect_args={"server_settings": _PG_SERVER_SETTINGS},
     )
     _read_session_factory = async_sessionmaker(_read_engine, expire_on_commit=False)
 
