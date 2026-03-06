@@ -38,6 +38,34 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("redis_unavailable_at_startup")
 
+    # Verify the DB connection role is NOT a superuser (superusers bypass RLS)
+    from sqlalchemy import text as sa_text
+
+    from app.db.session import async_engine
+
+    try:
+        async with async_engine.connect() as conn:
+            result = await conn.execute(sa_text("SELECT current_user, usesuper FROM pg_user WHERE usename = current_user"))
+            row = result.one_or_none()
+            if row and row[1]:
+                logger.error(
+                    "rls_bypass_risk",
+                    db_user=row[0],
+                    detail="Connected as superuser — Row-Level Security policies will NOT be enforced. "
+                    "Use a non-superuser role (e.g. app_user) in production.",
+                )
+                if not settings.DEBUG:
+                    raise RuntimeError(
+                        f"Database user '{row[0]}' is a superuser, which bypasses RLS. "
+                        "Configure DATABASE_URL to use a non-superuser role."
+                    )
+            else:
+                logger.info("rls_verified", db_user=row[0] if row else "unknown")
+    except RuntimeError:
+        raise
+    except Exception:
+        logger.warning("rls_check_skipped", exc_info=True)
+
     yield
 
     # Graceful shutdown — dispose resources in reverse init order with timeouts

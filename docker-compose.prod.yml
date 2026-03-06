@@ -114,6 +114,10 @@ services:
       POSTGRES_DB: ${DB_NAME:-app}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Init script creates a non-superuser app_user role.
+      # CRITICAL: The application MUST connect as app_user (not the superuser)
+      # so that Row-Level Security policies are enforced. Superusers bypass RLS.
+      - ./infra/docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-app}"]
       interval: 5s

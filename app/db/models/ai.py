@@ -8,7 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -87,6 +87,10 @@ class TokenWallet(TimestampMixin, VersionMixin, Base):
     balance_tokens: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     lifetime_purchased: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     lifetime_consumed: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("balance_tokens >= 0", name="ck_token_wallet_balance_non_negative"),
+    )
 
 
 class WalletTransactionType(enum.StrEnum):
