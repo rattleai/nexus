@@ -34,7 +34,7 @@ export interface RichTextEditorProps {
   editable?: boolean
   className?: string
   toolbar?: boolean
-  mentions?: Array<{ id: string; label: string }>
+  mentions?: MentionSuggestion[]
 }
 
 function BubbleLinkEditor({ editor }: { editor: ReturnType<typeof useEditor> }) {

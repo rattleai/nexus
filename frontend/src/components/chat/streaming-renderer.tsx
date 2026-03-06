@@ -16,20 +16,11 @@ export function StreamingRenderer({
       {content}
       {isStreaming && (
         <span
-          className="ml-0.5 inline-block h-4 w-2 animate-[blink_1s_steps(2)_infinite] bg-foreground align-middle"
+          className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-foreground align-middle"
           aria-hidden="true"
-          style={{
-            animationName: "blink",
-          }}
         />
       )}
       {isStreaming && <span className="sr-only">Streaming response</span>}
-      <style>{`
-        @keyframes blink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0; }
-        }
-      `}</style>
     </div>
   )
 }

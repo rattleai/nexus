@@ -8,9 +8,9 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-type AgentState = "idle" | "thinking" | "acting" | "waiting" | "error" | "complete"
+export type AgentState = "idle" | "thinking" | "acting" | "waiting" | "error" | "complete"
 
-interface AgentStatusProps {
+export interface AgentStatusProps {
   state: AgentState
   message?: string
   className?: string
@@ -65,6 +65,8 @@ export function AgentStatus({ state, message, className }: AgentStatusProps) {
 
   return (
     <div
+      role="status"
+      aria-live="polite"
       className={cn(
         "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm",
         className,

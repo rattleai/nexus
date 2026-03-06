@@ -7,16 +7,9 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import type { PromptTemplate } from "@/types/ai"
 
-export interface PromptTemplate {
-  id: string
-  name: string
-  description?: string
-  template: string
-  variables: string[]
-  category?: string
-  isFavorite?: boolean
-}
+export type { PromptTemplate }
 
 export interface PromptTemplateLibraryProps {
   templates: PromptTemplate[]
@@ -156,10 +149,18 @@ export function PromptTemplateLibrary({
     )
   }, [templates, search])
 
-  function getFilteredTemplates(category: string) {
-    if (category === "all") return filteredBySearch
-    return filteredBySearch.filter((t) => t.category === category)
-  }
+  const templatesByCategory = useMemo(() => {
+    const map = new Map<string, PromptTemplate[]>()
+    for (const cat of categories) {
+      map.set(
+        cat,
+        cat === "all"
+          ? filteredBySearch
+          : filteredBySearch.filter((t) => t.category === cat),
+      )
+    }
+    return map
+  }, [categories, filteredBySearch])
 
   return (
     <div className={cn("space-y-4", className)}>
@@ -183,28 +184,31 @@ export function PromptTemplateLibrary({
           ))}
         </TabsList>
 
-        {categories.map((cat) => (
-          <TabsContent key={cat} value={cat}>
-            <ScrollArea className="h-[400px]">
-              <div className="grid grid-cols-1 gap-3 pr-4 sm:grid-cols-2">
-                {getFilteredTemplates(cat).length === 0 ? (
-                  <p className="col-span-full py-8 text-center text-sm text-muted-foreground">
-                    No templates found.
-                  </p>
-                ) : (
-                  getFilteredTemplates(cat).map((template) => (
-                    <TemplateCard
-                      key={template.id}
-                      template={template}
-                      onSelect={onSelect}
-                      onToggleFavorite={onToggleFavorite}
-                    />
-                  ))
-                )}
-              </div>
-            </ScrollArea>
-          </TabsContent>
-        ))}
+        {categories.map((cat) => {
+          const filtered = templatesByCategory.get(cat) ?? []
+          return (
+            <TabsContent key={cat} value={cat}>
+              <ScrollArea className="h-[400px]">
+                <div className="grid grid-cols-1 gap-3 pr-4 sm:grid-cols-2">
+                  {filtered.length === 0 ? (
+                    <p className="col-span-full py-8 text-center text-sm text-muted-foreground">
+                      No templates found.
+                    </p>
+                  ) : (
+                    filtered.map((template) => (
+                      <TemplateCard
+                        key={template.id}
+                        template={template}
+                        onSelect={onSelect}
+                        onToggleFavorite={onToggleFavorite}
+                      />
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+          )
+        })}
       </Tabs>
     </div>
   )

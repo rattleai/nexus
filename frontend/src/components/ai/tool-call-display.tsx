@@ -39,6 +39,8 @@ const statusConfig: Record<
   error: { icon: XCircle, color: "text-red-500", label: "Error" },
 }
 
+export type { ToolCall, ToolCallDisplayProps }
+
 export function ToolCallDisplay({
   toolCall,
   onApprove,
@@ -82,6 +84,7 @@ export function ToolCallDisplay({
         <button
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           onClick={() => setArgsOpen(!argsOpen)}
+          aria-expanded={argsOpen}
         >
           {argsOpen ? (
             <ChevronDown className="h-3 w-3" />
@@ -102,6 +105,7 @@ export function ToolCallDisplay({
           <button
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => setResultOpen(!resultOpen)}
+            aria-expanded={resultOpen}
           >
             {resultOpen ? (
               <ChevronDown className="h-3 w-3" />

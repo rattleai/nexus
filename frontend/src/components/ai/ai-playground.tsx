@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { ModelSelector, type AIModel } from "./model-selector"
-import { ModelParameterControls } from "./model-parameter-controls"
+import { ModelParameterControls, type ModelParameters } from "./model-parameter-controls"
 import { TokenUsageDisplay } from "./token-usage-display"
 
 interface PlaygroundResponse {
@@ -28,7 +28,7 @@ interface PlaygroundProps {
   className?: string
 }
 
-const defaultParams = {
+const defaultParams: ModelParameters = {
   temperature: 1,
   topP: 1,
   maxTokens: 4096,

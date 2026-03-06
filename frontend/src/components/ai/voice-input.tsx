@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { Mic, MicOff, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -40,7 +41,9 @@ export function VoiceInput({
     }
   }
 
-  if (error && onError) onError(error)
+  useEffect(() => {
+    if (error && onError) onError(error)
+  }, [error, onError])
 
   if (!isSupported) {
     return (
@@ -79,7 +82,7 @@ export function VoiceInput({
               <Mic className="h-4 w-4" />
             )}
             {isListening && (
-              <span className="absolute inset-0 animate-ping rounded-md bg-red-500/20" />
+              <span className="pointer-events-none absolute inset-0 animate-ping rounded-md bg-red-500/20" />
             )}
           </Button>
         </TooltipTrigger>

@@ -35,6 +35,11 @@ export interface MessageDraft {
   content: string
 }
 
+// ── Constants ───────────────────────────────────────
+
+const MAX_CONVERSATIONS = 100
+const MAX_MESSAGES_PER_CONVERSATION = 500
+
 // ── State ────────────────────────────────────────────
 
 interface ChatState {
@@ -187,13 +192,33 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: "chat-store",
-      partialize: (s) => ({
-        conversations: s.conversations,
-        messages: s.messages,
-        activeConversationId: s.activeConversationId,
-        selectedModel: s.selectedModel,
-        drafts: s.drafts,
-      }),
+      partialize: (s) => {
+        // Limit persisted data to prevent unbounded localStorage growth
+        const conversations = s.conversations.slice(0, MAX_CONVERSATIONS)
+        const conversationIds = new Set(conversations.map((c) => c.id))
+
+        const messages: Record<string, ChatMessage[]> = {}
+        for (const [id, msgs] of Object.entries(s.messages)) {
+          if (conversationIds.has(id)) {
+            messages[id] = msgs.slice(-MAX_MESSAGES_PER_CONVERSATION)
+          }
+        }
+
+        const drafts: Record<string, string> = {}
+        for (const [id, draft] of Object.entries(s.drafts)) {
+          if (conversationIds.has(id)) {
+            drafts[id] = draft
+          }
+        }
+
+        return {
+          conversations,
+          messages,
+          activeConversationId: s.activeConversationId,
+          selectedModel: s.selectedModel,
+          drafts,
+        }
+      },
     },
   ),
 )

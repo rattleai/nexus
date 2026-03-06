@@ -30,7 +30,8 @@ export function Tour({ steps, active, onComplete, onSkip }: TourProps) {
   const [currentStep, setCurrentStep] = React.useState(0)
   const [targetRect, setTargetRect] = React.useState<TargetRect | null>(null)
 
-  const step = steps[currentStep]
+  const clampedStep = Math.min(currentStep, steps.length - 1)
+  const step = steps[clampedStep]
 
   const updateTargetRect = React.useCallback(() => {
     if (!step) return

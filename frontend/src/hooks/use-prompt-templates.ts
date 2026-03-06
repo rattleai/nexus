@@ -1,13 +1,5 @@
-import { useCallback, useState } from "react"
-
-interface PromptTemplate {
-  id: string
-  name: string
-  template: string
-  variables: string[]
-  category?: string
-  isFavorite?: boolean
-}
+import { useCallback, useMemo, useState } from "react"
+import type { PromptTemplate } from "@/types/ai"
 
 const STORAGE_KEY = "prompt-templates"
 
@@ -18,6 +10,7 @@ function extractVariables(template: string): string[] {
 }
 
 function loadTemplates(): PromptTemplate[] {
+  if (typeof window === "undefined") return []
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
     return stored ? JSON.parse(stored) : []
@@ -27,16 +20,26 @@ function loadTemplates(): PromptTemplate[] {
 }
 
 function saveTemplates(templates: PromptTemplate[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(templates))
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(templates))
+  } catch {
+    // localStorage not available or quota exceeded
+  }
 }
 
 export function usePromptTemplates() {
   const [templates, setTemplates] = useState<PromptTemplate[]>(loadTemplates)
 
-  const persist = useCallback((updated: PromptTemplate[]) => {
-    setTemplates(updated)
-    saveTemplates(updated)
-  }, [])
+  const persist = useCallback(
+    (updater: (prev: PromptTemplate[]) => PromptTemplate[]) => {
+      setTemplates((prev) => {
+        const updated = updater(prev)
+        saveTemplates(updated)
+        return updated
+      })
+    },
+    [],
+  )
 
   const addTemplate = useCallback(
     (name: string, template: string, category?: string) => {
@@ -48,16 +51,16 @@ export function usePromptTemplates() {
         category,
         isFavorite: false,
       }
-      persist([...templates, newTemplate])
+      persist((prev) => [...prev, newTemplate])
       return newTemplate
     },
-    [templates, persist],
+    [persist],
   )
 
   const updateTemplate = useCallback(
     (id: string, updates: Partial<Pick<PromptTemplate, "name" | "template" | "category">>) => {
-      persist(
-        templates.map((t) =>
+      persist((prev) =>
+        prev.map((t) =>
           t.id === id
             ? {
                 ...t,
@@ -70,25 +73,25 @@ export function usePromptTemplates() {
         ),
       )
     },
-    [templates, persist],
+    [persist],
   )
 
   const deleteTemplate = useCallback(
     (id: string) => {
-      persist(templates.filter((t) => t.id !== id))
+      persist((prev) => prev.filter((t) => t.id !== id))
     },
-    [templates, persist],
+    [persist],
   )
 
   const toggleFavorite = useCallback(
     (id: string) => {
-      persist(
-        templates.map((t) =>
+      persist((prev) =>
+        prev.map((t) =>
           t.id === id ? { ...t, isFavorite: !t.isFavorite } : t,
         ),
       )
     },
-    [templates, persist],
+    [persist],
   )
 
   const compileTemplate = useCallback(
@@ -100,7 +103,10 @@ export function usePromptTemplates() {
     [templates],
   )
 
-  const categories = [...new Set(templates.map((t) => t.category).filter(Boolean))] as string[]
+  const categories = useMemo(
+    () => [...new Set(templates.map((t) => t.category).filter(Boolean))] as string[],
+    [templates],
+  )
 
   return {
     templates,

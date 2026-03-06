@@ -5,6 +5,7 @@ import { formatCurrency, formatCompactNumber } from "@/lib/format"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
+import { StatCard } from "@/components/stat-card"
 
 export interface CostData {
   model: string
@@ -54,30 +55,6 @@ function aggregateByModel(data: CostData[]): ModelBreakdown[] {
   }
 
   return Array.from(map.values()).sort((a, b) => b.totalCost - a.totalCost)
-}
-
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  className,
-}: {
-  title: string
-  value: string | number
-  icon: React.ComponentType<{ className?: string }>
-  className?: string
-}) {
-  return (
-    <Card className={cn(className)}>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <Icon className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <p className="mt-2 text-2xl font-bold">{value}</p>
-      </CardContent>
-    </Card>
-  )
 }
 
 export function CostDashboard({ data, budget, className }: CostDashboardProps) {

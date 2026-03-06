@@ -5,19 +5,9 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Separator } from "@/components/ui/separator"
+import type { ModelParameters, ParameterPreset } from "@/types/ai"
 
-export interface ModelParameters {
-  temperature: number
-  topP: number
-  maxTokens: number
-  frequencyPenalty: number
-  presencePenalty: number
-}
-
-export interface ParameterPreset {
-  name: string
-  params: Partial<ModelParameters>
-}
+export type { ModelParameters, ParameterPreset }
 
 export interface ModelParameterControlsProps {
   params: ModelParameters

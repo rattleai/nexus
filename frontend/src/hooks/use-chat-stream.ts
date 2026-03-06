@@ -22,10 +22,6 @@ interface UseChatStreamOptions {
   onFinish?: (message: ChatStreamMessage) => void
 }
 
-function generateId(): string {
-  return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
-}
-
 export function useChatStream({
   apiUrl,
   model,
@@ -37,6 +33,16 @@ export function useChatStream({
   const [isStreaming, setIsStreaming] = React.useState(false)
   const [error, setError] = React.useState<Error | null>(null)
   const abortControllerRef = React.useRef<AbortController | null>(null)
+  const messagesRef = React.useRef(messages)
+  messagesRef.current = messages
+
+  // Abort on unmount
+  React.useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort()
+      abortControllerRef.current = null
+    }
+  }, [])
 
   const stop = React.useCallback(() => {
     abortControllerRef.current?.abort()
@@ -49,16 +55,19 @@ export function useChatStream({
       setError(null)
 
       const userMessage: ChatStreamMessage = {
-        id: generateId(),
+        id: crypto.randomUUID(),
         role: "user",
         content,
       }
 
       const assistantMessage: ChatStreamMessage = {
-        id: generateId(),
+        id: crypto.randomUUID(),
         role: "assistant",
         content: "",
       }
+
+      // Read current messages via ref to avoid stale closure
+      const currentMessages = messagesRef.current
 
       setMessages((prev) => [...prev, userMessage, assistantMessage])
       setIsStreaming(true)
@@ -72,7 +81,7 @@ export function useChatStream({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             messages: [
-              ...messages.map((m) => ({ role: m.role, content: m.content })),
+              ...currentMessages.map((m) => ({ role: m.role, content: m.content })),
               { role: "user", content },
             ],
             model,
@@ -95,13 +104,17 @@ export function useChatStream({
         let accumulated = ""
         let usage: ChatStreamMessage["usage"] | undefined
         let toolCalls: ChatStreamMessage["toolCalls"] | undefined
+        let lineBuffer = ""
 
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
 
           const chunk = decoder.decode(value, { stream: true })
-          const lines = chunk.split("\n")
+          lineBuffer += chunk
+          const lines = lineBuffer.split("\n")
+          // Keep the last potentially incomplete line in the buffer
+          lineBuffer = lines.pop() ?? ""
 
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue
@@ -165,11 +178,13 @@ export function useChatStream({
         abortControllerRef.current = null
       }
     },
-    [apiUrl, model, systemPrompt, messages, onError, onFinish],
+    [apiUrl, model, systemPrompt, onError, onFinish],
   )
 
   const reload = React.useCallback(async () => {
-    const lastUserMessage = [...messages]
+    // Read latest messages via ref to avoid stale closure
+    const currentMessages = messagesRef.current
+    const lastUserMessage = [...currentMessages]
       .reverse()
       .find((m) => m.role === "user")
     if (!lastUserMessage) return
@@ -181,8 +196,12 @@ export function useChatStream({
       return prev.slice(0, lastUserIdx)
     })
 
+    // Wait for state to settle before sending
+    // Use a microtask to ensure the setMessages above is processed
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
     await sendMessage(lastUserMessage.content)
-  }, [messages, sendMessage])
+  }, [sendMessage])
 
   return {
     messages,
