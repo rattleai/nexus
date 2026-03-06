@@ -4,6 +4,8 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     env_file: .env
+    environment:
+      - PYTHONPATH=/app
     volumes:
       - .:/app
     depends_on:
@@ -66,6 +68,8 @@ services:
   worker:
     build: .
     env_file: .env
+    environment:
+      - PYTHONPATH=/app
     volumes:
       - .:/app
     depends_on:
@@ -79,6 +83,8 @@ services:
   beat:
     build: .
     env_file: .env
+    environment:
+      - PYTHONPATH=/app
     volumes:
       - .:/app
     depends_on:

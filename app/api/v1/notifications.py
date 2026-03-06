@@ -20,17 +20,28 @@ class NotificationResponse(BaseModel):
     id: uuid.UUID
     type: str
     title: str
-    body: str | None
-    data: dict | None
-    read_at: datetime | None
+    message: str | None
+    read: bool
+    action_url: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
 
+    @classmethod
+    def from_notification(cls, n: "Notification") -> "NotificationResponse":
+        return cls(
+            id=n.id,
+            type=n.type,
+            title=n.title,
+            message=n.body,
+            read=n.read_at is not None,
+            action_url=n.data.get("action_url") if n.data else None,
+            created_at=n.created_at,
+        )
 
-class NotificationCountResponse(BaseModel):
-    unread: int
-    total: int
+
+class UnreadCountResponse(BaseModel):
+    count: int
 
 
 @router.get("", response_model=list[NotificationResponse])
@@ -50,26 +61,23 @@ async def list_notifications(
     stmt = stmt.order_by(Notification.created_at.desc()).limit(limit)
 
     result = await db.execute(stmt)
-    return result.scalars().all()
+    return [NotificationResponse.from_notification(n) for n in result.scalars().all()]
 
 
-@router.get("/count", response_model=NotificationCountResponse)
-async def get_notification_count(
+@router.get("/unread-count", response_model=UnreadCountResponse)
+async def get_unread_count(
     user: User = Depends(get_current_user_from_token),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get notification counts (unread and total)."""
-    base = select(func.count()).select_from(Notification).where(
-        Notification.user_id == user.id,
-        Notification.tenant_id == user.tenant_id,
+    """Get unread notification count."""
+    result = await db.execute(
+        select(func.count()).select_from(Notification).where(
+            Notification.user_id == user.id,
+            Notification.tenant_id == user.tenant_id,
+            Notification.read_at.is_(None),
+        )
     )
-    total_result = await db.execute(base)
-    total = total_result.scalar() or 0
-
-    unread_result = await db.execute(base.where(Notification.read_at.is_(None)))
-    unread = unread_result.scalar() or 0
-
-    return NotificationCountResponse(unread=unread, total=total)
+    return UnreadCountResponse(count=result.scalar() or 0)
 
 
 @router.post("/{notification_id}/read", response_model=NotificationResponse)
@@ -95,7 +103,7 @@ async def mark_as_read(
         await db.commit()
         await db.refresh(notification)
 
-    return notification
+    return NotificationResponse.from_notification(notification)
 
 
 @router.post("/read-all", status_code=204)
