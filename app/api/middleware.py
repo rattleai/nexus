@@ -59,7 +59,9 @@ def _add_security_headers(response: Response, request_id: str) -> None:
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     if not settings.DEBUG:
-        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=63072000; includeSubDomains; preload"
+        )
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = (
@@ -69,7 +71,9 @@ def _add_security_headers(response: Response, request_id: str) -> None:
         "img-src 'self' data:; "
         "font-src 'self'; "
         "connect-src 'self'; "
-        "frame-ancestors 'none'"
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
     )
     response.headers["X-Request-ID"] = request_id
 
@@ -123,16 +127,25 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Internal server error", "code": "INTERNAL_ERROR"},
             )
 
+        # Check for idempotency-replayed response (set by IdempotencyGuard dependency).
+        # When a cached idempotent response exists, return it instead of the handler's response.
+        idempotency_response = getattr(request.state, "idempotency_response", None)
+        if idempotency_response is not None:
+            response = idempotency_response
+
         duration_ms = round((time.perf_counter() - start) * 1000, 2)
 
-        # Log every request with timing
-        logger.info(
+        # Log every request with timing — warn on server errors
+        log_level = "warning" if response.status_code >= 500 else "info"
+        getattr(logger, log_level)(
             "request_completed",
             status_code=response.status_code,
             duration_ms=duration_ms,
+            client_ip=request.client.host if request.client else "unknown",
         )
 
-        # ── Security headers ──
+        # ── Security headers & timing ──
         _add_security_headers(response, request_id)
+        response.headers["X-Response-Time"] = f"{duration_ms}ms"
 
         return response

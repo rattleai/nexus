@@ -133,3 +133,67 @@ def storage_usage_report() -> dict:
 
     logger.info("storage_usage_report_completed", tenant_count=len(report))
     return {"tenants": len(report), "report": report}
+
+
+@celery.task(name="app.workers.periodic.cleanup_expired_tokens")
+def cleanup_expired_tokens() -> dict:
+    """Delete expired refresh tokens and email verification tokens.
+
+    Prevents unbounded growth of token tables and removes stale credentials.
+    """
+    from app.db.models import EmailVerificationToken, RefreshToken
+
+    now = datetime.now(UTC)
+    with _SyncSession() as db:
+        # Remove expired refresh tokens (expired or revoked older than 7 days)
+        revoked_cutoff = now - timedelta(days=7)
+        refresh_result = db.execute(
+            delete(RefreshToken).where(
+                (RefreshToken.expires_at < now)
+                | ((RefreshToken.revoked.is_(True)) & (RefreshToken.created_at < revoked_cutoff))
+            )
+        )
+        refresh_count = refresh_result.rowcount
+
+        # Remove expired or used email verification tokens older than 7 days
+        token_cutoff = now - timedelta(days=7)
+        verification_result = db.execute(
+            delete(EmailVerificationToken).where(
+                (EmailVerificationToken.expires_at < token_cutoff)
+                | ((EmailVerificationToken.used_at.isnot(None)) & (EmailVerificationToken.created_at < token_cutoff))
+            )
+        )
+        verification_count = verification_result.rowcount
+
+        db.commit()
+
+    logger.info(
+        "cleanup_expired_tokens_completed",
+        refresh_tokens_deleted=refresh_count,
+        verification_tokens_deleted=verification_count,
+    )
+    return {"refresh_tokens": refresh_count, "verification_tokens": verification_count}
+
+
+@celery.task(name="app.workers.periodic.cleanup_expired_invitations")
+def cleanup_expired_invitations() -> dict:
+    """Mark expired pending invitations as EXPIRED."""
+    from app.db.models import Invitation, InvitationStatus
+
+    now = datetime.now(UTC)
+    with _SyncSession() as db:
+        result = db.execute(
+            update(Invitation)
+            .where(
+                Invitation.status == InvitationStatus.PENDING,
+                Invitation.expires_at < now,
+            )
+            .values(status=InvitationStatus.EXPIRED)
+            .execution_options(synchronize_session=False)
+        )
+        count = result.rowcount
+        db.commit()
+
+    if count > 0:
+        logger.info("cleanup_expired_invitations_completed", expired_count=count)
+    return {"expired": count}

@@ -10,14 +10,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireScopes, get_current_tenant, get_db
+from app.api.rate_limit import ApiKeyRateLimiter
 from app.api.schemas import JobCancelResponse, JobCreate, JobResponse
+from app.billing.enforcement import enforce_plan_limit, get_effective_plan
 from app.core.cache import cached, invalidate
 from app.core.pagination import CursorPage, paginate
+from app.core.quotas import QuotaMetric, decrement_usage, increment_usage
 from app.core.tenant import tenant_query
-from app.core.url_validation import validate_webhook_url
+from app.core.url_validation import validate_webhook_url_async
 from app.db.models import Job, JobStatus, Tenant
 
-router = APIRouter(prefix="/jobs")
+_api_key_rate_limit = ApiKeyRateLimiter()
+router = APIRouter(prefix="/jobs", dependencies=[Depends(_api_key_rate_limit)])
 logger = structlog.stdlib.get_logger()
 
 
@@ -40,9 +44,13 @@ async def create_job(
     db: AsyncSession = Depends(get_db),
     x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
 ):
+    # Enforce plan quota for job creation
+    plan = await get_effective_plan(tenant.id, db)
+    await enforce_plan_limit(tenant.id, plan, QuotaMetric.JOBS_PER_MONTH)
+
     webhook_url = str(body.webhook_url) if body.webhook_url else None
     if webhook_url:
-        ssrf_error = validate_webhook_url(webhook_url)
+        ssrf_error = await validate_webhook_url_async(webhook_url)
         if ssrf_error:
             raise HTTPException(status_code=422, detail=f"Invalid webhook URL: {ssrf_error}")
 
@@ -67,7 +75,15 @@ async def create_job(
         input_hash=input_hash,
     )
     db.add(job)
-    await db.commit()
+
+    # Track usage before commit so failures roll back together.
+    # Redis increment happens first; if DB commit fails, we decrement to compensate.
+    await increment_usage(tenant.id, QuotaMetric.JOBS_PER_MONTH)
+    try:
+        await db.commit()
+    except Exception:
+        await decrement_usage(tenant.id, QuotaMetric.JOBS_PER_MONTH)
+        raise
     await db.refresh(job)
 
     # Dispatch to Celery — if the broker is unreachable, log the error but

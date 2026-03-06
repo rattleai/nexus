@@ -62,6 +62,33 @@ class _InMemoryRateLimitStore:
 _fallback_store = _InMemoryRateLimitStore()
 
 
+def _get_client_ip(request: Request) -> str:
+    """Extract client IP, trusting X-Real-IP only from localhost proxies."""
+    direct_ip = request.client.host if request.client else "unknown"
+    forwarded_ip = request.headers.get("X-Real-IP", "").strip()
+    if forwarded_ip and direct_ip in ("127.0.0.1", "::1"):
+        return forwarded_ip
+    return direct_ip
+
+
+async def _check_rate(key: str, max_requests: int, window: int) -> int:
+    """Check rate limit and return current request count."""
+    now = time.time()
+    window_start = now - window
+
+    try:
+        pipe = redis_pool.pipeline()
+        pipe.zremrangebyscore(key, 0, window_start)
+        pipe.zadd(key, {str(now): now})
+        pipe.zcard(key)
+        pipe.expire(key, window)
+        results = await pipe.execute()
+        return results[2]
+    except Exception:
+        logger.warning("rate_limit_redis_fallback", key=key)
+        return _fallback_store.check_and_increment(key, window)
+
+
 class RateLimiter:
     """Callable FastAPI dependency for per-IP sliding-window rate limiting."""
 
@@ -76,32 +103,11 @@ class RateLimiter:
         self.key_prefix = key_prefix
 
     async def __call__(self, request: Request) -> None:
-        # Use X-Real-IP (set by trusted nginx) or fall back to direct client IP.
-        # X-Forwarded-For is not used directly as it can be spoofed without proxy validation.
-        client_ip = request.headers.get("X-Real-IP", "").strip()
-        if not client_ip:
-            client_ip = request.client.host if request.client else "unknown"
-
-        key = f"{self.key_prefix}:{client_ip}:{request.url.path}"
-        now = time.time()
-        window_start = now - self.window
-
-        try:
-            pipe = redis_pool.pipeline()
-            # Remove entries outside the window
-            pipe.zremrangebyscore(key, 0, window_start)
-            # Add current request
-            pipe.zadd(key, {str(now): now})
-            # Count entries (after adding)
-            pipe.zcard(key)
-            # Set TTL on the key
-            pipe.expire(key, self.window)
-            results = await pipe.execute()
-            request_count = results[2]  # zcard result after zadd
-        except Exception:
-            # Redis unavailable — fall back to in-memory rate limiting
-            logger.warning("rate_limit_redis_fallback", client_ip=client_ip)
-            request_count = _fallback_store.check_and_increment(key, self.window)
+        client_ip = _get_client_ip(request)
+        # Normalize path to prevent bypass via trailing slashes, double slashes, or casing
+        normalized_path = request.url.path.rstrip("/").lower().replace("//", "/")
+        key = f"{self.key_prefix}:{client_ip}:{normalized_path}"
+        request_count = await _check_rate(key, self.max_requests, self.window)
 
         if request_count > self.max_requests:
             logger.warning(
@@ -115,4 +121,42 @@ class RateLimiter:
                 status_code=429,
                 detail="Too many requests",
                 headers={"Retry-After": str(self.window)},
+            )
+
+
+class ApiKeyRateLimiter:
+    """Per-API-key rate limiter that uses the key's configured rate_limit.
+
+    Falls back to the global default if the API key has no custom limit.
+    Must be used after get_current_api_key dependency resolves the key.
+    """
+
+    async def __call__(self, request: Request) -> None:
+        # The API key is resolved by dependency injection before this runs.
+        # Access it from request state if available, otherwise skip.
+        api_key = getattr(request.state, "api_key", None)
+        if api_key is None:
+            return
+
+        max_requests = api_key.rate_limit or settings.RATE_LIMIT_DEFAULT
+        window = settings.RATE_LIMIT_WINDOW_SECONDS
+        key = f"rl:apikey:{api_key.id}"
+
+        request_count = await _check_rate(key, max_requests, window)
+
+        if request_count > max_requests:
+            logger.warning(
+                "api_key_rate_limit_exceeded",
+                key_id=str(api_key.id),
+                count=request_count,
+                limit=max_requests,
+            )
+            raise HTTPException(
+                status_code=429,
+                detail="API key rate limit exceeded",
+                headers={
+                    "Retry-After": str(window),
+                    "X-RateLimit-Limit": str(max_requests),
+                    "X-RateLimit-Remaining": "0",
+                },
             )

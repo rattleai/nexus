@@ -11,8 +11,8 @@ from sqlalchemy.orm import selectinload
 
 from app.api.auth import hash_api_key
 from app.config import settings
-from app.db.models import ApiKey, Tenant, TenantMembership, User, UserRole
-from app.db.session import get_session
+from app.db.models import ApiKey, Tenant, TenantMembership, User
+from app.db.session import get_read_session, get_session, set_tenant_context
 
 logger = structlog.stdlib.get_logger()
 
@@ -22,14 +22,25 @@ async def get_db() -> AsyncGenerator[AsyncSession]:
         yield session
 
 
+async def get_read_db() -> AsyncGenerator[AsyncSession]:
+    """Get a read-only DB session (uses read replica if configured)."""
+    async for session in get_read_session():
+        yield session
+
+
 # ── API Key auth (existing) ─────────────────────────────
 
 
 async def get_current_api_key(
+    request: Request,
     x_api_key: str = Header(..., alias="X-API-Key"),
     db: AsyncSession = Depends(get_db),
 ) -> ApiKey:
-    """Resolve and validate the API key from the request header."""
+    """Resolve and validate the API key from the request header.
+
+    Stores the resolved key on request.state.api_key for downstream
+    dependencies (e.g. ApiKeyRateLimiter).
+    """
     key_hash = hash_api_key(x_api_key)
 
     result = await db.execute(
@@ -44,14 +55,23 @@ async def get_current_api_key(
     if tenant is None or not tenant.is_active:
         raise HTTPException(status_code=403, detail="Tenant not found or inactive")
 
+    # Store on request state for ApiKeyRateLimiter
+    request.state.api_key = api_key
+
     return api_key
 
 
 async def get_current_tenant(
     api_key: ApiKey = Depends(get_current_api_key),
+    db: AsyncSession = Depends(get_db),
 ) -> Tenant:
-    """Return the tenant associated with the current API key."""
-    return api_key.tenant
+    """Return the tenant associated with the current API key.
+
+    Also sets PostgreSQL RLS tenant context for defense-in-depth isolation.
+    """
+    tenant = api_key.tenant
+    await set_tenant_context(db, str(tenant.id))
+    return tenant
 
 
 # ── JWT auth (new, opt-in via AUTH_ENABLED) ──────────────
@@ -75,9 +95,9 @@ async def get_current_user_from_token(
     try:
         payload = decode_access_token(token)
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired")
+        raise HTTPException(status_code=401, detail="Token has expired") from None
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid token") from None
 
     user_id_str = payload.get("sub")
     if not user_id_str:
@@ -86,13 +106,22 @@ async def get_current_user_from_token(
     try:
         user_id = uuid.UUID(user_id_str)
     except (ValueError, AttributeError):
-        raise HTTPException(status_code=401, detail="Invalid token payload")
+        raise HTTPException(status_code=401, detail="Invalid token payload") from None
 
     result = await db.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))
     user = result.scalar_one_or_none()
 
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    # Cross-check JWT tenant_id against the user's current tenant to detect
+    # stale tokens (e.g. user was moved to a different tenant after JWT was issued).
+    jwt_tenant_id = payload.get("tenant_id")
+    if jwt_tenant_id and str(user.tenant_id) != str(jwt_tenant_id):
+        raise HTTPException(status_code=401, detail="Token tenant mismatch — please re-authenticate")
+
+    # Set RLS tenant context for defense-in-depth isolation (mirrors API key auth path)
+    await set_tenant_context(db, str(user.tenant_id))
 
     return user
 
@@ -124,7 +153,7 @@ class RequireRole:
         if not membership or membership.role.value not in self.required_roles:
             raise HTTPException(
                 status_code=403,
-                detail=f"Requires one of: {', '.join(sorted(self.required_roles))}",
+                detail="Insufficient permissions",
             )
 
 
@@ -153,7 +182,7 @@ class RequireScopes:
         if missing:
             raise HTTPException(
                 status_code=403,
-                detail=f"API key missing required scopes: {', '.join(sorted(missing))}",
+                detail="Insufficient API key permissions",
             )
 
 
@@ -162,7 +191,7 @@ async def require_admin_key(
 ) -> None:
     """Validate that the request carries a valid admin key.
 
-    Uses a dedicated ADMIN_KEY setting (falls back to SECRET_KEY in debug mode).
+    Uses a dedicated ADMIN_KEY setting. Rejects requests when ADMIN_KEY is not configured.
     Comparison is constant-time to prevent timing side-channel attacks.
     """
     if not settings.ADMIN_KEY:

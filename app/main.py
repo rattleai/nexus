@@ -4,9 +4,11 @@ from pathlib import Path
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+import app.core.event_handlers as _event_handlers  # noqa: F401 — registers handlers on import
 from app import __version__
 from app.api.exceptions import register_exception_handlers
 from app.api.middleware import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
@@ -38,13 +40,32 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Graceful shutdown
+    # Graceful shutdown — dispose resources in reverse init order with timeouts
+    import asyncio
+
+    logger.info("app_shutting_down")
+
     if settings.OTEL_ENABLED:
         from app.core.telemetry import shutdown_telemetry
 
         shutdown_telemetry()
 
-    await redis_pool.aclose()
+    # Close Redis (with timeout to prevent hanging during deployment)
+    try:
+        await asyncio.wait_for(redis_pool.aclose(), timeout=5.0)
+    except TimeoutError:
+        logger.warning("redis_close_timeout")
+    except Exception:
+        logger.warning("redis_close_error", exc_info=True)
+
+    # Dispose database engines to release connection pools
+    from app.db.session import dispose_engines
+
+    try:
+        await asyncio.wait_for(dispose_engines(), timeout=10.0)
+    except TimeoutError:
+        logger.warning("db_engine_dispose_timeout")
+
     logger.info("app_shutdown")
 
 
@@ -61,7 +82,12 @@ def create_app() -> FastAPI:
     # Exception handlers (fail-closed)
     register_exception_handlers(app)
 
-    # Middleware (outermost first)
+    # Middleware — Starlette executes in reverse order of registration:
+    # last added = outermost. We want:
+    #   CORS (outermost) → SecurityHeaders → RequestSizeLimit → GZip (innermost)
+    # So size limit checks Content-Length BEFORE gzip decompresses the body,
+    # preventing gzip bombs from exhausting memory.
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(RequestSizeLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(

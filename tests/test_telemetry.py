@@ -2,8 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
-
 
 class TestSetupTelemetry:
     def test_noop_when_disabled(self):

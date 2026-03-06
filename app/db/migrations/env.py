@@ -8,13 +8,30 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from app.config import settings
 from app.db.base import Base
 from app.db.models import (  # noqa: F401 — register models
+    AIUsageLog,
     ApiKey,
+    AuditLog,
+    EmailVerificationToken,
+    FeatureFlag,
+    Invitation,
     Job,
+    Notification,
     OAuthAccount,
+    Plan,
+    PromptTemplate,
     RefreshToken,
+    SSOConfiguration,
+    Subscription,
     Tenant,
+    TenantAIProviderKey,
+    TenantFeatureOverride,
     TenantMembership,
+    TokenWallet,
+    UsageRecord,
     User,
+    WalletTransaction,
+    WebhookDelivery,
+    WebhookEndpoint,
 )
 
 config = context.config

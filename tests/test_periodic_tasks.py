@@ -1,10 +1,24 @@
 """Tests for periodic Celery tasks."""
 
+import sys
 import uuid
-from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+# Ensure the tasks module can be imported without a real database by mocking
+# create_engine at import time.  The _SyncSession created at module level in
+# app.workers.tasks will be a MagicMock, which periodic.py re-exports.
+_mock_engine = MagicMock()
+_mock_session_cls = MagicMock()
+
+with patch("sqlalchemy.create_engine", return_value=_mock_engine), \
+     patch("sqlalchemy.orm.sessionmaker", return_value=_mock_session_cls):
+    # Drop cached modules so they get re-imported with the patches active
+    sys.modules.pop("app.workers.tasks", None)
+    sys.modules.pop("app.workers.periodic", None)
+    import app.workers.periodic
+    import app.workers.tasks  # noqa: F401 — imported for side-effect
 
 
 @pytest.fixture
@@ -86,8 +100,9 @@ class TestCacheWarmup:
         mock_sync_session.execute.return_value = exec_result
 
         mock_redis = MagicMock()
-        with patch("app.workers.periodic.sync_redis") as mock_redis_module:
-            mock_redis_module.from_url.return_value = mock_redis
+        mock_redis_module = MagicMock()
+        mock_redis_module.from_url.return_value = mock_redis
+        with patch.dict("sys.modules", {"redis": mock_redis_module}):
             result = cache_warmup()
 
         assert result["warmed"] == 1

@@ -1,7 +1,6 @@
 """Tests for password hashing and JWT token utilities."""
 
 from datetime import timedelta
-from unittest.mock import patch
 
 import jwt
 import pytest

@@ -7,11 +7,14 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import RequireScopes, get_current_tenant
+from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.rate_limit import RateLimiter
 from app.api.schemas import FileUploadResponse
+from app.billing.enforcement import enforce_plan_limit, get_effective_plan
 from app.config import settings
+from app.core.quotas import QuotaMetric, increment_usage
 from app.db.models import Tenant
 from app.storage.s3 import S3Storage, StorageError, handle_storage_error
 
@@ -59,7 +62,12 @@ def _tenant_key(tenant: Tenant, filename: str) -> str:
 async def upload_file(
     file: UploadFile,
     tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
 ):
+    # Enforce plan quota for uploads
+    plan = await get_effective_plan(tenant.id, db)
+    await enforce_plan_limit(tenant.id, plan, QuotaMetric.FILE_UPLOADS_PER_DAY)
+
     # Read in chunks to enforce size limit without loading entire file into memory
     chunks = []
     total_size = 0
@@ -89,6 +97,10 @@ async def upload_file(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    # Track usage
+    await increment_usage(tenant.id, QuotaMetric.FILE_UPLOADS_PER_DAY)
+    await increment_usage(tenant.id, QuotaMetric.STORAGE_BYTES, len(content))
+
     logger.info("file_uploaded", tenant_id=str(tenant.id), key=key, size=len(content))
     return FileUploadResponse(
         key=key,
@@ -102,18 +114,21 @@ async def download_file(
     file_key: str,
     tenant: Tenant = Depends(get_current_tenant),
 ):
+    # URL-decode before validation to prevent double-encoding bypass (%2e%2e → ..)
+    from urllib.parse import unquote
+    file_key = unquote(file_key)
+
     expected_prefix = f"tenants/{tenant.id}/"
     if not file_key.startswith(expected_prefix):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Block path traversal
-    if ".." in file_key:
+    if ".." in file_key or "\\" in file_key:
         raise HTTPException(status_code=400, detail="Invalid file key")
 
     try:
         storage = _get_storage()
-        if not await storage.async_exists(file_key):
-            raise HTTPException(status_code=404, detail="File not found")
+        # Download directly — avoid TOCTOU race from separate exists check
         data = await storage.async_download(file_key)
     except StorageError as exc:
         raise handle_storage_error(exc) from exc
@@ -138,17 +153,19 @@ async def delete_file(
     file_key: str,
     tenant: Tenant = Depends(get_current_tenant),
 ):
+    from urllib.parse import unquote
+    file_key = unquote(file_key)
+
     expected_prefix = f"tenants/{tenant.id}/"
     if not file_key.startswith(expected_prefix):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    if ".." in file_key:
+    if ".." in file_key or "\\" in file_key:
         raise HTTPException(status_code=400, detail="Invalid file key")
 
     try:
         storage = _get_storage()
-        if not await storage.async_exists(file_key):
-            raise HTTPException(status_code=404, detail="File not found")
+        # Delete directly — avoid TOCTOU race from separate exists check
         await storage.async_delete(file_key)
     except StorageError as exc:
         raise handle_storage_error(exc) from exc
