@@ -18,9 +18,9 @@ class TestBuildKey:
         assert key == "cache:item:xyz"
 
     def test_fallback_to_hash(self):
-        key = _build_key("noplaces", ("arg",), {"missing": "key"})
-        assert key.startswith("cache:noplaces:")
-        assert len(key) > len("cache:noplaces:")
+        key = _build_key("item:{0}:{missing}", ("arg",), {"wrong": "key"})
+        assert key.startswith("cache:item:")
+        assert len(key) > len("cache:item:")
 
 
 class TestCachedDecorator:
@@ -44,7 +44,7 @@ class TestCachedDecorator:
             call_count += 1
             return {"value": 42}
 
-        with patch("app.core.cache.redis_pool", mock_redis):
+        with patch("app.core.redis.redis_pool", mock_redis):
             result = await my_func()
 
         assert result == {"value": 42}
@@ -68,7 +68,7 @@ class TestCachedDecorator:
             call_count += 1
             return {"value": 99}
 
-        with patch("app.core.cache.redis_pool", mock_redis):
+        with patch("app.core.redis.redis_pool", mock_redis):
             result = await my_func()
 
         assert result == {"value": 42}
@@ -84,7 +84,7 @@ class TestCachedDecorator:
         async def my_func():
             return {"fallback": True}
 
-        with patch("app.core.cache.redis_pool", mock_redis):
+        with patch("app.core.redis.redis_pool", mock_redis):
             result = await my_func()
 
         assert result == {"fallback": True}
@@ -122,7 +122,7 @@ class TestCachedDecorator:
         mock_request = MagicMock()
         mock_request.state.cache_bypass = True
 
-        with patch("app.core.cache.redis_pool", mock_redis):
+        with patch("app.core.redis.redis_pool", mock_redis):
             result = await my_func(mock_request)
 
         assert result == {"fresh": True}
@@ -135,7 +135,7 @@ class TestInvalidate:
         mock_redis = AsyncMock()
         mock_redis.delete = AsyncMock(return_value=1)
 
-        with patch("app.core.cache.redis_pool", mock_redis):
+        with patch("app.core.redis.redis_pool", mock_redis):
             count = await invalidate("tenants:abc")
 
         assert count == 1
@@ -152,7 +152,7 @@ class TestInvalidate:
         mock_redis.scan_iter = fake_scan_iter
         mock_redis.delete = AsyncMock(return_value=1)
 
-        with patch("app.core.cache.redis_pool", mock_redis):
+        with patch("app.core.redis.redis_pool", mock_redis):
             count = await invalidate("tenants:*")
 
         assert count == 2
@@ -162,7 +162,7 @@ class TestInvalidate:
         mock_redis = AsyncMock()
         mock_redis.delete = AsyncMock(side_effect=ConnectionError("Redis down"))
 
-        with patch("app.core.cache.redis_pool", mock_redis):
+        with patch("app.core.redis.redis_pool", mock_redis):
             count = await invalidate("tenants:abc")
 
         assert count == 0

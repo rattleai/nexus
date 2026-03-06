@@ -55,7 +55,10 @@ celery.autodiscover_tasks(["app.workers"])
 # ── Context propagation: bind request_id/tenant_id to worker logs ──────────
 
 
-@celery.signals.task_prerun.connect
+from celery.signals import task_postrun, task_prerun  # noqa: E402
+
+
+@task_prerun.connect
 def _bind_task_context(sender=None, task_id=None, task=None, kwargs=None, **kw):
     """Bind request context (request_id, tenant_id) to structlog for the task."""
     import structlog
@@ -71,7 +74,7 @@ def _bind_task_context(sender=None, task_id=None, task=None, kwargs=None, **kw):
     structlog.contextvars.bind_contextvars(**ctx)
 
 
-@celery.signals.task_postrun.connect
+@task_postrun.connect
 def _clear_task_context(sender=None, **kw):
     """Clear structlog context after task completes."""
     import structlog

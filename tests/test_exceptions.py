@@ -21,7 +21,9 @@ async def exc_client():
 
         app = create_app()
 
-        # Add test routes directly to the app (not to the shared v1_router)
+        # Add test routes directly to the app (not to the shared v1_router).
+        # They must be registered before the SPA catch-all in the route
+        # list, so we pop them from the end and insert at the front.
         @app.get("/api/v1/_test_validation")
         async def _test_validation(num: int = Query(...)):
             return {"num": num}
@@ -29,6 +31,10 @@ async def exc_client():
         @app.get("/api/v1/_test_crash")
         async def _test_crash():
             raise RuntimeError("Something broke")
+
+        # Move the two newly added routes before the SPA catch-all
+        for _ in range(2):
+            app.router.routes.insert(0, app.router.routes.pop())
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:

@@ -7,9 +7,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.api.deps import get_current_tenant, get_db
+from app.api.deps import get_current_api_key, get_current_tenant, get_db
 from app.db.models import JobStatus
 from app.main import create_app
+
+
+def _make_api_key(tenant):
+    key = MagicMock(
+        tenant=tenant,
+        scopes=["jobs:read", "jobs:write"],
+        active=True,
+        rate_limit=100,
+    )
+    key.name = "test-key"
+    return key
 
 
 def _make_tenant():
@@ -85,8 +96,10 @@ async def test_get_job_not_found(job_client):
     async def _override_db():
         yield mock_db
 
+    api_key = _make_api_key(tenant)
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_tenant] = lambda: tenant
+    app.dependency_overrides[get_current_api_key] = lambda: api_key
 
     try:
         response = await client.get(f"/api/v1/jobs/{uuid.uuid4()}")
@@ -110,8 +123,10 @@ async def test_cancel_completed_job(job_client):
     async def _override_db():
         yield mock_db
 
+    api_key = _make_api_key(tenant)
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_tenant] = lambda: tenant
+    app.dependency_overrides[get_current_api_key] = lambda: api_key
 
     try:
         response = await client.post(f"/api/v1/jobs/{job.id}/cancel")
@@ -144,8 +159,10 @@ async def test_cancel_pending_job(job_client):
     async def _override_db():
         yield mock_db
 
+    api_key = _make_api_key(tenant)
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_tenant] = lambda: tenant
+    app.dependency_overrides[get_current_api_key] = lambda: api_key
 
     try:
         with patch("app.api.v1.jobs.invalidate", new_callable=AsyncMock):
