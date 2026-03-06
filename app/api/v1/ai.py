@@ -11,14 +11,14 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.cost import calculate_billed_tokens, estimate_max_tokens
 from app.ai.dependencies import AIQuotaEnforcer, RequireWalletBalance, require_ai_enabled
 from app.ai.events import AIProviderKeyCreated, AIProviderKeyDeleted, WalletBalanceLow, WalletTopupCompleted
-from app.ai.gateway import AIGatewayError, AIProviderUnavailableError, ai_gateway
+from app.ai.gateway import AIAuthenticationError, AIGatewayError, AIProviderUnavailableError, ai_gateway
 from app.ai.guardrails import validate_input
 from app.ai.key_resolver import NoAPIKeyError, resolve_api_key
 from app.ai.metrics import AI_WALLET_BALANCE
@@ -44,7 +44,7 @@ from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.schemas import CursorPaginatedResponse, JobResponse
 from app.config import settings
 from app.core.events import emit
-from app.core.quotas import increment_usage, QuotaMetric
+from app.core.quotas import QuotaMetric, increment_usage
 from app.db.models.ai import AIProvider, AIUsageLog, PromptTemplate, TenantAIProviderKey
 from app.db.models.core import Tenant
 from app.db.models.operations import Job, JobStatus
@@ -130,17 +130,83 @@ async def create_completion(
             raise HTTPException(status_code=400, detail=f"Model '{body.model}' does not support streaming")
 
         start_time = time.monotonic()
-        litellm_stream = await ai_gateway.streaming_completion(
-            tenant_id=tenant.id,
-            model=body.model,
-            messages=messages,
-            api_key=api_key,
-            key_source=key_source,
-            max_tokens=body.max_tokens,
-            temperature=body.temperature,
-            top_p=body.top_p,
-            request_id=request_id,
-        )
+
+        try:
+            litellm_stream = await ai_gateway.streaming_completion(
+                tenant_id=tenant.id,
+                model=body.model,
+                messages=messages,
+                api_key=api_key,
+                key_source=key_source,
+                max_tokens=body.max_tokens,
+                temperature=body.temperature,
+                top_p=body.top_p,
+                request_id=request_id,
+            )
+        except AIAuthenticationError as exc:
+            raise HTTPException(status_code=401, detail=str(exc))
+        except AIProviderUnavailableError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        except AIGatewayError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+        # Build a callback that deducts tokens and logs usage after streaming completes.
+        # Captures tenant/model/db context via closure.
+        async def _on_stream_complete(
+            *,
+            prompt_tokens: int,
+            completion_tokens: int,
+            total_tokens: int,
+            billed_tokens: int,
+            latency_ms: int,
+        ) -> None:
+            # Deduct from wallet
+            try:
+                new_balance = await wallet_service.deduct_tokens(
+                    tenant.id,
+                    billed_tokens,
+                    description=f"AI streaming: {body.model}",
+                    reference_id=request_id,
+                    db=db,
+                )
+                AI_WALLET_BALANCE.labels(tenant_id=str(tenant.id)).set(new_balance)
+
+                if new_balance < settings.AI_WALLET_LOW_BALANCE_THRESHOLD:
+                    await emit(WalletBalanceLow(
+                        tenant_id=str(tenant.id),
+                        balance_tokens=new_balance,
+                        threshold=settings.AI_WALLET_LOW_BALANCE_THRESHOLD,
+                    ))
+            except InsufficientBalanceError:
+                logger.warning(
+                    "streaming_wallet_deduction_insufficient",
+                    tenant_id=str(tenant.id),
+                    billed_tokens=billed_tokens,
+                    request_id=request_id,
+                )
+
+            # Record usage in quotas
+            await increment_usage(tenant.id, QuotaMetric.AI_REQUESTS_DAY)
+            await increment_usage(tenant.id, QuotaMetric.AI_TOKENS_MONTH, total_tokens)
+
+            # Log usage to DB
+            usage_log = AIUsageLog(
+                tenant_id=tenant.id,
+                provider=model_info.provider.value,
+                model=body.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                cost_usd=0.0,  # Exact cost not available for streaming
+                billed_tokens=billed_tokens,
+                latency_ms=latency_ms,
+                status="success",
+                key_source=key_source,
+                request_id=request_id,
+            )
+            db.add(usage_log)
+            await db.commit()
+
         return await sse_stream_response(
             litellm_stream,
             model=body.model,
@@ -148,6 +214,8 @@ async def create_completion(
             key_source=key_source,
             request_id=request_id,
             start_time=start_time,
+            request=request,
+            on_complete=_on_stream_complete,
         )
 
     # Non-streaming path
@@ -166,6 +234,8 @@ async def create_completion(
             tenant_settings=tenant.settings,
             db=db,
         )
+    except AIAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
     except AIProviderUnavailableError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     except AIGatewayError as exc:
@@ -257,6 +327,15 @@ async def create_async_completion(
     if not model_info:
         raise HTTPException(status_code=400, detail=f"Unknown model: {body.model}")
 
+    # Input guardrails (same as sync path)
+    messages = [{"role": m.role, "content": m.content} for m in body.messages]
+    violations = validate_input(messages, tenant_settings=tenant.settings)
+    if violations:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Input guardrail violation: {violations[0]}",
+        )
+
     # Create job
     job = Job(
         tenant_id=tenant.id,
@@ -278,7 +357,17 @@ async def create_async_completion(
     # Dispatch Celery task
     from app.ai.tasks import process_ai_completion
 
-    process_ai_completion.delay(str(tenant.id), job.payload, str(job.id))
+    try:
+        process_ai_completion.delay(str(tenant.id), job.payload, str(job.id))
+    except Exception as exc:
+        # If Celery queueing fails, mark job as failed immediately
+        job.status = JobStatus.FAILED
+        job.error = f"Failed to queue task: {exc}"
+        await db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail="Task queue temporarily unavailable. Please retry.",
+        )
 
     logger.info("ai_async_completion_queued", job_id=str(job.id), model=body.model)
 
@@ -459,7 +548,19 @@ async def topup_wallet(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    """Top up the token wallet (after payment verification)."""
+    """Top up the token wallet.
+
+    IMPORTANT: This endpoint requires `ai:admin` scope. In production,
+    it should only be called after payment has been verified by the billing
+    system. The `reference_id` field should contain the payment/invoice ID
+    for auditability.
+    """
+    if not body.reference_id:
+        raise HTTPException(
+            status_code=422,
+            detail="reference_id is required for wallet topups (payment/invoice ID).",
+        )
+
     new_balance = await wallet_service.topup(
         tenant.id,
         body.amount_tokens,
@@ -472,7 +573,7 @@ async def topup_wallet(
         tenant_id=str(tenant.id),
         amount_tokens=body.amount_tokens,
         new_balance=new_balance,
-        reference_id=body.reference_id or "",
+        reference_id=body.reference_id,
     ))
 
     AI_WALLET_BALANCE.labels(tenant_id=str(tenant.id)).set(new_balance)
@@ -493,7 +594,7 @@ async def topup_wallet(
 async def list_wallet_transactions(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=200),
     cursor: str | None = None,
 ):
     """List wallet transactions (newest first) with cursor pagination."""
@@ -655,7 +756,7 @@ async def delete_prompt_template(
 async def get_usage_stats(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
-    days: int = 30,
+    days: int = Query(default=30, ge=1, le=365),
 ):
     """Get AI usage statistics for the current tenant."""
     period_start = datetime.now(UTC) - timedelta(days=days)

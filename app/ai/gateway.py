@@ -7,10 +7,12 @@ that all AI requests flow through.
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
+import litellm
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +27,7 @@ from app.ai.metrics import (
     AI_REQUESTS_TOTAL,
     AI_TOKENS_TOTAL,
 )
-from app.ai.providers import DEFAULT_FALLBACK_CHAINS, MODEL_CATALOG, get_model_info
+from app.ai.providers import DEFAULT_FALLBACK_CHAINS, get_model_info
 from app.config import settings
 from app.core.circuit_breaker import CircuitBreaker
 from app.core.events import emit
@@ -34,6 +36,21 @@ logger = structlog.stdlib.get_logger()
 
 # Pre-configured circuit breaker for AI providers
 ai_breaker = CircuitBreaker("ai", failure_threshold=5, recovery_timeout=120)
+
+# Auth errors should NOT trip the circuit breaker (they are config issues, not provider outages)
+_AUTH_ERROR_TYPES = (
+    litellm.AuthenticationError,
+    litellm.NotFoundError,
+)
+
+# Transient errors ARE retryable and should trip the circuit breaker
+_TRANSIENT_ERROR_TYPES = (
+    litellm.RateLimitError,
+    litellm.ServiceUnavailableError,
+    litellm.Timeout,
+    litellm.APIConnectionError,
+    litellm.InternalServerError,
+)
 
 
 @dataclass
@@ -57,10 +74,15 @@ class AICompletionResult:
 class AIGatewayError(Exception):
     """Base exception for AI gateway errors."""
 
-    def __init__(self, message: str, *, provider: str = "", model: str = ""):
+    def __init__(self, message: str, *, provider: str = "", model: str = "", retryable: bool = False):
         self.provider = provider
         self.model = model
+        self.retryable = retryable
         super().__init__(message)
+
+
+class AIAuthenticationError(AIGatewayError):
+    """API key is invalid or expired. Not retryable — user must fix their key."""
 
 
 class AIProviderUnavailableError(AIGatewayError):
@@ -91,8 +113,8 @@ class AIGateway:
         Flow:
         1. Emit AICompletionRequested event
         2. Check circuit breaker
-        3. Call LiteLLM
-        4. On failure: try fallback models
+        3. Call LiteLLM (with absolute timeout ceiling)
+        4. On failure: try fallback models (skip auth errors — they won't resolve by switching models)
         5. Track tokens, cost, latency
         6. Apply output guardrails
         7. Emit AICompletionCompleted/Failed event
@@ -146,16 +168,20 @@ class AIGateway:
                 continue
 
             try:
-                result = await self._call_litellm(
-                    model_info=candidate_info,
-                    api_key=api_key,
-                    key_source=key_source,
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    top_p=top_p,
-                    request_id=request_id,
-                    tenant_settings=tenant_settings,
+                # Absolute timeout ceiling — prevents hung connections
+                result = await asyncio.wait_for(
+                    self._call_litellm(
+                        model_info=candidate_info,
+                        api_key=api_key,
+                        key_source=key_source,
+                        messages=messages,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        request_id=request_id,
+                        tenant_settings=tenant_settings,
+                    ),
+                    timeout=settings.AI_REQUEST_TIMEOUT_SECONDS + 5,  # LiteLLM timeout + buffer
                 )
 
                 # Record success on circuit breaker
@@ -183,7 +209,38 @@ class AIGateway:
 
                 return result
 
-            except Exception as exc:
+            except _AUTH_ERROR_TYPES as exc:
+                # Auth errors: do NOT trip circuit breaker, do NOT try fallbacks
+                # (switching models won't fix a bad API key)
+                last_error = exc
+                logger.warning(
+                    "ai_auth_error",
+                    model=candidate_model,
+                    provider=candidate_provider,
+                    error=str(exc),
+                )
+                AI_REQUESTS_TOTAL.labels(
+                    provider=candidate_provider,
+                    model=candidate_model,
+                    status="auth_error",
+                    key_source=key_source,
+                ).inc()
+
+                await emit(AICompletionFailed(
+                    tenant_id=str(tenant_id),
+                    model=model,
+                    provider=candidate_provider,
+                    error=f"Authentication failed: {exc}",
+                    request_id=request_id,
+                ))
+                raise AIAuthenticationError(
+                    f"Authentication failed for provider '{candidate_provider}': {exc}",
+                    provider=candidate_provider,
+                    model=candidate_model,
+                ) from exc
+
+            except (asyncio.TimeoutError, *_TRANSIENT_ERROR_TYPES) as exc:
+                # Transient errors: trip circuit breaker, try fallbacks
                 last_error = exc
                 ai_breaker.record_failure(breaker_key)
                 logger.warning(
@@ -191,9 +248,28 @@ class AIGateway:
                     model=candidate_model,
                     provider=candidate_provider,
                     error=str(exc),
+                    error_type=type(exc).__name__,
                     attempt=i + 1,
                 )
+                AI_REQUESTS_TOTAL.labels(
+                    provider=candidate_provider,
+                    model=candidate_model,
+                    status="error",
+                    key_source=key_source,
+                ).inc()
 
+            except Exception as exc:
+                # Unknown errors: trip circuit breaker, try fallbacks
+                last_error = exc
+                ai_breaker.record_failure(breaker_key)
+                logger.error(
+                    "ai_completion_unexpected_error",
+                    model=candidate_model,
+                    provider=candidate_provider,
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                    attempt=i + 1,
+                )
                 AI_REQUESTS_TOTAL.labels(
                     provider=candidate_provider,
                     model=candidate_model,
@@ -214,7 +290,9 @@ class AIGateway:
             request_id=request_id,
         ))
 
-        raise AIProviderUnavailableError(error_msg, provider=provider, model=model)
+        raise AIProviderUnavailableError(
+            error_msg, provider=provider, model=model, retryable=True,
+        )
 
     async def streaming_completion(
         self,
@@ -234,8 +312,6 @@ class AIGateway:
         Streaming does not use fallback chains (to avoid mid-stream switches).
         The caller (streaming.py) wraps this into SSE format.
         """
-        import litellm
-
         request_id = request_id or uuid.uuid4().hex
         model_info = get_model_info(model)
         if not model_info:
@@ -261,23 +337,57 @@ class AIGateway:
         ))
 
         try:
-            response = await litellm.acompletion(
-                model=model_info.litellm_model,
-                messages=messages,
-                stream=True,
-                stream_options={"include_usage": True},
-                timeout=settings.AI_REQUEST_TIMEOUT_SECONDS,
-                **kwargs,
+            response = await asyncio.wait_for(
+                litellm.acompletion(
+                    model=model_info.litellm_model,
+                    messages=messages,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                    timeout=settings.AI_REQUEST_TIMEOUT_SECONDS,
+                    **kwargs,
+                ),
+                timeout=settings.AI_REQUEST_TIMEOUT_SECONDS + 5,
             )
             ai_breaker.record_success(breaker_key)
+
+            AI_REQUESTS_TOTAL.labels(
+                provider=provider, model=model, status="success", key_source=key_source
+            ).inc()
+
             return response
+
+        except _AUTH_ERROR_TYPES as exc:
+            AI_REQUESTS_TOTAL.labels(
+                provider=provider, model=model, status="auth_error", key_source=key_source
+            ).inc()
+            await emit(AICompletionFailed(
+                tenant_id=str(tenant_id),
+                model=model,
+                provider=provider,
+                error=f"Authentication failed: {exc}",
+                request_id=request_id,
+            ))
+            raise AIAuthenticationError(
+                f"Authentication failed for provider '{provider}': {exc}",
+                provider=provider,
+                model=model,
+            ) from exc
+
         except Exception as exc:
             ai_breaker.record_failure(breaker_key)
             AI_REQUESTS_TOTAL.labels(
                 provider=provider, model=model, status="error", key_source=key_source
             ).inc()
+            await emit(AICompletionFailed(
+                tenant_id=str(tenant_id),
+                model=model,
+                provider=provider,
+                error=str(exc),
+                request_id=request_id,
+            ))
             raise AIGatewayError(
-                f"Streaming failed: {exc}", provider=provider, model=model
+                f"Streaming failed: {exc}", provider=provider, model=model,
+                retryable=isinstance(exc, (*_TRANSIENT_ERROR_TYPES, asyncio.TimeoutError)),
             ) from exc
 
     async def _call_litellm(
@@ -294,8 +404,6 @@ class AIGateway:
         tenant_settings: dict | None,
     ) -> AICompletionResult:
         """Execute a single LiteLLM call and process the response."""
-        import litellm
-
         provider = model_info.provider.value
         model = model_info.litellm_model
         start = time.monotonic()
@@ -375,10 +483,8 @@ class AIGateway:
 
         # Qwen requires a custom base URL
         if model_info.provider.value == "qwen":
-            from app.config import settings as _settings
-
-            if _settings.AI_QWEN_API_BASE:
-                kwargs["api_base"] = _settings.AI_QWEN_API_BASE
+            if settings.AI_QWEN_API_BASE:
+                kwargs["api_base"] = settings.AI_QWEN_API_BASE
 
         return kwargs
 

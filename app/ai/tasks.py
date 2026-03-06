@@ -8,7 +8,6 @@ via webhook.
 from __future__ import annotations
 
 import asyncio
-import time
 import uuid
 from datetime import UTC, datetime
 
@@ -40,11 +39,10 @@ def process_ai_completion(self, tenant_id: str, request_data: dict, job_id: str)
 
 async def _async_process_completion(tenant_id: str, request_data: dict, job_id: str) -> None:
     """Async implementation of the AI completion task."""
-    from app.ai.cost import calculate_billed_tokens
     from app.ai.gateway import ai_gateway
     from app.ai.key_resolver import NoAPIKeyError, resolve_api_key
     from app.ai.providers import get_model_info
-    from app.ai.wallet import wallet_service
+    from app.ai.wallet import InsufficientBalanceError, wallet_service
     from app.db.models.ai import AIUsageLog
     from app.db.models.operations import Job, JobStatus
     from app.db.session import async_session_factory
@@ -55,6 +53,15 @@ async def _async_process_completion(tenant_id: str, request_data: dict, job_id: 
         job = result.scalar_one_or_none()
         if not job:
             logger.error("ai_task_job_not_found", job_id=job_id)
+            return
+
+        # Guard against duplicate processing (e.g. Celery retry after ack timeout)
+        if job.status != JobStatus.PENDING:
+            logger.warning(
+                "ai_task_already_processed",
+                job_id=job_id,
+                status=job.status.value if hasattr(job.status, "value") else str(job.status),
+            )
             return
 
         job.status = JobStatus.PROCESSING
@@ -88,14 +95,24 @@ async def _async_process_completion(tenant_id: str, request_data: dict, job_id: 
                 db=db,
             )
 
-            # Deduct from wallet
-            await wallet_service.deduct_tokens(
-                tid,
-                completion.billed_tokens,
-                description=f"AI completion: {model}",
-                reference_id=job_id,
-                db=db,
-            )
+            # Deduct from wallet — distinguish insufficient balance from other errors
+            try:
+                await wallet_service.deduct_tokens(
+                    tid,
+                    completion.billed_tokens,
+                    description=f"AI completion: {model}",
+                    reference_id=job_id,
+                    db=db,
+                )
+            except InsufficientBalanceError as wallet_exc:
+                # Completion succeeded but wallet deduction failed.
+                # Log it but still return the result — the tokens were consumed.
+                logger.warning(
+                    "ai_task_wallet_insufficient",
+                    job_id=job_id,
+                    billed_tokens=completion.billed_tokens,
+                    error=str(wallet_exc),
+                )
 
             # Log usage
             usage_log = AIUsageLog(
@@ -138,6 +155,13 @@ async def _async_process_completion(tenant_id: str, request_data: dict, job_id: 
                 model=model,
                 tokens=completion.total_tokens,
             )
+
+        except NoAPIKeyError as exc:
+            job.status = JobStatus.FAILED
+            job.completed_at = datetime.now(UTC)
+            job.error = f"No API key available for provider: {exc.provider}"
+            await db.commit()
+            logger.error("ai_task_no_api_key", job_id=job_id, provider=exc.provider)
 
         except Exception as exc:
             job.status = JobStatus.FAILED

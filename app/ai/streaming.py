@@ -2,6 +2,9 @@
 
 Wraps LiteLLM's async streaming response into Server-Sent Events (SSE)
 format compatible with the EventSource browser API and httpx streaming.
+
+Includes client disconnect detection, resource cleanup, and a post-stream
+callback for wallet deduction and usage logging.
 """
 
 from __future__ import annotations
@@ -9,9 +12,11 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable, Coroutine
+from typing import Any
 
 import structlog
+from starlette.requests import Request
 from starlette.responses import StreamingResponse
 
 from app.ai.cost import calculate_billed_tokens
@@ -28,8 +33,22 @@ async def sse_stream_response(
     key_source: str,
     request_id: str,
     start_time: float,
+    request: Request | None = None,
+    on_complete: Callable[..., Coroutine[Any, Any, None]] | None = None,
 ) -> StreamingResponse:
     """Wrap a LiteLLM async streaming generator as an SSE StreamingResponse.
+
+    Args:
+        litellm_stream: The async generator from LiteLLM.
+        model: Model identifier.
+        provider: Provider name.
+        key_source: "byok" or "platform".
+        request_id: Unique request identifier.
+        start_time: time.monotonic() when the request started.
+        request: Optional Starlette Request for disconnect detection.
+        on_complete: Optional async callback(prompt_tokens, completion_tokens,
+                     total_tokens, billed_tokens, latency_ms) called after stream ends.
+                     Used for wallet deduction and usage logging.
 
     Emits:
       - data: {"id": ..., "delta": "..."} for each content chunk
@@ -43,9 +62,21 @@ async def sse_stream_response(
         prompt_tokens = 0
         completion_tokens = 0
         finish_reason = None
+        client_disconnected = False
 
         try:
             async for chunk in litellm_stream:
+                # Client disconnect detection
+                if request is not None and await request.is_disconnected():
+                    logger.info(
+                        "sse_client_disconnected",
+                        request_id=request_id,
+                        model=model,
+                        streamed_chars=len(total_content),
+                    )
+                    client_disconnected = True
+                    break
+
                 # Extract delta content
                 delta = ""
                 if chunk.choices and chunk.choices[0].delta:
@@ -70,32 +101,53 @@ async def sse_stream_response(
         except Exception as exc:
             error_data = {"type": "error", "error": str(exc)}
             yield f"data: {json.dumps(error_data)}\n\n"
-            logger.error("sse_stream_error", model=model, error=str(exc))
-            yield "data: [DONE]\n\n"
-            return
+            logger.error("sse_stream_error", model=model, request_id=request_id, error=str(exc))
+        finally:
+            # Ensure the LiteLLM stream is properly closed
+            if hasattr(litellm_stream, "aclose"):
+                try:
+                    await litellm_stream.aclose()
+                except Exception:
+                    pass
 
         # Estimate tokens if not provided by the final chunk
-        if not completion_tokens:
+        if not completion_tokens and total_content:
             completion_tokens = max(len(total_content) // 4, 1)
-        if not prompt_tokens:
-            prompt_tokens = 0  # Will be filled from non-streaming metadata if available
 
         total_tokens = prompt_tokens + completion_tokens
         billed_tokens = calculate_billed_tokens(total_tokens, key_source)
         latency_ms = int((time.monotonic() - start_time) * 1000)
 
-        # Final usage event
-        usage_data = {
-            "type": "usage",
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": total_tokens,
-            "billed_tokens": billed_tokens,
-            "cost_usd": 0.0,  # Streaming cost is approximated; exact cost available in usage logs
-            "latency_ms": latency_ms,
-        }
-        yield f"data: {json.dumps(usage_data)}\n\n"
-        yield "data: [DONE]\n\n"
+        # Invoke the on_complete callback for wallet deduction and usage logging.
+        # This runs regardless of client disconnect — the tokens were consumed.
+        if on_complete is not None:
+            try:
+                await on_complete(
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    billed_tokens=billed_tokens,
+                    latency_ms=latency_ms,
+                )
+            except Exception as cb_exc:
+                logger.error(
+                    "sse_on_complete_error",
+                    request_id=request_id,
+                    error=str(cb_exc),
+                )
+
+        if not client_disconnected:
+            # Final usage event
+            usage_data = {
+                "type": "usage",
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "billed_tokens": billed_tokens,
+                "latency_ms": latency_ms,
+            }
+            yield f"data: {json.dumps(usage_data)}\n\n"
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(
         event_generator(),

@@ -2,6 +2,10 @@
 
 Provides configurable per-tenant guardrails for safety and cost control.
 Tenant-level overrides are read from tenant.settings["ai_guardrails"].
+
+Security: Tenant-supplied regex patterns are NOT accepted — only the platform's
+hardcoded patterns are used for input blocking. Tenant config can only toggle
+which pre-defined patterns are active (via pattern names, not raw regexes).
 """
 
 from __future__ import annotations
@@ -14,20 +18,27 @@ from app.config import settings
 
 logger = structlog.stdlib.get_logger()
 
-# Default blocked input patterns (can be overridden per tenant)
-_DEFAULT_BLOCKED_INPUT_PATTERNS: list[str] = [
-    r"(?i)ignore\s+(all\s+)?previous\s+instructions",
-    r"(?i)you\s+are\s+now\s+(in\s+)?DAN\s+mode",
-    r"(?i)system\s*:\s*you\s+are",
-]
+# ── Pre-compiled safe patterns ────────────────────────────
+# These are platform-controlled and pre-compiled at module load time.
+# Tenants cannot supply custom regex patterns (ReDoS prevention).
 
-# PII patterns for optional output filtering
-_PII_PATTERNS: dict[str, str] = {
-    "email": r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+",
-    "phone_us": r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b",
-    "ssn": r"\b\d{3}-\d{2}-\d{4}\b",
-    "credit_card": r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b",
+_BLOCKED_INPUT_PATTERNS: dict[str, re.Pattern] = {
+    "ignore_instructions": re.compile(r"(?i)ignore\s+(all\s+)?previous\s+instructions"),
+    "dan_mode": re.compile(r"(?i)you\s+are\s+now\s+(in\s+)?DAN\s+mode"),
+    "system_override": re.compile(r"(?i)system\s*:\s*you\s+are"),
+    "jailbreak_prompt": re.compile(r"(?i)bypass\s+(your|all|any)\s+(safety|content)\s+(filter|restriction|guideline)"),
 }
+
+_PII_PATTERNS: dict[str, re.Pattern] = {
+    "email": re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"),
+    "phone_us": re.compile(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b"),
+    "ssn": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
+    "credit_card": re.compile(r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b"),
+}
+
+# Default active pattern sets
+_DEFAULT_ACTIVE_INPUT_PATTERNS = list(_BLOCKED_INPUT_PATTERNS.keys())
+_DEFAULT_ACTIVE_PII_PATTERNS = list(_PII_PATTERNS.keys())
 
 
 class GuardrailViolation:
@@ -51,10 +62,12 @@ def validate_input(
     Returns a list of violations (empty means input is clean).
     """
     violations: list[GuardrailViolation] = []
-    ai_config = (tenant_settings or {}).get("ai_guardrails", {})
+    ai_config = _safe_get_ai_config(tenant_settings)
 
     # 1. Max message count
     max_messages = ai_config.get("max_messages", settings.AI_MAX_MESSAGES_PER_REQUEST)
+    if not isinstance(max_messages, int) or max_messages < 1:
+        max_messages = settings.AI_MAX_MESSAGES_PER_REQUEST
     if len(messages) > max_messages:
         violations.append(
             GuardrailViolation("max_messages", f"Too many messages: {len(messages)} > {max_messages}")
@@ -62,6 +75,8 @@ def validate_input(
 
     # 2. Max individual message length
     max_msg_len = ai_config.get("max_message_length", settings.AI_MAX_MESSAGE_LENGTH)
+    if not isinstance(max_msg_len, int) or max_msg_len < 1:
+        max_msg_len = settings.AI_MAX_MESSAGE_LENGTH
     for i, msg in enumerate(messages):
         content = msg.get("content", "")
         if len(content) > max_msg_len:
@@ -70,22 +85,27 @@ def validate_input(
             )
 
     # 3. Blocked input patterns (prompt injection detection)
-    blocked_patterns = ai_config.get("blocked_input_patterns", _DEFAULT_BLOCKED_INPUT_PATTERNS)
+    # Tenants can only select which pre-compiled patterns are active (by name),
+    # NOT supply custom regexes. This prevents ReDoS attacks.
+    active_patterns = ai_config.get("active_input_patterns", _DEFAULT_ACTIVE_INPUT_PATTERNS)
+    if not isinstance(active_patterns, list):
+        active_patterns = _DEFAULT_ACTIVE_INPUT_PATTERNS
+
     for msg in messages:
         content = msg.get("content", "")
-        for pattern in blocked_patterns:
-            try:
-                if re.search(pattern, content):
-                    violations.append(
-                        GuardrailViolation("blocked_pattern", f"Input matches blocked pattern")
-                    )
-                    break  # One violation per message is enough
-            except re.error:
-                logger.warning("guardrail_invalid_regex", pattern=pattern)
+        for pattern_name in active_patterns:
+            compiled = _BLOCKED_INPUT_PATTERNS.get(pattern_name)
+            if compiled and compiled.search(content):
+                violations.append(
+                    GuardrailViolation("blocked_pattern", f"Input matches blocked pattern: {pattern_name}")
+                )
+                break  # One violation per message is enough
 
     # 4. Total input size check
     total_chars = sum(len(m.get("content", "")) for m in messages)
     max_total = ai_config.get("max_total_input_chars", 1_000_000)
+    if not isinstance(max_total, int) or max_total < 1:
+        max_total = 1_000_000
     if total_chars > max_total:
         violations.append(
             GuardrailViolation("max_total_input", f"Total input too large: {total_chars} > {max_total}")
@@ -111,24 +131,33 @@ def filter_output(
     Only applies PII filtering if enabled in tenant settings.
     Returns the (potentially redacted) content string.
     """
-    ai_config = (tenant_settings or {}).get("ai_guardrails", {})
+    ai_config = _safe_get_ai_config(tenant_settings)
 
     if not ai_config.get("filter_pii_output", False):
         return content
 
-    # Apply PII pattern redaction
+    # Apply PII pattern redaction (pre-compiled, safe patterns only)
     filtered = content
-    enabled_patterns = ai_config.get("pii_patterns", list(_PII_PATTERNS.keys()))
+    enabled_patterns = ai_config.get("pii_patterns", _DEFAULT_ACTIVE_PII_PATTERNS)
+    if not isinstance(enabled_patterns, list):
+        enabled_patterns = _DEFAULT_ACTIVE_PII_PATTERNS
 
     for pattern_name in enabled_patterns:
-        pattern = _PII_PATTERNS.get(pattern_name)
-        if pattern:
-            try:
-                filtered = re.sub(pattern, f"[REDACTED_{pattern_name.upper()}]", filtered)
-            except re.error:
-                logger.warning("guardrail_pii_regex_error", pattern=pattern_name)
+        compiled = _PII_PATTERNS.get(pattern_name)
+        if compiled:
+            filtered = compiled.sub(f"[REDACTED_{pattern_name.upper()}]", filtered)
 
     if filtered != content:
         logger.info("guardrail_output_filtered", patterns_applied=enabled_patterns)
 
     return filtered
+
+
+def _safe_get_ai_config(tenant_settings: dict | None) -> dict:
+    """Safely extract ai_guardrails config, defaulting to empty dict on bad data."""
+    if not isinstance(tenant_settings, dict):
+        return {}
+    ai_config = tenant_settings.get("ai_guardrails")
+    if not isinstance(ai_config, dict):
+        return {}
+    return ai_config

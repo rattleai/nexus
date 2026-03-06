@@ -6,13 +6,11 @@ AI feature gate, and quota enforcement.
 
 from __future__ import annotations
 
-import uuid
-
 import structlog
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.wallet import InsufficientBalanceError, wallet_service
+from app.ai.wallet import wallet_service
 from app.api.deps import get_current_tenant, get_db
 from app.config import settings
 from app.core.quotas import QuotaMetric, get_current_usage, get_plan_limit
@@ -43,12 +41,20 @@ class RequireWalletBalance:
         tenant: Tenant = Depends(get_current_tenant),
         db: AsyncSession = Depends(get_db),
     ) -> None:
-        # Initialize wallet in Redis if needed
-        balance = await wallet_service.get_balance(tenant.id)
-        if balance <= 0:
-            # Try loading from DB
-            await wallet_service.initialize_balance(tenant.id, db)
+        try:
             balance = await wallet_service.get_balance(tenant.id)
+            if balance <= 0:
+                # Redis cache miss or zero — try loading from DB
+                balance = await wallet_service.initialize_balance(tenant.id, db)
+        except Exception:
+            logger.warning(
+                "wallet_balance_check_failed",
+                tenant_id=str(tenant.id),
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Wallet service temporarily unavailable. Please retry.",
+            ) from None
 
         if balance <= 0:
             raise HTTPException(

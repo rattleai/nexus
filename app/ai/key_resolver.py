@@ -10,12 +10,10 @@ import uuid
 from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.providers import get_platform_api_key
-from app.config import settings
-from app.core.cache import cached
 from app.db.models.ai import AIProvider, TenantAIProviderKey
 
 logger = structlog.stdlib.get_logger()
@@ -37,7 +35,7 @@ async def resolve_api_key(
     """Resolve an API key for the given provider and tenant.
 
     Resolution order:
-    1. Tenant BYOK key (encrypted in DB, cached in Redis for 5min)
+    1. Tenant BYOK key (encrypted in DB)
     2. Platform-managed key (from environment/settings)
 
     Returns:
@@ -67,6 +65,8 @@ async def _get_tenant_byok_key(
     """Fetch and decrypt the tenant's BYOK key for the given provider.
 
     Returns the decrypted API key string, or None if not found/inactive.
+    The last_used_at update is done via a non-blocking UPDATE statement
+    that does NOT commit the caller's session (avoids side effects).
     """
     result = await db.execute(
         select(TenantAIProviderKey).where(
@@ -88,12 +88,9 @@ async def _get_tenant_byok_key(
         )
         return None
 
-    # Update last_used_at (fire-and-forget, non-blocking)
+    # Update last_used_at via direct UPDATE (no flush/commit — just marks it dirty).
+    # The caller's eventual commit will include this update.
     key_record.last_used_at = datetime.now(UTC)
-    try:
-        await db.commit()
-    except Exception:
-        await db.rollback()
 
     return api_key
 
