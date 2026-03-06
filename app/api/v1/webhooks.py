@@ -16,7 +16,7 @@ from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.core.audit import AuditAction, emit_audit_event
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
-from app.core.url_validation import validate_webhook_url
+from app.core.url_validation import validate_webhook_url_async
 from app.db.models import Tenant, WebhookDelivery, WebhookEndpoint
 
 router = APIRouter(prefix="/webhooks")
@@ -100,7 +100,7 @@ async def create_webhook_endpoint(
 ):
     """Register a new webhook endpoint."""
     url = str(body.url)
-    ssrf_error = validate_webhook_url(url)
+    ssrf_error = await validate_webhook_url_async(url)
     if ssrf_error:
         raise HTTPException(status_code=422, detail=f"Invalid webhook URL: {ssrf_error}")
 
@@ -110,10 +110,10 @@ async def create_webhook_endpoint(
         tenant_id=tenant.id,
         url=url,
         description=body.description,
-        secret=raw_secret,  # Placeholder, encrypted below
+        secret="",  # Will be set via set_secret() below
         events=body.events,
     )
-    endpoint.set_secret(raw_secret)  # Encrypt at rest
+    endpoint.set_secret(raw_secret)  # Encrypt at rest — never store plaintext
     db.add(endpoint)
 
     await emit_audit_event(
@@ -202,7 +202,7 @@ async def update_webhook_endpoint(
     changes = {}
     if body.url is not None:
         url = str(body.url)
-        ssrf_error = validate_webhook_url(url)
+        ssrf_error = await validate_webhook_url_async(url)
         if ssrf_error:
             raise HTTPException(status_code=422, detail=f"Invalid webhook URL: {ssrf_error}")
         changes["url"] = [endpoint.url, url]
@@ -252,7 +252,7 @@ async def delete_webhook_endpoint(
     if not endpoint:
         raise HTTPException(status_code=404, detail="Webhook endpoint not found")
 
-    await db.delete(endpoint)
+    endpoint.active = False
     await emit_audit_event(
         db,
         action=AuditAction.DELETE,
@@ -287,7 +287,16 @@ async def list_webhook_deliveries(
     if not ep_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Webhook endpoint not found")
 
-    stmt = select(WebhookDelivery).where(WebhookDelivery.endpoint_id == endpoint_id)
+    # Join through WebhookEndpoint to enforce tenant isolation — prevents
+    # cross-tenant data access if endpoint_id is guessed/leaked.
+    stmt = (
+        select(WebhookDelivery)
+        .join(WebhookEndpoint, WebhookDelivery.endpoint_id == WebhookEndpoint.id)
+        .where(
+            WebhookDelivery.endpoint_id == endpoint_id,
+            WebhookEndpoint.tenant_id == tenant.id,
+        )
+    )
     return await paginate(db, stmt, WebhookDelivery.created_at, limit=limit, cursor=cursor, descending=True)
 
 

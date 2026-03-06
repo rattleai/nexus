@@ -112,6 +112,27 @@ class CircuitBreaker:
         if was_open:
             logger.info("circuit_breaker_closed", breaker=self.name, key=key)
 
+    def _evict_stale_keys(self) -> None:
+        """Remove stale in-memory entries to prevent unbounded growth.
+
+        Called periodically during record_failure to keep memory bounded.
+        Only runs when in-memory fallback has grown beyond a threshold.
+        """
+        max_keys = 10_000
+        with self._lock:
+            if len(self._failures) <= max_keys:
+                return
+            now = time.time()
+            stale_keys = [
+                k for k, t in self._last_failure_time.items()
+                if now - t > self.recovery_timeout * 2
+            ]
+            for k in stale_keys:
+                self._failures.pop(k, None)
+                self._last_failure_time.pop(k, None)
+            if stale_keys:
+                logger.info("circuit_breaker_evicted_stale", breaker=self.name, evicted=len(stale_keys))
+
     def record_failure(self, key: str) -> None:
         """Record a failure and potentially open the circuit."""
         was_open = self.is_open(key)
@@ -151,6 +172,8 @@ class CircuitBreaker:
                 failures=new_count,
                 recovery_timeout=self.recovery_timeout,
             )
+
+        self._evict_stale_keys()
 
     @staticmethod
     def host_key(url: str) -> str:

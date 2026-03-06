@@ -6,12 +6,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import get_db
 from app.config import settings
 from app.main import create_app
 
-ADMIN_HEADERS = {"X-Admin-Key": settings.ADMIN_KEY or settings.SECRET_KEY}
+_TEST_ADMIN_KEY = "test-admin-key-for-tenants"
+ADMIN_HEADERS = {"X-Admin-Key": _TEST_ADMIN_KEY}
 
 
 def _make_tenant(**overrides):
@@ -39,6 +41,7 @@ async def tenant_client():
         patch("app.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_celery", new_callable=AsyncMock, return_value=True),
         patch("app.core.redis.redis_pool", new_callable=AsyncMock),
+        patch.object(settings, "ADMIN_KEY", _TEST_ADMIN_KEY),
     ):
         app = create_app()
         transport = ASGITransport(app=app)
@@ -55,6 +58,7 @@ async def test_tenant_requires_admin_key():
         patch("app.api.v1.health._check_storage", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_celery", new_callable=AsyncMock, return_value=True),
         patch("app.core.redis.redis_pool", new_callable=AsyncMock),
+        patch.object(settings, "ADMIN_KEY", _TEST_ADMIN_KEY),
     ):
         app = create_app()
         transport = ASGITransport(app=app)
@@ -143,12 +147,11 @@ async def test_get_tenant_not_found(tenant_client):
 async def test_create_tenant_duplicate_slug(tenant_client):
     """Duplicate slug should return 409."""
     client, app = tenant_client
-    existing = _make_tenant()
 
     mock_db = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = existing
-    mock_db.execute.return_value = mock_result
+    mock_db.commit = AsyncMock(
+        side_effect=IntegrityError("duplicate key", params=None, orig=Exception("unique constraint"))
+    )
 
     async def _override_db():
         yield mock_db

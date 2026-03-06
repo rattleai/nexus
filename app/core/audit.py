@@ -102,9 +102,6 @@ def get_client_ip(request) -> str:
     # If behind a trusted proxy, X-Real-IP may be more accurate, but we
     # always have the direct IP as a fallback to prevent spoofing.
     forwarded_ip = request.headers.get("X-Real-IP", "").strip()
-    if forwarded_ip and forwarded_ip != direct_ip:
-        # Log both for forensic purposes; return direct IP as the canonical one
-        # unless the connection is from localhost (common proxy setup)
-        if direct_ip in ("127.0.0.1", "::1"):
-            return forwarded_ip
+    if forwarded_ip and forwarded_ip != direct_ip and direct_ip in ("127.0.0.1", "::1"):
+        return forwarded_ip
     return direct_ip

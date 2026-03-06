@@ -8,8 +8,8 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 
 import structlog
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
-from pydantic import BaseModel, EmailStr, Field
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,8 +46,50 @@ router = APIRouter(prefix="/auth")
 logger = structlog.stdlib.get_logger()
 
 _REFRESH_COOKIE = "refresh_token"
-_REFRESH_COOKIE_PATH = "/api/v1/auth"
+_REFRESH_COOKIE_PATH = "/api/v1/auth/refresh"
 _MAX_REFRESH_TOKENS_PER_USER = 10
+_MAX_LOGIN_ATTEMPTS = 5
+_LOGIN_LOCKOUT_SECONDS = 900  # 15 minutes
+
+
+async def _check_account_lockout(email: str) -> None:
+    """Check if an account is locked out due to too many failed login attempts."""
+    try:
+        from app.core.redis import redis_pool
+        key = f"lockout:{email}"
+        attempts = await redis_pool.get(key)
+        if attempts and int(attempts) >= _MAX_LOGIN_ATTEMPTS:
+            raise HTTPException(
+                status_code=429,
+                detail="Account temporarily locked due to too many failed login attempts. Try again later.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # Redis unavailable — fail open (rate limiter still applies)
+
+
+async def _record_failed_login(email: str, client_ip: str) -> None:
+    """Record a failed login attempt for lockout tracking."""
+    logger.warning("login_failed", email=email, client_ip=client_ip)
+    try:
+        from app.core.redis import redis_pool
+        key = f"lockout:{email}"
+        pipe = redis_pool.pipeline()
+        pipe.incr(key)
+        pipe.expire(key, _LOGIN_LOCKOUT_SECONDS)
+        await pipe.execute()
+    except Exception:
+        pass  # Redis unavailable — fail open
+
+
+async def _clear_login_attempts(email: str) -> None:
+    """Clear login attempt counter on successful login."""
+    try:
+        from app.core.redis import redis_pool
+        await redis_pool.delete(f"lockout:{email}")
+    except Exception:
+        pass
 
 
 def _set_refresh_cookie(response: Response, raw_token: str) -> None:
@@ -111,6 +153,16 @@ async def register(body: UserRegister, response: Response, db: AsyncSession = De
     )
     db.add(rt)
 
+    # Create email verification token in same transaction
+    raw_verify_token, verify_hash = generate_secure_token()
+    verification = EmailVerificationToken(
+        user_id=user.id,
+        token_hash=verify_hash,
+        token_type="email_verification",
+        expires_at=datetime.now(UTC) + timedelta(hours=settings.EMAIL_VERIFICATION_EXPIRE_HOURS),
+    )
+    db.add(verification)
+
     try:
         await db.commit()
     except IntegrityError:
@@ -122,17 +174,8 @@ async def register(body: UserRegister, response: Response, db: AsyncSession = De
     access_token = create_access_token({"sub": str(user.id), "tenant_id": str(tenant.id)})
     _set_refresh_cookie(response, raw_refresh)
 
-    # Create email verification token and send verification email
-    raw_verify_token, verify_hash = generate_secure_token()
-    verification = EmailVerificationToken(
-        user_id=user.id,
-        token_hash=verify_hash,
-        token_type="email_verification",
-        expires_at=datetime.now(UTC) + timedelta(hours=settings.EMAIL_VERIFICATION_EXPIRE_HOURS),
-    )
-    db.add(verification)
-    await db.commit()
-
+    # Send verification email AFTER commit — never hold DB locks during
+    # external I/O (email service could hang and deadlock other requests).
     verify_url = f"{settings.APP_BASE_URL}/verify-email?token={raw_verify_token}"
     await send_email(
         to=user.email,
@@ -161,7 +204,12 @@ async def register(body: UserRegister, response: Response, db: AsyncSession = De
 
 
 @router.post("/login", response_model=AuthResponse, dependencies=[Depends(_auth_rate_limit)])
-async def login(body: UserLogin, response: Response, db: AsyncSession = Depends(get_db)):
+async def login(body: UserLogin, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    client_ip = request.client.host if request.client else "unknown"
+
+    # Check account lockout before expensive password verification
+    await _check_account_lockout(body.email)
+
     result = await db.execute(
         select(User).where(User.email == body.email, User.deleted_at.is_(None))
     )
@@ -173,10 +221,18 @@ async def login(body: UserLogin, response: Response, db: AsyncSession = Depends(
     password_valid = verify_password(body.password, stored_hash)
 
     if not user or not user.password_hash or not password_valid:
+        await _record_failed_login(body.email, client_ip)
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not user.is_active:
+        logger.warning("login_inactive_account", email=body.email, client_ip=client_ip)
         raise HTTPException(status_code=403, detail="Account is disabled")
+
+    if not user.email_verified:
+        raise HTTPException(status_code=403, detail="Email not verified. Please check your inbox.")
+
+    # Clear lockout counter on successful login
+    await _clear_login_attempts(body.email)
 
     # Auto-rehash legacy bcrypt passwords to argon2id on successful login
     if needs_rehash(user.password_hash):
@@ -218,7 +274,7 @@ async def login(body: UserLogin, response: Response, db: AsyncSession = Depends(
     access_token = create_access_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})
     _set_refresh_cookie(response, raw_refresh)
 
-    logger.info("user_logged_in", user_id=str(user.id))
+    logger.info("user_logged_in", user_id=str(user.id), client_ip=client_ip)
 
     expires_in = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
     return AuthResponse(
@@ -267,7 +323,7 @@ async def refresh(
     # Load user
     user_result = await db.execute(select(User).where(User.id == row.user_id, User.deleted_at.is_(None)))
     user = user_result.scalar_one_or_none()
-    if not user or not user.is_active:
+    if not user or not user.is_active or not user.email_verified:
         await db.commit()
         _clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="User not found or inactive")
@@ -343,30 +399,35 @@ async def get_current_user_profile(
 
 
 class VerifyEmailRequest(BaseModel):
-    token: str
+    token: str = Field(..., min_length=1, max_length=256)
 
 
 @router.post("/verify-email", dependencies=[Depends(_auth_rate_limit)])
 async def verify_email(body: VerifyEmailRequest, db: AsyncSession = Depends(get_db)):
     """Verify a user's email address using the token sent to their email."""
     token_hash = hash_token(body.token)
+    now = datetime.now(UTC)
 
-    result = await db.execute(
-        select(EmailVerificationToken).where(
+    # Atomic claim: UPDATE ... WHERE used_at IS NULL prevents race conditions
+    claim_result = await db.execute(
+        update(EmailVerificationToken)
+        .where(
             EmailVerificationToken.token_hash == token_hash,
             EmailVerificationToken.token_type == "email_verification",
             EmailVerificationToken.used_at.is_(None),
+            EmailVerificationToken.expires_at >= now,
         )
+        .values(used_at=now)
+        .returning(EmailVerificationToken.user_id)
     )
-    token_record = result.scalar_one_or_none()
-    if not token_record or token_record.expires_at < datetime.now(UTC):
+    claimed = claim_result.first()
+    if not claimed:
         raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
-    # Mark token as used
-    token_record.used_at = datetime.now(UTC)
-
-    # Verify user's email
-    user_result = await db.execute(select(User).where(User.id == token_record.user_id))
+    # Verify user's email (exclude soft-deleted users)
+    user_result = await db.execute(
+        select(User).where(User.id == claimed.user_id, User.deleted_at.is_(None))
+    )
     user = user_result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -386,8 +447,14 @@ class ForgotPasswordRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    token: str
+    token: str = Field(..., min_length=1, max_length=256)
     new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def check_password_strength(cls, v: str) -> str:
+        from app.api.schemas_auth import _validate_password_strength
+        return _validate_password_strength(v)
 
 
 @router.post("/forgot-password", dependencies=[Depends(_auth_rate_limit)])
@@ -399,6 +466,17 @@ async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depend
     user = result.scalar_one_or_none()
 
     if user:
+        # Invalidate any previous unused reset tokens for this user
+        await db.execute(
+            update(EmailVerificationToken)
+            .where(
+                EmailVerificationToken.user_id == user.id,
+                EmailVerificationToken.token_type == "password_reset",
+                EmailVerificationToken.used_at.is_(None),
+            )
+            .values(used_at=datetime.now(UTC))
+        )
+
         raw_token, token_hash_val = generate_secure_token()
         reset_token = EmailVerificationToken(
             user_id=user.id,
@@ -426,20 +504,27 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
     """Reset password using the token from the reset email."""
     token_hash_val = hash_token(body.token)
 
-    result = await db.execute(
-        select(EmailVerificationToken).where(
+    # Atomic claim: UPDATE ... WHERE used_at IS NULL prevents race conditions
+    # where concurrent requests could both use the same reset token.
+    now = datetime.now(UTC)
+    claim_result = await db.execute(
+        update(EmailVerificationToken)
+        .where(
             EmailVerificationToken.token_hash == token_hash_val,
             EmailVerificationToken.token_type == "password_reset",
             EmailVerificationToken.used_at.is_(None),
+            EmailVerificationToken.expires_at >= now,
         )
+        .values(used_at=now)
+        .returning(EmailVerificationToken.user_id)
     )
-    token_record = result.scalar_one_or_none()
-    if not token_record or token_record.expires_at < datetime.now(UTC):
+    claimed = claim_result.first()
+    if not claimed:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
 
-    token_record.used_at = datetime.now(UTC)
-
-    user_result = await db.execute(select(User).where(User.id == token_record.user_id))
+    user_result = await db.execute(
+        select(User).where(User.id == claimed.user_id, User.deleted_at.is_(None))
+    )
     user = user_result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -463,9 +548,17 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
 
 
 class AcceptInvitationRequest(BaseModel):
-    token: str
+    token: str = Field(..., min_length=1, max_length=256)
     password: str | None = Field(default=None, min_length=8, max_length=128)
     display_name: str | None = Field(default=None, max_length=255)
+
+    @field_validator("password")
+    @classmethod
+    def check_password_strength(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        from app.api.schemas_auth import _validate_password_strength
+        return _validate_password_strength(v)
 
 
 @router.post("/accept-invitation", response_model=AuthResponse, dependencies=[Depends(_auth_rate_limit)])
@@ -476,16 +569,25 @@ async def accept_invitation(
 ):
     """Accept a team invitation. Creates a new user if needed, or adds existing user to tenant."""
     token_hash_val = hash_token(body.token)
+    now = datetime.now(UTC)
 
-    result = await db.execute(
-        select(Invitation).where(
+    # Atomic claim: UPDATE ... WHERE status='PENDING' prevents race conditions
+    claim_result = await db.execute(
+        update(Invitation)
+        .where(
             Invitation.token_hash == token_hash_val,
             Invitation.status == InvitationStatus.PENDING,
+            Invitation.expires_at >= now,
         )
+        .values(status=InvitationStatus.ACCEPTED, accepted_at=now)
+        .returning(Invitation.id, Invitation.email, Invitation.tenant_id, Invitation.role, Invitation.expires_at)
     )
-    invitation = result.scalar_one_or_none()
-    if not invitation or invitation.expires_at < datetime.now(UTC):
+    claimed = claim_result.first()
+    if not claimed:
         raise HTTPException(status_code=400, detail="Invalid or expired invitation")
+
+    # Build an invitation-like object from the claimed row for downstream use
+    invitation = claimed
 
     # Defense-in-depth: reject owner role in invitation acceptance
     if invitation.role == UserRole.OWNER:
@@ -529,10 +631,6 @@ async def accept_invitation(
         role=invitation.role,
     )
     db.add(membership)
-
-    # Mark invitation as accepted
-    invitation.status = InvitationStatus.ACCEPTED
-    invitation.accepted_at = datetime.now(UTC)
 
     # Create refresh token
     raw_refresh, refresh_hash = create_refresh_token()

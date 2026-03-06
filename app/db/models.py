@@ -2,11 +2,14 @@ import enum
 import uuid
 from datetime import datetime
 
+import structlog
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, SoftDeleteMixin, TimestampMixin, VersionMixin
+
+logger = structlog.stdlib.get_logger()
 
 
 class JobStatus(enum.StrEnum):
@@ -123,8 +126,10 @@ class OAuthAccount(TimestampMixin, Base):
         from app.core.encryption import decrypt
         try:
             return decrypt(self.access_token)
-        except ValueError:
-            return self.access_token  # Legacy unencrypted fallback
+        except Exception:
+            # Decryption failed — never return raw ciphertext.
+            logger.warning("oauth_access_token_decrypt_failed", user_id=str(self.user_id))
+            return None
 
     def set_refresh_token(self, plaintext: str) -> None:
         """Encrypt and store the OAuth refresh token."""
@@ -138,8 +143,10 @@ class OAuthAccount(TimestampMixin, Base):
         from app.core.encryption import decrypt
         try:
             return decrypt(self.refresh_token)
-        except ValueError:
-            return self.refresh_token  # Legacy unencrypted fallback
+        except Exception:
+            # Decryption failed — never return raw ciphertext.
+            logger.warning("oauth_refresh_token_decrypt_failed", user_id=str(self.user_id))
+            return None
 
 
 class TenantMembership(TimestampMixin, Base):

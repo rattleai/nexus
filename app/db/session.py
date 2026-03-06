@@ -5,6 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.config import settings
 
+# PostgreSQL server-side timeouts to prevent runaway queries and idle transactions
+_PG_SERVER_SETTINGS = {
+    "statement_timeout": "30000",  # 30s max query execution
+    "idle_in_transaction_session_timeout": "60000",  # 60s idle-in-txn before kill
+}
+
 async_engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
@@ -12,6 +18,7 @@ async_engine = create_async_engine(
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_pre_ping=True,
     pool_recycle=300,
+    connect_args={"server_settings": _PG_SERVER_SETTINGS},
 )
 async_session_factory = async_sessionmaker(async_engine, expire_on_commit=False)
 
@@ -27,6 +34,7 @@ if settings.DATABASE_READ_URL:
         max_overflow=settings.DB_MAX_OVERFLOW,
         pool_pre_ping=True,
         pool_recycle=300,
+        connect_args={"server_settings": _PG_SERVER_SETTINGS},
     )
     _read_session_factory = async_sessionmaker(_read_engine, expire_on_commit=False)
 
@@ -41,6 +49,16 @@ async def get_read_session() -> AsyncGenerator[AsyncSession]:
     factory = _read_session_factory or async_session_factory
     async with factory() as session:
         yield session
+
+
+async def dispose_engines() -> None:
+    """Dispose all database engines, releasing connection pools.
+
+    Called during graceful shutdown to ensure connections are returned to the OS.
+    """
+    await async_engine.dispose()
+    if _read_engine is not None:
+        await _read_engine.dispose()
 
 
 async def set_tenant_context(session: AsyncSession, tenant_id: str) -> None:

@@ -228,6 +228,24 @@ async def handle_webhook_event(
     await _mark_event_processed(event_id)
 
 
+def _validate_webhook_tenant(data: dict, subscription: Subscription) -> bool:
+    """Cross-check metadata tenant_id against subscription's tenant_id.
+
+    Returns True if valid or no metadata present (backwards-compatible).
+    Logs a warning and returns False on mismatch.
+    """
+    metadata = data.get("object", {}).get("metadata", {})
+    meta_tenant_id = metadata.get("tenant_id")
+    if meta_tenant_id and str(subscription.tenant_id) != meta_tenant_id:
+        logger.error(
+            "stripe_webhook_tenant_mismatch",
+            expected=str(subscription.tenant_id),
+            got=meta_tenant_id,
+        )
+        return False
+    return True
+
+
 async def _handle_subscription_updated(data: dict, db: AsyncSession) -> None:
     """Handle subscription status changes."""
     stripe_sub_id = data["object"]["id"]
@@ -239,6 +257,9 @@ async def _handle_subscription_updated(data: dict, db: AsyncSession) -> None:
     subscription = result.scalar_one_or_none()
     if not subscription:
         logger.warning("stripe_subscription_not_found", stripe_sub_id=stripe_sub_id)
+        return
+
+    if not _validate_webhook_tenant(data, subscription):
         return
 
     status_map = {
@@ -272,6 +293,9 @@ async def _handle_subscription_deleted(data: dict, db: AsyncSession) -> None:
     )
     subscription = result.scalar_one_or_none()
     if not subscription:
+        return
+
+    if not _validate_webhook_tenant(data, subscription):
         return
 
     subscription.status = SubscriptionStatus.CANCELED

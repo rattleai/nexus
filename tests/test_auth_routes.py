@@ -73,7 +73,7 @@ class TestAuthSchemas:
 
         user = UserRegister(
             email="test@example.com",
-            password="securepass123",
+            password="SecurePass123",
             display_name="Test User",
             tenant_slug="my-org",
         )

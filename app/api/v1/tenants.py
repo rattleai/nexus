@@ -9,12 +9,13 @@ from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import hash_api_key
 from app.api.deps import get_db, require_admin_key
+from app.api.rate_limit import RateLimiter
 from app.api.schemas import (
     ApiKeyCreate,
     ApiKeyCreatedResponse,
@@ -28,7 +29,8 @@ from app.core.cache import cached, invalidate
 from app.core.pagination import CursorPage, paginate
 from app.db.models import ApiKey, Tenant
 
-router = APIRouter(prefix="/tenants", dependencies=[Depends(require_admin_key)])
+_admin_rate_limit = RateLimiter(max_requests=60, window=60, key_prefix="rl:admin")
+router = APIRouter(prefix="/tenants", dependencies=[Depends(require_admin_key), Depends(_admin_rate_limit)])
 logger = structlog.stdlib.get_logger()
 
 # Explicit allowlist of fields that can be updated via PATCH
@@ -113,13 +115,78 @@ async def delete_tenant(tenant_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    tenant.deleted_at = datetime.now(UTC)
-    await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="tenant",
-        resource_id=str(tenant.id), tenant_id=tenant.id,
-        metadata={"slug": tenant.slug},
+    now = datetime.now(UTC)
+    tenant.deleted_at = now
+    tenant.is_active = False
+
+    # Cascade soft-delete: deactivate all child resources so they stop
+    # working immediately.  Hard deletes happen via a background cleanup task.
+    from app.db.models import (
+        ApiKey,
+        RefreshToken,
+        Subscription,
+        SubscriptionStatus,
+        TenantFeatureOverride,
+        User,
+        WebhookEndpoint,
     )
-    await db.commit()
+
+    try:
+        # Deactivate API keys
+        await db.execute(
+            update(ApiKey)
+            .where(ApiKey.tenant_id == tenant_id, ApiKey.active.is_(True))
+            .values(active=False)
+        )
+        # Deactivate users and revoke their refresh tokens
+        user_ids_result = await db.execute(
+            select(User.id).where(User.tenant_id == tenant_id)
+        )
+        user_ids = [row[0] for row in user_ids_result.all()]
+        await db.execute(
+            update(User)
+            .where(User.tenant_id == tenant_id, User.is_active.is_(True))
+            .values(is_active=False)
+        )
+        if user_ids:
+            await db.execute(
+                update(RefreshToken)
+                .where(RefreshToken.user_id.in_(user_ids), RefreshToken.revoked.is_(False))
+                .values(revoked=True)
+            )
+        # Deactivate webhook endpoints
+        await db.execute(
+            update(WebhookEndpoint)
+            .where(WebhookEndpoint.tenant_id == tenant_id, WebhookEndpoint.active.is_(True))
+            .values(active=False)
+        )
+        # Cancel subscriptions
+        await db.execute(
+            update(Subscription)
+            .where(
+                Subscription.tenant_id == tenant_id,
+                Subscription.status != SubscriptionStatus.CANCELED,
+            )
+            .values(status=SubscriptionStatus.CANCELED)
+        )
+        # Remove feature flag overrides
+        from sqlalchemy import delete as sa_delete
+        await db.execute(
+            sa_delete(TenantFeatureOverride)
+            .where(TenantFeatureOverride.tenant_id == tenant_id)
+        )
+
+        await emit_audit_event(
+            db, action=AuditAction.DELETE, resource_type="tenant",
+            resource_id=str(tenant.id), tenant_id=tenant.id,
+            metadata={"slug": tenant.slug},
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.error("tenant_delete_cascade_failed", tenant_id=str(tenant_id), exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete tenant") from None
+
     await invalidate(f"tenants:{tenant_id}")
     logger.info("tenant_deleted", tenant_id=str(tenant.id), slug=tenant.slug)
 

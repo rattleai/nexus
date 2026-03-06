@@ -114,12 +114,16 @@ async def download_file(
     file_key: str,
     tenant: Tenant = Depends(get_current_tenant),
 ):
+    # URL-decode before validation to prevent double-encoding bypass (%2e%2e → ..)
+    from urllib.parse import unquote
+    file_key = unquote(file_key)
+
     expected_prefix = f"tenants/{tenant.id}/"
     if not file_key.startswith(expected_prefix):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Block path traversal
-    if ".." in file_key:
+    if ".." in file_key or "\\" in file_key:
         raise HTTPException(status_code=400, detail="Invalid file key")
 
     try:
@@ -149,11 +153,14 @@ async def delete_file(
     file_key: str,
     tenant: Tenant = Depends(get_current_tenant),
 ):
+    from urllib.parse import unquote
+    file_key = unquote(file_key)
+
     expected_prefix = f"tenants/{tenant.id}/"
     if not file_key.startswith(expected_prefix):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    if ".." in file_key:
+    if ".." in file_key or "\\" in file_key:
         raise HTTPException(status_code=400, detail="Invalid file key")
 
     try:

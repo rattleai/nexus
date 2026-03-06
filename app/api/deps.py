@@ -32,10 +32,15 @@ async def get_read_db() -> AsyncGenerator[AsyncSession]:
 
 
 async def get_current_api_key(
+    request: Request,
     x_api_key: str = Header(..., alias="X-API-Key"),
     db: AsyncSession = Depends(get_db),
 ) -> ApiKey:
-    """Resolve and validate the API key from the request header."""
+    """Resolve and validate the API key from the request header.
+
+    Stores the resolved key on request.state.api_key for downstream
+    dependencies (e.g. ApiKeyRateLimiter).
+    """
     key_hash = hash_api_key(x_api_key)
 
     result = await db.execute(
@@ -49,6 +54,9 @@ async def get_current_api_key(
     tenant = api_key.tenant
     if tenant is None or not tenant.is_active:
         raise HTTPException(status_code=403, detail="Tenant not found or inactive")
+
+    # Store on request state for ApiKeyRateLimiter
+    request.state.api_key = api_key
 
     return api_key
 
@@ -106,6 +114,12 @@ async def get_current_user_from_token(
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
 
+    # Cross-check JWT tenant_id against the user's current tenant to detect
+    # stale tokens (e.g. user was moved to a different tenant after JWT was issued).
+    jwt_tenant_id = payload.get("tenant_id")
+    if jwt_tenant_id and str(user.tenant_id) != str(jwt_tenant_id):
+        raise HTTPException(status_code=401, detail="Token tenant mismatch — please re-authenticate")
+
     # Set RLS tenant context for defense-in-depth isolation (mirrors API key auth path)
     await set_tenant_context(db, str(user.tenant_id))
 
@@ -139,7 +153,7 @@ class RequireRole:
         if not membership or membership.role.value not in self.required_roles:
             raise HTTPException(
                 status_code=403,
-                detail=f"Requires one of: {', '.join(sorted(self.required_roles))}",
+                detail="Insufficient permissions",
             )
 
 
@@ -168,7 +182,7 @@ class RequireScopes:
         if missing:
             raise HTTPException(
                 status_code=403,
-                detail=f"API key missing required scopes: {', '.join(sorted(missing))}",
+                detail="Insufficient API key permissions",
             )
 
 

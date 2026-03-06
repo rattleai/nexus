@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_admin_key
+from app.api.rate_limit import RateLimiter
 from app.core.pagination import CursorPage, paginate
 from app.db.models import (
     AuditLog,
@@ -24,7 +25,8 @@ from app.db.models import (
     User,
 )
 
-router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin_key)])
+_admin_rate_limit = RateLimiter(max_requests=60, window=60, key_prefix="rl:admin")
+router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin_key), Depends(_admin_rate_limit)])
 logger = structlog.stdlib.get_logger()
 
 
@@ -291,7 +293,7 @@ async def update_feature_flag(
         async for key in redis_pool.scan_iter(f"ff:{flag.name}:*", count=100):
             await redis_pool.delete(key)
     except Exception:
-        pass
+        logger.error("feature_flag_cache_invalidation_failed", flag_name=flag.name, exc_info=True)
 
     logger.info("feature_flag_updated", name=flag.name)
     return flag

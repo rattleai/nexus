@@ -4,6 +4,7 @@ from pathlib import Path
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -39,13 +40,32 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Graceful shutdown
+    # Graceful shutdown — dispose resources in reverse init order with timeouts
+    import asyncio
+
+    logger.info("app_shutting_down")
+
     if settings.OTEL_ENABLED:
         from app.core.telemetry import shutdown_telemetry
 
         shutdown_telemetry()
 
-    await redis_pool.aclose()
+    # Close Redis (with timeout to prevent hanging during deployment)
+    try:
+        await asyncio.wait_for(redis_pool.aclose(), timeout=5.0)
+    except TimeoutError:
+        logger.warning("redis_close_timeout")
+    except Exception:
+        logger.warning("redis_close_error", exc_info=True)
+
+    # Dispose database engines to release connection pools
+    from app.db.session import dispose_engines
+
+    try:
+        await asyncio.wait_for(dispose_engines(), timeout=10.0)
+    except TimeoutError:
+        logger.warning("db_engine_dispose_timeout")
+
     logger.info("app_shutdown")
 
 
@@ -65,6 +85,7 @@ def create_app() -> FastAPI:
     # Middleware (outermost first)
     app.add_middleware(RequestSizeLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",")],
