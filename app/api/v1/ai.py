@@ -183,7 +183,9 @@ async def create_completion(
                             threshold=settings.AI_WALLET_LOW_BALANCE_THRESHOLD,
                         ))
                 except InsufficientBalanceError:
-                    logger.warning(
+                    # Tokens were already consumed at the provider. Log as error
+                    # so billing can follow up (the tenant owes these tokens).
+                    logger.error(
                         "streaming_wallet_deduction_insufficient",
                         tenant_id=str(tenant.id),
                         billed_tokens=billed_tokens,
@@ -617,7 +619,10 @@ async def list_wallet_transactions(
             cursor_id = uuid.UUID(cursor)
             # Get the created_at of the cursor transaction
             cursor_result = await db.execute(
-                select(WalletTransaction.created_at).where(WalletTransaction.id == cursor_id)
+                select(WalletTransaction.created_at).where(
+                    WalletTransaction.id == cursor_id,
+                    WalletTransaction.tenant_id == tenant.id,
+                )
             )
             cursor_time = cursor_result.scalar_one_or_none()
             if cursor_time:
