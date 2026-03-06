@@ -51,6 +51,35 @@ celery.conf.update(
 
 celery.autodiscover_tasks(["app.workers"])
 
+
+# ── Context propagation: bind request_id/tenant_id to worker logs ──────────
+
+
+@celery.signals.task_prerun.connect
+def _bind_task_context(sender=None, task_id=None, task=None, kwargs=None, **kw):
+    """Bind request context (request_id, tenant_id) to structlog for the task."""
+    import structlog
+
+    headers = getattr(task.request, "headers", {}) or {}
+    ctx = {}
+    if headers.get("request_id"):
+        ctx["request_id"] = headers["request_id"]
+    if headers.get("tenant_id"):
+        ctx["tenant_id"] = headers["tenant_id"]
+    ctx["celery_task_id"] = task_id
+    ctx["celery_task_name"] = task.name
+    structlog.contextvars.bind_contextvars(**ctx)
+
+
+@celery.signals.task_postrun.connect
+def _clear_task_context(sender=None, **kw):
+    """Clear structlog context after task completes."""
+    import structlog
+
+    structlog.contextvars.unbind_contextvars(
+        "request_id", "tenant_id", "celery_task_id", "celery_task_name"
+    )
+
 # Initialize OpenTelemetry for workers (if enabled)
 if settings.OTEL_ENABLED:
     from app.core.telemetry import setup_telemetry

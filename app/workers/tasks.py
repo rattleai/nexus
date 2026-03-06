@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from app.config import settings
 from app.core.circuit_breaker import CircuitBreaker
 from app.core.circuit_breaker import webhook_breaker as _webhook_breaker
+from app.core.metrics import JOB_DURATION, JOBS_TOTAL, WEBHOOK_DELIVERIES_TOTAL
 from app.workers.celery_app import celery
 
 logger = structlog.stdlib.get_logger()
@@ -119,6 +120,9 @@ def process_job(self, job_id: str) -> dict:
                 logger.warning("job_completion_conflict", job_id=job_id)
                 return {"status": "conflict", "detail": "Job was modified concurrently"}
 
+            JOBS_TOTAL.labels(status="completed", type=job.type).inc()
+            if job.started_at:
+                JOB_DURATION.observe((datetime.now(UTC) - job.started_at).total_seconds())
             logger.info("job_completed", job_id=job_id, type=job.type)
 
             # Fire webhook if configured
@@ -147,6 +151,7 @@ def process_job(self, job_id: str) -> dict:
                 error="Job timed out",
             )
             db.commit()
+            JOBS_TOTAL.labels(status="timed_out", type=job.type).inc()
             logger.error("job_timed_out", job_id=job_id, type=job.type)
 
             if job.webhook_url:
@@ -177,6 +182,7 @@ def process_job(self, job_id: str) -> dict:
                     error="Processing failed",  # Sanitized error for DB
                 )
                 db.commit()
+                JOBS_TOTAL.labels(status="failed", type=job.type).inc()
                 logger.error("job_failed", job_id=job_id, error=str(exc))
 
                 if job.webhook_url:
@@ -208,8 +214,35 @@ def process_job(self, job_id: str) -> dict:
                 raise self.retry(exc=exc, countdown=2**self.request.retries) from exc
 
 
+def _record_webhook_failure(url: str, payload: dict, error: str, attempts: int, endpoint_id: str | None = None) -> None:
+    """Record a permanently failed webhook delivery in the DB (dead letter queue).
+
+    This allows operators to investigate and replay failed deliveries.
+    """
+    from app.db.models import WebhookDelivery
+
+    try:
+        with _SyncSession() as db:
+            delivery = WebhookDelivery(
+                endpoint_id=uuid.UUID(endpoint_id) if endpoint_id else None,
+                event=payload.get("event", "unknown"),
+                payload=payload,
+                status_code=None,
+                response_body=error,
+                attempts=attempts,
+                completed_at=datetime.now(UTC),
+            )
+            db.add(delivery)
+            db.commit()
+            logger.info("webhook_failure_recorded", url=url, event=payload.get("event"))
+    except Exception:
+        logger.error("webhook_failure_record_failed", url=url, exc_info=True)
+
+
 @celery.task(name="app.workers.deliver_webhook", bind=True, max_retries=5)
-def deliver_webhook(self, url: str, payload: dict, signing_secret: str | None = None) -> dict:
+def deliver_webhook(
+    self, url: str, payload: dict, signing_secret: str | None = None, endpoint_id: str | None = None
+) -> dict:
     """Deliver a webhook with HMAC-SHA256 signature, circuit breaker, and exponential backoff."""
     import httpx
 
@@ -218,7 +251,8 @@ def deliver_webhook(self, url: str, payload: dict, signing_secret: str | None = 
     # Check circuit breaker before attempting delivery
     if _webhook_breaker.is_open(host_key):
         logger.warning("webhook_circuit_open", url=url)
-        # Don't retry — the circuit is open. It will auto-recover after RECOVERY_TIMEOUT.
+        if self.request.retries >= self.max_retries:
+            _record_webhook_failure(url, payload, "Circuit breaker open", self.request.retries + 1, endpoint_id)
         return {"status": "circuit_open", "url": url}
 
     signature = _sign_webhook_payload(payload, signing_secret=signing_secret)
@@ -235,9 +269,17 @@ def deliver_webhook(self, url: str, payload: dict, signing_secret: str | None = 
             response = client.post(url, json=payload, headers=headers)
             response.raise_for_status()
         _webhook_breaker.record_success(host_key)
+        WEBHOOK_DELIVERIES_TOTAL.labels(status="delivered").inc()
         logger.info("webhook_delivered", url=url, status=response.status_code)
         return {"status": "delivered", "url": url}
     except Exception as exc:
         _webhook_breaker.record_failure(host_key)
-        logger.warning("webhook_delivery_failed", url=url, error=str(exc), attempt=self.request.retries + 1)
+        is_final = self.request.retries >= self.max_retries
+        logger.warning(
+            "webhook_delivery_failed", url=url, error=str(exc),
+            attempt=self.request.retries + 1, final=is_final,
+        )
+        if is_final:
+            WEBHOOK_DELIVERIES_TOTAL.labels(status="failed").inc()
+            _record_webhook_failure(url, payload, str(exc), self.request.retries + 1, endpoint_id)
         raise self.retry(exc=exc, countdown=2**self.request.retries * 5) from exc

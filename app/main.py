@@ -40,7 +40,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Graceful shutdown — dispose resources in reverse init order
+    # Graceful shutdown — dispose resources in reverse init order with timeouts
+    import asyncio
+
     logger.info("app_shutting_down")
 
     if settings.OTEL_ENABLED:
@@ -48,16 +50,21 @@ async def lifespan(app: FastAPI):
 
         shutdown_telemetry()
 
-    # Close Redis
+    # Close Redis (with timeout to prevent hanging during deployment)
     try:
-        await redis_pool.aclose()
+        await asyncio.wait_for(redis_pool.aclose(), timeout=5.0)
+    except TimeoutError:
+        logger.warning("redis_close_timeout")
     except Exception:
         logger.warning("redis_close_error", exc_info=True)
 
     # Dispose database engines to release connection pools
     from app.db.session import dispose_engines
 
-    await dispose_engines()
+    try:
+        await asyncio.wait_for(dispose_engines(), timeout=10.0)
+    except TimeoutError:
+        logger.warning("db_engine_dispose_timeout")
 
     logger.info("app_shutdown")
 
