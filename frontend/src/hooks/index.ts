@@ -43,3 +43,11 @@ export {
   useWebhookDeliveries,
   useWebhooks,
 } from "./use-webhooks"
+
+// AI/LLM hooks
+export { useChatStream } from "./use-chat-stream"
+export { useModelSelection } from "./use-model-selection"
+export { useTokenTracking } from "./use-token-tracking"
+export { useVoiceInput } from "./use-voice-input"
+export { usePromptTemplates } from "./use-prompt-templates"
+export { useKeyboardShortcut } from "./use-keyboard-shortcut"

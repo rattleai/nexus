@@ -25,5 +25,21 @@ export { UserMenu } from "./user-menu"
 export { AuthGuard } from "./auth/auth-guard"
 export { ApiKeyPrompt } from "./auth/api-key-prompt"
 
+// Interactive
+export { CommandPalette } from "./command-palette"
+export { DragDropList } from "./drag-drop-list"
+export { KanbanBoard } from "./kanban-board"
+export { InfiniteList } from "./infinite-list"
+export { ImageLightbox } from "./image-lightbox"
+export { ImageCropper } from "./image-cropper"
+export { KeyboardShortcutsDialog } from "./keyboard-shortcuts"
+export { Tour } from "./tour"
+
+// Media
+export { DiffViewer } from "./diff-viewer"
+export { TerminalOutput } from "./terminal-output"
+export { AudioPlayer } from "./audio-player"
+export { PDFViewer } from "./pdf-viewer"
+
 // Domain
 export { ErrorBoundary } from "./error-boundary"
