@@ -15,7 +15,10 @@ function reportMetric(metric: Metric) {
   })
 
   if (navigator.sendBeacon) {
-    navigator.sendBeacon("/api/v1/analytics/cwv", body)
+    navigator.sendBeacon(
+      "/api/v1/analytics/cwv",
+      new Blob([body], { type: "application/json" }),
+    )
   }
 }
 

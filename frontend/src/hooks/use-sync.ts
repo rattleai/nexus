@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useSyncExternalStore } from "react"
+import { useCallback, useRef, useSyncExternalStore } from "react"
 import { syncEngine } from "@/lib/sync-engine"
 
 interface SyncState {
@@ -13,6 +13,9 @@ interface SyncState {
  *
  * Exposes sync state (version, pending changes, syncing status)
  * and a manual sync trigger for pull-to-refresh or retry flows.
+ *
+ * Online/offline tracking is owned by SyncEngine, which calls notify()
+ * on status changes — so useSyncExternalStore re-renders automatically.
  *
  * @example
  * ```tsx
@@ -50,7 +53,7 @@ export function useSync(): SyncState & {
       syncVersion: syncEngine.syncVersion,
       pendingCount: syncEngine.pendingCount,
       isSyncing: syncEngine.isSyncing,
-      isOnline: typeof navigator !== "undefined" ? navigator.onLine : true,
+      isOnline: syncEngine.isOnline,
     }
     const prev = cachedSnapshot.current
     if (
@@ -66,23 +69,6 @@ export function useSync(): SyncState & {
   }, [])
 
   const state = useSyncExternalStore(subscribe, getSnapshot)
-
-  // Track online/offline status changes
-  useEffect(() => {
-    const handleOnline = () => {
-      syncEngine.sync()
-    }
-    const handleOffline = () => {
-      // Trigger re-render to update isOnline
-      cachedSnapshot.current = { ...cachedSnapshot.current, isOnline: false }
-    }
-    window.addEventListener("online", handleOnline)
-    window.addEventListener("offline", handleOffline)
-    return () => {
-      window.removeEventListener("online", handleOnline)
-      window.removeEventListener("offline", handleOffline)
-    }
-  }, [])
 
   const sync = useCallback(async () => {
     await syncEngine.sync()

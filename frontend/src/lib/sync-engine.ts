@@ -26,7 +26,11 @@ interface SyncPushRequest {
 
 interface SyncPushResponse {
   accepted: Array<{ entity_id: string; server_version: number }>
-  conflicts: Array<{ entity_id: string; server_version: number; server_data: Record<string, unknown> }>
+  conflicts: Array<{
+    entity_id: string
+    server_version: number
+    server_data: Record<string, unknown>
+  }>
 }
 
 const SYNC_VERSION_KEY = "cadprice-sync-version"
@@ -42,11 +46,25 @@ class SyncEngine {
   private _pendingChanges: SyncPushRequest[]
   private _listeners = new Set<() => void>()
   private _syncing = false
+  private _isOnline: boolean
 
   constructor() {
     this._syncVersion = this.loadSyncVersion()
     this._pendingChanges = this.loadPendingChanges()
-    window.addEventListener("online", () => this.sync())
+    this._isOnline =
+      typeof navigator !== "undefined" ? navigator.onLine : true
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", () => {
+        this._isOnline = true
+        this.notify()
+        this.sync()
+      })
+      window.addEventListener("offline", () => {
+        this._isOnline = false
+        this.notify()
+      })
+    }
   }
 
   get syncVersion(): number {
@@ -61,12 +79,16 @@ class SyncEngine {
     return this._syncing
   }
 
+  get isOnline(): boolean {
+    return this._isOnline
+  }
+
   subscribe(callback: () => void): () => void {
     this._listeners.add(callback)
     return () => this._listeners.delete(callback)
   }
 
-  private notify() {
+  notify() {
     this._listeners.forEach((cb) => cb())
   }
 
@@ -107,16 +129,27 @@ class SyncEngine {
         this.saveSyncVersion()
       }
 
-      // Push pending changes
+      // Push pending changes — snapshot to avoid race with concurrent queueChange
       if (this._pendingChanges.length > 0) {
+        const snapshot = [...this._pendingChanges]
         const pushResponse = await api
-          .post("sync/push", { json: { changes: this._pendingChanges } })
+          .post("sync/push", { json: { changes: snapshot } })
           .json<SyncPushResponse>()
 
-        // Remove accepted changes from pending queue
-        const acceptedIds = new Set(pushResponse.accepted.map((a) => a.entity_id))
+        // Remove accepted changes from pending queue (match by reference to snapshot)
+        const acceptedIds = new Set(
+          pushResponse.accepted.map((a) => a.entity_id),
+        )
+        // Remove conflicted changes — accept server version (last-write-wins)
+        const conflictedIds = new Set(
+          pushResponse.conflicts.map((c) => c.entity_id),
+        )
+        const resolvedIds = new Set([...acceptedIds, ...conflictedIds])
+
+        // Only remove entries that were in the original snapshot
+        const snapshotSet = new Set(snapshot)
         this._pendingChanges = this._pendingChanges.filter(
-          (c) => !acceptedIds.has(c.entity_id),
+          (c) => !snapshotSet.has(c) || !resolvedIds.has(c.entity_id),
         )
         this.savePendingChanges()
       }
@@ -134,7 +167,9 @@ class SyncEngine {
 
   private loadSyncVersion(): number {
     try {
-      return parseInt(localStorage.getItem(SYNC_VERSION_KEY) ?? "0", 10) || 0
+      return (
+        parseInt(localStorage.getItem(SYNC_VERSION_KEY) ?? "0", 10) || 0
+      )
     } catch {
       return 0
     }
@@ -158,7 +193,10 @@ class SyncEngine {
 
   private savePendingChanges(): void {
     try {
-      localStorage.setItem(PENDING_CHANGES_KEY, JSON.stringify(this._pendingChanges))
+      localStorage.setItem(
+        PENDING_CHANGES_KEY,
+        JSON.stringify(this._pendingChanges),
+      )
     } catch {
       // ignore
     }

@@ -67,7 +67,16 @@ export function NotificationBell() {
                 )}
                 onClick={() => {
                   if (!n.read) markAsRead.mutate(n.id)
-                  if (n.action_url) window.location.href = n.action_url
+                  if (n.action_url) {
+                    try {
+                      const url = new URL(n.action_url, window.location.origin)
+                      if (url.protocol === "http:" || url.protocol === "https:") {
+                        window.location.href = url.href
+                      }
+                    } catch {
+                      // Invalid URL — ignore
+                    }
+                  }
                 }}
               >
                 <div className={cn("mt-1.5 h-2 w-2 rounded-full shrink-0", typeStyles[n.type])} />
