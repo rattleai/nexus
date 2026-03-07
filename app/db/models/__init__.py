@@ -47,6 +47,12 @@ from app.db.models.features import (
     FeatureFlag,
     TenantFeatureOverride,
 )
+from app.db.models.mobile import (
+    ChangeLog,
+    PushSubscription,
+    SyncMixin,
+    WebAuthnCredential,
+)
 from app.db.models.operations import (
     AuditLog,
     Job,
@@ -94,4 +100,9 @@ __all__ = [
     "WalletTransactionType",
     "AIUsageLog",
     "PromptTemplate",
+    # Mobile
+    "PushSubscription",
+    "WebAuthnCredential",
+    "ChangeLog",
+    "SyncMixin",
 ]

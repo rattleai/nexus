@@ -1,46 +1,151 @@
-import type { ReactNode } from "react"
-import { Link } from "@tanstack/react-router"
+import { type ReactNode, useCallback, useState } from "react"
+import { Link, useRouterState } from "@tanstack/react-router"
+import {
+  LayoutDashboard,
+  Briefcase,
+  Key,
+  FolderOpen,
+  CreditCard,
+  Users,
+  Webhook,
+  Shield,
+  Settings,
+  MessageSquare,
+} from "lucide-react"
 import { APP_NAME } from "@/lib/constants"
-import { NavLink } from "./nav-link"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarInset,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
+import { Separator } from "@/components/ui/separator"
+import { ThemeToggle } from "@/components/theme-toggle"
+import { NotificationBell } from "@/components/notification-bell"
+import { UserMenu } from "@/components/user-menu"
+import { BottomNav } from "@/components/layout/bottom-nav"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? "0.1.0"
+
+const NAV_GROUPS = [
+  {
+    label: "Overview",
+    items: [
+      { href: "/", label: "Dashboard", icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "Platform",
+    items: [
+      { href: "/jobs", label: "Jobs", icon: Briefcase },
+      { href: "/files", label: "Files", icon: FolderOpen },
+      { href: "/api-keys", label: "API Keys", icon: Key },
+      { href: "/chat", label: "AI Chat", icon: MessageSquare },
+    ],
+  },
+  {
+    label: "Organization",
+    items: [
+      { href: "/billing", label: "Billing", icon: CreditCard },
+      { href: "/team", label: "Team", icon: Users },
+      { href: "/webhooks", label: "Webhooks", icon: Webhook },
+      { href: "/audit-log", label: "Audit Log", icon: Shield },
+    ],
+  },
+  {
+    label: "Account",
+    items: [
+      { href: "/settings", label: "Settings", icon: Settings },
+    ],
+  },
+]
 
 interface AppShellProps {
   children: ReactNode
 }
 
 export function AppShell({ children }: AppShellProps) {
+  const router = useRouterState()
+  const currentPath = router.location.pathname
+  const isMobile = useIsMobile()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const handleMenuClick = useCallback(() => {
+    setMobileMenuOpen((prev) => !prev)
+  }, [])
+
   return (
-    <div className="min-h-screen flex flex-col">
+    <SidebarProvider open={isMobile ? mobileMenuOpen : undefined} onOpenChange={isMobile ? setMobileMenuOpen : undefined}>
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-white focus:text-brand-600"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-background focus:text-foreground"
       >
         Skip to main content
       </a>
-      <nav className="bg-surface border-b border-gray-200 shadow-nav" aria-label="Main navigation">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            <Link to="/" className="text-xl font-bold text-brand-600">
-              {APP_NAME}
-            </Link>
-            <div className="flex items-center gap-4">
-              <NavLink href="/" label="Dashboard" />
-              <NavLink href="/jobs" label="Jobs" />
-              <NavLink href="/api-keys" label="API Keys" />
-              <NavLink href="/settings" label="Settings" />
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      <main id="main-content" className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
-        {children}
-      </main>
-
-      <footer className="border-t border-gray-200 py-4 text-center text-sm text-gray-500">
-        {APP_NAME} v{APP_VERSION}
-      </footer>
-    </div>
+      <Sidebar collapsible="icon">
+        <SidebarHeader className="p-4">
+          <Link to="/" className="flex items-center gap-2 text-lg font-bold text-primary">
+            <LayoutDashboard className="h-5 w-5" />
+            <span className="group-data-[collapsible=icon]:hidden">{APP_NAME}</span>
+          </Link>
+        </SidebarHeader>
+        <SidebarContent>
+          {NAV_GROUPS.map((group) => (
+            <SidebarGroup key={group.label}>
+              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {group.items.map((item) => {
+                    const isActive =
+                      item.href === "/"
+                        ? currentPath === "/"
+                        : currentPath.startsWith(item.href)
+                    return (
+                      <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                          <Link to={item.href}>
+                            <item.icon className="h-4 w-4" />
+                            <span>{item.label}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    )
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
+        </SidebarContent>
+        <SidebarFooter className="p-4">
+          <p className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+            v{APP_VERSION}
+          </p>
+        </SidebarFooter>
+      </Sidebar>
+      <SidebarInset>
+        <header className="flex h-14 items-center gap-2 border-b px-4">
+          {!isMobile && <SidebarTrigger />}
+          {!isMobile && <Separator orientation="vertical" className="h-6" />}
+          <div className="flex-1" />
+          <ThemeToggle />
+          <NotificationBell />
+          <UserMenu />
+        </header>
+        <main id="main-content" className="flex-1 p-6 pb-20 md:pb-6">
+          {children}
+        </main>
+      </SidebarInset>
+      <BottomNav onMenuClick={handleMenuClick} />
+    </SidebarProvider>
   )
 }

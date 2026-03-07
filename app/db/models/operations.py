@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, SoftDeleteMixin, TimestampMixin, VersionMixin
+from app.db.models.mobile import SyncMixin
 
 
 class JobStatus(enum.StrEnum):
@@ -20,7 +21,7 @@ class JobStatus(enum.StrEnum):
     FAILED = "failed"
 
 
-class Job(SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
+class Job(SyncMixin, SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
     __tablename__ = "jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

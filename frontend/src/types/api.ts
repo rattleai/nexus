@@ -93,3 +93,128 @@ export interface Job {
   created_at: string
   updated_at: string
 }
+
+// ── File ──────────────────────────────────────────────
+
+export interface FileRecord {
+  id: string
+  filename: string
+  content_type: string
+  size_bytes: number
+  storage_path: string
+  uploaded_by: string | null
+  created_at: string
+}
+
+// ── Billing ───────────────────────────────────────────
+
+export interface Plan {
+  id: string
+  name: string
+  stripe_price_id: string | null
+  price_monthly: number
+  limits: Record<string, number>
+  features: string[]
+  is_default: boolean
+}
+
+export interface Subscription {
+  id: string
+  stripe_subscription_id: string | null
+  status: "active" | "past_due" | "canceled" | "trialing" | "incomplete"
+  plan: Plan | null
+  current_period_start: string | null
+  current_period_end: string | null
+  cancel_at_period_end: boolean
+  created_at: string
+}
+
+// ── Team ──────────────────────────────────────────────
+
+export type TeamRole = "owner" | "admin" | "member" | "viewer"
+
+export interface TeamMember {
+  id: string
+  email: string
+  display_name: string | null
+  role: TeamRole
+  is_active: boolean
+  joined_at: string
+}
+
+export interface Invitation {
+  id: string
+  email: string
+  role: TeamRole
+  invited_by: string
+  expires_at: string
+  created_at: string
+}
+
+// ── Webhook ───────────────────────────────────────────
+
+export interface WebhookEndpoint {
+  id: string
+  url: string
+  events: string[]
+  active: boolean
+  secret: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WebhookDelivery {
+  id: string
+  endpoint_id: string
+  event_type: string
+  payload: Record<string, unknown>
+  status_code: number | null
+  response_body: string | null
+  success: boolean
+  attempts: number
+  delivered_at: string | null
+  created_at: string
+}
+
+// ── Notification ──────────────────────────────────────
+
+export type NotificationType = "info" | "success" | "warning" | "error"
+
+export interface Notification {
+  id: string
+  type: NotificationType
+  title: string
+  message: string
+  read: boolean
+  action_url: string | null
+  created_at: string
+}
+
+// ── Audit Log ─────────────────────────────────────────
+
+export interface AuditLog {
+  id: string
+  user_id: string | null
+  user_email: string | null
+  action: string
+  resource_type: string
+  resource_id: string | null
+  metadata: Record<string, unknown> | null
+  ip_address: string | null
+  user_agent: string | null
+  created_at: string
+}
+
+// ── Usage ─────────────────────────────────────────────
+
+export interface UsageMetric {
+  used: number
+  limit: number | null
+}
+
+export interface UsageSummary {
+  jobs: UsageMetric
+  api_keys: UsageMetric
+  team_members: UsageMetric
+  storage_bytes: UsageMetric
+}
