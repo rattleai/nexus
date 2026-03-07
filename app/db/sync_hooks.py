@@ -4,7 +4,7 @@ Listens to SQLAlchemy after_flush events and records create/update/delete
 operations for any model that uses SyncMixin. Mobile clients pull these
 records via the /sync/changes endpoint.
 
-Usage: call ``register_sync_hooks(engine)`` once at startup (in lifespan).
+Usage: call ``register_sync_hooks()`` once at startup (in lifespan).
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from typing import Any
 import structlog
 from sqlalchemy import event, inspect
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import instance_state
 
 from app.db.models.mobile import ChangeLog, SyncMixin
 
@@ -28,9 +29,14 @@ _ENTITY_TYPE_MAP: dict[str, str] = {
     "Notification": "notification",
 }
 
+# Re-entrancy guard: prevents recursive after_flush calls
+_in_flush = False
+
 
 def _get_entity_type(instance: Any) -> str | None:
     """Return the sync entity type for a model instance, or None if not syncable."""
+    if isinstance(instance, ChangeLog):
+        return None  # Explicit guard: never track ChangeLog itself
     if not isinstance(instance, SyncMixin):
         return None
     cls_name = type(instance).__name__
@@ -43,14 +49,18 @@ def _get_tenant_id(instance: Any) -> uuid.UUID | None:
 
 
 def _get_changed_fields(instance: Any) -> dict[str, Any] | None:
-    """Return dict of changed column names and their new values."""
-    insp = inspect(instance)
+    """Return dict of changed column names and their new values.
+
+    Only iterates over column attributes (not relationships) to avoid
+    serializing ORM model instances.
+    """
+    mapper = inspect(type(instance))
+    state = instance_state(instance)
     changes = {}
-    for attr in insp.attrs:
-        hist = attr.history
+    for attr in mapper.column_attrs:
+        hist = state.attrs[attr.key].history
         if hist.has_changes():
-            value = attr.value
-            # Serialize UUIDs and other non-JSON types
+            value = getattr(instance, attr.key, None)
             if isinstance(value, uuid.UUID):
                 value = str(value)
             elif hasattr(value, "isoformat"):
@@ -60,13 +70,16 @@ def _get_changed_fields(instance: Any) -> dict[str, Any] | None:
 
 
 def _compute_checksum(instance: Any) -> str:
-    """Compute a deterministic checksum for a syncable entity's current state."""
-    insp = inspect(instance)
+    """Compute a deterministic checksum for a syncable entity's current state.
+
+    Only includes column attributes (not relationships) for deterministic output.
+    """
+    mapper = inspect(type(instance))
     data = {}
-    for attr in insp.attrs:
+    for attr in mapper.column_attrs:
         if attr.key in ("sync_version", "sync_checksum", "created_at", "updated_at"):
             continue
-        value = attr.value
+        value = getattr(instance, attr.key, None)
         if isinstance(value, uuid.UUID):
             value = str(value)
         elif hasattr(value, "isoformat"):
@@ -77,85 +90,91 @@ def _compute_checksum(instance: Any) -> str:
 
 def _after_flush(session: Session, flush_context: Any) -> None:
     """After flush handler: record changes for syncable entities."""
-    changes_to_add: list[ChangeLog] = []
+    global _in_flush
+    if _in_flush:
+        return  # Prevent re-entrant calls
+    _in_flush = True
 
-    # Process new objects
-    for instance in session.new:
-        entity_type = _get_entity_type(instance)
-        if not entity_type:
-            continue
-        tenant_id = _get_tenant_id(instance)
-        if not tenant_id:
-            continue
+    try:
+        changes_to_add: list[ChangeLog] = []
 
-        entity_id = getattr(instance, "id", None)
-        if not entity_id:
-            continue
+        # Process new objects
+        for instance in list(session.new):
+            entity_type = _get_entity_type(instance)
+            if not entity_type:
+                continue
+            tenant_id = _get_tenant_id(instance)
+            if not tenant_id:
+                continue
 
-        changes_to_add.append(ChangeLog(
-            tenant_id=tenant_id,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            operation="create",
-            changed_fields=None,
-        ))
+            entity_id = getattr(instance, "id", None)
+            if not entity_id:
+                continue
 
-        # Update sync metadata
-        instance.sync_checksum = _compute_checksum(instance)
+            changes_to_add.append(ChangeLog(
+                tenant_id=tenant_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                operation="create",
+                changed_fields=None,
+            ))
 
-    # Process dirty (updated) objects
-    for instance in session.dirty:
-        entity_type = _get_entity_type(instance)
-        if not entity_type:
-            continue
-        tenant_id = _get_tenant_id(instance)
-        if not tenant_id:
-            continue
+            instance.sync_checksum = _compute_checksum(instance)
 
-        entity_id = getattr(instance, "id", None)
-        if not entity_id:
-            continue
+        # Process dirty (updated) objects
+        for instance in list(session.dirty):
+            entity_type = _get_entity_type(instance)
+            if not entity_type:
+                continue
+            tenant_id = _get_tenant_id(instance)
+            if not tenant_id:
+                continue
 
-        changed_fields = _get_changed_fields(instance)
-        if not changed_fields:
-            continue
+            entity_id = getattr(instance, "id", None)
+            if not entity_id:
+                continue
 
-        changes_to_add.append(ChangeLog(
-            tenant_id=tenant_id,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            operation="update",
-            changed_fields=changed_fields,
-        ))
+            changed_fields = _get_changed_fields(instance)
+            if not changed_fields:
+                continue
 
-        instance.sync_checksum = _compute_checksum(instance)
+            changes_to_add.append(ChangeLog(
+                tenant_id=tenant_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                operation="update",
+                changed_fields=changed_fields,
+            ))
 
-    # Process deleted objects
-    for instance in session.deleted:
-        entity_type = _get_entity_type(instance)
-        if not entity_type:
-            continue
-        tenant_id = _get_tenant_id(instance)
-        if not tenant_id:
-            continue
+            instance.sync_checksum = _compute_checksum(instance)
 
-        entity_id = getattr(instance, "id", None)
-        if not entity_id:
-            continue
+        # Process deleted objects
+        for instance in list(session.deleted):
+            entity_type = _get_entity_type(instance)
+            if not entity_type:
+                continue
+            tenant_id = _get_tenant_id(instance)
+            if not tenant_id:
+                continue
 
-        changes_to_add.append(ChangeLog(
-            tenant_id=tenant_id,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            operation="delete",
-            changed_fields=None,
-        ))
+            entity_id = getattr(instance, "id", None)
+            if not entity_id:
+                continue
 
-    # Add changelog entries to the session (they'll be flushed in a subsequent flush)
-    if changes_to_add:
-        for cl in changes_to_add:
-            session.add(cl)
-        logger.debug("sync_changelog_recorded", count=len(changes_to_add))
+            changes_to_add.append(ChangeLog(
+                tenant_id=tenant_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                operation="delete",
+                changed_fields=None,
+            ))
+
+        if changes_to_add:
+            for cl in changes_to_add:
+                session.add(cl)
+            logger.debug("sync_changelog_recorded", count=len(changes_to_add))
+    finally:
+        _in_flush = False
 
 
 def register_sync_hooks() -> None:

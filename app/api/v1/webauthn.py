@@ -296,7 +296,7 @@ async def authentication_complete(
 
     from app.core.security import create_access_token
 
-    access_token = create_access_token(user_id=str(user.id), tenant_id=str(user.tenant_id))
+    access_token = create_access_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})
 
     logger.info("webauthn_authenticated", user_id=str(user.id))
     return {"access_token": access_token}

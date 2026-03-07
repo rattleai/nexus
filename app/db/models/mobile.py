@@ -7,6 +7,7 @@ and offline sync change log.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -46,7 +47,7 @@ class WebAuthnCredential(Base, TimestampMixin):
     public_key: Mapped[str] = mapped_column(Text, nullable=False)
     sign_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     device_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    last_used_at: Mapped[None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("ix_webauthn_user", "user_id"),

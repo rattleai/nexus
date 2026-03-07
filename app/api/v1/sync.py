@@ -1,8 +1,8 @@
 """Offline-first data synchronization endpoints.
 
 Mobile clients pull changes since their last sync version and push
-locally-created/modified records. The server tracks changes via a
-monotonic sync_version and supports conflict resolution.
+locally-created/modified records. The server tracks changes via the
+monotonically increasing ChangeLog.id as the sync version.
 """
 
 from __future__ import annotations
@@ -78,13 +78,14 @@ async def get_changes(
 ) -> SyncChangesResponse:
     """Fetch changes since a given sync version.
 
-    Returns changes ordered by sync_version, scoped to the user's tenant.
+    Uses ChangeLog.id as the monotonically increasing sync version.
+    Returns changes ordered by id, scoped to the user's tenant.
     """
     from app.db.models.mobile import ChangeLog
 
     stmt = select(ChangeLog).where(
         ChangeLog.tenant_id == user.tenant_id,
-        ChangeLog.sync_version > since_version,
+        ChangeLog.id > since_version,
     )
 
     if entity_types:
@@ -92,7 +93,7 @@ async def get_changes(
         if types:
             stmt = stmt.where(ChangeLog.entity_type.in_(types))
 
-    stmt = stmt.order_by(ChangeLog.sync_version.asc()).limit(limit + 1)
+    stmt = stmt.order_by(ChangeLog.id.asc()).limit(limit + 1)
 
     result = await db.execute(stmt)
     rows = list(result.scalars().all())
@@ -100,7 +101,8 @@ async def get_changes(
     has_more = len(rows) > limit
     items = rows[:limit]
 
-    latest_version = items[-1].sync_version if items else since_version
+    # Use ChangeLog.id as the sync version
+    latest_version = items[-1].id if items else since_version
 
     return SyncChangesResponse(
         changes=[
@@ -110,7 +112,7 @@ async def get_changes(
                 entity_id=str(r.entity_id),
                 operation=r.operation,
                 changed_fields=r.changed_fields,
-                sync_version=r.sync_version,
+                sync_version=r.id,
                 created_at=r.created_at.isoformat(),
             )
             for r in items
@@ -128,8 +130,9 @@ async def push_changes(
 ) -> SyncPushResponse:
     """Push locally-created or modified records to the server.
 
-    Uses last-write-wins conflict resolution by default.
-    Returns accepted changes and any conflicts with server versions.
+    Checks for conflicts by comparing client_version against the latest
+    server ChangeLog entry for each entity. Returns conflicts with the
+    server's current data so clients can resolve them.
     """
     accepted: list[SyncAccepted] = []
     conflicts: list[SyncConflict] = []
@@ -141,31 +144,31 @@ async def push_changes(
             raise HTTPException(status_code=400, detail=f"Invalid operation: {change.operation}")
 
         if change.operation == "update":
-            # Check for conflicts: find the latest server version for this entity
             try:
                 entity_uuid = uuid_mod.UUID(change.entity_id)
             except ValueError:
                 raise HTTPException(status_code=400, detail=f"Invalid entity_id: {change.entity_id}")
 
+            # Find the latest server change for this entity (using id as version)
             latest = await db.execute(
-                select(ChangeLog.sync_version)
+                select(ChangeLog)
                 .where(
                     ChangeLog.tenant_id == user.tenant_id,
                     ChangeLog.entity_type == change.entity_type,
                     ChangeLog.entity_id == entity_uuid,
                 )
-                .order_by(ChangeLog.sync_version.desc())
+                .order_by(ChangeLog.id.desc())
                 .limit(1)
             )
-            server_version_row = latest.scalar_one_or_none()
-            server_version = server_version_row if server_version_row else 0
+            server_entry = latest.scalar_one_or_none()
+            server_version = server_entry.id if server_entry else 0
 
             if server_version > change.client_version:
-                # Conflict: server has newer changes
+                # Conflict: server has newer changes — return server's changed_fields
                 conflicts.append(SyncConflict(
                     entity_id=change.entity_id,
                     server_version=server_version,
-                    server_data=change.data,
+                    server_data=server_entry.changed_fields or {},
                 ))
                 continue
 
