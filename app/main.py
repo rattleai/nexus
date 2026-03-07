@@ -35,6 +35,10 @@ async def lifespan(app: FastAPI):
 
     register_sync_hooks()
 
+    # Enable DB connection pool monitoring (P0-8)
+    from app.db.session import setup_pool_monitoring
+    setup_pool_monitoring()
+
     logger.info("app_starting", version=__version__, debug=settings.DEBUG)
 
     # Warm up Redis connection pool
@@ -133,9 +137,13 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=[
             "Authorization", "Content-Type", "X-API-Key", "X-Admin-Key",
-            "X-Request-ID", "X-Idempotency-Key", "If-None-Match",
+            "X-Request-ID", "X-Idempotency-Key", "If-None-Match", "X-CSRF-Token",
         ],
-        expose_headers=["ETag", "X-Request-ID", "X-Response-Time", "Retry-After"],
+        expose_headers=[
+            "ETag", "X-Request-ID", "X-Response-Time", "Retry-After",
+            "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset",
+            "X-CSRF-Token",
+        ],
         max_age=86400,
     )
 

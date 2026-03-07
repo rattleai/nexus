@@ -1,0 +1,69 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cadprice-api
+  namespace: cadprice
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: cadprice
+  annotations:
+    # cert-manager TLS
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/revision-history-limit: "3"
+
+    # NGINX ingress rate limiting
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/rate-limit-connections: "20"
+
+    # Request size / timeouts
+    nginx.ingress.kubernetes.io/proxy-body-size: 50m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+
+    # Security headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Permissions-Policy: camera=(), microphone=(), geolocation=()";
+
+    # SSL redirect
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # HSTS
+    nginx.ingress.kubernetes.io/hsts: "true"
+    nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
+    nginx.ingress.kubernetes.io/hsts-include-subdomains: "true"
+    nginx.ingress.kubernetes.io/hsts-preload: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - cadprice.com
+        - www.cadprice.com
+      secretName: cadprice-tls
+  rules:
+    - host: cadprice.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cadprice-api
+                port:
+                  name: http
+    - host: www.cadprice.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cadprice-api
+                port:
+                  name: http

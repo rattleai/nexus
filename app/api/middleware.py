@@ -1,4 +1,7 @@
+import hashlib
+import hmac
 import re
+import secrets
 import time
 import uuid
 
@@ -12,6 +15,19 @@ from app.config import settings
 logger = structlog.stdlib.get_logger()
 
 _REQUEST_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,128}$")
+_STATE_CHANGING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+# Paths exempt from CSRF protection (API key auth, webhooks, public endpoints)
+_CSRF_EXEMPT_PREFIXES = (
+    "/api/v1/health",
+    "/api/v1/auth/login",
+    "/api/v1/auth/register",
+    "/api/v1/auth/forgot-password",
+    "/api/v1/auth/reset-password",
+    "/api/v1/auth/verify-email",
+    "/api/v1/auth/accept-invitation",
+    "/api/v1/billing/webhook",
+)
 
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
@@ -80,6 +96,18 @@ def _add_security_headers(response: Response, request_id: str) -> None:
     response.headers["X-Request-ID"] = request_id
 
 
+def _generate_csrf_token() -> str:
+    """Generate a cryptographic CSRF token."""
+    return secrets.token_urlsafe(32)
+
+
+def _verify_csrf_token(cookie_token: str, header_token: str) -> bool:
+    """Verify CSRF token using constant-time comparison (double-submit cookie pattern)."""
+    if not cookie_token or not header_token:
+        return False
+    return hmac.compare_digest(cookie_token, header_token)
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # ── Request ID propagation (validate to prevent log injection) ──
@@ -89,6 +117,25 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         else:
             request_id = str(uuid.uuid4())
         request.state.request_id = request_id
+
+        # ── CSRF protection (double-submit cookie pattern, P1-1) ──
+        # Only enforce for cookie-based auth on state-changing methods.
+        # API key auth (X-API-Key header) is inherently CSRF-safe.
+        if (
+            settings.AUTH_ENABLED
+            and request.method in _STATE_CHANGING_METHODS
+            and not request.headers.get("X-API-Key")
+            and not any(request.url.path.startswith(p) for p in _CSRF_EXEMPT_PREFIXES)
+        ):
+            # Check if request uses cookie-based auth (has refresh_token cookie)
+            if request.cookies.get("refresh_token"):
+                csrf_cookie = request.cookies.get("csrf_token", "")
+                csrf_header = request.headers.get("X-CSRF-Token", "")
+                if not _verify_csrf_token(csrf_cookie, csrf_header):
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "CSRF token missing or invalid", "code": "CSRF_VALIDATION_FAILED"},
+                    )
 
         # ── Cache bypass detection ──
         cache_control = request.headers.get("Cache-Control", "").lower()
@@ -149,5 +196,31 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # ── Security headers & timing ──
         _add_security_headers(response, request_id)
         response.headers["X-Response-Time"] = f"{duration_ms}ms"
+
+        # ── Rate limit headers on successful responses (P1-12) ──
+        rl_limit = getattr(request.state, "rate_limit_limit", None)
+        if rl_limit is not None:
+            response.headers["X-RateLimit-Limit"] = str(rl_limit)
+            response.headers["X-RateLimit-Remaining"] = str(
+                getattr(request.state, "rate_limit_remaining", 0)
+            )
+            response.headers["X-RateLimit-Reset"] = str(
+                getattr(request.state, "rate_limit_reset", 0)
+            )
+
+        # ── CSRF cookie (set/refresh on every response for cookie-based auth) ──
+        if settings.AUTH_ENABLED:
+            csrf_token = request.cookies.get("csrf_token")
+            if not csrf_token:
+                csrf_token = _generate_csrf_token()
+            response.set_cookie(
+                key="csrf_token",
+                value=csrf_token,
+                httponly=False,  # Must be readable by JavaScript
+                secure=not settings.DEBUG,
+                samesite="lax",
+                path="/",
+                max_age=86400,
+            )
 
         return response
