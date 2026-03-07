@@ -3,6 +3,9 @@
 Allows multiple API sub-requests in a single HTTP call, reducing
 round trips, latency, and battery consumption on mobile devices.
 
+Uses httpx AsyncClient to execute sub-requests internally against
+the running ASGI app — no network overhead, full middleware support.
+
 Usage:
     POST /api/v1/batch
     {
@@ -15,13 +18,13 @@ Usage:
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
+import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field, field_validator
-
-from app.api.deps import get_current_api_key, get_current_user_from_token
 
 logger = structlog.stdlib.get_logger()
 
@@ -29,7 +32,7 @@ router = APIRouter(prefix="/batch", tags=["batch"])
 
 MAX_SUB_REQUESTS = 10
 ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
-BLOCKED_PATHS = {"/api/v1/batch", "/api/v1/auth/refresh"}
+BLOCKED_PATHS = {"/api/v1/batch", "/api/v1/auth/refresh", "/api/v1/ws"}
 
 
 class SubRequest(BaseModel):
@@ -51,8 +54,9 @@ class SubRequest(BaseModel):
     def validate_path(cls, v: str) -> str:
         if not v.startswith("/api/"):
             raise ValueError("Path must start with /api/")
-        if v in BLOCKED_PATHS:
-            raise ValueError(f"Path {v} is not allowed in batch requests")
+        normalized = v.split("?")[0]
+        if normalized in BLOCKED_PATHS:
+            raise ValueError(f"Path {normalized} is not allowed in batch requests")
         return v
 
 
@@ -78,75 +82,56 @@ async def batch_execute(
     """Execute multiple API sub-requests in a single call.
 
     All sub-requests share the parent request's authentication context.
-    Maximum {MAX_SUB_REQUESTS} sub-requests per batch.
+    Sub-requests are executed sequentially against the ASGI app via httpx.
+    Maximum 10 sub-requests per batch.
     """
-    app = request.app
+    # Forward auth headers from the parent request
+    forwarded_headers: dict[str, str] = {}
+    for key in ("authorization", "x-api-key", "cookie", "x-request-id"):
+        value = request.headers.get(key)
+        if value:
+            forwarded_headers[key] = value
+
     responses: list[SubResponse] = []
 
-    for sub in batch.requests:
-        try:
-            # Build a scope dict that mimics an ASGI request
-            path_parts = sub.path.split("?", 1)
-            path = path_parts[0]
-            query_string = path_parts[1].encode() if len(path_parts) > 1 else b""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=request.app),
+        base_url="http://internal",
+    ) as client:
+        for sub in batch.requests:
+            try:
+                # Merge forwarded headers with sub-request specific headers
+                req_headers = {**forwarded_headers}
+                if sub.headers:
+                    req_headers.update(sub.headers)
 
-            # Create an internal request scope
-            scope = {
-                "type": "http",
-                "method": sub.method,
-                "path": path,
-                "query_string": query_string,
-                "headers": [
-                    (k.lower().encode(), v.encode())
-                    for k, v in (request.headers.items())
-                ],
-                "root_path": "",
-                "app": app,
-                "state": dict(request.state._state) if hasattr(request.state, "_state") else {},
-            }
+                # Build the request
+                kwargs: dict[str, Any] = {
+                    "method": sub.method,
+                    "url": sub.path,
+                    "headers": req_headers,
+                }
+                if sub.body is not None and sub.method in {"POST", "PUT", "PATCH"}:
+                    kwargs["json"] = sub.body
 
-            # Override with sub-request headers
-            if sub.headers:
-                extra_headers = [(k.lower().encode(), v.encode()) for k, v in sub.headers.items()]
-                scope["headers"] = list(scope["headers"]) + extra_headers
+                response = await client.request(**kwargs)
 
-            from starlette.testclient import TestClient
-            from io import BytesIO
-            import json as json_mod
+                # Parse response body
+                body: Any = None
+                if response.content:
+                    try:
+                        body = response.json()
+                    except (json.JSONDecodeError, ValueError):
+                        body = response.text
 
-            # Use a lightweight internal routing approach
-            # For simplicity and safety, we route through the app directly
-            from starlette.requests import Request as StarletteRequest
+                responses.append(SubResponse(
+                    status=response.status_code,
+                    body=body,
+                    headers=dict(response.headers) if response.status_code >= 400 else None,
+                ))
 
-            internal_request = StarletteRequest(scope)
-
-            # Route the request through FastAPI's router
-            from fastapi.routing import APIRoute
-
-            response_data: dict[str, Any] = {"status": 500, "body": None}
-
-            # Find the matching route and execute it
-            matched = False
-            for route in app.routes:
-                if hasattr(route, "matches"):
-                    match, child_scope = route.matches(scope)
-                    if match:
-                        matched = True
-                        break
-
-            if not matched:
-                responses.append(SubResponse(status=404, body={"detail": "Not found"}))
-                continue
-
-            # For safety, execute sub-requests as simple forwarded HTTP calls
-            # using the app's test client mechanism
-            responses.append(SubResponse(
-                status=501,
-                body={"detail": "Sub-request execution via internal routing — use individual endpoints for now"},
-            ))
-
-        except Exception as exc:
-            logger.warning("batch_sub_request_error", path=sub.path, error=str(exc))
-            responses.append(SubResponse(status=500, body={"detail": "Internal error"}))
+            except Exception as exc:
+                logger.warning("batch_sub_request_error", path=sub.path, error=str(exc))
+                responses.append(SubResponse(status=500, body={"detail": "Internal error"}))
 
     return BatchResponse(responses=responses)

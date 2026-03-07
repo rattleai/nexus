@@ -98,7 +98,11 @@ def create_app() -> FastAPI:
         allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",")],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Admin-Key", "X-Request-ID"],
+        allow_headers=[
+            "Authorization", "Content-Type", "X-API-Key", "X-Admin-Key",
+            "X-Request-ID", "X-Idempotency-Key", "If-None-Match",
+        ],
+        expose_headers=["ETag", "X-Request-ID", "X-Response-Time", "Retry-After"],
         max_age=86400,
     )
 
