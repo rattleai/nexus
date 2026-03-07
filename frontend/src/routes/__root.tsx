@@ -2,6 +2,8 @@ import { createRootRoute, Link, Outlet, type ErrorComponentProps } from "@tansta
 import { AppShell } from "@/components/layout/app-shell"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "sonner"
+import { useIsMobile } from "@/hooks/use-mobile"
+import { OfflineBanner } from "@/components/layout/offline-banner"
 
 function RootErrorComponent({ reset }: ErrorComponentProps) {
   return (
@@ -44,10 +46,18 @@ export const Route = createRootRoute({
 })
 
 function RootLayout() {
+  const isMobile = useIsMobile()
+
   return (
     <AppShell>
+      <OfflineBanner />
       <Outlet />
-      <Toaster position="top-right" richColors closeButton />
+      <Toaster
+        position={isMobile ? "bottom-center" : "top-right"}
+        richColors
+        closeButton
+        offset={isMobile ? "calc(4rem + var(--safe-area-bottom, 0px))" : undefined}
+      />
     </AppShell>
   )
 }

@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 import app.core.event_handlers as _event_handlers  # noqa: F401 — registers handlers on import
 from app import __version__
+from app.api.etag import ETagMiddleware
 from app.api.exceptions import register_exception_handlers
 from app.api.middleware import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
 from app.api.v1 import v1_router
@@ -84,10 +85,12 @@ def create_app() -> FastAPI:
 
     # Middleware — Starlette executes in reverse order of registration:
     # last added = outermost. We want:
-    #   CORS (outermost) → SecurityHeaders → RequestSizeLimit → GZip (innermost)
-    # So size limit checks Content-Length BEFORE gzip decompresses the body,
+    #   CORS (outermost) → SecurityHeaders → RequestSizeLimit → ETag → GZip (innermost)
+    # ETag is inside GZip so it computes on uncompressed body.
+    # Size limit checks Content-Length BEFORE gzip decompresses the body,
     # preventing gzip bombs from exhausting memory.
     app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(ETagMiddleware)
     app.add_middleware(RequestSizeLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(

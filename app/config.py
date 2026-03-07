@@ -77,6 +77,24 @@ class Settings(BaseSettings):
     # Read replica (optional, for read-write splitting)
     DATABASE_READ_URL: str = ""
 
+    # ── Mobile-First / PWA ───────────────────────────────
+    # Web Push (VAPID) — required for push notifications
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_MAILTO: str = "admin@cadprice.com"
+
+    # Firebase Cloud Messaging (for native mobile push)
+    FIREBASE_SERVICE_ACCOUNT_JSON: str = ""
+
+    # WebAuthn / FIDO2 (biometric authentication)
+    WEBAUTHN_RP_ID: str = "localhost"
+    WEBAUTHN_RP_NAME: str = "CAD Price"
+    WEBAUTHN_ORIGIN: str = "http://localhost:3000"
+
+    # CDN
+    CDN_BASE_URL: str = ""
+    CDN_IMAGE_TRANSFORM_PREFIX: str = ""  # e.g. /cdn-cgi/image/
+
     # ── AI Gateway ────────────────────────────────────────
     AI_ENABLED: bool = True
     AI_REQUEST_TIMEOUT_SECONDS: int = 30
