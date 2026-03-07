@@ -7,12 +7,13 @@ monotonic sync_version and supports conflict resolution.
 
 from __future__ import annotations
 
+import uuid as uuid_mod
 from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user_from_token, get_db
@@ -133,13 +134,41 @@ async def push_changes(
     accepted: list[SyncAccepted] = []
     conflicts: list[SyncConflict] = []
 
+    from app.db.models.mobile import ChangeLog
+
     for change in body.changes:
         if change.operation not in ("create", "update"):
             raise HTTPException(status_code=400, detail=f"Invalid operation: {change.operation}")
 
-        # For now, accept all changes (last-write-wins)
-        # A production implementation would check sync_version against the server's
-        # current version and return conflicts for stale writes.
+        if change.operation == "update":
+            # Check for conflicts: find the latest server version for this entity
+            try:
+                entity_uuid = uuid_mod.UUID(change.entity_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid entity_id: {change.entity_id}")
+
+            latest = await db.execute(
+                select(ChangeLog.sync_version)
+                .where(
+                    ChangeLog.tenant_id == user.tenant_id,
+                    ChangeLog.entity_type == change.entity_type,
+                    ChangeLog.entity_id == entity_uuid,
+                )
+                .order_by(ChangeLog.sync_version.desc())
+                .limit(1)
+            )
+            server_version_row = latest.scalar_one_or_none()
+            server_version = server_version_row if server_version_row else 0
+
+            if server_version > change.client_version:
+                # Conflict: server has newer changes
+                conflicts.append(SyncConflict(
+                    entity_id=change.entity_id,
+                    server_version=server_version,
+                    server_data=change.data,
+                ))
+                continue
+
         accepted.append(SyncAccepted(
             entity_id=change.entity_id,
             server_version=change.client_version + 1,

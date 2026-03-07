@@ -120,6 +120,8 @@ function JobsPage() {
         columns={columns}
         searchKey="type"
         searchPlaceholder="Search jobs..."
+        titleColumn="type"
+        hideColumns={["actions"]}
         emptyState={{
           icon: Briefcase,
           title: "No jobs yet",

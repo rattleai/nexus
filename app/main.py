@@ -30,6 +30,11 @@ async def lifespan(app: FastAPI):
     # Validate configuration before anything else
     validate_settings()
 
+    # Register sync change tracking hooks for ChangeLog population
+    from app.db.sync_hooks import register_sync_hooks
+
+    register_sync_hooks()
+
     logger.info("app_starting", version=__version__, debug=settings.DEBUG)
 
     # Warm up Redis connection pool

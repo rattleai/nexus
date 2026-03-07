@@ -81,6 +81,11 @@ export function CardList<TData, TValue>({
             <button
               type="button"
               key={row.id}
+              aria-label={
+                titleColumn
+                  ? `View ${row.getValue(titleColumn) ?? `item ${row.index + 1}`}`
+                  : `View item ${row.index + 1}`
+              }
               className={cn(
                 "w-full rounded-lg border bg-card p-4 text-left shadow-sm transition-colors",
                 onRowClick && "hover:bg-accent/50 active:bg-accent cursor-pointer",

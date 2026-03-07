@@ -44,6 +44,7 @@ dependencies = [
     # Mobile-first: push notifications & biometric auth
     "pywebpush>=2.0,<3",
     "py-vapid>=1.9,<2",
+    "py-webauthn>=2.0,<3",
     "websockets>=14.0,<15",
 ]
 

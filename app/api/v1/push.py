@@ -23,6 +23,19 @@ logger = structlog.stdlib.get_logger()
 router = APIRouter(prefix="/push", tags=["push"])
 
 
+@router.get("/vapid-key")
+async def get_vapid_public_key() -> dict[str, str]:
+    """Return the VAPID public key for Web Push subscription registration.
+
+    No authentication required — clients need this before they can subscribe.
+    """
+    from app.config import settings
+
+    if not settings.VAPID_PUBLIC_KEY:
+        raise HTTPException(status_code=503, detail="Web Push not configured")
+    return {"publicKey": settings.VAPID_PUBLIC_KEY}
+
+
 class PushSubscriptionCreate(BaseModel):
     platform: str = Field(..., description="Push platform: web, fcm, apns")
     subscription_data: dict[str, Any] = Field(

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
 from app.db.models.core import UserRole
+from app.db.models.mobile import SyncMixin
 
 
 class InvitationStatus(enum.StrEnum):
@@ -37,7 +38,7 @@ class Invitation(TimestampMixin, Base):
     __table_args__ = (Index("ix_invitations_tenant_email", "tenant_id", "email"),)
 
 
-class Notification(TimestampMixin, Base):
+class Notification(SyncMixin, TimestampMixin, Base):
     __tablename__ = "notifications"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
