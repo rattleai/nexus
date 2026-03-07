@@ -12,3 +12,6 @@ export {
   formatBytes,
 } from "./format"
 export { APP_NAME, AUTH_STORAGE_KEY } from "./constants"
+export { wsClient } from "./websocket-client"
+export { syncEngine } from "./sync-engine"
+export { initWebVitals } from "./web-vitals"

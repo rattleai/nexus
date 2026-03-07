@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { type ReactNode, useCallback, useState } from "react"
 import { Link, useRouterState } from "@tanstack/react-router"
 import {
   LayoutDashboard,
@@ -32,6 +32,8 @@ import { Separator } from "@/components/ui/separator"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { NotificationBell } from "@/components/notification-bell"
 import { UserMenu } from "@/components/user-menu"
+import { BottomNav } from "@/components/layout/bottom-nav"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? "0.1.0"
 
@@ -75,9 +77,15 @@ interface AppShellProps {
 export function AppShell({ children }: AppShellProps) {
   const router = useRouterState()
   const currentPath = router.location.pathname
+  const isMobile = useIsMobile()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const handleMenuClick = useCallback(() => {
+    setMobileMenuOpen((prev) => !prev)
+  }, [])
 
   return (
-    <SidebarProvider>
+    <SidebarProvider open={isMobile ? mobileMenuOpen : undefined} onOpenChange={isMobile ? setMobileMenuOpen : undefined}>
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-background focus:text-foreground"
@@ -126,17 +134,18 @@ export function AppShell({ children }: AppShellProps) {
       </Sidebar>
       <SidebarInset>
         <header className="flex h-14 items-center gap-2 border-b px-4">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="h-6" />
+          {!isMobile && <SidebarTrigger />}
+          {!isMobile && <Separator orientation="vertical" className="h-6" />}
           <div className="flex-1" />
           <ThemeToggle />
           <NotificationBell />
           <UserMenu />
         </header>
-        <main id="main-content" className="flex-1 p-6">
+        <main id="main-content" className="flex-1 p-6 pb-20 md:pb-6">
           {children}
         </main>
       </SidebarInset>
+      <BottomNav onMenuClick={handleMenuClick} />
     </SidebarProvider>
   )
 }

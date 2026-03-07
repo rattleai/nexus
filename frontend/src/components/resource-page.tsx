@@ -1,9 +1,9 @@
 import type { ReactNode } from "react"
 import type { UseQueryResult } from "@tanstack/react-query"
-import type { ColumnDef } from "@tanstack/react-table"
+import type { ColumnDef, Row } from "@tanstack/react-table"
 import type { LucideIcon } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
-import { DataTable } from "@/components/data-table"
+import { ResponsiveDataView } from "@/components/ui/responsive-data-view"
 import { LoadingState } from "@/components/loading-state"
 import { ErrorState } from "@/components/error-state"
 import { EmptyState } from "@/components/empty-state"
@@ -22,6 +22,11 @@ interface ResourcePageProps<T> {
   searchKey?: string
   searchPlaceholder?: string
   pageSize?: number
+  /** Column ID to use as card title on mobile */
+  titleColumn?: string
+  /** Column IDs to hide from the card body on mobile */
+  hideColumns?: string[]
+  onRowClick?: (row: Row<T>) => void
   emptyState: {
     icon?: LucideIcon
     title: string
@@ -45,6 +50,9 @@ export function ResourcePage<T>({
   searchKey,
   searchPlaceholder,
   pageSize,
+  titleColumn,
+  hideColumns,
+  onRowClick,
   emptyState,
   actions,
   headerContent,
@@ -72,12 +80,15 @@ export function ResourcePage<T>({
               action={emptyState.action}
             />
           ) : (
-            <DataTable
+            <ResponsiveDataView
               columns={columns}
               data={extractItems(data)}
               searchKey={searchKey}
               searchPlaceholder={searchPlaceholder}
               pageSize={pageSize}
+              titleColumn={titleColumn}
+              hideColumns={hideColumns}
+              onRowClick={onRowClick}
             />
           )}
         </CardContent>

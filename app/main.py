@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 import app.core.event_handlers as _event_handlers  # noqa: F401 — registers handlers on import
 from app import __version__
+from app.api.etag import ETagMiddleware
 from app.api.exceptions import register_exception_handlers
 from app.api.middleware import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
 from app.api.v1 import v1_router
@@ -28,6 +29,11 @@ SPA_DIR = BASE_DIR / "frontend" / "dist"
 async def lifespan(app: FastAPI):
     # Validate configuration before anything else
     validate_settings()
+
+    # Register sync change tracking hooks for ChangeLog population
+    from app.db.sync_hooks import register_sync_hooks
+
+    register_sync_hooks()
 
     logger.info("app_starting", version=__version__, debug=settings.DEBUG)
 
@@ -84,10 +90,12 @@ def create_app() -> FastAPI:
 
     # Middleware — Starlette executes in reverse order of registration:
     # last added = outermost. We want:
-    #   CORS (outermost) → SecurityHeaders → RequestSizeLimit → GZip (innermost)
-    # So size limit checks Content-Length BEFORE gzip decompresses the body,
+    #   CORS (outermost) → SecurityHeaders → RequestSizeLimit → ETag → GZip (innermost)
+    # ETag is inside GZip so it computes on uncompressed body.
+    # Size limit checks Content-Length BEFORE gzip decompresses the body,
     # preventing gzip bombs from exhausting memory.
     app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(ETagMiddleware)
     app.add_middleware(RequestSizeLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
@@ -95,7 +103,11 @@ def create_app() -> FastAPI:
         allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",")],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Admin-Key", "X-Request-ID"],
+        allow_headers=[
+            "Authorization", "Content-Type", "X-API-Key", "X-Admin-Key",
+            "X-Request-ID", "X-Idempotency-Key", "If-None-Match",
+        ],
+        expose_headers=["ETag", "X-Request-ID", "X-Response-Time", "Retry-After"],
         max_age=86400,
     )
 

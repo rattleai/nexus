@@ -34,7 +34,7 @@ async def _create_notification(
     body: str | None = None,
     data: dict | None = None,
 ) -> None:
-    """Create an in-app notification for a user."""
+    """Create an in-app notification and send push notification to the user."""
     import uuid
 
     from app.db.models import Notification
@@ -51,6 +51,22 @@ async def _create_notification(
             )
             db.add(notification)
             await db.commit()
+
+            # Send push notification to all active subscriptions
+            try:
+                from app.services.push import send_push_notification
+
+                action_url = (data or {}).get("action_url")
+                await send_push_notification(
+                    db=db,
+                    user_id=uuid.UUID(user_id),
+                    title=title,
+                    body=body or "",
+                    data={"type": notification_type, **(data or {})},
+                    url=action_url,
+                )
+            except Exception:
+                logger.warning("push_notification_failed", user_id=user_id, type=notification_type, exc_info=True)
     except Exception:
         logger.error("notification_create_failed", user_id=user_id, type=notification_type, exc_info=True)
 
