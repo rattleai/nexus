@@ -139,16 +139,18 @@ async def push_changes(
 
     from app.db.models.mobile import ChangeLog
 
+    changelog_entries: list[ChangeLog] = []
+
     for change in body.changes:
         if change.operation not in ("create", "update"):
             raise HTTPException(status_code=400, detail=f"Invalid operation: {change.operation}")
 
-        if change.operation == "update":
-            try:
-                entity_uuid = uuid_mod.UUID(change.entity_id)
-            except ValueError:
-                raise HTTPException(status_code=400, detail=f"Invalid entity_id: {change.entity_id}")
+        try:
+            entity_uuid = uuid_mod.UUID(change.entity_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid entity_id: {change.entity_id}")
 
+        if change.operation == "update":
             # Find the latest server change for this entity (using id as version)
             latest = await db.execute(
                 select(ChangeLog)
@@ -172,9 +174,26 @@ async def push_changes(
                 ))
                 continue
 
+        # Record accepted change in the ChangeLog
+        changelog_entries.append(ChangeLog(
+            tenant_id=user.tenant_id,
+            entity_type=change.entity_type,
+            entity_id=entity_uuid,
+            operation=change.operation,
+            changed_fields=change.data,
+        ))
+
+    # Persist all accepted ChangeLog entries
+    if changelog_entries:
+        for entry in changelog_entries:
+            db.add(entry)
+        await db.flush()
+
+    # Build accepted list with actual server versions (ChangeLog.id)
+    for entry in changelog_entries:
         accepted.append(SyncAccepted(
-            entity_id=change.entity_id,
-            server_version=change.client_version + 1,
+            entity_id=str(entry.entity_id),
+            server_version=entry.id,
         ))
 
     logger.info(

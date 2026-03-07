@@ -29,8 +29,7 @@ _ENTITY_TYPE_MAP: dict[str, str] = {
     "Notification": "notification",
 }
 
-# Re-entrancy guard: prevents recursive after_flush calls
-_in_flush = False
+_SYNC_HOOKS_IN_FLUSH_KEY = "_sync_hooks_in_flush"
 
 
 def _get_entity_type(instance: Any) -> str | None:
@@ -90,10 +89,10 @@ def _compute_checksum(instance: Any) -> str:
 
 def _after_flush(session: Session, flush_context: Any) -> None:
     """After flush handler: record changes for syncable entities."""
-    global _in_flush
-    if _in_flush:
-        return  # Prevent re-entrant calls
-    _in_flush = True
+    # Session-local re-entrancy guard (safe under concurrent async requests)
+    if session.info.get(_SYNC_HOOKS_IN_FLUSH_KEY):
+        return
+    session.info[_SYNC_HOOKS_IN_FLUSH_KEY] = True
 
     try:
         changes_to_add: list[ChangeLog] = []
@@ -174,7 +173,7 @@ def _after_flush(session: Session, flush_context: Any) -> None:
                 session.add(cl)
             logger.debug("sync_changelog_recorded", count=len(changes_to_add))
     finally:
-        _in_flush = False
+        session.info[_SYNC_HOOKS_IN_FLUSH_KEY] = False
 
 
 def register_sync_hooks() -> None:

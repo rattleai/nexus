@@ -66,15 +66,31 @@ async def subscribe_push(
     if body.platform not in ("web", "fcm", "apns"):
         raise HTTPException(status_code=400, detail="Platform must be web, fcm, or apns")
 
-    subscription = PushSubscription(
-        user_id=user.id,
-        tenant_id=user.tenant_id,
-        platform=body.platform,
-        subscription_data=body.subscription_data,
-        device_name=body.device_name,
-        active=True,
+    # Check for existing subscription with same platform + subscription_data
+    existing = await db.execute(
+        select(PushSubscription).where(
+            PushSubscription.user_id == user.id,
+            PushSubscription.platform == body.platform,
+            PushSubscription.subscription_data == body.subscription_data,
+        )
     )
-    db.add(subscription)
+    subscription = existing.scalar_one_or_none()
+
+    if subscription:
+        # Re-activate existing subscription and update device name
+        subscription.active = True
+        subscription.device_name = body.device_name
+    else:
+        subscription = PushSubscription(
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            platform=body.platform,
+            subscription_data=body.subscription_data,
+            device_name=body.device_name,
+            active=True,
+        )
+        db.add(subscription)
+
     await db.commit()
     await db.refresh(subscription)
 
