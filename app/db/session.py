@@ -19,10 +19,18 @@ _PG_SERVER_SETTINGS = {
 _connect_args: dict = {"server_settings": _PG_SERVER_SETTINGS}
 if settings.DATABASE_SSL_MODE:
     import ssl as _ssl
-    _ssl_ctx = _ssl.create_default_context()
-    if settings.DATABASE_SSL_MODE == "require":
+    if settings.DATABASE_SSL_MODE == "verify-full":
+        # Full certificate verification (recommended for production)
+        _ssl_ctx = _ssl.create_default_context()
+        # check_hostname=True and verify_mode=CERT_REQUIRED are defaults
+    elif settings.DATABASE_SSL_MODE == "require":
+        # Encryption without certificate verification — vulnerable to MITM.
+        # Use "verify-full" in production for proper server identity checks.
+        _ssl_ctx = _ssl.create_default_context()
         _ssl_ctx.check_hostname = False
         _ssl_ctx.verify_mode = _ssl.CERT_NONE
+    else:
+        _ssl_ctx = _ssl.create_default_context()
     _connect_args["ssl"] = _ssl_ctx
 
 async_engine = create_async_engine(
@@ -92,7 +100,7 @@ def setup_pool_monitoring(engine_to_monitor=None) -> None:
 
     _gauges = None
 
-    @event.listens_for(Pool, "checkout")
+    @event.listens_for(sync_pool, "checkout")
     def _on_checkout(dbapi_connection, connection_record, connection_proxy):
         nonlocal _checkedout, _gauges
         _checkedout += 1
@@ -100,23 +108,22 @@ def setup_pool_monitoring(engine_to_monitor=None) -> None:
             _gauges = _get_otel_gauges()
         if _gauges:
             _gauges["checkedout"].add(1)
-        pool = sync_pool
         logger.debug(
             "db_pool_checkout",
             checkedout=_checkedout,
-            pool_size=pool.size(),
-            overflow=pool.overflow(),
-            checkedin=pool.checkedin(),
+            pool_size=sync_pool.size(),
+            overflow=sync_pool.overflow(),
+            checkedin=sync_pool.checkedin(),
         )
 
-    @event.listens_for(Pool, "checkin")
+    @event.listens_for(sync_pool, "checkin")
     def _on_checkin(dbapi_connection, connection_record):
         nonlocal _checkedout, _gauges
         _checkedout = max(0, _checkedout - 1)
         if _gauges:
             _gauges["checkedout"].add(-1)
 
-    @event.listens_for(Pool, "invalidate")
+    @event.listens_for(sync_pool, "invalidate")
     def _on_invalidate(dbapi_connection, connection_record, exception):
         nonlocal _gauges
         if _gauges is None:
@@ -125,7 +132,7 @@ def setup_pool_monitoring(engine_to_monitor=None) -> None:
             _gauges["invalidated"].add(1)
         logger.warning("db_pool_connection_invalidated", exception=str(exception) if exception else None)
 
-    @event.listens_for(Pool, "reset")
+    @event.listens_for(sync_pool, "reset")
     def _on_reset(dbapi_connection, connection_record):
         pass  # Normal pool reset — no action needed
 
@@ -143,7 +150,7 @@ if settings.DATABASE_READ_URL:
         max_overflow=settings.DB_MAX_OVERFLOW,
         pool_pre_ping=True,
         pool_recycle=300,
-        connect_args={"server_settings": _PG_SERVER_SETTINGS},
+        connect_args=_connect_args,
     )
     _read_session_factory = async_sessionmaker(_read_engine, expire_on_commit=False)
 

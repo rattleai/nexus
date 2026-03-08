@@ -28,6 +28,10 @@ resource "aws_secretsmanager_secret_version" "app_config" {
     ADMIN_KEY              = var.app_admin_key
     DB_APP_USER_PASSWORD   = random_password.db_app_user.result
     DB_MASTER_PASSWORD     = random_password.db_master.result
+    # Full connection URLs with credentials — kept in Secrets Manager, never in env vars
+    DATABASE_URL           = "postgresql+asyncpg://app_user:${random_password.db_app_user.result}@${aws_db_instance.main.endpoint}/${var.db_name}?ssl=require"
+    DATABASE_SYNC_URL      = "postgresql://app_user:${random_password.db_app_user.result}@${aws_db_instance.main.endpoint}/${var.db_name}?sslmode=require"
+    REDIS_URL              = "rediss://:${random_password.redis_auth.result}@${aws_elasticache_replication_group.main.primary_endpoint_address}:6379/0"
     STRIPE_SECRET_KEY      = var.stripe_secret_key
     STRIPE_WEBHOOK_SECRET  = var.stripe_webhook_secret
     BREVO_API_KEY          = var.brevo_api_key

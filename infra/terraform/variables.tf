@@ -197,3 +197,11 @@ variable "uploads_bucket_name" {
   type        = string
   default     = ""
 }
+
+# ── Monitoring ─────────────────────────────────────────────────
+
+variable "alarm_email" {
+  description = "Email address for CloudWatch alarm notifications (leave empty to skip)"
+  type        = string
+  default     = ""
+}

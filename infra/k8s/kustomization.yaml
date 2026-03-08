@@ -21,7 +21,6 @@ resources:
 
 images:
   - name: ghcr.io/OWNER/cadprice
+    # IMPORTANT: Replace with immutable tag (git SHA or semver) before production deploy.
+    # Example: newTag: sha-abc1234f or newTag: v1.2.3
     newTag: latest
-
-commonLabels:
-  app.kubernetes.io/part-of: cadprice

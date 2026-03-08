@@ -137,7 +137,10 @@ resource "aws_iam_role_policy" "vpc_flow_log" {
         "logs:DescribeLogStreams",
       ]
       Effect   = "Allow"
-      Resource = "*"
+      Resource = [
+        aws_cloudwatch_log_group.vpc_flow.arn,
+        "${aws_cloudwatch_log_group.vpc_flow.arn}:*",
+      ]
     }]
   })
 }

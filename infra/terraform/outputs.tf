@@ -22,10 +22,7 @@ output "rds_endpoint" {
   value       = aws_db_instance.main.endpoint
 }
 
-output "rds_reader_endpoint" {
-  description = "RDS reader endpoint (if read replica exists)"
-  value       = aws_db_instance.main.endpoint
-}
+
 
 output "redis_endpoint" {
   description = "ElastiCache Redis primary endpoint"
@@ -68,6 +65,7 @@ output "cloudwatch_log_group" {
 }
 
 output "database_url_hint" {
-  description = "Construct DATABASE_URL from these components (password in Secrets Manager)"
+  description = "DATABASE_URL pattern (actual URL with password is in Secrets Manager)"
   value       = "postgresql+asyncpg://app_user:<password>@${aws_db_instance.main.endpoint}/${var.db_name}?ssl=require"
+  sensitive   = true
 }

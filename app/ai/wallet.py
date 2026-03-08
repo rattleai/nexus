@@ -20,6 +20,7 @@ import uuid
 
 import structlog
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis import redis_pool
@@ -90,14 +91,23 @@ class TokenWalletService:
     - Reads prefer Redis; fall back to DB on cache miss.
     """
 
-    async def get_balance(self, tenant_id: uuid.UUID) -> int:
-        """Get current token balance from Redis (fast path)."""
+    async def get_balance(
+        self, tenant_id: uuid.UUID, *, db: AsyncSession | None = None
+    ) -> int:
+        """Get current token balance from Redis (fast path), with DB fallback."""
         try:
             val = await redis_pool.get(_balance_key(tenant_id))
             if val is not None:
                 return int(val)
         except Exception:
             logger.warning("wallet_redis_read_error", tenant_id=str(tenant_id))
+        # Redis miss or error — fall back to DB if session provided
+        if db is not None:
+            result = await db.execute(
+                select(TokenWallet.balance_tokens).where(TokenWallet.tenant_id == tenant_id)
+            )
+            row = result.scalar_one_or_none()
+            return row if row is not None else 0
         return 0
 
     async def deduct_tokens(
@@ -276,8 +286,15 @@ class TokenWalletService:
                 wallet = await self._get_or_create_wallet(tenant_id, db)
                 return wallet.balance_tokens
 
-        # DB first: update wallet record atomically
+        # DB first: update wallet record atomically with row lock
         wallet = await self._get_or_create_wallet(tenant_id, db)
+        # Re-fetch with FOR UPDATE to prevent concurrent topup lost updates
+        locked_result = await db.execute(
+            select(TokenWallet)
+            .where(TokenWallet.tenant_id == tenant_id)
+            .with_for_update()
+        )
+        wallet = locked_result.scalar_one()
         new_balance = wallet.balance_tokens + amount_tokens
 
         if new_balance > _MAX_BALANCE:
@@ -351,7 +368,7 @@ class TokenWalletService:
             db.add(wallet)
             try:
                 await db.flush()
-            except Exception:
+            except IntegrityError:
                 await db.rollback()
                 # Race condition: another request created it — fetch theirs
                 result = await db.execute(

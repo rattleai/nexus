@@ -5,8 +5,18 @@
 # ── SNS Topic for alarm notifications ───────────────────────
 
 resource "aws_sns_topic" "alarms" {
-  name = "${local.name_prefix}-alarms"
-  tags = { Name = "${local.name_prefix}-alarms" }
+  name              = "${local.name_prefix}-alarms"
+  kms_master_key_id = "alias/aws/sns"
+  tags              = { Name = "${local.name_prefix}-alarms" }
+}
+
+# Subscribe to alarm notifications (email).
+# After first apply, check inbox and confirm the subscription.
+resource "aws_sns_topic_subscription" "alarms_email" {
+  count     = var.alarm_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.alarms.arn
+  protocol  = "email"
+  endpoint  = var.alarm_email
 }
 
 # ── ALB Alarms ───────────────────────────────────────────────

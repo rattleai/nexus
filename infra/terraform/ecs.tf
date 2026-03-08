@@ -150,10 +150,7 @@ locals {
   # Non-sensitive env vars set directly on the container
   container_environment = [
     { name = "DEBUG", value = "false" },
-    { name = "DATABASE_URL", value = "postgresql+asyncpg://app_user:PLACEHOLDER@${aws_db_instance.main.endpoint}/${var.db_name}?ssl=require" },
-    { name = "DATABASE_SYNC_URL", value = "postgresql://app_user:PLACEHOLDER@${aws_db_instance.main.endpoint}/${var.db_name}?sslmode=require" },
     { name = "DATABASE_SSL_MODE", value = "require" },
-    { name = "REDIS_URL", value = "rediss://:${random_password.redis_auth.result}@${aws_elasticache_replication_group.main.primary_endpoint_address}:6379/0" },
     { name = "S3_BUCKET", value = aws_s3_bucket.uploads.id },
     { name = "S3_REGION", value = var.aws_region },
     { name = "CORS_ORIGINS", value = var.cors_origins != "" ? var.cors_origins : "https://${var.domain_name}" },
@@ -161,13 +158,16 @@ locals {
     { name = "OTEL_ENABLED", value = "false" },
   ]
 
-  # Sensitive values pulled from Secrets Manager at container start
+  # Sensitive values pulled from Secrets Manager at container start.
+  # DATABASE_URL and REDIS_URL contain credentials — always use secrets.
   container_secrets = [
     { name = "SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.app_config.arn}:SECRET_KEY::" },
     { name = "ENCRYPTION_KEY", valueFrom = "${aws_secretsmanager_secret.app_config.arn}:ENCRYPTION_KEY::" },
     { name = "WEBHOOK_SIGNING_KEY", valueFrom = "${aws_secretsmanager_secret.app_config.arn}:WEBHOOK_SIGNING_KEY::" },
     { name = "ADMIN_KEY", valueFrom = "${aws_secretsmanager_secret.app_config.arn}:ADMIN_KEY::" },
-    { name = "DB_APP_USER_PASSWORD", valueFrom = "${aws_secretsmanager_secret.app_config.arn}:DB_APP_USER_PASSWORD::" },
+    { name = "DATABASE_URL", valueFrom = "${aws_secretsmanager_secret.app_config.arn}:DATABASE_URL::" },
+    { name = "DATABASE_SYNC_URL", valueFrom = "${aws_secretsmanager_secret.app_config.arn}:DATABASE_SYNC_URL::" },
+    { name = "REDIS_URL", valueFrom = "${aws_secretsmanager_secret.app_config.arn}:REDIS_URL::" },
     { name = "STRIPE_SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.app_config.arn}:STRIPE_SECRET_KEY::" },
     { name = "STRIPE_WEBHOOK_SECRET", valueFrom = "${aws_secretsmanager_secret.app_config.arn}:STRIPE_WEBHOOK_SECRET::" },
     { name = "BREVO_API_KEY", valueFrom = "${aws_secretsmanager_secret.app_config.arn}:BREVO_API_KEY::" },

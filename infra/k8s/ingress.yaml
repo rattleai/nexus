@@ -11,10 +11,9 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     cert-manager.io/revision-history-limit: "3"
 
-    # NGINX ingress rate limiting
-    nginx.ingress.kubernetes.io/rate-limit: "100"
-    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
-    nginx.ingress.kubernetes.io/rate-limit-connections: "20"
+    # NGINX ingress rate limiting (standard annotations)
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
 
     # Request size / timeouts
     nginx.ingress.kubernetes.io/proxy-body-size: 50m

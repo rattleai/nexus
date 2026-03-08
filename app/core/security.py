@@ -119,9 +119,11 @@ async def is_token_revoked(jti: str) -> bool:
         result = await redis_pool.get(f"jwt:revoked:{jti}")
         return result is not None
     except Exception:
-        # Redis unavailable — fail open but log warning
-        logger.warning("token_revocation_check_failed", jti=jti)
-        return False
+        # Redis unavailable — fail CLOSED to prevent use of revoked tokens.
+        # This means all JWT auth fails during Redis outage, but prevents
+        # a revoked token from being accepted. Prefer safety over availability.
+        logger.error("token_revocation_check_failed_closing", jti=jti)
+        return True
 
 
 async def revoke_access_token(jti: str, ttl_seconds: int | None = None) -> None:

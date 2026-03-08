@@ -249,7 +249,14 @@ def validate_settings() -> None:
     # Database SSL in production
     if not settings.DEBUG and not settings.DATABASE_SSL_MODE:
         warnings.warn(
-            "DATABASE_SSL_MODE is not set. Set to 'require' in production for encrypted DB connections.",
+            "DATABASE_SSL_MODE is not set. Set to 'verify-full' (recommended) or 'require' "
+            "in production for encrypted DB connections.",
+            stacklevel=2,
+        )
+    elif not settings.DEBUG and settings.DATABASE_SSL_MODE == "require":
+        warnings.warn(
+            "DATABASE_SSL_MODE='require' encrypts traffic but does NOT verify the server certificate. "
+            "Consider 'verify-full' for MITM protection.",
             stacklevel=2,
         )
 
