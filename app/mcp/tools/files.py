@@ -37,7 +37,7 @@ async def file_upload(
     Example: file_upload(filename="data.csv", content_base64="...", content_type="text/csv")
     """
     try:
-        file_bytes = base64.b64decode(content_base64)
+        file_bytes = base64.b64decode(content_base64, validate=True)
     except Exception as exc:
         raise tool_error("Invalid base64 content") from exc
 
@@ -116,7 +116,11 @@ async def file_list(
         storage = _get_storage()
         keys = storage.list_objects(full_prefix)
     except Exception:
-        return []
+        logger.warning("file_list_storage_error", prefix=full_prefix, exc_info=True)
+        raise tool_error(
+            "Failed to list files from storage.",
+            hint="Storage may be temporarily unavailable. Try again.",
+        ) from None
 
     return [
         {"key": k, "filename": k.split("/")[-1]}

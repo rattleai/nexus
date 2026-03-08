@@ -57,6 +57,18 @@ async def ai_complete(
                 hint=f"Valid roles: {', '.join(sorted(valid_roles))}",
             )
 
+    # Validate numeric parameters
+    if temperature is not None and not (0.0 <= temperature <= 2.0):
+        raise tool_error(
+            f"Temperature must be between 0.0 and 2.0, got {temperature}.",
+        )
+    if top_p is not None and not (0.0 <= top_p <= 1.0):
+        raise tool_error(
+            f"top_p must be between 0.0 and 1.0, got {top_p}.",
+        )
+    if max_tokens is not None and max_tokens < 1:
+        raise tool_error("max_tokens must be at least 1.")
+
     model_info = get_model_info(model)
     if not model_info:
         raise tool_error(
