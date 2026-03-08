@@ -469,7 +469,7 @@ async def _handle_invoice_paid(data: dict, db: AsyncSession) -> None:
     """Handle successful payment — send receipt email."""
     invoice = data["object"]
     customer_id = invoice.get("customer")
-    amount_paid = invoice.get("amount_paid", 0)
+    amount_paid = invoice.get("amount_paid") or 0
 
     result = await db.execute(
         select(Subscription).where(Subscription.stripe_customer_id == customer_id)
@@ -477,6 +477,9 @@ async def _handle_invoice_paid(data: dict, db: AsyncSession) -> None:
     subscription = result.scalar_one_or_none()
     if not subscription:
         logger.info("invoice_paid_no_subscription", invoice_id=invoice["id"])
+        return
+
+    if not _validate_webhook_tenant(data, subscription):
         return
 
     # Load plan name
@@ -505,6 +508,9 @@ async def _handle_payment_failed(data: dict, db: AsyncSession) -> None:
     )
     subscription = result.scalar_one_or_none()
     if not subscription:
+        return
+
+    if not _validate_webhook_tenant(data, subscription):
         return
 
     # Update status to past_due
