@@ -71,6 +71,15 @@ def upgrade() -> None:
     op.add_column("wallet_transactions",
                   sa.Column("stripe_payment_intent_id", sa.String(255), nullable=True))
 
+    # Partial unique index on reference_id for idempotency (prevents double-credit race)
+    op.create_index(
+        "ix_wallet_tx_tenant_reference_unique",
+        "wallet_transactions",
+        ["tenant_id", "reference_id"],
+        unique=True,
+        postgresql_where="reference_id IS NOT NULL",
+    )
+
     # ── Update ai_usage_logs ──────────────────────────────────
     # Remove billed_tokens, add billed_amount_usd
     op.drop_column("ai_usage_logs", "billed_tokens")
@@ -102,6 +111,7 @@ def downgrade() -> None:
                   sa.Column("billed_tokens", sa.Integer, nullable=False, server_default=sa.text("0")))
 
     # ── Reverse wallet_transactions changes ───────────────────
+    op.drop_index("ix_wallet_tx_tenant_reference_unique", table_name="wallet_transactions")
     op.drop_column("wallet_transactions", "stripe_payment_intent_id")
     op.drop_column("wallet_transactions", "provider_cost_usd")
     op.alter_column("wallet_transactions", "balance_after_usd", new_column_name="balance_after",

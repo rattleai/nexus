@@ -567,6 +567,7 @@ async def _handle_credit_pack_checkout(
         reference_id=reference_id,
         stripe_payment_intent_id=payment_intent_id,
         description=f"Credit pack purchase: ${amount_usd}",
+        db=db,
     )
 
     logger.info(
@@ -708,6 +709,7 @@ async def _handle_payment_intent_succeeded(data: dict, db: AsyncSession) -> None
         reference_id=f"auto_refill:{payment_intent['id']}",
         stripe_payment_intent_id=payment_intent["id"],
         description=f"Auto-refill: ${refill_amount}",
+        db=db,
     )
 
     logger.info(

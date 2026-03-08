@@ -122,11 +122,10 @@ async def sse_stream_response(
         try:
             import litellm as _litellm
 
-            cost_usd = _litellm.completion_cost(
-                model=model,
-                prompt=str(prompt_tokens),
-                completion=str(completion_tokens),
+            prompt_cost_per, completion_cost_per = _litellm.cost_per_token(
+                model=model, prompt_tokens=1, completion_tokens=1,
             )
+            cost_usd = (prompt_tokens * prompt_cost_per) + (completion_tokens * completion_cost_per)
         except Exception:
             cost_usd = 0.0
 

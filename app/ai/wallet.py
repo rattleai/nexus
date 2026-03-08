@@ -327,8 +327,20 @@ class DollarWalletService:
 
         try:
             await db.commit()
-        except Exception:
+        except Exception as exc:
             await db.rollback()
+            # If the commit failed due to a duplicate reference_id (unique constraint),
+            # treat it as an idempotent duplicate — return current balance.
+            from sqlalchemy.exc import IntegrityError
+
+            if isinstance(exc, IntegrityError) and reference_id:
+                logger.info(
+                    "wallet_topup_duplicate_constraint",
+                    tenant_id=str(tenant_id),
+                    reference_id=reference_id,
+                )
+                refreshed = await self._get_or_create_wallet(tenant_id, db)
+                return refreshed.balance_usd
             raise
 
         # Sync to Redis atomically

@@ -132,6 +132,13 @@ class WalletTransaction(Base):
 
     __table_args__ = (
         Index("ix_wallet_tx_tenant_created", "tenant_id", "created_at"),
+        Index(
+            "ix_wallet_tx_tenant_reference_unique",
+            "tenant_id",
+            "reference_id",
+            unique=True,
+            postgresql_where=text("reference_id IS NOT NULL"),
+        ),
     )
 
 
