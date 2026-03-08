@@ -40,6 +40,11 @@ if settings.OTEL_ENABLED:
 
     v1_router.include_router(metrics_router, tags=["metrics"])
 
+if settings.OAUTH_CLIENT_CREDENTIALS_ENABLED:
+    from app.api.v1.oauth_clients import router as oauth_router
+
+    v1_router.include_router(oauth_router, tags=["oauth"])
+
 if settings.AUTH_ENABLED:
     from app.api.v1.auth_routes import router as auth_router
     from app.api.v1.notifications import router as notifications_router

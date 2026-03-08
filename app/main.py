@@ -115,6 +115,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         docs_url="/api/docs" if settings.DEBUG else None,
         redoc_url="/api/redoc" if settings.DEBUG else None,
+        openapi_url="/api/v1/openapi.json",
     )
 
     # Exception handlers (fail-closed)
@@ -138,11 +139,12 @@ def create_app() -> FastAPI:
         allow_headers=[
             "Authorization", "Content-Type", "X-API-Key", "X-Admin-Key",
             "X-Request-ID", "X-Idempotency-Key", "If-None-Match", "X-CSRF-Token",
+            "X-Agent-Name",
         ],
         expose_headers=[
             "ETag", "X-Request-ID", "X-Response-Time", "Retry-After",
             "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset",
-            "X-CSRF-Token",
+            "X-CSRF-Token", "X-Agent-Name",
         ],
         max_age=86400,
     )
@@ -155,6 +157,16 @@ def create_app() -> FastAPI:
 
     # API routes (must be before SPA catch-all)
     app.include_router(v1_router, prefix=settings.API_V1_PREFIX)
+
+    # Enrich OpenAPI schema with agent-friendly metadata
+    _original_openapi = app.openapi
+
+    def _enriched_openapi():
+        schema = _original_openapi()
+        from app.api.openapi_enrichment import enrich_openapi_schema
+        return enrich_openapi_schema(schema)
+
+    app.openapi = _enriched_openapi
 
     # SPA static assets
     if (SPA_DIR / "assets").is_dir():

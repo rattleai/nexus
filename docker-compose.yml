@@ -65,6 +65,26 @@ services:
       retries: 5
     restart: unless-stopped
 
+  mcp:
+    build: .
+    ports:
+      - "127.0.0.1:8001:8001"
+    env_file: .env
+    environment:
+      - PYTHONPATH=/app
+      - MCP_ENABLED=true
+      - MCP_TRANSPORT=streamable-http
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: cadprice-mcp
+    restart: unless-stopped
+    profiles: ["mcp"]
+
   worker:
     build: .
     env_file: .env

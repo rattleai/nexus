@@ -1,4 +1,4 @@
-.PHONY: dev dev-up dev-down test lint format migrate seed build
+.PHONY: dev dev-up dev-down test lint format migrate seed build mcp mcp-http
 
 # ── Development ──────────────────────────────────────────────
 dev-up:  ## Start all services (DB, Redis, API, frontend, worker)
@@ -52,6 +52,13 @@ fe-test:  ## Run frontend tests
 
 fe-lint:  ## Lint frontend code
 	cd frontend && npm run lint
+
+# ── MCP Server ──────────────────────────────────────────────
+mcp:  ## Start MCP server (stdio transport)
+	MCP_ENABLED=true MCP_TRANSPORT=stdio cadprice-mcp
+
+mcp-http:  ## Start MCP server (HTTP transport on port 8001)
+	MCP_ENABLED=true MCP_TRANSPORT=streamable-http cadprice-mcp
 
 # ── Docker ───────────────────────────────────────────────────
 build:  ## Build production Docker image
