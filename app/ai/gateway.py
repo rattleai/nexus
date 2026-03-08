@@ -16,11 +16,13 @@ import litellm
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.cost import calculate_billed_tokens, get_response_cost, get_response_tokens
+from decimal import Decimal
+
+from app.ai.cost import calculate_billed_amount_usd, get_response_cost, get_response_tokens
 from app.ai.events import AICompletionCompleted, AICompletionFailed, AICompletionRequested
 from app.ai.guardrails import filter_output
 from app.ai.metrics import (
-    AI_BILLED_TOKENS_TOTAL,
+    AI_BILLED_USD_TOTAL,
     AI_COST_USD_TOTAL,
     AI_FALLBACK_TOTAL,
     AI_LATENCY_SECONDS,
@@ -64,8 +66,8 @@ class AICompletionResult:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
-    billed_tokens: int = 0
     cost_usd: float = 0.0
+    billed_amount_usd: Decimal = Decimal("0")
     latency_ms: int = 0
     key_source: str = "platform"
     finish_reason: str | None = None
@@ -219,7 +221,7 @@ class AIGateway:
                     model=candidate_model,
                     provider=candidate_provider,
                     total_tokens=result.total_tokens,
-                    billed_tokens=result.billed_tokens,
+                    billed_amount_usd=float(result.billed_amount_usd),
                     cost_usd=result.cost_usd,
                     latency_ms=result.latency_ms,
                     key_source=key_source,
@@ -450,7 +452,7 @@ class AIGateway:
 
         prompt_tokens, completion_tokens, total_tokens = get_response_tokens(response)
         cost_usd = get_response_cost(response)
-        billed_tokens = calculate_billed_tokens(total_tokens, key_source)
+        billed_amount_usd = calculate_billed_amount_usd(cost_usd, key_source)
 
         # Apply output guardrails
         content = filter_output(content, tenant_settings=tenant_settings)
@@ -461,7 +463,7 @@ class AIGateway:
         ).inc()
         AI_TOKENS_TOTAL.labels(provider=provider, model=model_info.litellm_model, token_type="prompt").inc(prompt_tokens)
         AI_TOKENS_TOTAL.labels(provider=provider, model=model_info.litellm_model, token_type="completion").inc(completion_tokens)
-        AI_BILLED_TOKENS_TOTAL.labels(provider=provider, model=model_info.litellm_model, key_source=key_source).inc(billed_tokens)
+        AI_BILLED_USD_TOTAL.labels(provider=provider, model=model_info.litellm_model, key_source=key_source).inc(float(billed_amount_usd))
         AI_LATENCY_SECONDS.labels(provider=provider, model=model_info.litellm_model).observe(elapsed)
         AI_COST_USD_TOTAL.labels(provider=provider, model=model_info.litellm_model).inc(cost_usd)
 
@@ -475,8 +477,8 @@ class AIGateway:
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
-            billed_tokens=billed_tokens,
             cost_usd=cost_usd,
+            billed_amount_usd=billed_amount_usd,
             latency_ms=latency_ms,
             key_source=key_source,
             finish_reason=finish_reason,

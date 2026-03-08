@@ -1,7 +1,7 @@
 """AI gateway API endpoints.
 
 Provides unified multi-provider AI completions (sync, streaming, async),
-BYOK key management, prepaid token wallet, prompt templates, and usage stats.
+BYOK key management, USD wallet, prompt templates, and usage stats.
 """
 
 from __future__ import annotations
@@ -9,13 +9,13 @@ from __future__ import annotations
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.cost import calculate_billed_tokens, estimate_max_tokens
 from app.ai.dependencies import AIQuotaEnforcer, RequireWalletBalance, require_ai_enabled
 from app.ai.events import AIProviderKeyCreated, AIProviderKeyDeleted, WalletBalanceLow, WalletTopupCompleted
 from app.ai.gateway import AIAuthenticationError, AIGatewayError, AIProviderUnavailableError, ai_gateway
@@ -35,7 +35,6 @@ from app.ai.schemas import (
     ProviderKeyCreate,
     ProviderKeyResponse,
     WalletBalanceResponse,
-    WalletTopupRequest,
     WalletTransactionResponse,
 )
 from app.ai.streaming import sse_stream_response
@@ -150,7 +149,7 @@ async def create_completion(
         except AIGatewayError as exc:
             raise HTTPException(status_code=500, detail=str(exc))
 
-        # Build a callback that deducts tokens and logs usage after streaming completes.
+        # Build a callback that deducts USD and logs usage after streaming completes.
         # IMPORTANT: The request-scoped DB session (`db`) may be closed by the time
         # this callback runs (streaming responses execute outside FastAPI's dependency
         # scope). We create a fresh session here to avoid "Session is closed" errors.
@@ -159,7 +158,8 @@ async def create_completion(
             prompt_tokens: int,
             completion_tokens: int,
             total_tokens: int,
-            billed_tokens: int,
+            billed_amount_usd: Decimal,
+            cost_usd: float,
             latency_ms: int,
         ) -> None:
             from app.db.session import async_session_factory
@@ -167,28 +167,30 @@ async def create_completion(
             async with async_session_factory() as stream_db:
                 # Deduct from wallet
                 try:
-                    new_balance = await wallet_service.deduct_tokens(
+                    new_balance = await wallet_service.deduct(
                         tenant.id,
-                        billed_tokens,
+                        billed_amount_usd,
+                        provider_cost_usd=Decimal(str(cost_usd)),
                         description=f"AI streaming: {body.model}",
                         reference_id=request_id,
                         db=stream_db,
                     )
-                    AI_WALLET_BALANCE.labels(tenant_id=str(tenant.id)).set(new_balance)
+                    AI_WALLET_BALANCE.labels(tenant_id=str(tenant.id)).set(float(new_balance))
 
-                    if new_balance < settings.AI_WALLET_LOW_BALANCE_THRESHOLD:
+                    if float(new_balance) < settings.AI_WALLET_LOW_BALANCE_THRESHOLD:
                         await emit(WalletBalanceLow(
                             tenant_id=str(tenant.id),
-                            balance_tokens=new_balance,
-                            threshold=settings.AI_WALLET_LOW_BALANCE_THRESHOLD,
+                            balance_usd=float(new_balance),
+                            threshold_usd=settings.AI_WALLET_LOW_BALANCE_THRESHOLD,
                         ))
+
+                    # Check auto-refill
+                    await wallet_service.check_auto_refill(tenant.id, new_balance, stream_db)
                 except InsufficientBalanceError:
-                    # Tokens were already consumed at the provider. Log as error
-                    # so billing can follow up (the tenant owes these tokens).
                     logger.error(
                         "streaming_wallet_deduction_insufficient",
                         tenant_id=str(tenant.id),
-                        billed_tokens=billed_tokens,
+                        billed_amount_usd=str(billed_amount_usd),
                         request_id=request_id,
                     )
 
@@ -204,8 +206,8 @@ async def create_completion(
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
                     total_tokens=total_tokens,
-                    cost_usd=0.0,  # Exact cost not available for streaming
-                    billed_tokens=billed_tokens,
+                    cost_usd=cost_usd,
+                    billed_amount_usd=billed_amount_usd,
                     latency_ms=latency_ms,
                     status="success",
                     key_source=key_source,
@@ -248,11 +250,12 @@ async def create_completion(
     except AIGatewayError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
-    # Deduct from wallet
+    # Deduct from wallet (USD)
     try:
-        new_balance = await wallet_service.deduct_tokens(
+        new_balance = await wallet_service.deduct(
             tenant.id,
-            result.billed_tokens,
+            result.billed_amount_usd,
+            provider_cost_usd=Decimal(str(result.cost_usd)),
             description=f"AI completion: {body.model}",
             reference_id=request_id,
             db=db,
@@ -265,15 +268,18 @@ async def create_completion(
         )
 
     # Update Prometheus wallet gauge
-    AI_WALLET_BALANCE.labels(tenant_id=str(tenant.id)).set(new_balance)
+    AI_WALLET_BALANCE.labels(tenant_id=str(tenant.id)).set(float(new_balance))
 
     # Check low balance warning
-    if new_balance < settings.AI_WALLET_LOW_BALANCE_THRESHOLD:
+    if float(new_balance) < settings.AI_WALLET_LOW_BALANCE_THRESHOLD:
         await emit(WalletBalanceLow(
             tenant_id=str(tenant.id),
-            balance_tokens=new_balance,
-            threshold=settings.AI_WALLET_LOW_BALANCE_THRESHOLD,
+            balance_usd=float(new_balance),
+            threshold_usd=settings.AI_WALLET_LOW_BALANCE_THRESHOLD,
         ))
+
+    # Check auto-refill
+    await wallet_service.check_auto_refill(tenant.id, new_balance, db)
 
     # Record usage in quotas
     await increment_usage(tenant.id, QuotaMetric.AI_REQUESTS_DAY)
@@ -288,7 +294,7 @@ async def create_completion(
         completion_tokens=result.completion_tokens,
         total_tokens=result.total_tokens,
         cost_usd=result.cost_usd,
-        billed_tokens=result.billed_tokens,
+        billed_amount_usd=result.billed_amount_usd,
         latency_ms=result.latency_ms,
         status="success",
         key_source=result.key_source,
@@ -304,8 +310,8 @@ async def create_completion(
         prompt_tokens=result.prompt_tokens,
         completion_tokens=result.completion_tokens,
         total_tokens=result.total_tokens,
-        billed_tokens=result.billed_tokens,
         cost_usd=result.cost_usd,
+        billed_amount_usd=float(result.billed_amount_usd),
         latency_ms=result.latency_ms,
         key_source=result.key_source,
         finish_reason=result.finish_reason,
@@ -531,65 +537,19 @@ async def get_wallet_balance(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the current token wallet balance."""
+    """Get the current USD wallet balance."""
     wallet = await wallet_service._get_or_create_wallet(tenant.id, db)
     balance = await wallet_service.get_balance(tenant.id)
-    if balance == 0 and wallet.balance_tokens > 0:
+    if balance == Decimal("0") and wallet.balance_usd > 0:
         await wallet_service.initialize_balance(tenant.id, db)
         balance = await wallet_service.get_balance(tenant.id)
 
     return WalletBalanceResponse(
-        balance_tokens=balance,
-        lifetime_purchased=wallet.lifetime_purchased,
-        lifetime_consumed=wallet.lifetime_consumed,
-    )
-
-
-@router.post(
-    "/wallet/topup",
-    response_model=WalletBalanceResponse,
-    dependencies=[Depends(RequireScopes("ai:admin"))],
-)
-async def topup_wallet(
-    body: WalletTopupRequest,
-    tenant: Tenant = Depends(get_current_tenant),
-    db: AsyncSession = Depends(get_db),
-):
-    """Top up the token wallet.
-
-    IMPORTANT: This endpoint requires `ai:admin` scope. In production,
-    it should only be called after payment has been verified by the billing
-    system. The `reference_id` field should contain the payment/invoice ID
-    for auditability.
-    """
-    if not body.reference_id:
-        raise HTTPException(
-            status_code=422,
-            detail="reference_id is required for wallet topups (payment/invoice ID).",
-        )
-
-    new_balance = await wallet_service.topup(
-        tenant.id,
-        body.amount_tokens,
-        reference_id=body.reference_id,
-        description=f"Wallet topup: {body.amount_tokens} tokens",
-        db=db,
-    )
-
-    await emit(WalletTopupCompleted(
-        tenant_id=str(tenant.id),
-        amount_tokens=body.amount_tokens,
-        new_balance=new_balance,
-        reference_id=body.reference_id,
-    ))
-
-    AI_WALLET_BALANCE.labels(tenant_id=str(tenant.id)).set(new_balance)
-
-    wallet = await wallet_service._get_or_create_wallet(tenant.id, db)
-    return WalletBalanceResponse(
-        balance_tokens=new_balance,
-        lifetime_purchased=wallet.lifetime_purchased,
-        lifetime_consumed=wallet.lifetime_consumed,
+        balance_usd=balance,
+        lifetime_deposited_usd=wallet.lifetime_deposited_usd,
+        lifetime_consumed_usd=wallet.lifetime_consumed_usd,
+        currency=wallet.currency,
+        auto_refill_enabled=wallet.auto_refill_enabled,
     )
 
 

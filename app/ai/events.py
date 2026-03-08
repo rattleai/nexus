@@ -21,7 +21,7 @@ class AICompletionCompleted(DomainEvent):
     model: str = ""
     provider: str = ""
     total_tokens: int = 0
-    billed_tokens: int = 0
+    billed_amount_usd: float = 0.0
     cost_usd: float = 0.0
     latency_ms: int = 0
     key_source: str = ""
@@ -40,16 +40,16 @@ class AICompletionFailed(DomainEvent):
 @dataclass
 class WalletTopupCompleted(DomainEvent):
     tenant_id: str = ""
-    amount_tokens: int = 0
-    new_balance: int = 0
+    amount_usd: float = 0.0
+    new_balance_usd: float = 0.0
     reference_id: str = ""
 
 
 @dataclass
 class WalletBalanceLow(DomainEvent):
     tenant_id: str = ""
-    balance_tokens: int = 0
-    threshold: int = 0
+    balance_usd: float = 0.0
+    threshold_usd: float = 0.0
 
 
 @dataclass

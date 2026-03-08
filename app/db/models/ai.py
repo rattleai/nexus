@@ -1,4 +1,4 @@
-"""AI infrastructure models: provider keys, token wallet, usage logging, prompt templates."""
+"""AI infrastructure models: provider keys, dollar wallet, usage logging, prompt templates."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -74,22 +74,32 @@ class TenantAIProviderKey(TimestampMixin, Base):
             return None
 
 
-# ── Token Wallet ──────────────────────────────────────────
+# ── Dollar Wallet ─────────────────────────────────────────
 
 
-class TokenWallet(TimestampMixin, VersionMixin, Base):
-    """Prepaid token balance per tenant. Uses optimistic locking via VersionMixin."""
+class DollarWallet(TimestampMixin, VersionMixin, Base):
+    """Prepaid USD balance per tenant. Uses optimistic locking via VersionMixin.
 
-    __tablename__ = "token_wallets"
+    All balances are stored in USD. Stripe Adaptive Pricing handles local
+    currency presentation at checkout; internally everything is USD.
+    """
+
+    __tablename__ = "dollar_wallets"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, unique=True)
-    balance_tokens: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
-    lifetime_purchased: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
-    lifetime_consumed: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    balance_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=0, nullable=False)
+    lifetime_deposited_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), default=0, nullable=False)
+    lifetime_consumed_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), default=0, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
+    # Auto-refill settings
+    auto_refill_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_refill_threshold_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    auto_refill_amount_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    stripe_payment_method_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     __table_args__ = (
-        CheckConstraint("balance_tokens >= 0", name="ck_token_wallet_balance_non_negative"),
+        CheckConstraint("balance_usd >= 0", name="ck_dollar_wallet_balance_non_negative"),
     )
 
 
@@ -102,17 +112,19 @@ class WalletTransactionType(enum.StrEnum):
 
 
 class WalletTransaction(Base):
-    """Immutable ledger entry for every wallet balance change."""
+    """Immutable ledger entry for every wallet balance change (USD-based)."""
 
     __tablename__ = "wallet_transactions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     type: Mapped[WalletTransactionType] = mapped_column(Enum(WalletTransactionType), nullable=False)
-    amount_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    balance_after: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    amount_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    balance_after_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    provider_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     reference_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
@@ -120,6 +132,13 @@ class WalletTransaction(Base):
 
     __table_args__ = (
         Index("ix_wallet_tx_tenant_created", "tenant_id", "created_at"),
+        Index(
+            "ix_wallet_tx_tenant_reference_unique",
+            "tenant_id",
+            "reference_id",
+            unique=True,
+            postgresql_where=text("reference_id IS NOT NULL"),
+        ),
     )
 
 
@@ -139,7 +158,7 @@ class AIUsageLog(Base):
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
     total_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), default=0)
-    billed_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    billed_amount_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), default=0)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="success")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

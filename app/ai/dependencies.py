@@ -6,6 +6,8 @@ AI feature gate, and quota enforcement.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import structlog
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,7 +45,7 @@ class RequireWalletBalance:
     ) -> None:
         try:
             balance = await wallet_service.get_balance(tenant.id)
-            if balance <= 0:
+            if balance <= Decimal("0"):
                 # Redis cache miss or zero — try loading from DB
                 balance = await wallet_service.initialize_balance(tenant.id, db)
         except Exception:
@@ -56,10 +58,10 @@ class RequireWalletBalance:
                 detail="Wallet service temporarily unavailable. Please retry.",
             ) from None
 
-        if balance <= 0:
+        if balance <= Decimal("0"):
             raise HTTPException(
                 status_code=402,
-                detail="Insufficient token balance. Please top up your wallet.",
+                detail="Insufficient balance. Please top up your wallet.",
                 headers={"X-Wallet-Balance": str(balance)},
             )
 

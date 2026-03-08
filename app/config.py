@@ -103,13 +103,17 @@ class Settings(BaseSettings):
     AI_MAX_MESSAGES_PER_REQUEST: int = 100
     AI_MAX_MESSAGE_LENGTH: int = 200_000
 
-    # Margin multipliers — applied to raw token consumption
+    # Margin multipliers — applied to provider cost (USD)
     # Platform keys: platform bears provider cost, higher margin
     # BYOK keys: tenant pays provider directly, lower infrastructure fee
     AI_MARGIN_PLATFORM_KEYS: float = 1.20   # 20% margin on platform-managed keys
     AI_MARGIN_BYOK_KEYS: float = 1.05       # 5% infrastructure fee on BYOK
 
-    AI_WALLET_LOW_BALANCE_THRESHOLD: int = 1000
+    AI_WALLET_LOW_BALANCE_THRESHOLD: float = 5.00  # USD threshold for low balance warning
+
+    # Auto-refill limits
+    AI_AUTO_REFILL_MIN_AMOUNT: float = 5.00   # Minimum auto-refill amount in USD
+    AI_AUTO_REFILL_MAX_AMOUNT: float = 500.00  # Maximum auto-refill amount in USD
     AI_CACHE_ENABLED: bool = True
     AI_CACHE_TTL_SECONDS: int = 3600
     AI_DEFAULT_FALLBACK_ENABLED: bool = True
