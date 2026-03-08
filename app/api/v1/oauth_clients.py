@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireRole, get_current_tenant, get_db
+from app.api.rate_limit import RateLimiter
 from app.config import settings
 from app.db.models import Tenant
 from app.db.models.oauth_client import OAuthClient
@@ -187,7 +188,14 @@ async def revoke_oauth_client(
     logger.info("oauth_client_revoked", client_id=client_id, tenant_id=str(tenant.id))
 
 
-@router.post("/token", response_model=TokenResponse)
+_token_rate_limit = RateLimiter(max_requests=10, window=60, key_prefix="rl:oauth_token")
+
+
+@router.post(
+    "/token",
+    response_model=TokenResponse,
+    dependencies=[Depends(_token_rate_limit)],
+)
 async def exchange_token(
     body: TokenRequest,
     db: AsyncSession = Depends(get_db),
@@ -227,6 +235,8 @@ async def exchange_token(
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=expires_in)).timestamp()),
         "iss": "cadprice",
+        "aud": "cadprice-api",
+        "jti": uuid.uuid4().hex,
         "type": "client_credentials",
     }
 

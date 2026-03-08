@@ -51,7 +51,24 @@ async def team_invite(
 
     Creates an invitation that the user must accept. Valid roles: member, admin.
     """
+    import re
+
     from app.db.models import Invitation, InvitationStatus
+
+    # Validate email format
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        raise tool_error(
+            "Invalid email address format.",
+            hint="Provide a valid email like user@example.com.",
+        )
+
+    # Validate role
+    valid_roles = {"member", "admin"}
+    if role not in valid_roles:
+        raise tool_error(
+            f"Invalid role: {role}",
+            hint=f"Valid roles: {', '.join(sorted(valid_roles))}",
+        )
 
     # Check for existing pending invitation
     existing = await db.execute(

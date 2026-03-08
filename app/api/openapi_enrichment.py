@@ -55,6 +55,76 @@ _ENRICHMENTS: dict[tuple[str, str], dict[str, Any]] = {
         ),
         "x-idempotent": False,
     },
+    # ── Team ──
+    ("get", "/team/members"): {
+        "x-agent-hint": "List team members with roles. Use to discover who has access.",
+    },
+    ("post", "/team/invite"): {
+        "x-agent-hint": "Invite a new member by email. Requires team:write scope.",
+        "x-idempotent": False,
+    },
+    # ── Webhooks ──
+    ("get", "/webhooks"): {
+        "x-agent-hint": "List configured webhook endpoints for event subscriptions.",
+    },
+    ("post", "/webhooks"): {
+        "x-agent-hint": (
+            "Create a webhook endpoint. URL must be HTTPS. "
+            "Store the signing_secret to verify deliveries."
+        ),
+        "x-idempotent": False,
+    },
+    ("delete", "/webhooks/{webhook_id}"): {
+        "x-agent-hint": "Delete a webhook endpoint by ID. Stops all event deliveries.",
+    },
+    # ── Billing ──
+    ("get", "/billing/plans"): {
+        "x-agent-hint": "List subscription plans with pricing. Compare before upgrading.",
+    },
+    ("get", "/billing/subscription"): {
+        "x-agent-hint": "Get current subscription details and billing period.",
+    },
+    # ── Export ──
+    ("post", "/export"): {
+        "x-agent-hint": (
+            "Request a GDPR data export. Returns an export ID. "
+            "Poll GET /export/{id} for completion."
+        ),
+        "x-idempotent": False,
+    },
+    ("get", "/export/{export_id}"): {
+        "x-agent-hint": "Check export status. Download URL available when status is 'completed'.",
+    },
+    # ── Auth ──
+    ("post", "/oauth/token"): {
+        "x-agent-hint": (
+            "Exchange client_id + client_secret for a short-lived JWT. "
+            "Rate limited to 10 requests/minute."
+        ),
+    },
+    ("post", "/oauth/clients"): {
+        "x-agent-hint": "Register an OAuth client for machine-to-machine auth. Admin only.",
+        "x-idempotent": False,
+    },
+    # ── API Keys ──
+    ("get", "/api-keys"): {
+        "x-agent-hint": "List API keys for the tenant. Secrets are masked.",
+    },
+    ("delete", "/api-keys/{key_id}"): {
+        "x-agent-hint": "Revoke an API key. Cannot be undone.",
+    },
+    # ── Files ──
+    ("get", "/files"): {
+        "x-agent-hint": "List uploaded files. Use prefix param to filter by path.",
+    },
+    # ── Batch ──
+    ("post", "/batch"): {
+        "x-agent-hint": (
+            "Execute up to 10 sub-requests in a single call. "
+            "Reduces round-trips for multi-step workflows."
+        ),
+    },
+    # ── Health ──
     ("get", "/health/live"): {
         "x-agent-hint": "Lightweight liveness check. No auth required.",
     },

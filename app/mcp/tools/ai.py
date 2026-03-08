@@ -35,6 +35,28 @@ async def ai_complete(
 
     Example messages: [{"role": "user", "content": "Hello, how are you?"}]
     """
+    # Validate messages structure
+    if not messages:
+        raise tool_error("Messages list cannot be empty.")
+    if len(messages) > 200:
+        raise tool_error("Too many messages (max 200).")
+    valid_roles = {"user", "system", "assistant"}
+    for i, msg in enumerate(messages):
+        if not isinstance(msg, dict):
+            raise tool_error(
+                f"Message at index {i} must be a dict with 'role' and 'content' keys.",
+            )
+        if "role" not in msg or "content" not in msg:
+            raise tool_error(
+                f"Message at index {i} missing required keys.",
+                hint="Each message needs 'role' (user/system/assistant) and 'content'.",
+            )
+        if msg["role"] not in valid_roles:
+            raise tool_error(
+                f"Invalid role '{msg['role']}' at index {i}.",
+                hint=f"Valid roles: {', '.join(sorted(valid_roles))}",
+            )
+
     model_info = get_model_info(model)
     if not model_info:
         raise tool_error(

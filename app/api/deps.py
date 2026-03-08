@@ -214,7 +214,13 @@ async def get_tenant_from_client_credentials(
 
     token = auth_header[7:]
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=["HS256"],
+            audience="cadprice-api",
+            issuer="cadprice",
+        )
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired") from None
     except jwt.InvalidTokenError:

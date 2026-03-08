@@ -52,6 +52,7 @@ async def file_upload(
     import re
 
     safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", filename.split("/")[-1])[:255] or "upload"
+    safe_name = safe_name.lstrip(".")  # Prevent hidden files
     key = f"tenants/{tenant.id}/{uuid.uuid4().hex}_{safe_name}"
 
     try:

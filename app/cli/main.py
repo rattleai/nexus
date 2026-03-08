@@ -25,9 +25,11 @@ from app.cli.client import CadpriceClient, CLIError
 from app.cli.commands.ai import ai_app
 from app.cli.commands.api_key import api_key_app
 from app.cli.commands.billing import billing_app
+from app.cli.commands.export import export_app
 from app.cli.commands.file import file_app
 from app.cli.commands.job import job_app
 from app.cli.commands.team import team_app
+from app.cli.commands.webhook import webhook_app
 from app.cli.output import format_error_json
 
 app = typer.Typer(
@@ -43,6 +45,8 @@ app.add_typer(file_app)
 app.add_typer(billing_app)
 app.add_typer(team_app)
 app.add_typer(api_key_app)
+app.add_typer(webhook_app)
+app.add_typer(export_app)
 
 
 @app.callback()

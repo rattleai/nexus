@@ -27,6 +27,21 @@ async def job_create(
     Jobs run asynchronously and can be polled for status.
     Provide a job type and optional payload dict.
     """
+    import json as json_mod
+
+    # Validate job_type
+    if not job_type or not job_type.strip():
+        raise tool_error("Job type cannot be empty.")
+
+    # Validate payload size to prevent abuse
+    if payload:
+        payload_size = len(json_mod.dumps(payload, default=str))
+        if payload_size > 1_048_576:  # 1 MB
+            raise tool_error(
+                "Payload too large (max 1 MB).",
+                hint="Reduce the payload size or upload large data as a file first.",
+            )
+
     job = Job(
         tenant_id=tenant.id,
         type=job_type,

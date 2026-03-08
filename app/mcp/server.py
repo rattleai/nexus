@@ -333,6 +333,59 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
+    # ── Webhook Tools ───────────────────────────────────────
+
+    @mcp.tool()
+    async def webhook_list() -> str:
+        """List all configured webhook endpoints for the tenant."""
+        from app.mcp.tools.webhooks import webhook_list as _webhook_list
+
+        api_key, tenant, db = await _get_context()
+        try:
+            check_scopes(api_key, "webhooks:read")
+            result = await _webhook_list(tenant=tenant, db=db)
+            return json.dumps(result)
+        finally:
+            await db.close()
+
+    @mcp.tool()
+    async def webhook_create(url: str, events: list[str], description: str | None = None) -> str:
+        """Create a webhook endpoint to receive event notifications.
+
+        Subscribe to events like job.completed, file.uploaded, member.added.
+        The URL must be HTTPS and publicly reachable.
+
+        Example: webhook_create(url="https://example.com/hook", events=["job.completed"])
+        """
+        from app.mcp.tools.webhooks import webhook_create as _webhook_create
+
+        api_key, tenant, db = await _get_context()
+        try:
+            check_scopes(api_key, "webhooks:write")
+            result = await _webhook_create(
+                url=url, events=events, description=description, tenant=tenant, db=db,
+            )
+            if settings.MCP_LOG_TOOL_CALLS:
+                logger.info("mcp_tool_call", tool="webhook_create", tenant_id=str(tenant.id))
+            return json.dumps(result)
+        finally:
+            await db.close()
+
+    @mcp.tool()
+    async def webhook_delete(webhook_id: str) -> str:
+        """Delete a webhook endpoint by ID."""
+        from app.mcp.tools.webhooks import webhook_delete as _webhook_delete
+
+        api_key, tenant, db = await _get_context()
+        try:
+            check_scopes(api_key, "webhooks:write")
+            result = await _webhook_delete(webhook_id=webhook_id, tenant=tenant, db=db)
+            if settings.MCP_LOG_TOOL_CALLS:
+                logger.info("mcp_tool_call", tool="webhook_delete", tenant_id=str(tenant.id))
+            return json.dumps(result)
+        finally:
+            await db.close()
+
     # ── Resources ────────────────────────────────────────────
 
     @mcp.resource("cadprice://models")
@@ -358,6 +411,49 @@ def create_mcp_server() -> FastMCP:
             return json.dumps(result)
         finally:
             await db.close()
+
+    @mcp.resource("cadprice://team/members")
+    async def resource_team_members() -> str:
+        """Current team members with roles."""
+        from app.mcp.tools.team import team_list_members as _list_members
+
+        _api_key, tenant, db = await _get_context()
+        try:
+            result = await _list_members(tenant=tenant, db=db)
+            return json.dumps(result)
+        finally:
+            await db.close()
+
+    @mcp.resource("cadprice://jobs/recent")
+    async def resource_recent_jobs() -> str:
+        """Most recent jobs (last 20)."""
+        from app.mcp.tools.jobs import job_list as _job_list
+
+        _api_key, tenant, db = await _get_context()
+        try:
+            result = await _job_list(limit=20, tenant=tenant, db=db)
+            return json.dumps(result)
+        finally:
+            await db.close()
+
+    @mcp.resource("cadprice://billing/usage")
+    async def resource_billing_usage() -> str:
+        """AI usage statistics for the last 30 days."""
+        from app.mcp.tools.ai import ai_get_usage as _ai_get_usage
+
+        _api_key, tenant, db = await _get_context()
+        try:
+            result = await _ai_get_usage(days=30, tenant=tenant, db=db)
+            return json.dumps(result)
+        finally:
+            await db.close()
+
+    @mcp.resource("cadprice://webhooks/events")
+    async def resource_webhook_events() -> str:
+        """Available webhook event types that can be subscribed to."""
+        from app.api.v1.webhooks import VALID_WEBHOOK_EVENTS
+
+        return json.dumps({"events": VALID_WEBHOOK_EVENTS})
 
     # ── Prompts ──────────────────────────────────────────────
 
@@ -392,5 +488,77 @@ def create_mcp_server() -> FastMCP:
             return json.dumps(items)
         finally:
             await db.close()
+
+    @mcp.prompt()
+    async def analyze_usage() -> str:
+        """Prompt template: Analyze your AI usage patterns and suggest optimizations.
+
+        Use this to understand your spending and identify cost-saving opportunities.
+        """
+        return json.dumps({
+            "name": "analyze_usage",
+            "description": "Analyze AI usage patterns and spending",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "Analyze my AI usage data and provide:\n"
+                        "1. Total spend and token usage trends\n"
+                        "2. Most-used models and their cost efficiency\n"
+                        "3. Suggestions to reduce costs\n\n"
+                        "First call ai_get_usage and billing_get_wallet_balance, "
+                        "then provide the analysis."
+                    ),
+                }
+            ],
+        })
+
+    @mcp.prompt()
+    async def troubleshoot_job() -> str:
+        """Prompt template: Diagnose why a job failed and suggest fixes.
+
+        Use this when a background job has failed and you need to understand why.
+        """
+        return json.dumps({
+            "name": "troubleshoot_job",
+            "description": "Diagnose a failed job and suggest remediation",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "A job has failed. Please:\n"
+                        "1. Call job_list with status='failed' to find recent failures\n"
+                        "2. Call job_get on the failed job to see the error\n"
+                        "3. Explain the root cause and suggest how to fix it\n"
+                        "4. If appropriate, suggest retrying with corrected parameters"
+                    ),
+                }
+            ],
+        })
+
+    @mcp.prompt()
+    async def optimize_costs() -> str:
+        """Prompt template: Review billing and suggest plan/model optimizations.
+
+        Use this to get recommendations on reducing costs or upgrading plans.
+        """
+        return json.dumps({
+            "name": "optimize_costs",
+            "description": "Review billing and suggest optimizations",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "Review my billing and usage to optimize costs:\n"
+                        "1. Call billing_get_wallet_balance to check token balance\n"
+                        "2. Call billing_get_subscription to see current plan\n"
+                        "3. Call billing_list_plans to see available plans\n"
+                        "4. Call ai_get_usage to see usage patterns\n"
+                        "5. Recommend whether to change plans or switch models "
+                        "for better cost efficiency"
+                    ),
+                }
+            ],
+        })
 
     return mcp
