@@ -1,14 +1,21 @@
 """HTTP client wrapper for the CADPrice CLI.
 
 Thin wrapper around httpx.Client that handles authentication,
-error formatting, and consistent output.
+error formatting, retries with exponential backoff, and consistent output.
 """
 
 from __future__ import annotations
 
+import time
+
 import httpx
 
 from app import __version__
+from app.cli.branding import BASE_URL_ENV, CLI_NAME
+
+_MAX_RETRIES = 3
+_RETRY_BACKOFF_BASE = 1.0  # seconds
+_RETRYABLE_STATUS_CODES = {502, 503, 504}
 
 
 class CLIError(Exception):
@@ -24,17 +31,17 @@ class CLIError(Exception):
 class CadpriceClient:
     """HTTP client for interacting with the CADPrice REST API."""
 
-    def __init__(self, base_url: str, api_key: str):
+    def __init__(self, base_url: str, api_key: str, timeout: float = 30.0):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self._client = httpx.Client(
             base_url=self.base_url,
             headers={
                 "X-API-Key": api_key,
-                "User-Agent": f"cadprice-cli/{__version__}",
+                "User-Agent": f"{CLI_NAME}-cli/{__version__}",
                 "Content-Type": "application/json",
             },
-            timeout=30.0,
+            timeout=timeout,
         )
 
     def request(
@@ -48,28 +55,46 @@ class CadpriceClient:
     ) -> dict:
         """Make an API request and return the parsed response.
 
-        Raises CLIError on failure with hint if available.
+        Retries transient network errors and 502/503/504 responses with
+        exponential backoff. Raises CLIError on failure with hint if available.
         """
         headers = {}
         if idempotency_key:
             headers["X-Idempotency-Key"] = idempotency_key
 
-        try:
-            response = self._client.request(
-                method,
-                path,
-                json=json,
-                params=params,
-                headers=headers,
-            )
-        except httpx.ConnectError as exc:
-            raise CLIError(
-                f"Cannot connect to {self.base_url}",
-                exit_code=2,
-                hint="Is the CADPrice API server running? Check CADPRICE_BASE_URL.",
-            ) from exc
-        except httpx.TimeoutException as exc:
-            raise CLIError("Request timed out", exit_code=2) from exc
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                response = self._client.request(
+                    method,
+                    path,
+                    json=json,
+                    params=params,
+                    headers=headers,
+                )
+            except httpx.ConnectError as exc:
+                last_exc = exc
+                if attempt < _MAX_RETRIES:
+                    time.sleep(_RETRY_BACKOFF_BASE * (2**attempt))
+                    continue
+                raise CLIError(
+                    f"Cannot connect to {self.base_url}",
+                    exit_code=2,
+                    hint=f"Is the API server running? Check {BASE_URL_ENV}.",
+                ) from exc
+            except httpx.TimeoutException as exc:
+                last_exc = exc
+                if attempt < _MAX_RETRIES:
+                    time.sleep(_RETRY_BACKOFF_BASE * (2**attempt))
+                    continue
+                raise CLIError("Request timed out", exit_code=2) from exc
+
+            # Retry on transient server errors
+            if response.status_code in _RETRYABLE_STATUS_CODES and attempt < _MAX_RETRIES:
+                time.sleep(_RETRY_BACKOFF_BASE * (2**attempt))
+                continue
+
+            break
 
         if response.status_code >= 400:
             try:

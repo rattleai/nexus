@@ -1,18 +1,7 @@
-"""CADPrice CLI — command-line tool for interacting with the CADPrice platform.
+"""CLI entry point — command-line tool for interacting with the platform.
 
-Usage:
-    cadprice [OPTIONS] COMMAND [ARGS]...
-
-Global options:
-    --api-key TEXT      API key (or set CADPRICE_API_KEY env var)
-    --base-url TEXT     API base URL (or set CADPRICE_BASE_URL env var)
-    --output TEXT       Output format: json or table (default: table)
-
-Examples:
-    cadprice ai models --output json
-    cadprice job list --status pending
-    cadprice ai complete --model gpt-4o --message "Hello"
-    cadprice billing wallet
+The CLI name, display name, and env var prefix are all configurable
+via environment variables for white-labeling. See app.cli.branding.
 """
 
 from __future__ import annotations
@@ -21,6 +10,8 @@ import sys
 
 import typer
 
+from app import __version__
+from app.cli.branding import API_KEY_ENV, BASE_URL_ENV, CLI_DISPLAY_NAME, CLI_NAME
 from app.cli.client import CadpriceClient, CLIError
 from app.cli.commands.ai import ai_app
 from app.cli.commands.api_key import api_key_app
@@ -32,9 +23,11 @@ from app.cli.commands.team import team_app
 from app.cli.commands.webhook import webhook_app
 from app.cli.output import format_error_json
 
+_VALID_OUTPUT_FORMATS = {"json", "table"}
+
 app = typer.Typer(
-    name="cadprice",
-    help="CADPrice CLI — interact with the CADPrice platform from the command line.",
+    name=CLI_NAME,
+    help=f"{CLI_DISPLAY_NAME} CLI — interact with the platform from the command line.",
     no_args_is_help=True,
 )
 
@@ -49,20 +42,26 @@ app.add_typer(webhook_app)
 app.add_typer(export_app)
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"{CLI_NAME} {__version__}")
+        raise typer.Exit()
+
+
 @app.callback()
 def main(
     ctx: typer.Context,
     api_key: str | None = typer.Option(
         None,
         "--api-key",
-        envvar="CADPRICE_API_KEY",
+        envvar=API_KEY_ENV,
         help="API key for authentication",
     ),
     base_url: str = typer.Option(
         "http://localhost:8000",
         "--base-url",
-        envvar="CADPRICE_BASE_URL",
-        help="CADPrice API base URL",
+        envvar=BASE_URL_ENV,
+        help="API base URL",
     ),
     output_format: str = typer.Option(
         "table",
@@ -70,10 +69,28 @@ def main(
         "-o",
         help="Output format: json or table",
     ),
+    _version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show version and exit",
+    ),
 ):
     """Initialize the CLI context with shared configuration."""
+    if output_format not in _VALID_OUTPUT_FORMATS:
+        typer.echo(
+            f"Error: Invalid output format '{output_format}'. Choose from: {', '.join(sorted(_VALID_OUTPUT_FORMATS))}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
     if not api_key:
-        typer.echo("Error: API key required. Set --api-key or CADPRICE_API_KEY.", err=True)
+        typer.echo(
+            f"Error: API key required. Set --api-key or {API_KEY_ENV}.",
+            err=True,
+        )
         raise typer.Exit(code=1)
 
     ctx.ensure_object(dict)
