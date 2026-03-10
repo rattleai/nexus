@@ -136,6 +136,19 @@ class Settings(BaseSettings):
     # Rate limiting for AI endpoints (per window)
     RATE_LIMIT_AI_REQUESTS: int = 60
 
+    # ── MCP Server ───────────────────────────────────────────
+    MCP_ENABLED: bool = False
+    MCP_SERVER_NAME: str = "cadprice"
+    MCP_TRANSPORT: str = "streamable-http"  # "stdio" or "streamable-http"
+    MCP_HTTP_PORT: int = 8001
+    MCP_LOG_TOOL_CALLS: bool = True
+
+    # ── Agent / Bot API Enhancements ──────────────────────
+    AGENT_HINTS_ENABLED: bool = True
+    AGENT_RATE_LIMIT_REQUESTS: int = 300
+    AGENT_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    OAUTH_CLIENT_CREDENTIALS_ENABLED: bool = False
+
     # Allowed scope values for API keys
     VALID_SCOPES: list[str] = [
         "jobs:read", "jobs:write",
@@ -146,6 +159,7 @@ class Settings(BaseSettings):
         "billing:read", "billing:write",
         "audit:read",
         "ai:read", "ai:write", "ai:admin",
+        "mcp:read", "mcp:write",
     ]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}

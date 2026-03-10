@@ -1,0 +1,47 @@
+"""Entry point for the CADPrice MCP server.
+
+Run via: cadprice-mcp
+Or: python -m app.mcp.run
+
+Supports two transports:
+- stdio (default for local agent connections)
+- streamable-http (for remote agent connections)
+
+Configure via environment variables:
+- MCP_TRANSPORT: "stdio" or "streamable-http" (default: from settings)
+- MCP_HTTP_PORT: Port for HTTP transport (default: 8001)
+- CADPRICE_API_KEY: API key for authenticating the MCP session
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+
+
+def main() -> None:
+    """Start the MCP server with the configured transport."""
+    from app.config import settings
+    from app.mcp.server import create_mcp_server
+
+    if not settings.MCP_ENABLED:
+        print("MCP server is disabled. Set MCP_ENABLED=true to enable.", file=sys.stderr)
+        sys.exit(1)
+
+    if not os.environ.get("CADPRICE_API_KEY"):
+        print("CADPRICE_API_KEY environment variable is required.", file=sys.stderr)
+        sys.exit(1)
+
+    mcp = create_mcp_server()
+
+    transport = os.environ.get("MCP_TRANSPORT", settings.MCP_TRANSPORT)
+    port = int(os.environ.get("MCP_HTTP_PORT", str(settings.MCP_HTTP_PORT)))
+
+    if transport == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
+
+
+if __name__ == "__main__":
+    main()

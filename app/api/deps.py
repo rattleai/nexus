@@ -196,6 +196,58 @@ class RequireScopes:
             )
 
 
+# ── OAuth Client Credentials auth ──────────────────────
+
+
+async def get_tenant_from_client_credentials(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Tenant:
+    """Authenticate via OAuth Client Credentials JWT (Bearer token).
+
+    Validates the token was issued by the Client Credentials flow,
+    resolves the tenant, and sets RLS context.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    token = auth_header[7:]
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=["HS256"],
+            audience="cadprice-api",
+            issuer="cadprice",
+        )
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired") from None
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token") from None
+
+    if payload.get("type") != "client_credentials":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+
+    tenant_id_str = payload.get("tenant_id")
+    if not tenant_id_str:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    try:
+        tenant_id = uuid.UUID(tenant_id_str)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=401, detail="Invalid token payload") from None
+
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)))
+    tenant = result.scalar_one_or_none()
+
+    if not tenant:
+        raise HTTPException(status_code=401, detail="Tenant not found or inactive")
+
+    await set_tenant_context(db, str(tenant.id))
+    return tenant
+
+
 async def require_admin_key(
     x_admin_key: str = Header(..., alias="X-Admin-Key"),
 ) -> None:
