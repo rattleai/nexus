@@ -1,0 +1,172 @@
+"""Tests for the agent governance engine."""
+
+from __future__ import annotations
+
+import uuid
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from app.agents.governance import GovernanceEngine, GovernanceViolation
+
+
+@pytest.fixture
+def strict_policy():
+    return {
+        "allowed_tools": ["ai_complete", "file_list"],
+        "denied_tools": ["webhook_create"],
+        "max_spend_per_run_usd": 1.00,
+        "max_requests_per_minute": 10,
+        "require_approval_for": ["team_invite"],
+        "approval_default_action": "deny",
+    }
+
+
+class TestToolAccessControl:
+    @pytest.mark.asyncio
+    async def test_allowed_tool_passes(self, strict_policy):
+        engine = GovernanceEngine(strict_policy)
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            # Should not raise
+            await engine.check(
+                action="tool_call",
+                context={"tool_name": "ai_complete", "instance_id": "x"},
+                tenant_id=uuid.uuid4(),
+            )
+
+    @pytest.mark.asyncio
+    async def test_denied_tool_raises(self, strict_policy):
+        engine = GovernanceEngine(strict_policy)
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with pytest.raises(GovernanceViolation) as exc_info:
+                await engine.check(
+                    action="tool_call",
+                    context={"tool_name": "webhook_create", "instance_id": "x"},
+                    tenant_id=uuid.uuid4(),
+                )
+            assert exc_info.value.violation_type == "denied_tool"
+
+    @pytest.mark.asyncio
+    async def test_unlisted_tool_raises(self, strict_policy):
+        engine = GovernanceEngine(strict_policy)
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with pytest.raises(GovernanceViolation) as exc_info:
+                await engine.check(
+                    action="tool_call",
+                    context={"tool_name": "job_create", "instance_id": "x"},
+                    tenant_id=uuid.uuid4(),
+                )
+            assert exc_info.value.violation_type == "denied_tool"
+
+    @pytest.mark.asyncio
+    async def test_non_tool_action_passes(self, strict_policy):
+        engine = GovernanceEngine(strict_policy)
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with patch("app.agents.governance.redis_pool") as mock_redis:
+                mock_redis.incr = AsyncMock(return_value=1)
+                mock_redis.expire = AsyncMock()
+                # Non-tool actions should pass tool check
+                await engine.check(
+                    action="llm_call",
+                    context={"instance_id": "x"},
+                    tenant_id=uuid.uuid4(),
+                )
+
+
+class TestSpendingLimits:
+    @pytest.mark.asyncio
+    async def test_within_budget_passes(self, strict_policy):
+        engine = GovernanceEngine(strict_policy)
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with patch("app.agents.governance.redis_pool") as mock_redis:
+                mock_redis.incr = AsyncMock(return_value=1)
+                mock_redis.expire = AsyncMock()
+                await engine.check(
+                    action="llm_call",
+                    context={"current_cost": 0.50, "instance_id": "x"},
+                    tenant_id=uuid.uuid4(),
+                )
+
+    @pytest.mark.asyncio
+    async def test_over_budget_raises(self, strict_policy):
+        engine = GovernanceEngine(strict_policy)
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with pytest.raises(GovernanceViolation) as exc_info:
+                await engine.check(
+                    action="llm_call",
+                    context={"current_cost": 1.50, "instance_id": "x"},
+                    tenant_id=uuid.uuid4(),
+                )
+            assert exc_info.value.violation_type == "spending_limit"
+
+
+class TestRateLimiting:
+    @pytest.mark.asyncio
+    async def test_within_rate_limit_passes(self, strict_policy):
+        engine = GovernanceEngine(strict_policy)
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with patch("app.agents.governance.redis_pool") as mock_redis:
+                mock_redis.incr = AsyncMock(return_value=5)
+                mock_redis.expire = AsyncMock()
+                await engine.check(
+                    action="llm_call",
+                    context={"instance_id": "x"},
+                    tenant_id=uuid.uuid4(),
+                )
+
+    @pytest.mark.asyncio
+    async def test_over_rate_limit_raises(self, strict_policy):
+        engine = GovernanceEngine(strict_policy)
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with patch("app.agents.governance.redis_pool") as mock_redis:
+                mock_redis.incr = AsyncMock(return_value=11)
+                mock_redis.expire = AsyncMock()
+                with pytest.raises(GovernanceViolation) as exc_info:
+                    await engine.check(
+                        action="llm_call",
+                        context={"instance_id": "x"},
+                        tenant_id=uuid.uuid4(),
+                    )
+                assert exc_info.value.violation_type == "rate_limit"
+
+
+class TestApprovalWorkflow:
+    @pytest.mark.asyncio
+    async def test_approval_required_raises(self, strict_policy):
+        engine = GovernanceEngine(strict_policy)
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with pytest.raises(GovernanceViolation) as exc_info:
+                await engine.check(
+                    action="tool_call",
+                    context={"tool_name": "team_invite", "instance_id": "x"},
+                    tenant_id=uuid.uuid4(),
+                )
+            assert exc_info.value.violation_type == "approval_required"
+
+    @pytest.mark.asyncio
+    async def test_no_approval_policy_passes(self):
+        engine = GovernanceEngine({"require_approval_for": []})
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with patch("app.agents.governance.redis_pool") as mock_redis:
+                mock_redis.incr = AsyncMock(return_value=1)
+                mock_redis.expire = AsyncMock()
+                await engine.check(
+                    action="tool_call",
+                    context={"tool_name": "team_invite", "instance_id": "x"},
+                    tenant_id=uuid.uuid4(),
+                )
+
+
+class TestEmptyPolicy:
+    @pytest.mark.asyncio
+    async def test_empty_policy_allows_everything(self):
+        engine = GovernanceEngine({})
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with patch("app.agents.governance.redis_pool") as mock_redis:
+                mock_redis.incr = AsyncMock(return_value=1)
+                mock_redis.expire = AsyncMock()
+                await engine.check(
+                    action="tool_call",
+                    context={"tool_name": "anything", "instance_id": "x"},
+                    tenant_id=uuid.uuid4(),
+                )

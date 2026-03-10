@@ -115,6 +115,23 @@ services:
     command: celery -A app.workers.celery_app beat --loglevel=info
     restart: unless-stopped
 
+  agent-worker:
+    build: .
+    env_file: .env
+    environment:
+      - PYTHONPATH=/app
+      - AGENT_EXECUTION_ENABLED=true
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app worker --loglevel=info -Q agents --concurrency=4
+    restart: unless-stopped
+    profiles: ["agents"]
+
   jaeger:
     image: jaegertracing/all-in-one:1.54
     ports:

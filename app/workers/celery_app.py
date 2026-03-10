@@ -43,13 +43,17 @@ celery.conf.update(
             "task": "app.workers.periodic.cleanup_expired_invitations",
             "schedule": crontab(hour=3, minute=30),
         },
+        "cleanup-stale-agent-instances": {
+            "task": "agents.cleanup_stale_instances",
+            "schedule": crontab(minute="*/15"),
+        },
     },
     beat_max_loop_interval=60,
     beat_scheduler="redbeat.RedBeatScheduler",
     redbeat_redis_url=settings.REDIS_URL,
 )
 
-celery.autodiscover_tasks(["app.workers"])
+celery.autodiscover_tasks(["app.workers", "app.agents"])
 
 
 # ── Context propagation: bind request_id/tenant_id to worker logs ──────────
