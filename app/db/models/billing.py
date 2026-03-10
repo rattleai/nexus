@@ -1,12 +1,13 @@
-"""Billing, subscription, and usage record models."""
+"""Billing, subscription, credit pack, and usage record models."""
 
 from __future__ import annotations
 
 import enum
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -60,6 +61,24 @@ class Subscription(TimestampMixin, Base):
     __table_args__ = (
         Index("ix_subscriptions_customer_id", "stripe_customer_id"),
     )
+
+
+class CreditPack(TimestampMixin, Base):
+    """Pre-defined credit bundles purchasable via Stripe Checkout.
+
+    Prices are defined in USD; Stripe Adaptive Pricing handles local
+    currency display at checkout automatically.
+    """
+
+    __tablename__ = "credit_packs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    amount_usd: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    stripe_price_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class UsageRecord(Base):

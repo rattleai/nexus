@@ -13,13 +13,14 @@ import json
 import time
 import uuid
 from collections.abc import AsyncGenerator, Callable, Coroutine
+from decimal import Decimal
 from typing import Any
 
 import structlog
 from starlette.requests import Request
 from starlette.responses import StreamingResponse
 
-from app.ai.cost import calculate_billed_tokens
+from app.ai.cost import calculate_billed_amount_usd
 from app.ai.metrics import AI_STREAM_CHUNKS_TOTAL
 
 logger = structlog.stdlib.get_logger()
@@ -47,8 +48,8 @@ async def sse_stream_response(
         start_time: time.monotonic() when the request started.
         request: Optional Starlette Request for disconnect detection.
         on_complete: Optional async callback(prompt_tokens, completion_tokens,
-                     total_tokens, billed_tokens, latency_ms) called after stream ends.
-                     Used for wallet deduction and usage logging.
+                     total_tokens, billed_amount_usd, cost_usd, latency_ms)
+                     called after stream ends. Used for wallet deduction and usage logging.
 
     Emits:
       - data: {"id": ..., "delta": "..."} for each content chunk
@@ -63,6 +64,7 @@ async def sse_stream_response(
         completion_tokens = 0
         finish_reason = None
         client_disconnected = False
+        cost_usd = 0.0
 
         try:
             async for chunk in litellm_stream:
@@ -99,8 +101,6 @@ async def sse_stream_response(
                     yield f"data: {json.dumps(chunk_data)}\n\n"
 
         except Exception as exc:
-            # Never send raw exception details to clients — they may contain
-            # internal URLs, API key fragments, or stack traces from providers.
             error_data = {"type": "error", "error": "An error occurred during streaming. Please retry."}
             yield f"data: {json.dumps(error_data)}\n\n"
             logger.error("sse_stream_error", model=model, request_id=request_id, error=str(exc))
@@ -117,7 +117,19 @@ async def sse_stream_response(
             completion_tokens = max(len(total_content) // 4, 1)
 
         total_tokens = prompt_tokens + completion_tokens
-        billed_tokens = calculate_billed_tokens(total_tokens, key_source)
+
+        # For streaming, estimate cost using LiteLLM's cost_per_token
+        try:
+            import litellm as _litellm
+
+            prompt_cost_per, completion_cost_per = _litellm.cost_per_token(
+                model=model, prompt_tokens=1, completion_tokens=1,
+            )
+            cost_usd = (prompt_tokens * prompt_cost_per) + (completion_tokens * completion_cost_per)
+        except Exception:
+            cost_usd = 0.0
+
+        billed_amount_usd = calculate_billed_amount_usd(cost_usd, key_source)
         latency_ms = int((time.monotonic() - start_time) * 1000)
 
         # Invoke the on_complete callback for wallet deduction and usage logging.
@@ -128,7 +140,8 @@ async def sse_stream_response(
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
                     total_tokens=total_tokens,
-                    billed_tokens=billed_tokens,
+                    billed_amount_usd=billed_amount_usd,
+                    cost_usd=cost_usd,
                     latency_ms=latency_ms,
                 )
             except Exception as cb_exc:
@@ -145,7 +158,8 @@ async def sse_stream_response(
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
                 "total_tokens": total_tokens,
-                "billed_tokens": billed_tokens,
+                "billed_amount_usd": float(billed_amount_usd),
+                "cost_usd": cost_usd,
                 "latency_ms": latency_ms,
             }
             yield f"data: {json.dumps(usage_data)}\n\n"

@@ -7,9 +7,9 @@ Alembic discovers models through this package via ``env.py``.
 from app.db.models.ai import (
     AIProvider,
     AIUsageLog,
+    DollarWallet,
     PromptTemplate,
     TenantAIProviderKey,
-    TokenWallet,
     WalletTransaction,
     WalletTransactionType,
 )
@@ -19,6 +19,7 @@ from app.db.models.auth import (
     RefreshToken,
 )
 from app.db.models.billing import (
+    CreditPack,
     Plan,
     PlanTier,
     Subscription,
@@ -89,13 +90,14 @@ __all__ = [
     "Subscription",
     "SubscriptionStatus",
     "UsageRecord",
+    "CreditPack",
     # Enterprise
     "SSOConfiguration",
     "SSOProvider",
     # AI
     "AIProvider",
     "TenantAIProviderKey",
-    "TokenWallet",
+    "DollarWallet",
     "WalletTransaction",
     "WalletTransactionType",
     "AIUsageLog",

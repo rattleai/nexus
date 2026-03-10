@@ -1,12 +1,13 @@
-"""Stripe integration for subscription billing.
+"""Stripe integration for subscription billing and credit pack purchases.
 
-Handles customer creation, subscription management, checkout sessions,
-and webhook processing with idempotency protection.
+Handles customer creation, subscription management, credit pack checkout,
+auto-refill setup, and webhook processing with idempotency protection.
 Requires STRIPE_SECRET_KEY to be configured.
 """
 
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import structlog
 from sqlalchemy import select
@@ -15,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.email import EmailTemplate, send_email
 from app.core.redis import redis_pool
-from app.db.models import Plan, Subscription, SubscriptionStatus, Tenant, User
+from app.db.models import CreditPack, Plan, Subscription, SubscriptionStatus, Tenant, User
 
 logger = structlog.stdlib.get_logger()
 
@@ -211,6 +212,145 @@ async def get_billing_portal_url(stripe_customer_id: str, return_url: str) -> st
     return session.url
 
 
+async def create_credit_pack_checkout(
+    tenant_id: uuid.UUID,
+    pack_id: uuid.UUID,
+    return_url: str,
+    db: AsyncSession,
+) -> str:
+    """Create a Stripe Checkout Session for purchasing a credit pack.
+
+    Returns the checkout session URL. Uses mode="payment" (one-time).
+    """
+    stripe = _get_stripe()
+
+    # Load credit pack
+    pack_result = await db.execute(
+        select(CreditPack).where(CreditPack.id == pack_id, CreditPack.is_active.is_(True))
+    )
+    pack = pack_result.scalar_one_or_none()
+    if not pack or not pack.stripe_price_id:
+        raise ValueError("Invalid credit pack or pack has no Stripe price ID")
+
+    # Load or create Stripe customer
+    sub_result = await db.execute(
+        select(Subscription).where(Subscription.tenant_id == tenant_id)
+    )
+    subscription = sub_result.scalar_one_or_none()
+    customer_id = subscription.stripe_customer_id if subscription else None
+
+    if not customer_id:
+        tenant_result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+        tenant = tenant_result.scalar_one_or_none()
+        if not tenant:
+            raise ValueError("Tenant not found")
+
+        from app.db.models import TenantMembership, UserRole
+
+        owner_result = await db.execute(
+            select(User).join(TenantMembership).where(
+                TenantMembership.tenant_id == tenant_id,
+                TenantMembership.role == UserRole.OWNER,
+            )
+        )
+        owner = owner_result.scalar_one_or_none()
+        email = owner.email if owner else f"{tenant.slug}@billing.local"
+        customer_id = await create_customer(tenant, email, db)
+
+    session = stripe.checkout.Session.create(
+        customer=customer_id,
+        mode="payment",
+        line_items=[{"price": pack.stripe_price_id, "quantity": 1}],
+        success_url=f"{return_url}?session_id={{CHECKOUT_SESSION_ID}}&status=success",
+        cancel_url=f"{return_url}?status=canceled",
+        metadata={
+            "tenant_id": str(tenant_id),
+            "type": "credit_pack",
+            "pack_id": str(pack_id),
+            "amount_usd": str(pack.amount_usd),
+        },
+    )
+
+    logger.info("credit_pack_checkout_created", tenant_id=str(tenant_id), pack_id=str(pack_id))
+    return session.url
+
+
+async def create_setup_intent(
+    tenant_id: uuid.UUID,
+    db: AsyncSession,
+) -> str:
+    """Create a Stripe SetupIntent for saving a card for auto-refill.
+
+    Returns the SetupIntent client secret.
+    """
+    stripe = _get_stripe()
+
+    # Get Stripe customer ID
+    sub_result = await db.execute(
+        select(Subscription).where(Subscription.tenant_id == tenant_id)
+    )
+    subscription = sub_result.scalar_one_or_none()
+    if not subscription or not subscription.stripe_customer_id:
+        raise ValueError("No billing account found. Please set up billing first.")
+
+    setup_intent = stripe.SetupIntent.create(
+        customer=subscription.stripe_customer_id,
+        payment_method_types=["card"],
+        metadata={"tenant_id": str(tenant_id), "type": "auto_refill_setup"},
+    )
+
+    logger.info("setup_intent_created", tenant_id=str(tenant_id))
+    return setup_intent.client_secret
+
+
+async def configure_auto_refill(
+    tenant_id: uuid.UUID,
+    payment_method_id: str,
+    threshold_usd: Decimal,
+    refill_amount_usd: Decimal,
+    db: AsyncSession,
+) -> None:
+    """Configure auto-refill settings on the tenant's wallet."""
+    from app.db.models.ai import DollarWallet
+
+    result = await db.execute(
+        select(DollarWallet).where(DollarWallet.tenant_id == tenant_id)
+    )
+    wallet = result.scalar_one_or_none()
+    if not wallet:
+        # Create wallet if it doesn't exist
+        from app.ai.wallet import wallet_service
+
+        wallet = await wallet_service._get_or_create_wallet(tenant_id, db)
+
+    wallet.auto_refill_enabled = True
+    wallet.auto_refill_threshold_usd = threshold_usd
+    wallet.auto_refill_amount_usd = refill_amount_usd
+    wallet.stripe_payment_method_id = payment_method_id
+
+    await db.commit()
+    logger.info(
+        "auto_refill_configured",
+        tenant_id=str(tenant_id),
+        threshold_usd=str(threshold_usd),
+        refill_amount_usd=str(refill_amount_usd),
+    )
+
+
+async def disable_auto_refill(tenant_id: uuid.UUID, db: AsyncSession) -> None:
+    """Disable auto-refill for the tenant's wallet."""
+    from app.db.models.ai import DollarWallet
+
+    result = await db.execute(
+        select(DollarWallet).where(DollarWallet.tenant_id == tenant_id)
+    )
+    wallet = result.scalar_one_or_none()
+    if wallet:
+        wallet.auto_refill_enabled = False
+        await db.commit()
+    logger.info("auto_refill_disabled", tenant_id=str(tenant_id))
+
+
 async def handle_webhook_event(
     event_id: str, event_type: str, event_data: dict, db: AsyncSession
 ) -> None:
@@ -226,6 +366,7 @@ async def handle_webhook_event(
         "invoice.paid": _handle_invoice_paid,
         "invoice.payment_failed": _handle_payment_failed,
         "checkout.session.completed": _handle_checkout_completed,
+        "payment_intent.succeeded": _handle_payment_intent_succeeded,
     }
 
     handler = handlers.get(event_type)
@@ -328,7 +469,7 @@ async def _handle_invoice_paid(data: dict, db: AsyncSession) -> None:
     """Handle successful payment — send receipt email."""
     invoice = data["object"]
     customer_id = invoice.get("customer")
-    amount_paid = invoice.get("amount_paid", 0)
+    amount_paid = invoice.get("amount_paid") or 0
 
     result = await db.execute(
         select(Subscription).where(Subscription.stripe_customer_id == customer_id)
@@ -336,6 +477,9 @@ async def _handle_invoice_paid(data: dict, db: AsyncSession) -> None:
     subscription = result.scalar_one_or_none()
     if not subscription:
         logger.info("invoice_paid_no_subscription", invoice_id=invoice["id"])
+        return
+
+    if not _validate_webhook_tenant(data, subscription):
         return
 
     # Load plan name
@@ -366,6 +510,9 @@ async def _handle_payment_failed(data: dict, db: AsyncSession) -> None:
     if not subscription:
         return
 
+    if not _validate_webhook_tenant(data, subscription):
+        return
+
     # Update status to past_due
     subscription.status = SubscriptionStatus.PAST_DUE
     await db.commit()
@@ -385,10 +532,64 @@ async def _handle_payment_failed(data: dict, db: AsyncSession) -> None:
 
 
 async def _handle_checkout_completed(data: dict, db: AsyncSession) -> None:
-    """Handle checkout session completion — create subscription record."""
+    """Handle checkout session completion — subscription or credit pack purchase."""
     session = data["object"]
-    tenant_id_str = session.get("metadata", {}).get("tenant_id")
-    plan_id_str = session.get("metadata", {}).get("plan_id")
+    metadata = session.get("metadata", {})
+    checkout_type = metadata.get("type")
+
+    if checkout_type == "credit_pack":
+        await _handle_credit_pack_checkout(session, metadata, db)
+    else:
+        await _handle_subscription_checkout(session, metadata, db)
+
+
+async def _handle_credit_pack_checkout(
+    session: dict, metadata: dict, db: AsyncSession
+) -> None:
+    """Credit the tenant's wallet after a credit pack purchase."""
+    from app.ai.wallet import wallet_service
+
+    tenant_id_str = metadata.get("tenant_id")
+    amount_usd_str = metadata.get("amount_usd")
+    pack_id_str = metadata.get("pack_id")
+
+    if not tenant_id_str or not amount_usd_str:
+        logger.warning("credit_pack_checkout_missing_metadata", session_id=session["id"])
+        return
+
+    try:
+        tenant_id = uuid.UUID(tenant_id_str)
+        amount_usd = Decimal(amount_usd_str)
+    except (ValueError, ArithmeticError):
+        logger.error("credit_pack_checkout_invalid_metadata", session_id=session["id"])
+        return
+
+    payment_intent_id = session.get("payment_intent")
+    reference_id = f"credit_pack:{session['id']}"
+
+    await wallet_service.topup(
+        tenant_id,
+        amount_usd,
+        reference_id=reference_id,
+        stripe_payment_intent_id=payment_intent_id,
+        description=f"Credit pack purchase: ${amount_usd}",
+        db=db,
+    )
+
+    logger.info(
+        "credit_pack_checkout_completed",
+        tenant_id=tenant_id_str,
+        amount_usd=amount_usd_str,
+        pack_id=pack_id_str,
+    )
+
+
+async def _handle_subscription_checkout(
+    session: dict, metadata: dict, db: AsyncSession
+) -> None:
+    """Create or update subscription record after subscription checkout."""
+    tenant_id_str = metadata.get("tenant_id")
+    plan_id_str = metadata.get("plan_id")
     stripe_sub_id = session.get("subscription")
     customer_id = session.get("customer")
 
@@ -475,3 +676,51 @@ async def _notify_tenant_owner(
             await send_email(to=owner.email, template=template, context=ctx)
     except Exception:
         logger.error("notify_tenant_owner_failed", tenant_id=str(tenant_id), exc_info=True)
+
+
+async def _handle_payment_intent_succeeded(data: dict, db: AsyncSession) -> None:
+    """Handle successful PaymentIntent — credit wallet for auto-refill payments."""
+    payment_intent = data["object"]
+    metadata = payment_intent.get("metadata", {})
+
+    if metadata.get("type") != "auto_refill":
+        # Not an auto-refill payment, ignore
+        return
+
+    from app.ai.wallet import wallet_service
+
+    tenant_id_str = metadata.get("tenant_id")
+    refill_amount_str = metadata.get("refill_amount_usd")
+
+    if not tenant_id_str or not refill_amount_str:
+        logger.warning(
+            "auto_refill_pi_missing_metadata",
+            payment_intent_id=payment_intent["id"],
+        )
+        return
+
+    try:
+        tenant_id = uuid.UUID(tenant_id_str)
+        refill_amount = Decimal(refill_amount_str)
+    except (ValueError, ArithmeticError):
+        logger.error(
+            "auto_refill_pi_invalid_metadata",
+            payment_intent_id=payment_intent["id"],
+        )
+        return
+
+    await wallet_service.topup(
+        tenant_id,
+        refill_amount,
+        reference_id=f"auto_refill:{payment_intent['id']}",
+        stripe_payment_intent_id=payment_intent["id"],
+        description=f"Auto-refill: ${refill_amount}",
+        db=db,
+    )
+
+    logger.info(
+        "auto_refill_payment_succeeded",
+        tenant_id=tenant_id_str,
+        amount_usd=refill_amount_str,
+        payment_intent_id=payment_intent["id"],
+    )

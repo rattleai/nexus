@@ -14,9 +14,9 @@ AI_TOKENS_TOTAL = Counter(
     ["provider", "model", "token_type"],  # token_type: prompt, completion
 )
 
-AI_BILLED_TOKENS_TOTAL = Counter(
-    "saas_ai_billed_tokens_total",
-    "Total billed tokens (with margin applied)",
+AI_BILLED_USD_TOTAL = Counter(
+    "saas_ai_billed_usd_total",
+    "Total billed USD (with margin applied)",
     ["provider", "model", "key_source"],
 )
 
@@ -34,8 +34,8 @@ AI_COST_USD_TOTAL = Counter(
 )
 
 AI_WALLET_BALANCE = Gauge(
-    "saas_ai_wallet_balance_tokens",
-    "Current wallet balance in tokens",
+    "saas_ai_wallet_balance_usd",
+    "Current wallet balance in USD",
     ["tenant_id"],
 )
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -43,8 +44,8 @@ class AICompletionResponse(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
-    billed_tokens: int
     cost_usd: float
+    billed_amount_usd: float
     latency_ms: int
     key_source: str
     finish_reason: str | None = None
@@ -63,7 +64,7 @@ class AIStreamUsage(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
-    billed_tokens: int
+    billed_amount_usd: float
     cost_usd: float
     latency_ms: int
 
@@ -118,22 +119,19 @@ class ProviderKeyResponse(BaseModel):
 
 
 class WalletBalanceResponse(BaseModel):
-    balance_tokens: int
-    lifetime_purchased: int
-    lifetime_consumed: int
-
-
-class WalletTopupRequest(BaseModel):
-    amount_tokens: int = Field(..., ge=1_000, le=100_000_000, description="Tokens to add (minimum 1,000)")
-    payment_method: str = Field(default="stripe")
-    reference_id: str | None = Field(default=None, max_length=255, description="External payment reference")
+    balance_usd: Decimal
+    lifetime_deposited_usd: Decimal
+    lifetime_consumed_usd: Decimal
+    currency: str = "USD"
+    auto_refill_enabled: bool = False
 
 
 class WalletTransactionResponse(BaseModel):
     id: uuid.UUID
     type: str
-    amount_tokens: int
-    balance_after: int
+    amount_usd: Decimal
+    balance_after_usd: Decimal
+    provider_cost_usd: Decimal | None
     description: str | None
     reference_id: str | None
     created_at: datetime

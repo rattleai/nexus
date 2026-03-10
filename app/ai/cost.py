@@ -1,12 +1,12 @@
-"""Token counting and cost calculation with tiered margin.
+"""Cost calculation with USD-based margin.
 
-Uses LiteLLM's built-in cost tracking for provider costs, then applies
+Uses LiteLLM's built-in cost tracking for provider costs (USD), then applies
 platform margin based on key source (BYOK vs platform-managed).
 """
 
 from __future__ import annotations
 
-import math
+from decimal import Decimal, ROUND_UP
 
 import structlog
 
@@ -15,30 +15,46 @@ from app.config import settings
 logger = structlog.stdlib.get_logger()
 
 
-def calculate_billed_tokens(total_tokens: int, key_source: str) -> int:
-    """Apply platform margin to raw token count based on key source.
+def calculate_billed_amount_usd(provider_cost_usd: float, key_source: str) -> Decimal:
+    """Apply platform margin to provider cost to get billed amount in USD.
 
     Args:
-        total_tokens: Raw tokens consumed by the AI call.
+        provider_cost_usd: Raw cost from LiteLLM response._hidden_params["response_cost"].
         key_source: "byok" or "platform" — determines margin multiplier.
 
     Returns:
-        Billed token count (always rounded up to prevent rounding loss).
+        Billed amount in USD (Decimal, 6 decimal places, rounded up).
     """
     if key_source == "byok":
-        multiplier = settings.AI_MARGIN_BYOK_KEYS
+        multiplier = Decimal(str(settings.AI_MARGIN_BYOK_KEYS))
     else:
-        multiplier = settings.AI_MARGIN_PLATFORM_KEYS
+        multiplier = Decimal(str(settings.AI_MARGIN_PLATFORM_KEYS))
 
-    return math.ceil(total_tokens * multiplier)
+    billed = Decimal(str(provider_cost_usd)) * multiplier
+    return billed.quantize(Decimal("0.000001"), rounding=ROUND_UP)
 
 
-def estimate_max_tokens(messages: list[dict], max_tokens: int | None, model_max_output: int) -> int:
-    """Estimate the maximum tokens a request might consume (for wallet reservation).
+def estimate_max_cost_usd(
+    model: str,
+    messages: list[dict],
+    max_tokens: int | None,
+    model_max_output: int,
+    key_source: str = "platform",
+) -> Decimal:
+    """Estimate the maximum USD cost a request might incur (for wallet pre-check).
 
-    Uses a rough heuristic: ~4 chars per token for input, plus requested max_tokens for output.
-    This is intentionally conservative to avoid over-reserving.
+    Uses LiteLLM's cost_per_token() for the model to estimate worst-case cost,
+    then applies margin. This is intentionally conservative.
     """
+    try:
+        import litellm
+
+        prompt_cost, completion_cost = litellm.cost_per_token(model=model, prompt_tokens=1, completion_tokens=1)
+    except Exception:
+        # Fallback: use a conservative default ($0.01 per 1K tokens)
+        prompt_cost = 0.00001
+        completion_cost = 0.00003
+
     # Estimate input tokens (rough: 1 token ≈ 4 chars)
     input_chars = sum(len(m.get("content", "")) for m in messages)
     estimated_input = max(input_chars // 4, 1)
@@ -46,7 +62,9 @@ def estimate_max_tokens(messages: list[dict], max_tokens: int | None, model_max_
     # Output tokens: use requested max_tokens or a conservative default
     estimated_output = max_tokens or min(model_max_output, 4096)
 
-    return estimated_input + estimated_output
+    estimated_cost = (estimated_input * prompt_cost) + (estimated_output * completion_cost)
+
+    return calculate_billed_amount_usd(estimated_cost, key_source)
 
 
 def get_response_cost(response) -> float:

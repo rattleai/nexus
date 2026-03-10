@@ -99,14 +99,14 @@ async def _async_process_completion(tenant_id: str, request_data: dict, job_id: 
                 db=db,
             )
 
-            # Deduct from wallet — fail the job if balance is insufficient.
-            # The tokens were consumed at the provider, but allowing free usage
-            # incentivizes abuse. Mark the job as failed so the tenant sees they
-            # need to top up.
+            # Deduct from wallet in USD
+            from decimal import Decimal
+
             try:
-                await wallet_service.deduct_tokens(
+                await wallet_service.deduct(
                     tid,
-                    completion.billed_tokens,
+                    completion.billed_amount_usd,
+                    provider_cost_usd=Decimal(str(completion.cost_usd)),
                     description=f"AI completion: {model}",
                     reference_id=job_id,
                     db=db,
@@ -115,7 +115,7 @@ async def _async_process_completion(tenant_id: str, request_data: dict, job_id: 
                 logger.error(
                     "ai_task_wallet_insufficient",
                     job_id=job_id,
-                    billed_tokens=completion.billed_tokens,
+                    billed_amount_usd=str(completion.billed_amount_usd),
                     error=str(wallet_exc),
                 )
                 job.status = JobStatus.FAILED
@@ -133,7 +133,7 @@ async def _async_process_completion(tenant_id: str, request_data: dict, job_id: 
                 completion_tokens=completion.completion_tokens,
                 total_tokens=completion.total_tokens,
                 cost_usd=completion.cost_usd,
-                billed_tokens=completion.billed_tokens,
+                billed_amount_usd=completion.billed_amount_usd,
                 latency_ms=completion.latency_ms,
                 status="success",
                 key_source=key_source,
@@ -151,8 +151,8 @@ async def _async_process_completion(tenant_id: str, request_data: dict, job_id: 
                 "prompt_tokens": completion.prompt_tokens,
                 "completion_tokens": completion.completion_tokens,
                 "total_tokens": completion.total_tokens,
-                "billed_tokens": completion.billed_tokens,
                 "cost_usd": completion.cost_usd,
+                "billed_amount_usd": float(completion.billed_amount_usd),
                 "latency_ms": completion.latency_ms,
                 "key_source": completion.key_source,
                 "finish_reason": completion.finish_reason,
