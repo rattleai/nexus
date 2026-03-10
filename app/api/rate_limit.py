@@ -109,6 +109,12 @@ class RateLimiter:
         key = f"{self.key_prefix}:{client_ip}:{normalized_path}"
         request_count = await _check_rate(key, self.max_requests, self.window)
 
+        # Store rate limit info on request state for response headers (P1-12)
+        remaining = max(0, self.max_requests - request_count)
+        request.state.rate_limit_limit = self.max_requests
+        request.state.rate_limit_remaining = remaining
+        request.state.rate_limit_reset = int(time.time()) + self.window
+
         if request_count > self.max_requests:
             logger.warning(
                 "rate_limit_exceeded",
@@ -120,7 +126,12 @@ class RateLimiter:
             raise HTTPException(
                 status_code=429,
                 detail="Too many requests",
-                headers={"Retry-After": str(self.window)},
+                headers={
+                    "Retry-After": str(self.window),
+                    "X-RateLimit-Limit": str(self.max_requests),
+                    "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Reset": str(int(time.time()) + self.window),
+                },
             )
 
 

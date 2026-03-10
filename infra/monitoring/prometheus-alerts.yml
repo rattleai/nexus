@@ -1,0 +1,240 @@
+# Prometheus Alerting Rules for SaaS Platform
+# SLO Targets:
+#   - Availability: 99.9% (43.8 min/month downtime budget)
+#   - API p99 latency: < 500ms
+#   - Error rate: < 0.1%
+#   - Database connection pool: < 80% utilization
+
+groups:
+  # ── Availability & Error Rate SLOs ──────────────────────
+  - name: slo_availability
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_server_request_duration_seconds_count{http_status_code=~"5.."}[5m]))
+            /
+            sum(rate(http_server_request_duration_seconds_count[5m]))
+          ) > 0.001
+        for: 5m
+        labels:
+          severity: critical
+          slo: error_rate
+        annotations:
+          summary: "Error rate exceeds 0.1% SLO"
+          description: "5xx error rate is {{ $value | humanizePercentage }} over the last 5 minutes (SLO: < 0.1%)."
+
+      - alert: HighErrorRateWarning
+        expr: |
+          (
+            sum(rate(http_server_request_duration_seconds_count{http_status_code=~"5.."}[5m]))
+            /
+            sum(rate(http_server_request_duration_seconds_count[5m]))
+          ) > 0.0005
+        for: 10m
+        labels:
+          severity: warning
+          slo: error_rate
+        annotations:
+          summary: "Error rate approaching SLO threshold"
+          description: "5xx error rate is {{ $value | humanizePercentage }} (warning at 0.05%, SLO: 0.1%)."
+
+      - alert: HealthCheckFailing
+        expr: up{job="saas-platform"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          slo: availability
+        annotations:
+          summary: "Service health check is failing"
+          description: "{{ $labels.instance }} has been unreachable for over 1 minute."
+
+      - alert: ReadinessCheckDegraded
+        expr: |
+          probe_success{job="saas-platform-readiness"} == 0
+        for: 3m
+        labels:
+          severity: warning
+          slo: availability
+        annotations:
+          summary: "Readiness check is failing — dependencies may be down"
+          description: "The /api/v1/health/ready endpoint is reporting degraded for 3+ minutes."
+
+  # ── Latency SLOs ──────────────────────────────────────────
+  - name: slo_latency
+    rules:
+      - alert: HighP99Latency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_server_request_duration_seconds_bucket{http_route!~"/api/v1/health/.*"}[5m])) by (le)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          slo: latency
+        annotations:
+          summary: "API p99 latency exceeds 500ms SLO"
+          description: "p99 latency is {{ $value | humanizeDuration }} (SLO: < 500ms)."
+
+      - alert: HighP95Latency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_server_request_duration_seconds_bucket{http_route!~"/api/v1/health/.*"}[5m])) by (le)
+          ) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+          slo: latency
+        annotations:
+          summary: "API p95 latency is elevated"
+          description: "p95 latency is {{ $value | humanizeDuration }} (warning at 300ms)."
+
+  # ── Database ─────────────────────────────────────────────
+  - name: database
+    rules:
+      - alert: DatabaseConnectionPoolExhausted
+        expr: |
+          db_pool_connections_checkedout / on() db_pool_size > 0.8
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database connection pool > 80% utilized"
+          description: "{{ $value | humanizePercentage }} of DB pool connections in use. Risk of pool exhaustion."
+
+      - alert: DatabaseConnectionPoolHigh
+        expr: |
+          db_pool_connections_checkedout / on() db_pool_size > 0.6
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database connection pool > 60% utilized"
+          description: "{{ $value | humanizePercentage }} of DB pool connections in use."
+
+      - alert: DatabaseConnectionInvalidations
+        expr: |
+          rate(db_pool_connections_invalidated_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database connections being invalidated"
+          description: "{{ $value }} connections/sec are being invalidated — possible network issues."
+
+  # ── Redis ───────────────────────────────────────────────
+  - name: redis
+    rules:
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage > 90%"
+          description: "Redis is using {{ $value | humanizePercentage }} of max memory."
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is unreachable"
+          description: "Redis has been down for over 1 minute. Rate limiting and caching are affected."
+
+  # ── Celery Workers ──────────────────────────────────────
+  - name: celery
+    rules:
+      - alert: CeleryNoActiveWorkers
+        expr: celery_workers_active == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No active Celery workers"
+          description: "All Celery workers are down. Background jobs will not be processed."
+
+      - alert: CeleryTaskQueueBacklog
+        expr: celery_task_queue_length > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Celery task queue backlog growing"
+          description: "{{ $value }} tasks queued — workers may be overloaded."
+
+  # ── Rate Limiting ─────────────────────────────────────
+  - name: rate_limiting
+    rules:
+      - alert: HighRateLimitRejections
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{http_status_code="429"}[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate of 429 responses"
+          description: "{{ $value }} rate-limited requests/sec — possible abuse or misconfigured limits."
+
+  # ── AI Gateway ─────────────────────────────────────────
+  - name: ai_gateway
+    rules:
+      - alert: AIProviderErrorRate
+        expr: |
+          (
+            sum(rate(ai_completions_total{status="error"}[5m]))
+            /
+            sum(rate(ai_completions_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI provider error rate > 5%"
+          description: "{{ $value | humanizePercentage }} of AI completion requests are failing."
+
+      - alert: AIProviderLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(ai_completion_duration_seconds_bucket[5m])) by (le, provider)
+          ) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI provider p95 latency > 30s"
+          description: "Provider {{ $labels.provider }} p95 latency is {{ $value | humanizeDuration }}."
+
+  # ── Disk & Container Resources ───────────────────────────
+  - name: resources
+    rules:
+      - alert: ContainerMemoryHigh
+        expr: |
+          container_memory_usage_bytes / container_spec_memory_limit_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container memory usage > 85%"
+          description: "{{ $labels.container }} is using {{ $value | humanizePercentage }} of its memory limit."
+
+      - alert: ContainerRestarts
+        expr: |
+          increase(kube_pod_container_status_restarts_total[1h]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container restarting frequently"
+          description: "{{ $labels.container }} has restarted {{ $value }} times in the last hour."
+
+      - alert: PersistentVolumeSpaceLow
+        expr: |
+          kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 0.15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Persistent volume has < 15% space remaining"
+          description: "Volume {{ $labels.persistentvolumeclaim }} has {{ $value | humanizePercentage }} free."

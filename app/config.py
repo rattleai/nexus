@@ -53,7 +53,9 @@ class Settings(BaseSettings):
     AUTH_ENABLED: bool = False
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
+    JWT_PRIVATE_KEY: str = ""  # PEM-encoded RSA private key for RS256 JWT signing
+    JWT_PUBLIC_KEY: str = ""   # PEM-encoded RSA public key for RS256 JWT verification
     OAUTH_GOOGLE_CLIENT_ID: str = ""
     OAUTH_GOOGLE_CLIENT_SECRET: str = ""
     OAUTH_GITHUB_CLIENT_ID: str = ""
@@ -71,6 +73,9 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+
+    # Database SSL mode for production connections
+    DATABASE_SSL_MODE: str = ""  # Set to "require" in production for encrypted DB connections
 
     # Database sync URL (for Celery workers — avoids fragile string replacement)
     DATABASE_SYNC_URL: str = ""
@@ -228,6 +233,36 @@ def validate_settings() -> None:
                 "ENCRYPTION_KEY must be set in production (DEBUG=false). "
                 "Use a unique high-entropy value separate from SECRET_KEY."
             )
+
+    # JWT asymmetric key validation
+    if settings.JWT_ALGORITHM in ("RS256", "ES256"):
+        if not settings.JWT_PRIVATE_KEY or not settings.JWT_PUBLIC_KEY:
+            if settings.DEBUG:
+                warnings.warn(
+                    f"JWT_ALGORITHM is {settings.JWT_ALGORITHM} but JWT_PRIVATE_KEY/JWT_PUBLIC_KEY are not set. "
+                    "Falling back to HS256 with SECRET_KEY. Set RSA keys for production.",
+                    stacklevel=2,
+                )
+            else:
+                raise RuntimeError(
+                    f"JWT_ALGORITHM is {settings.JWT_ALGORITHM} — JWT_PRIVATE_KEY and JWT_PUBLIC_KEY must be set "
+                    "in production. Generate with: openssl genrsa -out private.pem 2048 && "
+                    "openssl rsa -in private.pem -pubout -out public.pem"
+                )
+
+    # Database SSL in production
+    if not settings.DEBUG and not settings.DATABASE_SSL_MODE:
+        warnings.warn(
+            "DATABASE_SSL_MODE is not set. Set to 'verify-full' (recommended) or 'require' "
+            "in production for encrypted DB connections.",
+            stacklevel=2,
+        )
+    elif not settings.DEBUG and settings.DATABASE_SSL_MODE == "require":
+        warnings.warn(
+            "DATABASE_SSL_MODE='require' encrypts traffic but does NOT verify the server certificate. "
+            "Consider 'verify-full' for MITM protection.",
+            stacklevel=2,
+        )
 
     if not settings.storage_configured:
         warnings.warn(

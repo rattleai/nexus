@@ -85,7 +85,7 @@ async def get_current_user_from_token(
 
     Raises 401 if the token is missing, expired, or invalid.
     """
-    from app.core.security import decode_access_token
+    from app.core.security import decode_access_token, is_token_revoked, is_user_token_revoked
 
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
@@ -99,9 +99,19 @@ async def get_current_user_from_token(
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token") from None
 
+    # Check token revocation blacklist (P0-7: JWT revocation)
+    jti = payload.get("jti")
+    if jti and await is_token_revoked(jti):
+        raise HTTPException(status_code=401, detail="Token has been revoked")
+
     user_id_str = payload.get("sub")
     if not user_id_str:
         raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    # Check if all user tokens were bulk-revoked (e.g. after password reset)
+    iat = payload.get("iat")
+    if user_id_str and iat and await is_user_token_revoked(user_id_str, int(iat)):
+        raise HTTPException(status_code=401, detail="Token has been revoked")
 
     try:
         user_id = uuid.UUID(user_id_str)
