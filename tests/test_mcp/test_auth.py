@@ -82,12 +82,16 @@ def test_check_scopes_granted():
 
 
 def test_check_scopes_missing():
+    from mcp.shared.exceptions import McpError
+
     api_key = MagicMock(scopes=["ai:read"])
-    with pytest.raises(MCPAuthError, match="Insufficient API key scopes"):
+    with pytest.raises(McpError, match="Insufficient API key scopes"):
         check_scopes(api_key, "ai:write")
 
 
 def test_check_scopes_empty():
+    from mcp.shared.exceptions import McpError
+
     api_key = MagicMock(scopes=[])
-    with pytest.raises(MCPAuthError, match="Insufficient API key scopes"):
+    with pytest.raises(McpError, match="Insufficient API key scopes"):
         check_scopes(api_key, "ai:read")

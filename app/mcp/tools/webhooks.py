@@ -56,7 +56,13 @@ async def webhook_create(
     """
     from app.api.v1.webhooks import VALID_WEBHOOK_EVENTS
 
-    # Validate URL
+    # Validate URL — full SSRF protection (DNS resolution, private IP checks)
+    from app.core.url_validation import validate_webhook_url_async
+
+    ssrf_error = await validate_webhook_url_async(url)
+    if ssrf_error:
+        raise tool_error(ssrf_error, hint="Provide a publicly reachable HTTPS URL")
+
     if not url.startswith("https://"):
         raise tool_error(
             "Webhook URL must use HTTPS.",
@@ -94,6 +100,7 @@ async def webhook_create(
         "url": endpoint.url,
         "events": endpoint.events,
         "signing_secret": signing_secret,
+        "warning": "Store this secret securely. It will not be shown again.",
         "active": True,
     }
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mcp.shared.exceptions import McpError
+from mcp.types import ErrorData
 
 # Standard JSON-RPC error codes
 INVALID_PARAMS = -32602
@@ -17,12 +18,12 @@ CONFLICT = -32005
 PROVIDER_ERROR = -32006
 
 
-def tool_error(message: str, *, hint: str | None = None) -> McpError:
+def tool_error(message: str, *, hint: str | None = None, code: int = INVALID_PARAMS) -> McpError:
     """Create an McpError with an optional hint for agents."""
     detail = message
     if hint:
         detail = f"{message} | Hint: {hint}"
-    return McpError(detail)
+    return McpError(ErrorData(code=code, message=detail))
 
 
 def auth_error(detail: str = "Authentication failed") -> McpError:

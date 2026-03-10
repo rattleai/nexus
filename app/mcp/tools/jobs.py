@@ -87,7 +87,7 @@ async def job_list(
         except ValueError as exc:
             raise tool_error(
                 f"Invalid status: {status}",
-                hint="Valid statuses: pending, processing, completed, failed",
+                hint="Valid statuses: pending, processing, completed, failed, cancelled",
             ) from exc
         query = query.where(Job.status == status_enum)
 
@@ -140,28 +140,35 @@ async def job_cancel(job_id: str, *, tenant: Any, db: AsyncSession) -> dict:
     """Cancel a pending or processing job.
 
     Only jobs that haven't completed can be cancelled.
+    Uses row-level locking and optimistic version check.
     """
+    from datetime import UTC, datetime
+
     try:
         uid = uuid.UUID(job_id)
     except ValueError as exc:
         raise tool_error("Invalid job ID format") from exc
 
     result = await db.execute(
-        select(Job).where(Job.id == uid, Job.tenant_id == tenant.id)
+        select(Job)
+        .where(Job.id == uid, Job.tenant_id == tenant.id)
+        .with_for_update()
     )
     job = result.scalar_one_or_none()
 
     if not job:
         raise not_found_error("Job")
 
-    if job.status in (JobStatus.COMPLETED, JobStatus.FAILED):
+    if job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
         raise tool_error(
             f"Cannot cancel job with status '{job.status.value}'",
             hint="Only pending or processing jobs can be cancelled.",
         )
 
-    job.status = JobStatus.FAILED
+    job.status = JobStatus.CANCELLED
     job.error = "Cancelled via MCP"
+    job.completed_at = datetime.now(UTC)
+    job.version += 1
     await db.commit()
 
     return {"id": str(job.id), "status": "cancelled"}

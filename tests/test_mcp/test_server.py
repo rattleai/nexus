@@ -42,7 +42,12 @@ def test_mcp_server_has_tools():
 
     # Access registered tools from the FastMCP instance
     tool_manager = mcp._tool_manager
-    registered_names = set(tool_manager.tools.keys()) if hasattr(tool_manager, 'tools') else set()
+    if hasattr(tool_manager, 'tools'):
+        registered_names = set(tool_manager.tools.keys())
+    elif hasattr(tool_manager, '_tools'):
+        registered_names = set(tool_manager._tools.keys())
+    else:
+        registered_names = set()
 
     for name in expected_tools:
         assert name in registered_names, f"Tool '{name}' not registered"

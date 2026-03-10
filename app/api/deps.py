@@ -208,16 +208,19 @@ async def get_tenant_from_client_credentials(
     Validates the token was issued by the Client Credentials flow,
     resolves the tenant, and sets RLS context.
     """
+    from app.core.security import _get_effective_algorithm, _get_jwt_verification_key, is_token_revoked
+
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
 
     token = auth_header[7:]
+    algorithm = _get_effective_algorithm()
     try:
         payload = jwt.decode(
             token,
-            settings.SECRET_KEY,
-            algorithms=["HS256"],
+            _get_jwt_verification_key(),
+            algorithms=[algorithm],
             audience="cadprice-api",
             issuer="cadprice",
         )
@@ -228,6 +231,11 @@ async def get_tenant_from_client_credentials(
 
     if payload.get("type") != "client_credentials":
         raise HTTPException(status_code=401, detail="Invalid token type")
+
+    # Check token revocation blacklist
+    jti = payload.get("jti")
+    if jti and await is_token_revoked(jti):
+        raise HTTPException(status_code=401, detail="Token has been revoked")
 
     tenant_id_str = payload.get("tenant_id")
     if not tenant_id_str:
@@ -243,6 +251,9 @@ async def get_tenant_from_client_credentials(
 
     if not tenant:
         raise HTTPException(status_code=401, detail="Tenant not found or inactive")
+
+    # Propagate client scopes for downstream RequireScopes checks
+    request.state.client_scopes = payload.get("scopes", [])
 
     await set_tenant_context(db, str(tenant.id))
     return tenant

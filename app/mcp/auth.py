@@ -55,9 +55,14 @@ async def authenticate_api_key(
 def check_scopes(api_key: ApiKey, *required: str) -> None:
     """Verify the API key has all required scopes.
 
-    Raises MCPAuthError if scopes are missing.
+    Raises McpError (via tool_error) so the error message is preserved in MCP responses.
     """
+    from app.mcp.errors import tool_error
+
     granted = set(api_key.scopes) if api_key.scopes else set()
     missing = set(required) - granted
     if missing:
-        raise MCPAuthError(f"Insufficient API key scopes: missing {', '.join(sorted(missing))}")
+        raise tool_error(
+            f"Insufficient API key scopes: missing {', '.join(sorted(missing))}",
+            hint="Update your API key scopes to include the required permissions.",
+        )

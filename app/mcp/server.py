@@ -20,6 +20,12 @@ from app.mcp.errors import auth_error
 logger = structlog.stdlib.get_logger()
 
 
+def _log_tool_call(tool: str, tenant_id: str, **extra: object) -> None:
+    """Log an MCP tool call if logging is enabled."""
+    if settings.MCP_LOG_TOOL_CALLS:
+        logger.info("mcp_tool_call", tool=tool, tenant_id=tenant_id, **extra)
+
+
 def create_mcp_server() -> FastMCP:
     """Create and configure the MCP server with all tools and resources."""
     mcp = FastMCP(
@@ -49,10 +55,27 @@ def create_mcp_server() -> FastMCP:
         db = async_session_factory()
         try:
             api_key, tenant = await authenticate_api_key(raw_key, db)
+
+            # Per-tenant MCP rate limiting
+            from app.api.rate_limit import _check_rate
+            from app.mcp.errors import tool_error as _tool_error
+
+            tenant_id_str = str(tenant.id)
+            key = f"rl:mcp:{tenant_id_str}"
+            count = await _check_rate(key, settings.MCP_RATE_LIMIT_REQUESTS, 60)
+            if count > settings.MCP_RATE_LIMIT_REQUESTS:
+                raise _tool_error(
+                    "Rate limit exceeded",
+                    hint=f"MCP limit is {settings.MCP_RATE_LIMIT_REQUESTS} requests/min. Retry after a moment.",
+                )
+
             return api_key, tenant, db
         except MCPAuthError as exc:
             await db.close()
             raise auth_error(exc.detail) from exc
+        except Exception:
+            await db.close()
+            raise
 
     # ── AI Tools ─────────────────────────────────────────────
 
@@ -85,8 +108,7 @@ def create_mcp_server() -> FastMCP:
                 tenant=tenant,
                 db=db,
             )
-            if settings.MCP_LOG_TOOL_CALLS:
-                logger.info("mcp_tool_call", tool="ai_complete", tenant_id=str(tenant.id), model=model)
+            _log_tool_call("ai_complete", str(tenant.id), model=model)
             return json.dumps(result)
         finally:
             await db.close()
@@ -104,6 +126,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "ai:read")
             result = await _ai_list_models(tenant=tenant, db=db)
+            _log_tool_call("ai_list_models", str(tenant.id))
             return json.dumps(result)
         finally:
             await db.close()
@@ -121,6 +144,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "ai:read")
             result = await _ai_get_usage(days=days, tenant=tenant, db=db)
+            _log_tool_call("ai_get_usage", str(tenant.id), days=days)
             return json.dumps(result)
         finally:
             await db.close()
@@ -140,8 +164,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "jobs:write")
             result = await _job_create(job_type=job_type, payload=payload, tenant=tenant, db=db)
-            if settings.MCP_LOG_TOOL_CALLS:
-                logger.info("mcp_tool_call", tool="job_create", tenant_id=str(tenant.id))
+            _log_tool_call("job_create", str(tenant.id))
             return json.dumps(result)
         finally:
             await db.close()
@@ -159,6 +182,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "jobs:read")
             result = await _job_list(status=status, limit=limit, tenant=tenant, db=db)
+            _log_tool_call("job_list", str(tenant.id))
             return json.dumps(result)
         finally:
             await db.close()
@@ -175,6 +199,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "jobs:read")
             result = await _job_get(job_id=job_id, tenant=tenant, db=db)
+            _log_tool_call("job_get", str(tenant.id), job_id=job_id)
             return json.dumps(result)
         finally:
             await db.close()
@@ -191,8 +216,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "jobs:write")
             result = await _job_cancel(job_id=job_id, tenant=tenant, db=db)
-            if settings.MCP_LOG_TOOL_CALLS:
-                logger.info("mcp_tool_call", tool="job_cancel", tenant_id=str(tenant.id), job_id=job_id)
+            _log_tool_call("job_cancel", str(tenant.id), job_id=job_id)
             return json.dumps(result)
         finally:
             await db.close()
@@ -212,6 +236,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "ai:read")
             result = await _get_balance(tenant=tenant, db=db)
+            _log_tool_call("billing_get_wallet_balance", str(tenant.id))
             return json.dumps(result)
         finally:
             await db.close()
@@ -225,6 +250,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "billing:read")
             result = await _list_plans(db=db)
+            _log_tool_call("billing_list_plans", str(tenant.id))
             return json.dumps(result)
         finally:
             await db.close()
@@ -238,6 +264,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "billing:read")
             result = await _get_sub(tenant=tenant, db=db)
+            _log_tool_call("billing_get_subscription", str(tenant.id))
             return json.dumps(result)
         finally:
             await db.close()
@@ -268,8 +295,7 @@ def create_mcp_server() -> FastMCP:
                 tenant=tenant,
                 db=db,
             )
-            if settings.MCP_LOG_TOOL_CALLS:
-                logger.info("mcp_tool_call", tool="file_upload", tenant_id=str(tenant.id))
+            _log_tool_call("file_upload", str(tenant.id))
             return json.dumps(result)
         finally:
             await db.close()
@@ -283,6 +309,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "files:read")
             result = await _file_download(file_key=file_key, tenant=tenant, db=db)
+            _log_tool_call("file_download", str(tenant.id))
             return json.dumps(result)
         finally:
             await db.close()
@@ -296,6 +323,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "files:read")
             result = await _file_list(prefix=prefix, tenant=tenant, db=db)
+            _log_tool_call("file_list", str(tenant.id))
             return json.dumps(result)
         finally:
             await db.close()
@@ -311,6 +339,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "team:read")
             result = await _list_members(tenant=tenant, db=db)
+            _log_tool_call("team_list_members", str(tenant.id))
             return json.dumps(result)
         finally:
             await db.close()
@@ -327,8 +356,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "team:write")
             result = await _team_invite(email=email, role=role, tenant=tenant, db=db)
-            if settings.MCP_LOG_TOOL_CALLS:
-                logger.info("mcp_tool_call", tool="team_invite", tenant_id=str(tenant.id), email=email)
+            _log_tool_call("team_invite", str(tenant.id), email=email)
             return json.dumps(result)
         finally:
             await db.close()
@@ -344,6 +372,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "webhooks:read")
             result = await _webhook_list(tenant=tenant, db=db)
+            _log_tool_call("webhook_list", str(tenant.id))
             return json.dumps(result)
         finally:
             await db.close()
@@ -365,8 +394,7 @@ def create_mcp_server() -> FastMCP:
             result = await _webhook_create(
                 url=url, events=events, description=description, tenant=tenant, db=db,
             )
-            if settings.MCP_LOG_TOOL_CALLS:
-                logger.info("mcp_tool_call", tool="webhook_create", tenant_id=str(tenant.id))
+            _log_tool_call("webhook_create", str(tenant.id))
             return json.dumps(result)
         finally:
             await db.close()
@@ -380,8 +408,7 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "webhooks:write")
             result = await _webhook_delete(webhook_id=webhook_id, tenant=tenant, db=db)
-            if settings.MCP_LOG_TOOL_CALLS:
-                logger.info("mcp_tool_call", tool="webhook_delete", tenant_id=str(tenant.id))
+            _log_tool_call("webhook_delete", str(tenant.id))
             return json.dumps(result)
         finally:
             await db.close()
@@ -393,8 +420,9 @@ def create_mcp_server() -> FastMCP:
         """Available AI models and their capabilities."""
         from app.mcp.tools.ai import ai_list_models as _ai_list_models
 
-        _api_key, tenant, db = await _get_context()
+        api_key, tenant, db = await _get_context()
         try:
+            check_scopes(api_key, "ai:read")
             result = await _ai_list_models(tenant=tenant, db=db)
             return json.dumps(result)
         finally:
@@ -405,8 +433,9 @@ def create_mcp_server() -> FastMCP:
         """Current token wallet balance."""
         from app.mcp.tools.billing import billing_get_wallet_balance as _get_balance
 
-        _api_key, tenant, db = await _get_context()
+        api_key, tenant, db = await _get_context()
         try:
+            check_scopes(api_key, "ai:read")
             result = await _get_balance(tenant=tenant, db=db)
             return json.dumps(result)
         finally:
@@ -417,8 +446,9 @@ def create_mcp_server() -> FastMCP:
         """Current team members with roles."""
         from app.mcp.tools.team import team_list_members as _list_members
 
-        _api_key, tenant, db = await _get_context()
+        api_key, tenant, db = await _get_context()
         try:
+            check_scopes(api_key, "team:read")
             result = await _list_members(tenant=tenant, db=db)
             return json.dumps(result)
         finally:
@@ -429,8 +459,9 @@ def create_mcp_server() -> FastMCP:
         """Most recent jobs (last 20)."""
         from app.mcp.tools.jobs import job_list as _job_list
 
-        _api_key, tenant, db = await _get_context()
+        api_key, tenant, db = await _get_context()
         try:
+            check_scopes(api_key, "jobs:read")
             result = await _job_list(limit=20, tenant=tenant, db=db)
             return json.dumps(result)
         finally:
@@ -441,8 +472,9 @@ def create_mcp_server() -> FastMCP:
         """AI usage statistics for the last 30 days."""
         from app.mcp.tools.ai import ai_get_usage as _ai_get_usage
 
-        _api_key, tenant, db = await _get_context()
+        api_key, tenant, db = await _get_context()
         try:
+            check_scopes(api_key, "ai:read")
             result = await _ai_get_usage(days=30, tenant=tenant, db=db)
             return json.dumps(result)
         finally:
@@ -464,8 +496,9 @@ def create_mcp_server() -> FastMCP:
 
         from app.db.models.ai import PromptTemplate
 
-        _api_key, tenant, db = await _get_context()
+        api_key, tenant, db = await _get_context()
         try:
+            check_scopes(api_key, "ai:read")
             result = await db.execute(
                 select(PromptTemplate)
                 .where(

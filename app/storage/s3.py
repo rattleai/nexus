@@ -80,10 +80,10 @@ class S3Storage:
 
     # ── sync interface (Celery workers) ──────────────────────
 
-    def upload(self, key: str, data: bytes) -> None:
+    def upload(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
         key = _validate_key(key)
         try:
-            self._client.put_object(Bucket=self._bucket, Key=key, Body=data)
+            self._client.put_object(Bucket=self._bucket, Key=key, Body=data, ContentType=content_type)
         except ClientError as exc:
             error_code = exc.response.get("Error", {}).get("Code", "Unknown")
             logger.error("s3_upload_failed", key=key, error_code=error_code, error=str(exc))
@@ -214,10 +214,32 @@ class S3Storage:
             logger.error("s3_streaming_upload_failed", key=key, error=str(exc))
             raise StorageError("Upload failed: storage service unavailable") from exc
 
+    def list_objects(self, prefix: str) -> list[str]:
+        """List object keys under the given prefix with pagination."""
+        prefix = _validate_key(prefix)
+        keys: list[str] = []
+        try:
+            kwargs = {"Bucket": self._bucket, "Prefix": prefix}
+            while True:
+                response = self._client.list_objects_v2(**kwargs)
+                for obj in response.get("Contents", []):
+                    keys.append(obj["Key"])
+                if not response.get("IsTruncated"):
+                    break
+                kwargs["ContinuationToken"] = response["NextContinuationToken"]
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.error("s3_list_failed", prefix=prefix, error_code=error_code)
+            raise StorageError(f"List failed: {error_code}") from exc
+        except BotoCoreError as exc:
+            logger.error("s3_list_failed", prefix=prefix, error=str(exc))
+            raise StorageError("List failed: storage service unavailable") from exc
+        return keys
+
     # ── async interface (FastAPI handlers) ───────────────────
 
-    async def async_upload(self, key: str, data: bytes) -> None:
-        await asyncio.to_thread(self.upload, key, data)
+    async def async_upload(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
+        await asyncio.to_thread(self.upload, key, data, content_type)
 
     async def async_upload_fileobj(self, key: str, file_obj, max_size: int) -> int:
         """Stream a file-like object to S3 without loading into memory."""
@@ -231,6 +253,9 @@ class S3Storage:
 
     async def async_delete(self, key: str) -> None:
         await asyncio.to_thread(self.delete, key)
+
+    async def async_list_objects(self, prefix: str) -> list[str]:
+        return await asyncio.to_thread(self.list_objects, prefix)
 
 
 def handle_storage_error(exc: StorageError) -> HTTPException:

@@ -34,6 +34,7 @@ router = APIRouter(prefix="/oauth")
 class OAuthClientCreate(BaseModel):
     name: str
     scopes: list[str] = []
+    expires_at: datetime | None = None
 
 
 class OAuthClientResponse(BaseModel):
@@ -69,7 +70,7 @@ class TokenResponse(BaseModel):
 
 def _hash_secret(secret: str) -> str:
     """Hash a client secret with HMAC-SHA256."""
-    pepper = (settings.SECRET_KEY or "default-pepper").encode()
+    pepper = settings.SECRET_KEY.encode()
     return hmac.new(pepper, secret.encode(), hashlib.sha256).hexdigest()
 
 
@@ -79,6 +80,29 @@ def _generate_client_id() -> str:
 
 def _generate_client_secret() -> str:
     return secrets.token_urlsafe(48)
+
+
+async def _audit_log(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+    **extra: object,
+) -> None:
+    """Write an audit log entry for OAuth operations."""
+    from app.db.models.operations import AuditLog
+
+    entry = AuditLog(
+        tenant_id=tenant_id,
+        actor_type="oauth_client",
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        metadata_=extra if extra else None,
+    )
+    db.add(entry)
+    await db.commit()
 
 
 # ── Endpoints ────────────────────────────────────────────
@@ -113,12 +137,14 @@ async def create_oauth_client(
         client_secret_hash=_hash_secret(client_secret),
         name=body.name,
         scopes=body.scopes,
+        expires_at=body.expires_at,
     )
     db.add(client)
     await db.commit()
     await db.refresh(client)
 
     logger.info("oauth_client_created", client_id=client_id, tenant_id=str(tenant.id))
+    await _audit_log(db, tenant.id, "create", "oauth_client", str(client.id), client_id=client_id)
 
     return OAuthClientCreateResponse(
         id=client.id,
@@ -186,15 +212,12 @@ async def revoke_oauth_client(
     await db.commit()
 
     logger.info("oauth_client_revoked", client_id=client_id, tenant_id=str(tenant.id))
-
-
-_token_rate_limit = RateLimiter(max_requests=10, window=60, key_prefix="rl:oauth_token")
+    await _audit_log(db, tenant.id, "revoke", "oauth_client", str(client.id), client_id=client_id)
 
 
 @router.post(
     "/token",
     response_model=TokenResponse,
-    dependencies=[Depends(_token_rate_limit)],
 )
 async def exchange_token(
     body: TokenRequest,
@@ -224,9 +247,31 @@ async def exchange_token(
     if not client:
         raise HTTPException(status_code=401, detail="Invalid client credentials")
 
-    # Generate short-lived JWT
-    expires_in = 3600  # 1 hour
+    # Per-client rate limiting (prevents credential stuffing across distributed IPs)
+    from app.api.rate_limit import _check_rate
+
+    rl_key = f"rl:oauth_client:{client.client_id}"
+    count = await _check_rate(rl_key, 10, 60)
+    if count > 10:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many token requests for this client",
+            headers={"Retry-After": "60"},
+        )
+
+    # Check client expiry
     now = datetime.now(UTC)
+    if client.expires_at and client.expires_at < now:
+        raise HTTPException(status_code=401, detail="OAuth client has expired")
+
+    # Update last_used_at
+    client.last_used_at = now
+    await db.commit()
+
+    # Generate short-lived JWT
+    from app.core.security import _get_effective_algorithm, _get_jwt_signing_key
+
+    expires_in = 3600  # 1 hour
     payload = {
         "sub": str(client.id),
         "tenant_id": str(client.tenant_id),
@@ -240,12 +285,13 @@ async def exchange_token(
         "type": "client_credentials",
     }
 
-    # Use HS256 with SECRET_KEY for client credentials tokens
-    token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
+    algorithm = _get_effective_algorithm()
+    token = pyjwt.encode(payload, _get_jwt_signing_key(), algorithm=algorithm)
 
     scope_str = " ".join(client.scopes) if client.scopes else ""
 
     logger.info("oauth_token_issued", client_id=client.client_id, tenant_id=str(client.tenant_id))
+    await _audit_log(db, client.tenant_id, "token_exchange", "oauth_client", str(client.id), client_id=client.client_id)
 
     return TokenResponse(
         access_token=token,
@@ -253,3 +299,45 @@ async def exchange_token(
         expires_in=expires_in,
         scope=scope_str,
     )
+
+
+# ── Secret Rotation ────────────────────────────────────
+
+
+class RotateSecretResponse(BaseModel):
+    client_id: str
+    client_secret: str
+
+
+@router.post(
+    "/clients/{client_id}/rotate",
+    response_model=RotateSecretResponse,
+    dependencies=[Depends(RequireRole("admin", "owner"))],
+)
+async def rotate_client_secret(
+    client_id: str,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rotate the client secret for an OAuth client.
+
+    Returns the new client_secret. The secret is only shown once.
+    """
+    result = await db.execute(
+        select(OAuthClient).where(
+            OAuthClient.client_id == client_id,
+            OAuthClient.tenant_id == tenant.id,
+        )
+    )
+    client = result.scalar_one_or_none()
+    if not client:
+        raise HTTPException(status_code=404, detail="OAuth client not found")
+
+    new_secret = _generate_client_secret()
+    client.client_secret_hash = _hash_secret(new_secret)
+    await db.commit()
+
+    logger.info("oauth_client_secret_rotated", client_id=client_id, tenant_id=str(tenant.id))
+    await _audit_log(db, tenant.id, "rotate_secret", "oauth_client", str(client.id), client_id=client_id)
+
+    return RotateSecretResponse(client_id=client_id, client_secret=new_secret)

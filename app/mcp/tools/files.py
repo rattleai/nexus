@@ -107,6 +107,12 @@ async def file_list(
 
     Optionally filter by prefix within the tenant's namespace.
     """
+    if prefix and (".." in prefix or prefix.startswith("/")):
+        raise tool_error(
+            "Invalid prefix",
+            hint="Prefix must not contain '..' or start with '/'",
+        )
+
     tenant_prefix = f"tenants/{tenant.id}/"
     full_prefix = tenant_prefix
     if prefix:

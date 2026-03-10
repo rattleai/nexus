@@ -164,7 +164,9 @@ async def is_user_token_revoked(user_id: str, issued_at: int) -> bool:
             return True
         return False
     except Exception:
-        return False
+        # Redis unavailable — fail CLOSED (consistent with is_token_revoked)
+        logger.error("user_revocation_check_failed_closing", user_id=user_id)
+        return True
 
 
 def get_jwks_public_key() -> dict | None:

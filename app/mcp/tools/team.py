@@ -84,6 +84,8 @@ async def team_invite(
             hint="Wait for the existing invitation to be accepted or revoke it first.",
         )
 
+    from sqlalchemy.exc import IntegrityError
+
     invitation = Invitation(
         tenant_id=tenant.id,
         email=email,
@@ -91,7 +93,11 @@ async def team_invite(
         status=InvitationStatus.PENDING,
     )
     db.add(invitation)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise tool_error(f"A pending invitation already exists for {email}")
     await db.refresh(invitation)
 
     logger.info("mcp_team_invite_created", email=email, tenant_id=str(tenant.id))

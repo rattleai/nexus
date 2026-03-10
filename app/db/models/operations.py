@@ -19,6 +19,7 @@ class JobStatus(enum.StrEnum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class Job(SyncMixin, SoftDeleteMixin, VersionMixin, TimestampMixin, Base):

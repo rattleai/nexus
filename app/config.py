@@ -142,6 +142,7 @@ class Settings(BaseSettings):
     MCP_TRANSPORT: str = "streamable-http"  # "stdio" or "streamable-http"
     MCP_HTTP_PORT: int = 8001
     MCP_LOG_TOOL_CALLS: bool = True
+    MCP_RATE_LIMIT_REQUESTS: int = 300  # Max MCP requests per tenant per minute
 
     # ── Agent / Bot API Enhancements ──────────────────────
     AGENT_HINTS_ENABLED: bool = True
