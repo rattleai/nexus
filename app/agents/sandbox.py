@@ -43,16 +43,20 @@ _DEFAULT_ALLOWED_IMPORTS = frozenset({
     "io", "enum", "abc", "contextlib",
 })
 
-# Modules that are always blocked
 _BLOCKED_IMPORTS = frozenset({
     "os", "sys", "subprocess", "shutil", "signal", "ctypes",
     "importlib", "code", "codeop", "compileall",
     "socket", "http", "urllib", "requests", "httpx",
     "multiprocessing", "threading", "concurrent",
     "pickle", "shelve", "marshal",
-    "pathlib",  # prevents filesystem traversal
+    "pathlib",
     "builtins", "__builtin__",
     "pty", "termios", "fcntl",
+    "pwd", "grp",
+    "ssl", "secrets",
+    "webbrowser",
+    "tempfile", "glob",
+    "sysconfig", "site",
 })
 
 

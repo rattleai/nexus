@@ -135,30 +135,40 @@ class A2ACommunicator:
         *,
         timeout_seconds: int = 0,
         count: int = 10,
+        max_age_seconds: int | None = None,
     ) -> list[A2AMessage]:
         """Receive messages from an agent's inbox.
 
         If timeout_seconds > 0, blocks until a message arrives or timeout.
         Otherwise returns immediately with available messages.
+        If max_age_seconds is set, messages older than threshold are discarded.
         """
         inbox_key = _INBOX_KEY.format(tenant_id=tenant_id, instance_id=instance_id)
 
-        messages = []
+        raw_messages = []
         if timeout_seconds > 0:
             # Blocking pop
             result = await redis_pool.brpop(inbox_key, timeout=timeout_seconds)
             if result:
                 _, raw = result
-                messages.append(self._parse_message(raw))
+                raw_messages.append(self._parse_message(raw))
         else:
             # Non-blocking: pop up to `count` messages
             for _ in range(count):
                 raw = await redis_pool.rpop(inbox_key)
                 if raw is None:
                     break
-                messages.append(self._parse_message(raw))
+                raw_messages.append(self._parse_message(raw))
 
-        return messages
+        # Filter out stale messages
+        if max_age_seconds is not None and raw_messages:
+            now = time.time()
+            raw_messages = [
+                m for m in raw_messages
+                if (now - m.timestamp) <= max_age_seconds
+            ]
+
+        return raw_messages
 
     async def reply(
         self,
@@ -284,12 +294,15 @@ class A2ACommunicator:
         group_name: str,
         capability: str,
     ) -> list[AgentCapability]:
-        """Find all agents in a group that have a specific capability."""
+        """Find all agents in a group that have a specific capability.
+
+        Filters out agents with status 'offline'.
+        """
         members = await self.list_group_members(tenant_id, group_name)
         results = []
         for member_id in members:
             caps = await self.discover_capabilities(uuid.UUID(member_id), tenant_id)
-            if caps and capability in caps.capabilities:
+            if caps and capability in caps.capabilities and caps.status != "offline":
                 results.append(caps)
         return results
 

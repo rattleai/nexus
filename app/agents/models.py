@@ -164,6 +164,9 @@ class AgentInstance(Base, TimestampMixin):
     output_data: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Idempotency key for deduplication
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # Parent workflow run (if spawned by orchestrator)
     workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workflow_runs.id"), nullable=True,

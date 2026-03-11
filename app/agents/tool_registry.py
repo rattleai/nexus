@@ -154,7 +154,7 @@ class ToolRegistry:
         """
         # Check built-in tools first
         if tool_name in _BUILTIN_TOOLS:
-            return await self._invoke_builtin(tool_name, arguments, tenant_id)
+            return await self._invoke_builtin(tool_name, arguments, tenant_id, db=db)
 
         # Check tenant tools
         if db is None:
@@ -182,22 +182,81 @@ class ToolRegistry:
         tool_name: str,
         arguments: dict[str, Any],
         tenant_id: uuid.UUID,
+        *,
+        db: AsyncSession | None = None,
     ) -> Any:
-        """Invoke a built-in platform tool.
-
-        In a full implementation, this would delegate to the actual MCP tool
-        handlers. For now, returns a structured acknowledgment.
-        """
+        """Invoke a built-in platform tool by delegating to MCP tool handlers."""
         logger.info(
             "tool_invoke_builtin",
             tool_name=tool_name,
             tenant_id=str(tenant_id),
         )
-        return {
-            "tool": tool_name,
-            "status": "executed",
-            "arguments": arguments,
-        }
+
+        # Load tenant object for MCP tools that require it
+        tenant = None
+        if db is not None:
+            from app.db.models import Tenant
+            tenant = await db.get(Tenant, tenant_id)
+
+        if tenant is None:
+            # Build a minimal tenant-like object if DB is unavailable
+            from types import SimpleNamespace
+            tenant = SimpleNamespace(id=tenant_id)
+
+        # Dispatch table: built-in tool name → (handler, kwarg mapping)
+        try:
+            if tool_name == "ai_complete":
+                from app.mcp.tools.ai import ai_complete
+                return await ai_complete(
+                    model=arguments.get("model", "gpt-4o"),
+                    messages=arguments.get("messages", []),
+                    max_tokens=arguments.get("max_tokens"),
+                    temperature=arguments.get("temperature"),
+                    tenant=tenant,
+                    db=db,
+                )
+            elif tool_name == "ai_list_models":
+                from app.mcp.tools.ai import ai_list_models
+                return await ai_list_models(tenant=tenant, db=db)
+            elif tool_name == "file_upload":
+                from app.mcp.tools.files import file_upload
+                return await file_upload(
+                    filename=arguments.get("filename", ""),
+                    content_base64=arguments.get("content", ""),
+                    tenant=tenant,
+                    db=db,
+                )
+            elif tool_name == "file_list":
+                from app.mcp.tools.files import file_list
+                return await file_list(tenant=tenant, db=db)
+            elif tool_name == "job_create":
+                from app.mcp.tools.jobs import job_create
+                return await job_create(
+                    job_type=arguments.get("job_type", ""),
+                    payload=arguments.get("payload"),
+                    tenant=tenant,
+                    db=db,
+                )
+            elif tool_name == "job_list":
+                from app.mcp.tools.jobs import job_list
+                return await job_list(tenant=tenant, db=db)
+            elif tool_name == "webhook_create":
+                from app.mcp.tools.webhooks import webhook_create
+                return await webhook_create(
+                    url=arguments.get("url", ""),
+                    events=arguments.get("events", []),
+                    tenant=tenant,
+                    db=db,
+                )
+            else:
+                return {"error": f"Built-in tool '{tool_name}' has no handler"}
+        except Exception as exc:
+            logger.warning(
+                "builtin_tool_error",
+                tool_name=tool_name,
+                error=str(exc),
+            )
+            return {"error": f"Built-in tool '{tool_name}' failed: {exc}"}
 
     async def _invoke_external(
         self,
@@ -205,7 +264,8 @@ class ToolRegistry:
         arguments: dict[str, Any],
     ) -> Any:
         """Invoke a tenant-registered external tool via HTTP."""
-        breaker_key = CircuitBreaker.host_key(tool.endpoint_url)
+        # Per-tenant circuit breaker key to prevent cross-tenant impact
+        breaker_key = f"{tool.tenant_id}:{CircuitBreaker.host_key(tool.endpoint_url)}"
 
         if _tool_breaker.is_open(breaker_key):
             return {"error": f"Tool '{tool.tool_name}' is temporarily unavailable (circuit open)"}
@@ -213,13 +273,27 @@ class ToolRegistry:
         try:
             headers = {"Content-Type": "application/json"}
 
-            # Apply auth config if present
+            # Apply auth config if present, decrypting secrets
             auth_config = tool.auth_config or {}
             if auth_config.get("type") == "bearer":
-                headers["Authorization"] = f"Bearer {auth_config.get('token', '')}"
+                token = auth_config.get("token", "")
+                if token:
+                    try:
+                        from app.core.encryption import decrypt
+                        token = decrypt(token)
+                    except (ValueError, Exception):
+                        pass  # Use as-is if not encrypted (legacy data)
+                headers["Authorization"] = f"Bearer {token}"
             elif auth_config.get("type") == "api_key":
                 header_name = auth_config.get("header", "X-API-Key")
-                headers[header_name] = auth_config.get("key", "")
+                key = auth_config.get("key", "")
+                if key:
+                    try:
+                        from app.core.encryption import decrypt
+                        key = decrypt(key)
+                    except (ValueError, Exception):
+                        pass  # Use as-is if not encrypted (legacy data)
+                headers[header_name] = key
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(

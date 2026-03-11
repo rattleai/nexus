@@ -111,6 +111,7 @@ class AgentRuntime:
             db: Database session for AI gateway.
         """
         from app.ai.gateway import ai_gateway
+        from app.agents.governance import GovernanceEngine
 
         result = RunResult()
         start_time = time.monotonic()
@@ -124,6 +125,9 @@ class AgentRuntime:
 
         max_steps = self.definition.max_steps_per_run
         max_tokens = self.definition.max_tokens_per_run
+
+        # Build tools schema for LLM function calling
+        tools_schema = self._build_tools_schema()
 
         for step_num in range(1, max_steps + 1):
             if self._cancelled:
@@ -152,6 +156,7 @@ class AgentRuntime:
                     max_tokens=self.definition.max_tokens,
                     temperature=self.definition.temperature,
                     db=db,
+                    tools=tools_schema,
                 )
 
                 step_tokens = completion.total_tokens
@@ -159,15 +164,44 @@ class AgentRuntime:
                 result.total_tokens += step_tokens
                 result.total_cost_usd += step_cost
 
+                # Track spending after each LLM call (best-effort)
+                try:
+                    await GovernanceEngine.track_spending(
+                        tenant_id=self.tenant_id,
+                        agent_id=str(self.definition.id),
+                        instance_id=str(instance_id),
+                        cost_usd=step_cost,
+                    )
+                except Exception:
+                    pass
+
                 # Check if the LLM wants to call a tool
-                tool_calls = self._extract_tool_calls(completion.content)
+                tool_calls = self._extract_tool_calls(completion)
 
                 if tool_calls and tool_executor:
-                    # Append assistant message once for all tool calls in this step
-                    conversation.append({"role": "assistant", "content": completion.content})
+                    # Append assistant message with tool_calls for proper API format
+                    assistant_msg: dict[str, Any] = {"role": "assistant"}
+                    if completion.content:
+                        assistant_msg["content"] = completion.content
+                    # Include tool_calls in assistant message for LLM context
+                    if completion.tool_calls:
+                        assistant_msg["tool_calls"] = [
+                            {
+                                "id": tc_raw["id"],
+                                "type": "function",
+                                "function": {
+                                    "name": tc_raw["name"],
+                                    "arguments": (
+                                        tc_raw["arguments"] if isinstance(tc_raw["arguments"], str)
+                                        else __import__("json").dumps(tc_raw["arguments"])
+                                    ),
+                                },
+                            }
+                            for tc_raw in completion.tool_calls
+                        ]
+                    conversation.append(assistant_msg)
 
                     # Execute all tool calls from this LLM response
-                    tool_observations = []
                     for tc in tool_calls:
                         # Governance check before tool execution
                         if governance_checker:
@@ -200,7 +234,13 @@ class AgentRuntime:
                             duration_ms=step_duration,
                         )
                         result.steps.append(step)
-                        tool_observations.append(f"Tool '{tc.name}' returned: {tool_result_str}")
+
+                        # Append tool result using proper "tool" role for LLM API compatibility
+                        conversation.append({
+                            "role": "tool",
+                            "tool_call_id": tc.call_id,
+                            "content": tool_result_str,
+                        })
 
                         # Emit step event (best-effort)
                         try:
@@ -218,12 +258,6 @@ class AgentRuntime:
                             )
                         except Exception:
                             pass
-
-                    # Append all tool observations as a single user message
-                    conversation.append({
-                        "role": "user",
-                        "content": "\n\n".join(tool_observations),
-                    })
                 else:
                     # LLM responded directly — agent run is complete
                     step_duration = int((time.monotonic() - step_start) * 1000)
@@ -256,18 +290,54 @@ class AgentRuntime:
         result.total_duration_ms = int((time.monotonic() - start_time) * 1000)
         return result
 
-    def _extract_tool_calls(self, content: str) -> list[ToolCall]:
-        """Extract tool calls from LLM response content.
+    def _extract_tool_calls(self, completion) -> list[ToolCall]:
+        """Extract tool calls from the AI gateway completion result.
 
-        Supports multiple formats:
-        1. JSON tool_call blocks (OpenAI-style)
-        2. XML-style <tool_call> tags
-        3. Markdown code blocks with tool invocations
-
-        This is a simplified extraction. In production, tool_calls come from
-        the LLM response object's tool_calls field, not content parsing.
+        Reads from the structured tool_calls field populated by the AI gateway
+        from LiteLLM's response.choices[0].message.tool_calls.
         """
-        # For now, return empty — actual tool calls come from LiteLLM's
-        # response.choices[0].message.tool_calls which the AI gateway
-        # would need to expose. This is a placeholder for the extraction logic.
-        return []
+        if not completion.tool_calls:
+            return []
+
+        calls = []
+        for tc in completion.tool_calls:
+            calls.append(ToolCall(
+                name=tc["name"],
+                arguments=tc.get("arguments", {}),
+                call_id=tc.get("id", ""),
+            ))
+        return calls
+
+    def _build_tools_schema(self) -> list[dict] | None:
+        """Build OpenAI-compatible tools schema from allowed_tools."""
+        allowed = self.definition.allowed_tools or []
+        if not allowed:
+            return None
+
+        from app.agents.tool_registry import tool_registry
+        builtin_tools = tool_registry.list_builtin_tools()
+
+        tools = []
+        for tool_name in allowed:
+            if tool_name in builtin_tools:
+                info = builtin_tools[tool_name]
+                tools.append({
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "description": info.get("description", ""),
+                        "parameters": info.get("input_schema", {"type": "object", "properties": {}}),
+                    },
+                })
+            else:
+                # Tenant tools will be resolved at invocation time; provide
+                # a generic schema so the LLM knows the tool exists.
+                tools.append({
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "description": f"Custom tool: {tool_name}",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                })
+        return tools if tools else None

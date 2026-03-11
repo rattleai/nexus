@@ -17,6 +17,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.events import AgentDefinitionCreated, AgentDefinitionUpdated
@@ -79,17 +80,6 @@ async def create_agent_definition(
     """Create a new agent definition."""
     await set_tenant_context(db, str(tenant.id))
 
-    # Check for duplicate slug
-    existing = await db.execute(
-        select(AgentDefinition).where(
-            AgentDefinition.tenant_id == tenant.id,
-            AgentDefinition.slug == body.slug,
-            AgentDefinition.deleted_at.is_(None),
-        )
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(409, f"Agent with slug '{body.slug}' already exists")
-
     agent = AgentDefinition(
         tenant_id=tenant.id,
         name=body.name,
@@ -109,7 +99,11 @@ async def create_agent_definition(
         metadata_=body.metadata,
     )
     db.add(agent)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, f"Agent with slug '{body.slug}' already exists")
     await db.refresh(agent)
 
     await emit(
@@ -272,15 +266,37 @@ async def create_agent_instance(
     if agent.status != AgentStatus.ACTIVE:
         raise HTTPException(400, f"Agent '{agent.name}' is not active")
 
+    # Check idempotency key for deduplication
+    if body.idempotency_key:
+        existing_stmt = select(AgentInstance).where(
+            AgentInstance.tenant_id == tenant.id,
+            AgentInstance.definition_id == agent.id,
+            AgentInstance.idempotency_key == body.idempotency_key,
+        )
+        existing_result = await db.execute(existing_stmt)
+        existing_instance = existing_result.scalar_one_or_none()
+        if existing_instance:
+            return existing_instance
+
     # Create instance record
     instance = AgentInstance(
         tenant_id=tenant.id,
         definition_id=agent.id,
         status=InstanceStatus.PENDING,
         input_data=body.input_data,
+        idempotency_key=body.idempotency_key,
     )
     db.add(instance)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        # Race: another request with the same key was inserted concurrently
+        existing_result = await db.execute(existing_stmt)
+        existing_instance = existing_result.scalar_one_or_none()
+        if existing_instance:
+            return existing_instance
+        raise HTTPException(409, "Duplicate idempotency key")
     await db.refresh(instance)
 
     # Dispatch to Celery for async execution
@@ -521,17 +537,6 @@ async def create_workflow(
     """Create a new workflow definition."""
     await set_tenant_context(db, str(tenant.id))
 
-    # Check for duplicate slug
-    existing = await db.execute(
-        select(WorkflowDefinition).where(
-            WorkflowDefinition.tenant_id == tenant.id,
-            WorkflowDefinition.slug == body.slug,
-            WorkflowDefinition.deleted_at.is_(None),
-        )
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(409, f"Workflow with slug '{body.slug}' already exists")
-
     workflow = WorkflowDefinition(
         tenant_id=tenant.id,
         name=body.name,
@@ -542,7 +547,11 @@ async def create_workflow(
         metadata_=body.metadata,
     )
     db.add(workflow)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, f"Workflow with slug '{body.slug}' already exists")
     await db.refresh(workflow)
     return workflow
 
@@ -689,16 +698,14 @@ async def register_tenant_tool(
     """Register a custom tool for agents."""
     await set_tenant_context(db, str(tenant.id))
 
-    # Check for duplicate tool name
-    existing = await db.execute(
-        select(TenantTool).where(
-            TenantTool.tenant_id == tenant.id,
-            TenantTool.tool_name == body.tool_name,
-            TenantTool.deleted_at.is_(None),
-        )
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(409, f"Tool '{body.tool_name}' already exists")
+    # Encrypt sensitive auth_config fields before storage
+    encrypted_auth_config = dict(body.auth_config) if body.auth_config else {}
+    if encrypted_auth_config:
+        from app.core.encryption import encrypt
+        if encrypted_auth_config.get("type") == "bearer" and encrypted_auth_config.get("token"):
+            encrypted_auth_config["token"] = encrypt(encrypted_auth_config["token"])
+        elif encrypted_auth_config.get("type") == "api_key" and encrypted_auth_config.get("key"):
+            encrypted_auth_config["key"] = encrypt(encrypted_auth_config["key"])
 
     tool = TenantTool(
         tenant_id=tenant.id,
@@ -707,12 +714,16 @@ async def register_tenant_tool(
         input_schema=body.input_schema,
         output_schema=body.output_schema,
         endpoint_url=body.endpoint_url,
-        auth_config=body.auth_config,
+        auth_config=encrypted_auth_config,
         health_check_url=body.health_check_url,
         metadata_=body.metadata,
     )
     db.add(tool)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, f"Tool '{body.tool_name}' already exists")
     await db.refresh(tool)
     return tool
 

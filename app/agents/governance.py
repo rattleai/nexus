@@ -158,7 +158,7 @@ class GovernanceEngine:
                     "Unable to verify spending limits (Redis unavailable). Action blocked.",
                     details={"reason": "redis_unavailable"},
                 )
-            if daily_spend + current_cost >= max_per_day:
+            if daily_spend >= max_per_day:
                 await self._emit_violation(
                     tenant_id=tenant_id,
                     context=context,
@@ -187,9 +187,18 @@ class GovernanceEngine:
             return
 
         rate_key = _RATE_KEY.format(tenant_id=tenant_id, instance_id=instance_id)
-        current = await redis_pool.incr(rate_key)
-        if current == 1:
-            await redis_pool.expire(rate_key, 60)
+        try:
+            current = await redis_pool.incr(rate_key)
+            if current == 1:
+                await redis_pool.expire(rate_key, 60)
+        except Exception:
+            # Fail-closed: if Redis is unavailable, block the action
+            logger.error("governance_redis_unavailable", check="rate_limit", exc_info=True)
+            raise GovernanceViolation(
+                "rate_limit",
+                "Unable to verify rate limits (Redis unavailable). Action blocked.",
+                details={"reason": "redis_unavailable"},
+            )
 
         if current > max_rpm:
             await self._emit_violation(

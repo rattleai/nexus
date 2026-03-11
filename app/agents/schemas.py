@@ -79,6 +79,7 @@ class AgentDefinitionResponse(BaseModel):
 class AgentInstanceCreate(BaseModel):
     input_data: dict[str, Any] = {}
     session_id: uuid.UUID | None = None
+    idempotency_key: str | None = Field(None, max_length=255)
 
 
 class AgentInstanceResponse(BaseModel):
@@ -223,6 +224,7 @@ class TenantToolResponse(BaseModel):
     input_schema: dict[str, Any]
     output_schema: dict[str, Any]
     endpoint_url: str | None
+    auth_config: dict[str, Any] = {}
     is_active: bool
     health_check_url: str | None
     metadata: dict[str, Any]
@@ -230,6 +232,19 @@ class TenantToolResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_validator("auth_config", mode="before")
+    @classmethod
+    def mask_auth_secrets(cls, v: dict[str, Any] | None) -> dict[str, Any]:
+        """Mask sensitive fields in auth_config for API responses."""
+        if not v:
+            return {}
+        masked = dict(v)
+        if masked.get("token"):
+            masked["token"] = "***"
+        if masked.get("key"):
+            masked["key"] = "***"
+        return masked
 
 
 # ── Agent Policy ───────────────────────────────────────────────────────

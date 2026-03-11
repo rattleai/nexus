@@ -90,8 +90,8 @@ class AgentOrchestrator:
         """Execute a workflow definition from start to finish."""
         await set_tenant_context(self.db, str(tenant_id))
 
-        # Load workflow definition
-        workflow = await self._load_workflow(workflow_id)
+        # Load workflow definition (filtered by tenant_id for isolation)
+        workflow = await self._load_workflow(workflow_id, tenant_id)
         if not workflow:
             raise OrchestrationError(f"Workflow {workflow_id} not found")
         if workflow.status != WorkflowStatus.ACTIVE:
@@ -274,16 +274,29 @@ class AgentOrchestrator:
         key_source: str,
         workflow_run: WorkflowRun,
     ) -> dict[str, Any]:
-        """Execute a single workflow step using the specified pattern."""
+        """Execute a single workflow step using the specified pattern.
+
+        Enforces per-step timeout from step definition.
+        """
         if pattern == "parallel":
-            return await self._execute_parallel(
+            coro = self._execute_parallel(
                 step_def, step_input, tenant_id, api_key, key_source, workflow_run,
             )
         else:
             # "single" or "supervisor" — both use single agent execution
-            return await self._execute_single(
+            coro = self._execute_single(
                 step_def, step_input, tenant_id, api_key, key_source, workflow_run,
             )
+
+        timeout = step_def.get("timeout_seconds")
+        if timeout:
+            try:
+                return await asyncio.wait_for(coro, timeout=timeout)
+            except asyncio.TimeoutError:
+                raise OrchestrationError(
+                    f"Step '{step_def.get('name', '?')}' timed out after {timeout}s"
+                )
+        return await coro
 
     async def _execute_single(
         self,
@@ -365,6 +378,10 @@ class AgentOrchestrator:
 
         return {"parallel_results": outputs}
 
+    # Pattern for safe path components — prevents __dict__, __class__ traversal
+    _SAFE_PATH_RE = __import__("re").compile(r"^[a-zA-Z0-9_]+$")
+    _MAX_PATH_DEPTH = 10
+
     def _resolve_input(
         self,
         input_mapping: dict[str, str],
@@ -376,6 +393,8 @@ class AgentOrchestrator:
         Supports simple dot-notation references:
             "$.previous_step.output.field" → step_outputs["previous_step"]["output"]["field"]
             "$._input.messages" → original_input["messages"]
+
+        Path components are validated to prevent attribute traversal attacks.
         """
         if not input_mapping:
             return original_input
@@ -387,6 +406,26 @@ class AgentOrchestrator:
                 continue
 
             parts = path[2:].split(".")
+
+            # Validate path depth and component safety
+            if len(parts) > self._MAX_PATH_DEPTH:
+                logger.warning("input_mapping_path_too_deep", path=path)
+                resolved[key] = None
+                continue
+
+            valid = True
+            for part in parts:
+                if not self._SAFE_PATH_RE.match(part):
+                    logger.warning(
+                        "input_mapping_invalid_path_component",
+                        path=path, component=part,
+                    )
+                    valid = False
+                    break
+            if not valid:
+                resolved[key] = None
+                continue
+
             current: Any = step_outputs
             try:
                 for part in parts:
@@ -424,10 +463,15 @@ class AgentOrchestrator:
 
         return None  # No more steps — workflow complete
 
-    async def _load_workflow(self, workflow_id: uuid.UUID) -> WorkflowDefinition | None:
-        stmt = select(WorkflowDefinition).where(
+    async def _load_workflow(
+        self, workflow_id: uuid.UUID, tenant_id: uuid.UUID | None = None,
+    ) -> WorkflowDefinition | None:
+        conditions = [
             WorkflowDefinition.id == workflow_id,
             WorkflowDefinition.deleted_at.is_(None),
-        )
+        ]
+        if tenant_id is not None:
+            conditions.append(WorkflowDefinition.tenant_id == tenant_id)
+        stmt = select(WorkflowDefinition).where(*conditions)
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()

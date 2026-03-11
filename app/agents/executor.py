@@ -93,8 +93,8 @@ class AgentExecutor:
         """
         await set_tenant_context(self.db, str(tenant_id))
 
-        # Load definition
-        definition = await self._load_definition(definition_id)
+        # Load definition (filtered by tenant_id for cross-tenant isolation)
+        definition = await self._load_definition(definition_id, tenant_id)
         if not definition:
             raise AgentExecutionError(f"Agent definition {definition_id} not found")
         if definition.status != AgentStatus.ACTIVE:
@@ -187,6 +187,12 @@ class AgentExecutor:
                         "role": "assistant",
                         "content": f"[Tool: {step.tool_name}]",
                     })
+
+            # Truncate to prevent unbounded JSONB growth
+            from app.config import settings
+            max_msgs = settings.AGENT_SESSION_MAX_MESSAGES
+            if len(new_messages) > max_msgs:
+                new_messages = new_messages[-max_msgs:]
             session.messages = new_messages
 
             await self.db.commit()
@@ -270,7 +276,13 @@ class AgentExecutor:
         """
         await set_tenant_context(self.db, str(tenant_id))
 
-        instance = await self.db.get(AgentInstance, instance_id)
+        # Use filtered query for tenant isolation instead of db.get()
+        stmt = select(AgentInstance).where(
+            AgentInstance.id == instance_id,
+            AgentInstance.tenant_id == tenant_id,
+        )
+        result = await self.db.execute(stmt)
+        instance = result.scalar_one_or_none()
         if not instance:
             raise AgentExecutionError(f"Instance {instance_id} not found")
 
@@ -298,11 +310,16 @@ class AgentExecutor:
 
         return instance
 
-    async def _load_definition(self, definition_id: uuid.UUID) -> AgentDefinition | None:
-        stmt = select(AgentDefinition).where(
+    async def _load_definition(
+        self, definition_id: uuid.UUID, tenant_id: uuid.UUID | None = None,
+    ) -> AgentDefinition | None:
+        conditions = [
             AgentDefinition.id == definition_id,
             AgentDefinition.deleted_at.is_(None),
-        )
+        ]
+        if tenant_id is not None:
+            conditions.append(AgentDefinition.tenant_id == tenant_id)
+        stmt = select(AgentDefinition).where(*conditions)
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -313,7 +330,13 @@ class AgentExecutor:
         session_id: uuid.UUID | None,
     ) -> AgentSession:
         if session_id:
-            session = await self.db.get(AgentSession, session_id)
+            # Use filtered query instead of db.get() for tenant isolation
+            stmt = select(AgentSession).where(
+                AgentSession.id == session_id,
+                AgentSession.tenant_id == tenant_id,
+            )
+            result = await self.db.execute(stmt)
+            session = result.scalar_one_or_none()
             if session and session.status == SessionStatus.ACTIVE:
                 return session
             logger.warning(
@@ -339,6 +362,7 @@ class AgentExecutor:
         Returns an async callable: (tool_name, arguments) → result
         """
         allowed_tools = set(definition.allowed_tools or [])
+        db = self.db  # Capture in closure for tenant tool lookups
 
         async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> Any:
             if allowed_tools and tool_name not in allowed_tools:
@@ -350,6 +374,7 @@ class AgentExecutor:
                     tool_name=tool_name,
                     arguments=arguments,
                     tenant_id=tenant_id,
+                    db=db,
                 )
             except Exception as exc:
                 logger.warning(

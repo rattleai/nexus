@@ -17,6 +17,7 @@ from typing import Any
 
 import structlog
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.events import AgentMemoryUpdated
@@ -61,6 +62,18 @@ class AgentMemoryManager:
         except (json.JSONDecodeError, TypeError):
             return raw
 
+    # Redis Lua script for atomic check-and-set with cap enforcement.
+    # Returns 1 if the value was set, 0 if the cap was reached and key is new.
+    _SET_SHORT_TERM_LUA = """
+local size = redis.call('HLEN', KEYS[1])
+if size >= tonumber(ARGV[3]) and redis.call('HEXISTS', KEYS[1], ARGV[1]) == 0 then
+    return 0
+end
+redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[4]))
+return 1
+"""
+
     async def set_short_term(
         self,
         instance_id: uuid.UUID,
@@ -71,32 +84,39 @@ class AgentMemoryManager:
         ttl_seconds: int = 3600,
         max_entries: int = 100,
     ) -> None:
-        """Write a value to short-term (session) memory."""
+        """Write a value to short-term (session) memory.
+
+        Uses a Redis Lua script for atomic cap enforcement to prevent
+        concurrent writes from exceeding the cap.
+        """
         from app.config import settings
 
         redis_key = _SHORT_TERM_KEY.format(
             instance_id=instance_id, session_id=session_id,
         )
 
-        # Enforce max entries to prevent unbounded growth.
         cap = max_entries or settings.AGENT_MEMORY_SHORT_MAX_ENTRIES
-        current_size = await redis_pool.hlen(redis_key)
-        if current_size >= cap:
-            # Key already exists → allow overwrite; new key → reject.
-            exists = await redis_pool.hexists(redis_key, key)
-            if not exists:
-                logger.warning(
-                    "short_term_memory_full",
-                    instance_id=str(instance_id),
-                    session_id=str(session_id),
-                    size=current_size,
-                    cap=cap,
-                )
-                return
-
         serialized = json.dumps(value, default=str)
-        await redis_pool.hset(redis_key, key, serialized)
-        await redis_pool.expire(redis_key, ttl_seconds)
+
+        # NOTE: redis_pool.eval() runs a server-side Lua script atomically
+        # on the Redis server — this is NOT Python eval().
+        result = await redis_pool.eval(
+            self._SET_SHORT_TERM_LUA,
+            1,  # number of keys
+            redis_key,  # KEYS[1]
+            key,  # ARGV[1] - hash field name
+            serialized,  # ARGV[2] - value
+            str(cap),  # ARGV[3] - max entries
+            str(ttl_seconds),  # ARGV[4] - TTL
+        )
+
+        if result == 0:
+            logger.warning(
+                "short_term_memory_full",
+                instance_id=str(instance_id),
+                session_id=str(session_id),
+                cap=cap,
+            )
 
     async def get_all_short_term(
         self,
@@ -160,34 +180,35 @@ class AgentMemoryManager:
     ) -> AgentMemoryEntry:
         """Write a value to long-term (persistent) memory.
 
-        Upserts: creates if not exists, updates if exists.
+        Uses INSERT ... ON CONFLICT DO UPDATE for atomic upsert,
+        avoiding TOCTOU race between SELECT and INSERT.
         """
-        stmt = select(AgentMemoryEntry).where(
-            AgentMemoryEntry.instance_id == instance_id,
-            AgentMemoryEntry.tenant_id == tenant_id,
-            AgentMemoryEntry.namespace == namespace,
-            AgentMemoryEntry.key == key,
-        )
-        result = await self.db.execute(stmt)
-        entry = result.scalar_one_or_none()
+        insert_values = {
+            "tenant_id": tenant_id,
+            "instance_id": instance_id,
+            "namespace": namespace,
+            "key": key,
+            "value": value,
+        }
+        if embedding is not None:
+            insert_values["embedding"] = embedding
+            insert_values["embedding_model"] = embedding_model
 
-        if entry:
-            entry.value = value
-            if embedding is not None:
-                entry.embedding = embedding
-                entry.embedding_model = embedding_model
-            entry.updated_at = datetime.now(UTC)
-        else:
-            entry = AgentMemoryEntry(
-                tenant_id=tenant_id,
-                instance_id=instance_id,
-                namespace=namespace,
-                key=key,
-                value=value,
-                embedding=embedding,
-                embedding_model=embedding_model,
-            )
-            self.db.add(entry)
+        stmt = pg_insert(AgentMemoryEntry).values(**insert_values)
+
+        # ON CONFLICT on the unique constraint (instance_id, namespace, key)
+        update_set = {"value": value, "updated_at": datetime.now(UTC)}
+        if embedding is not None:
+            update_set["embedding"] = embedding
+            update_set["embedding_model"] = embedding_model
+
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_agent_memory_instance_ns_key",
+            set_=update_set,
+        ).returning(AgentMemoryEntry)
+
+        result = await self.db.execute(stmt)
+        entry = result.scalar_one()
 
         await self.db.flush()
 

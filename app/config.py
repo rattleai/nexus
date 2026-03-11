@@ -158,6 +158,7 @@ class Settings(BaseSettings):
     AGENT_SANDBOX_CPU_SECONDS: int = 30
     AGENT_SANDBOX_TIMEOUT_SECONDS: int = 60
     AGENT_SANDBOX_NETWORK_ENABLED: bool = False
+    AGENT_SESSION_MAX_MESSAGES: int = 200
 
     # Agent Memory
     AGENT_MEMORY_SHORT_TTL_SECONDS: int = 3600
