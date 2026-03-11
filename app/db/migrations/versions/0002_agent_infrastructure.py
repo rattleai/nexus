@@ -111,6 +111,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
     op.create_index("ix_workflow_run_tenant_status", "workflow_runs", ["tenant_id", "status"])
+    op.create_index("ix_workflow_run_workflow", "workflow_runs", ["workflow_id"])
     _enable_rls("workflow_runs")
 
     # ── agent_definitions ──
@@ -166,6 +167,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_agent_inst_tenant_status", "agent_instances", ["tenant_id", "status"])
     op.create_index("ix_agent_inst_definition", "agent_instances", ["definition_id"])
+    op.create_index("ix_agent_inst_workflow_run", "agent_instances", ["workflow_run_id"])
     _enable_rls("agent_instances")
 
     # ── agent_sessions ──

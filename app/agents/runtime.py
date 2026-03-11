@@ -163,7 +163,11 @@ class AgentRuntime:
                 tool_calls = self._extract_tool_calls(completion.content)
 
                 if tool_calls and tool_executor:
-                    # Execute tool calls
+                    # Append assistant message once for all tool calls in this step
+                    conversation.append({"role": "assistant", "content": completion.content})
+
+                    # Execute all tool calls from this LLM response
+                    tool_observations = []
                     for tc in tool_calls:
                         # Governance check before tool execution
                         if governance_checker:
@@ -190,27 +194,30 @@ class AgentRuntime:
                             duration_ms=step_duration,
                         )
                         result.steps.append(step)
+                        tool_observations.append(f"Tool '{tc.name}' returned: {tool_result}")
 
-                        # Append tool result to conversation for next iteration
-                        conversation.append({"role": "assistant", "content": completion.content})
-                        conversation.append({
-                            "role": "user",
-                            "content": f"Tool '{tc.name}' returned: {tool_result}",
-                        })
+                        # Emit step event (best-effort)
+                        try:
+                            await emit(
+                                AgentStepCompleted(
+                                    tenant_id=str(self.tenant_id),
+                                    instance_id=str(instance_id),
+                                    step_number=step_num,
+                                    action="tool_call",
+                                    tool_name=tc.name,
+                                    tokens_used=step_tokens,
+                                    cost_usd=step_cost,
+                                ),
+                                durable=True,
+                            )
+                        except Exception:
+                            pass
 
-                        # Emit step event
-                        await emit(
-                            AgentStepCompleted(
-                                tenant_id=str(self.tenant_id),
-                                instance_id=str(instance_id),
-                                step_number=step_num,
-                                action="tool_call",
-                                tool_name=tc.name,
-                                tokens_used=step_tokens,
-                                cost_usd=step_cost,
-                            ),
-                            durable=True,
-                        )
+                    # Append all tool observations as a single user message
+                    conversation.append({
+                        "role": "user",
+                        "content": "\n\n".join(tool_observations),
+                    })
                 else:
                     # LLM responded directly — agent run is complete
                     step_duration = int((time.monotonic() - step_start) * 1000)

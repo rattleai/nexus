@@ -35,11 +35,21 @@ from app.agents.models import (
     InstanceStatus,
     SessionStatus,
 )
-from app.agents.runtime import AgentRuntime, RunResult
+from app.agents.runtime import AgentRuntime
 from app.core.events import emit
 from app.db.session import set_tenant_context
 
 logger = structlog.stdlib.get_logger()
+
+# Map runtime finish reasons to instance statuses
+_FINISH_STATUS_MAP = {
+    "completed": InstanceStatus.COMPLETED,
+    "error": InstanceStatus.FAILED,
+    "cancelled": InstanceStatus.CANCELLED,
+    "max_steps": InstanceStatus.COMPLETED,
+    "max_tokens": InstanceStatus.COMPLETED,
+    "max_duration": InstanceStatus.FAILED,
+}
 
 
 class AgentExecutionError(Exception):
@@ -90,6 +100,16 @@ class AgentExecutor:
         if definition.status != AgentStatus.ACTIVE:
             raise AgentExecutionError(f"Agent '{definition.name}' is not active (status={definition.status.value})")
 
+        # Validate input_data structure
+        messages = input_data.get("messages", [])
+        if not messages and "prompt" in input_data:
+            messages = [{"role": "user", "content": str(input_data["prompt"])}]
+        if not messages:
+            raise AgentExecutionError("input_data must contain 'messages' or 'prompt'")
+        for msg in messages:
+            if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
+                raise AgentExecutionError("Each message must have 'role' and 'content' keys")
+
         # Create instance
         instance = AgentInstance(
             tenant_id=tenant_id,
@@ -106,31 +126,27 @@ class AgentExecutor:
 
         await self.db.flush()
 
-        # Emit start event
-        await emit(
-            AgentInstanceStarted(
-                tenant_id=str(tenant_id),
-                instance_id=str(instance.id),
-                agent_id=str(definition_id),
-                input_summary=str(input_data)[:200],
-            ),
-            durable=True,
-        )
-
-        # Build messages from input_data
-        messages = input_data.get("messages", [])
-        if not messages and "prompt" in input_data:
-            messages = [{"role": "user", "content": input_data["prompt"]}]
+        # Emit start event (best-effort — don't fail the run if event emission fails)
+        try:
+            await emit(
+                AgentInstanceStarted(
+                    tenant_id=str(tenant_id),
+                    instance_id=str(instance.id),
+                    agent_id=str(definition_id),
+                    input_summary=str(input_data)[:200],
+                ),
+                durable=True,
+            )
+        except Exception:
+            logger.warning("agent_start_event_failed", instance_id=str(instance.id), exc_info=True)
 
         # Include session history for context continuity
         if session.messages:
             messages = list(session.messages) + messages
 
-        # Set up tool executor
-        tool_executor = await self._build_tool_executor(definition, tenant_id)
-
-        # Set up governance checker
-        governance_checker = await self._build_governance_checker(definition, tenant_id)
+        # Set up tool executor and governance (created once, not per-call)
+        tool_executor = self._build_tool_executor(definition, tenant_id)
+        governance_checker = self._build_governance_checker(definition, tenant_id)
 
         # Run the agent
         runtime = AgentRuntime(
@@ -149,14 +165,8 @@ class AgentExecutor:
                 db=self.db,
             )
 
-            # Update instance with results
-            instance.status = (
-                InstanceStatus.COMPLETED
-                if result.finish_reason == "completed"
-                else InstanceStatus.FAILED
-                if result.finish_reason == "error"
-                else InstanceStatus.COMPLETED
-            )
+            # Map finish reason to status
+            instance.status = _FINISH_STATUS_MAP.get(result.finish_reason, InstanceStatus.FAILED)
             instance.output_data = {
                 "output": result.output,
                 "finish_reason": result.finish_reason,
@@ -175,25 +185,28 @@ class AgentExecutor:
                 elif step.action == "tool_call":
                     new_messages.append({
                         "role": "assistant",
-                        "content": f"[Tool: {step.tool_name}] → {step.tool_result}",
+                        "content": f"[Tool: {step.tool_name}]",
                     })
             session.messages = new_messages
 
             await self.db.commit()
 
-            # Emit completion event
-            await emit(
-                AgentInstanceCompleted(
-                    tenant_id=str(tenant_id),
-                    instance_id=str(instance.id),
-                    agent_id=str(definition_id),
-                    steps_executed=instance.steps_executed,
-                    tokens_used=instance.tokens_used,
-                    cost_usd=instance.cost_usd,
-                    duration_seconds=result.total_duration_ms / 1000,
-                ),
-                durable=True,
-            )
+            # Emit completion event (best-effort — already committed)
+            try:
+                await emit(
+                    AgentInstanceCompleted(
+                        tenant_id=str(tenant_id),
+                        instance_id=str(instance.id),
+                        agent_id=str(definition_id),
+                        steps_executed=instance.steps_executed,
+                        tokens_used=instance.tokens_used,
+                        cost_usd=instance.cost_usd,
+                        duration_seconds=result.total_duration_ms / 1000,
+                    ),
+                    durable=True,
+                )
+            except Exception:
+                logger.warning("agent_completion_event_failed", instance_id=str(instance.id), exc_info=True)
 
             logger.info(
                 "agent_execution_completed",
@@ -206,25 +219,34 @@ class AgentExecutor:
             )
 
         except Exception as exc:
-            instance.status = InstanceStatus.FAILED
-            instance.error = str(exc)[:2000]
-            instance.completed_at = datetime.now(UTC)
-            await self.db.commit()
+            # Rollback any uncommitted changes before writing failure state
+            await self.db.rollback()
 
-            await emit(
-                AgentInstanceFailed(
-                    tenant_id=str(tenant_id),
-                    instance_id=str(instance.id),
-                    agent_id=str(definition_id),
-                    error=str(exc)[:500],
-                    step_number=instance.steps_executed,
-                ),
-                durable=True,
-            )
+            # Re-fetch instance in clean transaction
+            instance = await self.db.get(AgentInstance, instance.id)
+            if instance:
+                instance.status = InstanceStatus.FAILED
+                instance.error = str(exc)[:2000]
+                instance.completed_at = datetime.now(UTC)
+                await self.db.commit()
+
+            try:
+                await emit(
+                    AgentInstanceFailed(
+                        tenant_id=str(tenant_id),
+                        instance_id=str(instance.id) if instance else "unknown",
+                        agent_id=str(definition_id),
+                        error=str(exc)[:500],
+                        step_number=instance.steps_executed if instance else 0,
+                    ),
+                    durable=True,
+                )
+            except Exception:
+                logger.warning("agent_failure_event_failed", exc_info=True)
 
             logger.error(
                 "agent_execution_failed",
-                instance_id=str(instance.id),
+                instance_id=str(instance.id) if instance else "unknown",
                 agent_id=str(definition_id),
                 error=str(exc),
                 exc_info=True,
@@ -240,14 +262,19 @@ class AgentExecutor:
         tenant_id: uuid.UUID,
         reason: str = "user_requested",
     ) -> AgentInstance:
-        """Stop a running agent instance."""
+        """Stop a running agent instance.
+
+        Marks the instance as cancelled in the database. If the agent is
+        executing in a Celery worker, the Celery task revocation mechanism
+        should be used in conjunction with this method.
+        """
         await set_tenant_context(self.db, str(tenant_id))
 
         instance = await self.db.get(AgentInstance, instance_id)
         if not instance:
             raise AgentExecutionError(f"Instance {instance_id} not found")
 
-        if instance.status != InstanceStatus.RUNNING:
+        if instance.status not in (InstanceStatus.RUNNING, InstanceStatus.PENDING):
             raise AgentExecutionError(
                 f"Instance {instance_id} is not running (status={instance.status.value})"
             )
@@ -257,14 +284,17 @@ class AgentExecutor:
         instance.error = f"Stopped: {reason}"
         await self.db.commit()
 
-        await emit(
-            AgentInstanceStopped(
-                tenant_id=str(tenant_id),
-                instance_id=str(instance_id),
-                reason=reason,
-            ),
-            durable=True,
-        )
+        try:
+            await emit(
+                AgentInstanceStopped(
+                    tenant_id=str(tenant_id),
+                    instance_id=str(instance_id),
+                    reason=reason,
+                ),
+                durable=True,
+            )
+        except Exception:
+            logger.warning("agent_stop_event_failed", instance_id=str(instance_id), exc_info=True)
 
         return instance
 
@@ -286,6 +316,11 @@ class AgentExecutor:
             session = await self.db.get(AgentSession, session_id)
             if session and session.status == SessionStatus.ACTIVE:
                 return session
+            logger.warning(
+                "agent_session_not_found_or_inactive",
+                session_id=str(session_id),
+                creating_new=True,
+            )
 
         return AgentSession(
             tenant_id=tenant_id,
@@ -294,7 +329,7 @@ class AgentExecutor:
             messages=[],
         )
 
-    async def _build_tool_executor(
+    def _build_tool_executor(
         self,
         definition: AgentDefinition,
         tenant_id: uuid.UUID,
@@ -326,20 +361,22 @@ class AgentExecutor:
 
         return execute_tool
 
-    async def _build_governance_checker(
+    def _build_governance_checker(
         self,
         definition: AgentDefinition,
         tenant_id: uuid.UUID,
     ):
         """Build a governance checker that enforces policies before actions.
 
-        Returns an async callable: (action, context) → None (raises on violation)
+        Returns an async callable: (action, context) → None (raises on violation).
+        Engine is created once and reused across all checks.
         """
+        from app.agents.governance import GovernanceEngine
+
         policy = definition.governance_policy or {}
+        engine = GovernanceEngine(policy)
 
         async def check_governance(action: str, context: dict[str, Any]) -> None:
-            from app.agents.governance import GovernanceEngine
-            engine = GovernanceEngine(policy)
             await engine.check(action=action, context=context, tenant_id=tenant_id)
 
         return check_governance

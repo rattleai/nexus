@@ -1,16 +1,20 @@
 """Sandboxed code execution for AI agents.
 
 Provides OS-level isolation for agents that need to run generated code.
-Uses subprocess with resource limits (rlimit, tmpfs, optional seccomp)
-for defense-in-depth. Designed for upgrade path to gVisor/Kata containers
+Uses subprocess with resource limits (rlimit) and restricted builtins for
+defense-in-depth. Designed for upgrade path to gVisor/Kata containers
 in Kubernetes environments.
 
 Security model:
     - Each execution runs in a subprocess with restricted resources
-    - Separate tmpfs working directory (cleaned after execution)
+    - Separate temporary working directory (cleaned after execution)
     - CPU and memory limits enforced via resource.setrlimit
-    - Network access disabled by default
-    - No access to host filesystem beyond the tmpfs sandbox
+    - Restricted builtins: dangerous functions removed (exec, eval, compile,
+      __import__ replaced with allowlist-based importer)
+    - File paths passed via environment variables (not string interpolation)
+    - Process fork/spawn blocked via RLIMIT_NPROC
+    - File creation size limited via RLIMIT_FSIZE
+    - No access to parent process environment variables
 """
 
 from __future__ import annotations
@@ -18,7 +22,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import resource
 import shutil
 import tempfile
 import uuid
@@ -27,9 +30,30 @@ from typing import Any
 
 import structlog
 
-from app.config import settings
-
 logger = structlog.stdlib.get_logger()
+
+# Modules that are always safe to import in the sandbox
+_DEFAULT_ALLOWED_IMPORTS = frozenset({
+    "math", "random", "string", "re", "json", "csv",
+    "datetime", "time", "collections", "itertools", "functools",
+    "operator", "decimal", "fractions", "statistics",
+    "hashlib", "hmac", "base64", "binascii",
+    "textwrap", "difflib", "unicodedata",
+    "copy", "pprint", "dataclasses", "typing",
+    "io", "enum", "abc", "contextlib",
+})
+
+# Modules that are always blocked
+_BLOCKED_IMPORTS = frozenset({
+    "os", "sys", "subprocess", "shutil", "signal", "ctypes",
+    "importlib", "code", "codeop", "compileall",
+    "socket", "http", "urllib", "requests", "httpx",
+    "multiprocessing", "threading", "concurrent",
+    "pickle", "shelve", "marshal",
+    "pathlib",  # prevents filesystem traversal
+    "builtins", "__builtin__",
+    "pty", "termios", "fcntl",
+})
 
 
 @dataclass
@@ -41,7 +65,7 @@ class SandboxConfig:
     timeout_seconds: int = 60
     max_output_bytes: int = 1_048_576  # 1 MB
     network_enabled: bool = False
-    allowed_imports: list[str] = field(default_factory=list)  # empty = all allowed
+    allowed_imports: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -62,7 +86,7 @@ class ExecutionSandbox:
     """Subprocess-based code execution sandbox with resource limits.
 
     Each execution:
-    1. Creates a temporary directory (tmpfs-backed on Linux)
+    1. Creates a temporary directory
     2. Writes the code to a file in that directory
     3. Spawns a subprocess with rlimits (memory, CPU)
     4. Captures stdout/stderr with size limits
@@ -83,7 +107,7 @@ class ExecutionSandbox:
 
         Args:
             code: Python source code to execute.
-            input_data: JSON-serializable data passed as INPUT_DATA env var.
+            input_data: JSON-serializable data passed via file (not env var).
             execution_id: Tracking ID for logging.
         """
         execution_id = execution_id or uuid.uuid4().hex[:12]
@@ -91,26 +115,26 @@ class ExecutionSandbox:
 
         try:
             # Create isolated temp directory
-            sandbox_dir = tempfile.mkdtemp(prefix=f"agent_sandbox_{execution_id}_")
+            sandbox_dir = tempfile.mkdtemp(prefix="agent_sandbox_")
 
             # Write code to file
             code_file = os.path.join(sandbox_dir, "agent_code.py")
             with open(code_file, "w") as f:
                 f.write(code)
 
-            # Write input data
+            # Write input data to file (not env var — avoids size/encoding issues)
             if input_data:
                 input_file = os.path.join(sandbox_dir, "input.json")
                 with open(input_file, "w") as f:
                     json.dump(input_data, f, default=str)
 
-            # Build wrapper script that sets rlimits before exec
-            wrapper_code = self._build_wrapper(code_file, sandbox_dir)
+            # Write wrapper script
+            wrapper_code = self._build_wrapper()
             wrapper_file = os.path.join(sandbox_dir, "wrapper.py")
             with open(wrapper_file, "w") as f:
                 f.write(wrapper_code)
 
-            # Set up environment
+            # Minimal, clean environment — no host env var leakage
             env = {
                 "HOME": sandbox_dir,
                 "TMPDIR": sandbox_dir,
@@ -118,11 +142,18 @@ class ExecutionSandbox:
                 "PYTHONPATH": "",
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "SANDBOX_DIR": sandbox_dir,
+                "SANDBOX_CODE_FILE": code_file,
+                "SANDBOX_MEM_BYTES": str(self.config.memory_mb * 1024 * 1024),
+                "SANDBOX_CPU_SECONDS": str(self.config.cpu_seconds),
             }
-            if input_data:
-                env["INPUT_DATA"] = json.dumps(input_data, default=str)
 
-            # Run in subprocess with timeout
+            # Build allowed imports list
+            allowed = set(_DEFAULT_ALLOWED_IMPORTS)
+            if self.config.allowed_imports:
+                allowed.update(self.config.allowed_imports)
+            env["SANDBOX_ALLOWED_IMPORTS"] = ",".join(sorted(allowed))
+            env["SANDBOX_BLOCKED_IMPORTS"] = ",".join(sorted(_BLOCKED_IMPORTS))
+
             import time
             start = time.monotonic()
 
@@ -140,8 +171,17 @@ class ExecutionSandbox:
                     timeout=self.config.timeout_seconds,
                 )
             except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
+                # Graceful shutdown: SIGTERM first, then SIGKILL
+                try:
+                    process.terminate()
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=3)
+                    except asyncio.TimeoutError:
+                        process.kill()
+                        await process.wait()
+                except ProcessLookupError:
+                    pass  # Process already exited
+
                 return SandboxResult(
                     success=False,
                     error=f"Execution timed out after {self.config.timeout_seconds}s",
@@ -151,21 +191,23 @@ class ExecutionSandbox:
 
             duration_ms = int((time.monotonic() - start) * 1000)
 
-            # Truncate output
+            # Truncate output to prevent memory exhaustion
             stdout = stdout_bytes[:self.config.max_output_bytes].decode("utf-8", errors="replace")
             stderr = stderr_bytes[:self.config.max_output_bytes].decode("utf-8", errors="replace")
 
-            # Try to parse return value from stdout
+            # Read result file if it exists
             return_value = None
             if process.returncode == 0:
-                # Check for JSON result file
                 result_file = os.path.join(sandbox_dir, "result.json")
                 if os.path.exists(result_file):
-                    with open(result_file) as f:
-                        try:
-                            return_value = json.load(f)
-                        except json.JSONDecodeError:
-                            pass
+                    # Limit result file size
+                    stat = os.stat(result_file)
+                    if stat.st_size <= self.config.max_output_bytes:
+                        with open(result_file) as f:
+                            try:
+                                return_value = json.load(f)
+                            except json.JSONDecodeError:
+                                pass
 
             return SandboxResult(
                 success=process.returncode == 0,
@@ -190,65 +232,106 @@ class ExecutionSandbox:
                 exit_code=-2,
             )
         finally:
-            # Clean up sandbox directory
             if sandbox_dir and os.path.exists(sandbox_dir):
-                try:
-                    shutil.rmtree(sandbox_dir, ignore_errors=True)
-                except Exception:
-                    pass
+                shutil.rmtree(sandbox_dir, ignore_errors=True)
 
-    def _build_wrapper(self, code_file: str, sandbox_dir: str) -> str:
-        """Build a Python wrapper that sets resource limits before executing agent code."""
-        mem_bytes = self.config.memory_mb * 1024 * 1024
-        cpu_seconds = self.config.cpu_seconds
+    def _build_wrapper(self) -> str:
+        """Build a Python wrapper that sets resource limits and restricted builtins.
 
-        return f'''
+        All paths and configuration come from environment variables, not
+        string interpolation, to prevent code injection.
+        """
+        return '''
 import resource
 import sys
 import os
 import json
 
-# Set resource limits
+# ── Resource limits ────────────────────────────────────────────────────
+mem_bytes = int(os.environ.get("SANDBOX_MEM_BYTES", "268435456"))
+cpu_seconds = int(os.environ.get("SANDBOX_CPU_SECONDS", "30"))
+
 try:
-    # Memory limit (virtual memory)
-    resource.setrlimit(resource.RLIMIT_AS, ({mem_bytes}, {mem_bytes}))
-    # CPU time limit
-    resource.setrlimit(resource.RLIMIT_CPU, ({cpu_seconds}, {cpu_seconds}))
-    # Max file size (10 MB)
+    resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
+except (ValueError, resource.error):
+    pass
+try:
+    resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
+except (ValueError, resource.error):
+    pass
+try:
     resource.setrlimit(resource.RLIMIT_FSIZE, (10485760, 10485760))
-    # Max number of open files
+except (ValueError, resource.error):
+    pass
+try:
     resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
-    # No core dumps
+except (ValueError, resource.error):
+    pass
+try:
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    # No new processes (prevent fork bombs)
+except (ValueError, resource.error):
+    pass
+try:
     resource.setrlimit(resource.RLIMIT_NPROC, (0, 0))
 except (ValueError, resource.error):
-    pass  # Some limits may not be available on all platforms
+    pass
 
-# Load input data if available
+# ── Import restriction ─────────────────────────────────────────────────
+_allowed_imports = set(os.environ.get("SANDBOX_ALLOWED_IMPORTS", "").split(","))
+_blocked_imports = set(os.environ.get("SANDBOX_BLOCKED_IMPORTS", "").split(","))
+_original_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
+
+def _restricted_import(name, *args, **kwargs):
+    top_level = name.split(".")[0]
+    if top_level in _blocked_imports:
+        raise ImportError(f"Import of '{name}' is not allowed in sandbox")
+    if _allowed_imports and top_level not in _allowed_imports:
+        raise ImportError(f"Import of '{name}' is not allowed in sandbox")
+    return _original_import(name, *args, **kwargs)
+
+# ── Restricted builtins ────────────────────────────────────────────────
+_safe_builtins = {}
+_dangerous = {"exec", "eval", "compile", "__import__", "globals", "locals",
+              "breakpoint", "exit", "quit", "help", "input", "open",
+              "memoryview", "credits", "license", "copyright"}
+for name in dir(__builtins__):
+    if name not in _dangerous:
+        _safe_builtins[name] = getattr(__builtins__, name)
+
+# Re-add safe versions
+_safe_builtins["__import__"] = _restricted_import
+_safe_builtins["print"] = print
+_safe_builtins["range"] = range
+_safe_builtins["len"] = len
+_safe_builtins["type"] = type
+_safe_builtins["isinstance"] = isinstance
+
+# ── Load input data ────────────────────────────────────────────────────
+sandbox_dir = os.environ.get("SANDBOX_DIR", "")
+code_file = os.environ.get("SANDBOX_CODE_FILE", "")
 input_data = None
-input_file = os.path.join("{sandbox_dir}", "input.json")
-if os.path.exists(input_file):
-    with open(input_file) as f:
+input_path = os.path.join(sandbox_dir, "input.json")
+if os.path.exists(input_path):
+    with open(input_path) as f:
         input_data = json.load(f)
 
-# Execute the agent code
+# ── Execute agent code ─────────────────────────────────────────────────
 try:
-    with open("{code_file}") as f:
+    with open(code_file) as f:
         code = f.read()
-    exec_globals = {{"__builtins__": __builtins__, "input_data": input_data}}
-    exec(code, exec_globals)
+    exec_globals = {"__builtins__": _safe_builtins, "input_data": input_data}
+    compiled = compile(code, "<agent_code>", "exec")
+    exec(compiled, exec_globals)
 
-    # If the code defines a 'result' variable, save it
     if "result" in exec_globals:
-        result_file = os.path.join("{sandbox_dir}", "result.json")
-        with open(result_file, "w") as f:
+        result_path = os.path.join(sandbox_dir, "result.json")
+        with open(result_path, "w") as f:
             json.dump(exec_globals["result"], f, default=str)
 
 except MemoryError:
     print("ERROR: Memory limit exceeded", file=sys.stderr)
     sys.exit(137)
 except Exception as e:
-    print(f"ERROR: {{type(e).__name__}}: {{e}}", file=sys.stderr)
+    print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)
     sys.exit(1)
 '''

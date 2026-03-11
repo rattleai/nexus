@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── Agent Definition ───────────────────────────────────────────────────
@@ -15,11 +15,11 @@ from pydantic import BaseModel, Field
 class AgentDefinitionCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     slug: str = Field(..., min_length=1, max_length=255, pattern=r"^[a-z0-9][a-z0-9\-]*$")
-    description: str = ""
-    system_prompt: str = ""
-    model: str = "gpt-4o"
-    temperature: float | None = None
-    max_tokens: int | None = None
+    description: str = Field("", max_length=5000)
+    system_prompt: str = Field("", max_length=100_000)
+    model: str = Field("gpt-4o", max_length=100)
+    temperature: float | None = Field(None, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(None, ge=1, le=1_000_000)
     allowed_tools: list[str] = []
     max_steps_per_run: int = Field(50, ge=1, le=1000)
     max_duration_seconds: int = Field(300, ge=10, le=3600)
@@ -31,12 +31,12 @@ class AgentDefinitionCreate(BaseModel):
 
 
 class AgentDefinitionUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    system_prompt: str | None = None
-    model: str | None = None
-    temperature: float | None = None
-    max_tokens: int | None = None
+    name: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = Field(None, max_length=5000)
+    system_prompt: str | None = Field(None, max_length=100_000)
+    model: str | None = Field(None, max_length=100)
+    temperature: float | None = Field(None, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(None, ge=1, le=1_000_000)
     allowed_tools: list[str] | None = None
     max_steps_per_run: int | None = Field(None, ge=1, le=1000)
     max_duration_seconds: int | None = Field(None, ge=10, le=3600)
@@ -45,7 +45,7 @@ class AgentDefinitionUpdate(BaseModel):
     memory_config: dict[str, Any] | None = None
     governance_policy: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
-    status: str | None = None
+    status: Literal["draft", "active", "disabled"] | None = None
 
 
 class AgentDefinitionResponse(BaseModel):
@@ -105,6 +105,7 @@ class AgentInstanceResponse(BaseModel):
 
 class AgentSessionResponse(BaseModel):
     id: uuid.UUID
+    tenant_id: uuid.UUID
     instance_id: uuid.UUID
     status: str
     messages: list[dict[str, Any]]
@@ -120,7 +121,7 @@ class AgentSessionResponse(BaseModel):
 
 
 class MemoryWriteRequest(BaseModel):
-    namespace: str = "default"
+    namespace: str = Field("default", min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     key: str = Field(..., min_length=1, max_length=500)
     value: dict[str, Any] = {}
 
@@ -195,13 +196,22 @@ class WorkflowRunResponse(BaseModel):
 
 class TenantToolCreate(BaseModel):
     tool_name: str = Field(..., min_length=1, max_length=100, pattern=r"^[a-z][a-z0-9_]*$")
-    description: str = ""
+    description: str = Field("", max_length=5000)
     input_schema: dict[str, Any] = {}
     output_schema: dict[str, Any] = {}
-    endpoint_url: str | None = None
+    endpoint_url: str | None = Field(None, max_length=2048)
     auth_config: dict[str, Any] = {}
-    health_check_url: str | None = None
+    health_check_url: str | None = Field(None, max_length=2048)
     metadata: dict[str, Any] = {}
+
+    @field_validator("endpoint_url", "health_check_url")
+    @classmethod
+    def validate_url_scheme(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not v.startswith(("https://",)):
+            raise ValueError("Only HTTPS URLs are allowed")
+        return v
 
 
 class TenantToolResponse(BaseModel):
@@ -227,17 +237,17 @@ class TenantToolResponse(BaseModel):
 
 class AgentPolicyCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    description: str = ""
-    max_spend_per_run_usd: float | None = None
-    max_spend_per_day_usd: float | None = None
-    max_spend_per_month_usd: float | None = None
+    description: str = Field("", max_length=5000)
+    max_spend_per_run_usd: float | None = Field(None, ge=0)
+    max_spend_per_day_usd: float | None = Field(None, ge=0)
+    max_spend_per_month_usd: float | None = Field(None, ge=0)
     allowed_tools: list[str] = []
     denied_tools: list[str] = []
     require_approval_for: list[str] = []
-    approval_timeout_seconds: int = 300
-    approval_default_action: str = "deny"
-    max_requests_per_minute: int | None = None
-    max_steps_per_run: int | None = None
+    approval_timeout_seconds: int = Field(300, ge=1, le=86400)
+    approval_default_action: Literal["deny", "approve"] = "deny"
+    max_requests_per_minute: int | None = Field(None, ge=1, le=10_000)
+    max_steps_per_run: int | None = Field(None, ge=1, le=10_000)
     rules: dict[str, Any] = {}
 
 

@@ -106,7 +106,7 @@ class AgentDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Version
     max_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Tool access — JSON array of tool names this agent may invoke
-    allowed_tools: Mapped[dict] = mapped_column(JSONB, default=list, server_default="[]")
+    allowed_tools: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
 
     # Execution constraints
     max_steps_per_run: Mapped[int] = mapped_column(Integer, default=50, server_default="50")
@@ -199,7 +199,7 @@ class AgentSession(Base, TimestampMixin):
     status: Mapped[SessionStatus] = mapped_column(
         Enum(SessionStatus, name="session_status"), default=SessionStatus.ACTIVE, nullable=False,
     )
-    messages: Mapped[dict] = mapped_column(JSONB, default=list, server_default="[]")
+    messages: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, server_default="{}")
     expires_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -379,11 +379,11 @@ class AgentPolicy(Base, TimestampMixin, VersionMixin):
     max_spend_per_month_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Tool access control
-    allowed_tools: Mapped[dict] = mapped_column(JSONB, default=list, server_default="[]")
-    denied_tools: Mapped[dict] = mapped_column(JSONB, default=list, server_default="[]")
+    allowed_tools: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    denied_tools: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
 
     # Actions requiring human approval
-    require_approval_for: Mapped[dict] = mapped_column(JSONB, default=list, server_default="[]")
+    require_approval_for: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     approval_timeout_seconds: Mapped[int] = mapped_column(Integer, default=300, server_default="300")
     approval_default_action: Mapped[str] = mapped_column(String(10), default="deny", server_default="deny")
 

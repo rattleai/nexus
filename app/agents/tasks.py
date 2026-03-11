@@ -14,7 +14,8 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import structlog
-from sqlalchemy import select, update
+from celery.exceptions import SoftTimeLimitExceeded
+from sqlalchemy import text, update
 
 from app.workers.celery_app import celery as celery_app
 
@@ -27,7 +28,12 @@ def _run_async(coro):
     try:
         return loop.run_until_complete(coro)
     finally:
-        loop.close()
+        try:
+            # Shut down async generators and pending tasks cleanly.
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.run_until_complete(loop.shutdown_default_executor())
+        finally:
+            loop.close()
 
 
 @celery_app.task(
@@ -74,6 +80,26 @@ def execute_agent_run(
 
     try:
         return _run_async(_run())
+    except SoftTimeLimitExceeded:
+        logger.warning(
+            "agent_task_soft_timeout",
+            definition_id=definition_id,
+            tenant_id=tenant_id,
+        )
+        # Mark instance as failed due to timeout (best-effort).
+        try:
+            _run_async(_mark_instances_failed(
+                tenant_id,
+                definition_id,
+                "Agent execution timed out (soft limit reached)",
+            ))
+        except Exception:
+            logger.exception("failed_to_mark_timeout")
+        return {
+            "instance_id": None,
+            "status": "failed",
+            "error": "soft_time_limit_exceeded",
+        }
     except Exception as exc:
         logger.error(
             "agent_task_failed",
@@ -83,6 +109,35 @@ def execute_agent_run(
             exc_info=True,
         )
         raise
+
+
+async def _mark_instances_failed(
+    tenant_id: str,
+    definition_id: str,
+    error_msg: str,
+) -> None:
+    """Best-effort: mark running instances for this definition as failed."""
+    from app.agents.models import AgentInstance, InstanceStatus
+    from app.db.session import async_session_factory
+
+    async with async_session_factory() as db:
+        # Set tenant context for RLS.
+        await db.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": tenant_id})
+        stmt = (
+            update(AgentInstance)
+            .where(
+                AgentInstance.definition_id == uuid.UUID(definition_id),
+                AgentInstance.tenant_id == uuid.UUID(tenant_id),
+                AgentInstance.status == InstanceStatus.RUNNING,
+            )
+            .values(
+                status=InstanceStatus.FAILED,
+                error=error_msg,
+                completed_at=datetime.now(UTC),
+            )
+        )
+        await db.execute(stmt)
+        await db.commit()
 
 
 @celery_app.task(
@@ -124,6 +179,17 @@ def execute_workflow_run(
 
     try:
         return _run_async(_run())
+    except SoftTimeLimitExceeded:
+        logger.warning(
+            "workflow_task_soft_timeout",
+            workflow_id=workflow_id,
+            tenant_id=tenant_id,
+        )
+        return {
+            "run_id": None,
+            "status": "failed",
+            "error": "soft_time_limit_exceeded",
+        }
     except Exception as exc:
         logger.error(
             "workflow_task_failed",
@@ -137,7 +203,11 @@ def execute_workflow_run(
 
 @celery_app.task(name="agents.cleanup_stale_instances")
 def cleanup_stale_instances() -> dict:
-    """Periodic task: mark running instances that have been stale for too long as failed."""
+    """Periodic task: mark running instances that have been stale for too long as failed.
+
+    This task runs without tenant context (platform-level) so it uses a
+    superuser connection that bypasses RLS by setting the role appropriately.
+    """
     async def _run():
         from app.agents.models import AgentInstance, InstanceStatus
         from app.db.session import async_session_factory
@@ -145,6 +215,11 @@ def cleanup_stale_instances() -> dict:
         cutoff = datetime.now(UTC) - timedelta(hours=1)
 
         async with async_session_factory() as db:
+            # Bypass RLS for cross-tenant cleanup.  The session factory uses
+            # the application role which has FORCE RLS.  We disable it for
+            # this single transaction so the UPDATE sees all tenants.
+            await db.execute(text("SET LOCAL row_security = off"))
+
             stmt = (
                 update(AgentInstance)
                 .where(
