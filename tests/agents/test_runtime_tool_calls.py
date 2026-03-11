@@ -69,6 +69,14 @@ def _build_runtime(**definition_overrides) -> AgentRuntime:
     )
 
 
+# Patch targets: ai_gateway and GovernanceEngine are imported locally inside
+# AgentRuntime.run(), so we patch them at their defining modules.
+_PATCH_AI_GW = "app.ai.gateway.ai_gateway"
+_PATCH_GOVERNANCE = "app.agents.governance.GovernanceEngine"
+_PATCH_EMIT = "app.agents.runtime.emit"
+_PATCH_TOOL_REGISTRY = "app.agents.tool_registry.tool_registry"
+
+
 # ===================================================================
 # _extract_tool_calls
 # ===================================================================
@@ -142,11 +150,10 @@ class TestExtractToolCalls:
 class TestBuildToolsSchema:
     """Tests for AgentRuntime._build_tools_schema."""
 
-    @patch("app.agents.runtime.AgentRuntime._build_tools_schema.__module__", create=True)
     def test_returns_openai_function_format_for_builtin_tools(self):
         runtime = _build_runtime(allowed_tools=["ai_complete"])
 
-        with patch("app.agents.tool_registry.tool_registry") as mock_registry:
+        with patch(_PATCH_TOOL_REGISTRY) as mock_registry:
             mock_registry.list_builtin_tools.return_value = {
                 "ai_complete": {
                     "description": "Run an AI completion",
@@ -181,7 +188,7 @@ class TestBuildToolsSchema:
     def test_custom_tool_gets_generic_schema(self):
         runtime = _build_runtime(allowed_tools=["my_custom_tool"])
 
-        with patch("app.agents.tool_registry.tool_registry") as mock_registry:
+        with patch(_PATCH_TOOL_REGISTRY) as mock_registry:
             mock_registry.list_builtin_tools.return_value = {}
             schema = runtime._build_tools_schema()
 
@@ -193,7 +200,7 @@ class TestBuildToolsSchema:
     def test_mixed_builtin_and_custom_tools(self):
         runtime = _build_runtime(allowed_tools=["ai_complete", "my_custom_tool"])
 
-        with patch("app.agents.tool_registry.tool_registry") as mock_registry:
+        with patch(_PATCH_TOOL_REGISTRY) as mock_registry:
             mock_registry.list_builtin_tools.return_value = {
                 "ai_complete": {
                     "description": "Run an AI completion",
@@ -219,7 +226,7 @@ class TestBuildToolsSchema:
 
 
 class TestReActLoop:
-    """Tests for AgentRuntime.run — the full ReAct loop."""
+    """Tests for AgentRuntime.run -- the full ReAct loop."""
 
     @pytest.mark.asyncio
     async def test_tool_call_then_final_response(self):
@@ -252,10 +259,10 @@ class TestReActLoop:
         governance_checker = AsyncMock()
 
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", new_callable=AsyncMock),
-            patch("app.agents.tool_registry.tool_registry") as mock_registry,
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, new_callable=AsyncMock),
+            patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
             MockGov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {
@@ -312,10 +319,10 @@ class TestReActLoop:
         mock_ai_gw.completion = AsyncMock(side_effect=[call1, call2])
 
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", new_callable=AsyncMock),
-            patch("app.agents.tool_registry.tool_registry") as mock_registry,
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, new_callable=AsyncMock),
+            patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
             MockGov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
@@ -350,10 +357,10 @@ class TestReActLoop:
         governance_checker = AsyncMock(side_effect=RuntimeError("Policy violation: spending limit exceeded"))
 
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", new_callable=AsyncMock),
-            patch("app.agents.tool_registry.tool_registry") as mock_registry,
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, new_callable=AsyncMock),
+            patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
             MockGov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
@@ -387,10 +394,10 @@ class TestReActLoop:
         tool_executor = AsyncMock(side_effect=Exception("Connection refused"))
 
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", new_callable=AsyncMock),
-            patch("app.agents.tool_registry.tool_registry") as mock_registry,
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, new_callable=AsyncMock),
+            patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
             MockGov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
@@ -428,22 +435,11 @@ class TestReActLoop:
 
         tool_executor = AsyncMock(return_value="tool result text")
 
-        # Capture the messages sent to the second LLM call
-        captured_messages: list[list[dict]] = []
-        original_completion = mock_ai_gw.completion
-
-        async def capture_completion(**kwargs):
-            captured_messages.append([m.copy() for m in kwargs["messages"]])
-            return await original_completion(**kwargs)
-
-        mock_ai_gw.completion = AsyncMock(side_effect=[tool_call_completion, final_completion])
-        # We will inspect the call args after the run
-
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", new_callable=AsyncMock),
-            patch("app.agents.tool_registry.tool_registry") as mock_registry,
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, new_callable=AsyncMock),
+            patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
             MockGov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
@@ -493,10 +489,10 @@ class TestReActLoop:
         mock_ai_gw.completion = AsyncMock(return_value=completion)
 
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", new_callable=AsyncMock),
-            patch("app.agents.tool_registry.tool_registry") as mock_registry,
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, new_callable=AsyncMock),
+            patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
             MockGov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
@@ -529,10 +525,10 @@ class TestReActLoop:
         mock_ai_gw.completion = AsyncMock(return_value=perpetual_tool_call)
 
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", new_callable=AsyncMock),
-            patch("app.agents.tool_registry.tool_registry") as mock_registry,
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, new_callable=AsyncMock),
+            patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
             MockGov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
@@ -558,10 +554,10 @@ class TestReActLoop:
         mock_ai_gw.completion = AsyncMock()
 
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", new_callable=AsyncMock),
-            patch("app.agents.tool_registry.tool_registry"),
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, new_callable=AsyncMock),
+            patch(_PATCH_TOOL_REGISTRY),
         ):
             MockGov.track_spending = AsyncMock()
 
@@ -590,10 +586,10 @@ class TestReActLoop:
         mock_ai_gw.completion = AsyncMock(return_value=completion)
 
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", new_callable=AsyncMock),
-            patch("app.agents.tool_registry.tool_registry") as mock_registry,
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, new_callable=AsyncMock),
+            patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
             MockGov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
@@ -623,10 +619,10 @@ class TestReActLoop:
         mock_ai_gw.completion = AsyncMock(return_value=completion)
 
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", new_callable=AsyncMock),
-            patch("app.agents.tool_registry.tool_registry") as mock_registry,
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, new_callable=AsyncMock),
+            patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
             MockGov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
@@ -664,10 +660,10 @@ class TestReActLoop:
         tool_executor = AsyncMock(return_value=huge_output)
 
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", new_callable=AsyncMock),
-            patch("app.agents.tool_registry.tool_registry") as mock_registry,
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, new_callable=AsyncMock),
+            patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
             MockGov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
@@ -706,10 +702,10 @@ class TestReActLoop:
         mock_emit = AsyncMock()
 
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", mock_emit),
-            patch("app.agents.tool_registry.tool_registry") as mock_registry,
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, mock_emit),
+            patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
             MockGov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
@@ -751,10 +747,10 @@ class TestReActLoop:
         tool_executor = AsyncMock(side_effect=["result_a", "result_b"])
 
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", new_callable=AsyncMock),
-            patch("app.agents.tool_registry.tool_registry") as mock_registry,
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, new_callable=AsyncMock),
+            patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
             MockGov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
@@ -798,10 +794,10 @@ class TestReActLoop:
         mock_ai_gw.completion = AsyncMock(return_value=completion)
 
         with (
-            patch("app.agents.runtime.ai_gateway", mock_ai_gw),
-            patch("app.agents.runtime.GovernanceEngine") as MockGov,
-            patch("app.agents.runtime.emit", new_callable=AsyncMock),
-            patch("app.agents.tool_registry.tool_registry") as mock_registry,
+            patch(_PATCH_AI_GW, mock_ai_gw),
+            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_EMIT, new_callable=AsyncMock),
+            patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
             MockGov.track_spending = AsyncMock(side_effect=Exception("Redis down"))
             mock_registry.list_builtin_tools.return_value = {}

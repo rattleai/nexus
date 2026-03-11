@@ -27,12 +27,15 @@ class TestToolAccessControl:
     async def test_allowed_tool_passes(self, strict_policy):
         engine = GovernanceEngine(strict_policy)
         with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            # Should not raise
-            await engine.check(
-                action="tool_call",
-                context={"tool_name": "ai_complete", "instance_id": "x"},
-                tenant_id=uuid.uuid4(),
-            )
+            with patch("app.agents.governance.redis_pool") as mock_redis:
+                mock_redis.incr = AsyncMock(return_value=1)
+                mock_redis.expire = AsyncMock()
+                # Should not raise
+                await engine.check(
+                    action="tool_call",
+                    context={"tool_name": "ai_complete", "instance_id": "x"},
+                    tenant_id=uuid.uuid4(),
+                )
 
     @pytest.mark.asyncio
     async def test_denied_tool_raises(self, strict_policy):
@@ -132,16 +135,25 @@ class TestRateLimiting:
 
 class TestApprovalWorkflow:
     @pytest.mark.asyncio
-    async def test_approval_required_raises(self, strict_policy):
-        engine = GovernanceEngine(strict_policy)
+    async def test_approval_required_raises(self):
+        """Test approval_required when tool is allowed but requires approval."""
+        policy = {
+            "allowed_tools": ["team_invite"],
+            "require_approval_for": ["team_invite"],
+            "approval_default_action": "deny",
+        }
+        engine = GovernanceEngine(policy)
         with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with pytest.raises(GovernanceViolation) as exc_info:
-                await engine.check(
-                    action="tool_call",
-                    context={"tool_name": "team_invite", "instance_id": "x"},
-                    tenant_id=uuid.uuid4(),
-                )
-            assert exc_info.value.violation_type == "approval_required"
+            with patch("app.agents.governance.redis_pool") as mock_redis:
+                mock_redis.incr = AsyncMock(return_value=1)
+                mock_redis.expire = AsyncMock()
+                with pytest.raises(GovernanceViolation) as exc_info:
+                    await engine.check(
+                        action="tool_call",
+                        context={"tool_name": "team_invite", "instance_id": "x"},
+                        tenant_id=uuid.uuid4(),
+                    )
+                assert exc_info.value.violation_type == "approval_required"
 
     @pytest.mark.asyncio
     async def test_no_approval_policy_passes(self):

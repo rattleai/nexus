@@ -28,7 +28,6 @@ from app.agents.events import (
 )
 from app.agents.executor import AgentExecutor
 from app.agents.models import (
-    AgentDefinition,
     WorkflowDefinition,
     WorkflowRun,
     WorkflowRunStatus,
@@ -378,8 +377,9 @@ class AgentOrchestrator:
 
         return {"parallel_results": outputs}
 
-    # Pattern for safe path components — prevents __dict__, __class__ traversal
-    _SAFE_PATH_RE = __import__("re").compile(r"^[a-zA-Z0-9_]+$")
+    # Pattern for safe path components — prevents __dict__, __class__ traversal.
+    # Blocks components starting with double underscore (dunder attributes).
+    _SAFE_PATH_RE = __import__("re").compile(r"^(?!__)[a-zA-Z0-9_]+$")
     _MAX_PATH_DEPTH = 10
 
     def _resolve_input(

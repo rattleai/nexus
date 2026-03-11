@@ -25,7 +25,6 @@ import structlog
 
 from app.agents.events import AgentStepCompleted
 from app.agents.models import AgentDefinition
-from app.config import settings
 from app.core.events import emit
 
 logger = structlog.stdlib.get_logger()
