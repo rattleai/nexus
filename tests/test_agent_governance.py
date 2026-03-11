@@ -157,6 +157,104 @@ class TestApprovalWorkflow:
                 )
 
 
+class TestDailySpendingLimits:
+    @pytest.mark.asyncio
+    async def test_daily_within_budget_passes(self):
+        policy = {"max_spend_per_day_usd": 10.0}
+        engine = GovernanceEngine(policy)
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with patch("app.agents.governance.redis_pool") as mock_redis:
+                mock_redis.get = AsyncMock(return_value="5.0")  # $5 spent
+                mock_redis.incr = AsyncMock(return_value=1)
+                mock_redis.expire = AsyncMock()
+                await engine.check(
+                    action="tool_call",
+                    context={"tool_name": "test", "instance_id": "x", "current_cost": 0.5},
+                    tenant_id=uuid.uuid4(),
+                )
+
+    @pytest.mark.asyncio
+    async def test_daily_over_budget_raises(self):
+        policy = {"max_spend_per_day_usd": 10.0}
+        engine = GovernanceEngine(policy)
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with patch("app.agents.governance.redis_pool") as mock_redis:
+                mock_redis.get = AsyncMock(return_value="10.5")  # Over $10 limit
+                mock_redis.incr = AsyncMock(return_value=1)
+                mock_redis.expire = AsyncMock()
+                with pytest.raises(GovernanceViolation) as exc_info:
+                    await engine.check(
+                        action="tool_call",
+                        context={"tool_name": "test", "instance_id": "x", "current_cost": 0.5},
+                        tenant_id=uuid.uuid4(),
+                    )
+                assert exc_info.value.violation_type == "spending_limit"
+
+    @pytest.mark.asyncio
+    async def test_redis_failure_blocks_spending_check(self):
+        """When Redis is unavailable and a daily limit is configured, fail-closed."""
+        policy = {"max_spend_per_day_usd": 10.0}
+        engine = GovernanceEngine(policy)
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with patch("app.agents.governance.redis_pool") as mock_redis:
+                mock_redis.get = AsyncMock(side_effect=ConnectionError("Redis down"))
+                mock_redis.incr = AsyncMock(return_value=1)
+                mock_redis.expire = AsyncMock()
+                with pytest.raises(GovernanceViolation) as exc_info:
+                    await engine.check(
+                        action="tool_call",
+                        context={"tool_name": "test", "instance_id": "x", "current_cost": 0.5},
+                        tenant_id=uuid.uuid4(),
+                    )
+                assert "Redis unavailable" in str(exc_info.value)
+
+
+class TestRateLimitRedisFailure:
+    @pytest.mark.asyncio
+    async def test_redis_failure_blocks_rate_limit(self):
+        """When Redis is unavailable for rate limiting, fail-closed."""
+        policy = {"max_requests_per_minute": 10}
+        engine = GovernanceEngine(policy)
+        with patch("app.agents.governance.emit", new_callable=AsyncMock):
+            with patch("app.agents.governance.redis_pool") as mock_redis:
+                mock_redis.incr = AsyncMock(side_effect=ConnectionError("Redis down"))
+                with pytest.raises(GovernanceViolation) as exc_info:
+                    await engine.check(
+                        action="tool_call",
+                        context={"tool_name": "test", "instance_id": "x"},
+                        tenant_id=uuid.uuid4(),
+                    )
+                assert "Redis unavailable" in str(exc_info.value)
+
+
+class TestSpendingTracking:
+    @pytest.mark.asyncio
+    async def test_track_spending_records_to_redis(self):
+        with patch("app.agents.governance.redis_pool") as mock_redis:
+            mock_redis.incrbyfloat = AsyncMock()
+            mock_redis.expire = AsyncMock()
+            await GovernanceEngine.track_spending(
+                tenant_id=uuid.uuid4(),
+                agent_id="agent1",
+                instance_id="inst1",
+                cost_usd=0.05,
+            )
+            assert mock_redis.incrbyfloat.call_count == 3  # run, day, month
+
+    @pytest.mark.asyncio
+    async def test_track_spending_best_effort_on_redis_failure(self):
+        """track_spending should not raise on Redis failure."""
+        with patch("app.agents.governance.redis_pool") as mock_redis:
+            mock_redis.incrbyfloat = AsyncMock(side_effect=ConnectionError("Redis down"))
+            # Should not raise
+            await GovernanceEngine.track_spending(
+                tenant_id=uuid.uuid4(),
+                agent_id="agent1",
+                instance_id="inst1",
+                cost_usd=0.05,
+            )
+
+
 class TestEmptyPolicy:
     @pytest.mark.asyncio
     async def test_empty_policy_allows_everything(self):

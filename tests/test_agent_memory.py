@@ -21,18 +21,32 @@ class TestShortTermMemory:
         session_id = uuid.uuid4()
 
         with patch("app.agents.memory.redis_pool") as mock_redis:
-            mock_redis.hset = AsyncMock()
-            mock_redis.expire = AsyncMock()
+            # Lua script returns 1 (success)
+            mock_redis.eval = AsyncMock(return_value=1)
             mock_redis.hget = AsyncMock(return_value=json.dumps({"key": "value"}))
 
             await manager.set_short_term(
                 instance_id, session_id, "test_key", {"key": "value"},
             )
-            mock_redis.hset.assert_called_once()
-            mock_redis.expire.assert_called_once()
+            mock_redis.eval.assert_called_once()
 
             result = await manager.get_short_term(instance_id, session_id, "test_key")
             assert result == {"key": "value"}
+
+    @pytest.mark.asyncio
+    async def test_atomic_cap_enforcement_rejects_new_key(self):
+        """When cap is reached, Lua script returns 0 for new keys."""
+        mock_db = MagicMock()
+        manager = AgentMemoryManager(mock_db)
+
+        with patch("app.agents.memory.redis_pool") as mock_redis:
+            # Lua script returns 0 (cap reached, new key rejected)
+            mock_redis.eval = AsyncMock(return_value=0)
+
+            # Should not raise, just silently skip
+            await manager.set_short_term(
+                uuid.uuid4(), uuid.uuid4(), "new_key", "value", max_entries=5,
+            )
 
     @pytest.mark.asyncio
     async def test_get_returns_none_for_missing(self):
