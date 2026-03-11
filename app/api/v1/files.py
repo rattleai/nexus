@@ -68,30 +68,18 @@ async def upload_file(
     plan = await get_effective_plan(tenant.id, db)
     await enforce_plan_limit(tenant.id, plan, QuotaMetric.FILE_UPLOADS_PER_DAY)
 
-    # Read in chunks to enforce size limit without loading entire file into memory
-    chunks = []
-    total_size = 0
-    while True:
-        chunk = await file.read(65_536)  # 64KB chunks
-        if not chunk:
-            break
-        total_size += len(chunk)
-        if total_size > settings.MAX_UPLOAD_SIZE_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large (max {settings.MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB)",
-            )
-        chunks.append(chunk)
-
-    content = b"".join(chunks)
-
     safe_name = _sanitize_filename(file.filename or "upload")
     unique_name = f"{uuid.uuid4().hex}_{safe_name}"
     key = _tenant_key(tenant, unique_name)
 
     try:
         storage = _get_storage()
-        await storage.async_upload(key, content)
+        # Stream directly to S3 — avoids loading entire file into memory (P0-11).
+        # The SpooledTemporaryFile from UploadFile is passed to the sync S3 upload
+        # via asyncio.to_thread, which streams in 5 MB chunks.
+        total_size = await storage.async_upload_fileobj(
+            key, file.file, max_size=settings.MAX_UPLOAD_SIZE_BYTES
+        )
     except StorageError as exc:
         raise handle_storage_error(exc) from exc
     except RuntimeError as exc:
@@ -99,12 +87,12 @@ async def upload_file(
 
     # Track usage
     await increment_usage(tenant.id, QuotaMetric.FILE_UPLOADS_PER_DAY)
-    await increment_usage(tenant.id, QuotaMetric.STORAGE_BYTES, len(content))
+    await increment_usage(tenant.id, QuotaMetric.STORAGE_BYTES, total_size)
 
-    logger.info("file_uploaded", tenant_id=str(tenant.id), key=key, size=len(content))
+    logger.info("file_uploaded", tenant_id=str(tenant.id), key=key, size=total_size)
     return FileUploadResponse(
         key=key,
-        size=len(content),
+        size=total_size,
         content_type=file.content_type or "application/octet-stream",
     )
 

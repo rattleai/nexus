@@ -208,26 +208,53 @@ def on(event_type: type) -> Callable:
     return decorator
 
 
-async def emit(event: DomainEvent) -> None:
+async def emit(event: DomainEvent, *, durable: bool = False) -> None:
     """Dispatch a domain event to all registered handlers.
 
     Handlers run concurrently. Failures in individual handlers are logged
     but do not prevent other handlers from running.
+
+    If durable=True, the event is also published to the Redis Streams event
+    bus for cross-process delivery and persistence.
     """
     event_type = type(event)
     handlers = _handlers.get(event_type, [])
 
-    if not handlers:
+    if not handlers and not durable:
         logger.debug("event_no_handlers", event_name=event.event_name)
         return
 
-    logger.info("event_emitting", event_name=event.event_name, handler_count=len(handlers))
+    logger.info("event_emitting", event_name=event.event_name, handler_count=len(handlers), durable=durable)
 
     tasks = []
     for handler in handlers:
         tasks.append(_safe_call(handler, event))
 
+    # Publish to durable event bus if requested
+    if durable:
+        tasks.append(_publish_durable(event))
+
     await asyncio.gather(*tasks)
+
+
+async def _publish_durable(event: DomainEvent) -> None:
+    """Publish event to the Redis Streams event bus."""
+    try:
+        from app.core.event_bus import event_bus
+        from dataclasses import asdict
+
+        data = asdict(event)
+        # Convert datetime to ISO string for JSON serialization
+        data.pop("occurred_at", None)
+        data["occurred_at"] = event.occurred_at.isoformat()
+
+        await event_bus.publish(event.event_name, data)
+    except Exception:
+        logger.error(
+            "event_durable_publish_failed",
+            event_name=event.event_name,
+            exc_info=True,
+        )
 
 
 async def _safe_call(handler: EventHandler, event: DomainEvent) -> None:

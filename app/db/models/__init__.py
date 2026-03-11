@@ -54,6 +54,9 @@ from app.db.models.mobile import (
     SyncMixin,
     WebAuthnCredential,
 )
+from app.db.models.oauth_client import (
+    OAuthClient,
+)
 from app.db.models.operations import (
     AuditLog,
     Job,
@@ -102,6 +105,8 @@ __all__ = [
     "WalletTransactionType",
     "AIUsageLog",
     "PromptTemplate",
+    # OAuth
+    "OAuthClient",
     # Mobile
     "PushSubscription",
     "WebAuthnCredential",

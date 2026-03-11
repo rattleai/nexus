@@ -85,7 +85,7 @@ async def get_current_user_from_token(
 
     Raises 401 if the token is missing, expired, or invalid.
     """
-    from app.core.security import decode_access_token
+    from app.core.security import decode_access_token, is_token_revoked, is_user_token_revoked
 
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
@@ -99,9 +99,19 @@ async def get_current_user_from_token(
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token") from None
 
+    # Check token revocation blacklist (P0-7: JWT revocation)
+    jti = payload.get("jti")
+    if jti and await is_token_revoked(jti):
+        raise HTTPException(status_code=401, detail="Token has been revoked")
+
     user_id_str = payload.get("sub")
     if not user_id_str:
         raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    # Check if all user tokens were bulk-revoked (e.g. after password reset)
+    iat = payload.get("iat")
+    if user_id_str and iat and await is_user_token_revoked(user_id_str, int(iat)):
+        raise HTTPException(status_code=401, detail="Token has been revoked")
 
     try:
         user_id = uuid.UUID(user_id_str)
@@ -184,6 +194,69 @@ class RequireScopes:
                 status_code=403,
                 detail="Insufficient API key permissions",
             )
+
+
+# ── OAuth Client Credentials auth ──────────────────────
+
+
+async def get_tenant_from_client_credentials(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Tenant:
+    """Authenticate via OAuth Client Credentials JWT (Bearer token).
+
+    Validates the token was issued by the Client Credentials flow,
+    resolves the tenant, and sets RLS context.
+    """
+    from app.core.security import _get_effective_algorithm, _get_jwt_verification_key, is_token_revoked
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    token = auth_header[7:]
+    algorithm = _get_effective_algorithm()
+    try:
+        payload = jwt.decode(
+            token,
+            _get_jwt_verification_key(),
+            algorithms=[algorithm],
+            audience="cadprice-api",
+            issuer="cadprice",
+        )
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired") from None
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token") from None
+
+    if payload.get("type") != "client_credentials":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+
+    # Check token revocation blacklist
+    jti = payload.get("jti")
+    if jti and await is_token_revoked(jti):
+        raise HTTPException(status_code=401, detail="Token has been revoked")
+
+    tenant_id_str = payload.get("tenant_id")
+    if not tenant_id_str:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    try:
+        tenant_id = uuid.UUID(tenant_id_str)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=401, detail="Invalid token payload") from None
+
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)))
+    tenant = result.scalar_one_or_none()
+
+    if not tenant:
+        raise HTTPException(status_code=401, detail="Tenant not found or inactive")
+
+    # Propagate client scopes for downstream RequireScopes checks
+    request.state.client_scopes = payload.get("scopes", [])
+
+    await set_tenant_context(db, str(tenant.id))
+    return tenant
 
 
 async def require_admin_key(

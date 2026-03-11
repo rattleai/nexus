@@ -338,10 +338,12 @@ async def refresh(
 
 @router.post("/logout", dependencies=[Depends(_auth_rate_limit)])
 async def logout(
+    request: Request,
     response: Response,
     refresh_token: str | None = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    # Revoke refresh token in DB
     if refresh_token:
         token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
         result = await db.execute(
@@ -351,6 +353,18 @@ async def logout(
         if rt:
             rt.revoked = True
             await db.commit()
+
+    # Revoke current access token via Redis blacklist
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            from app.core.security import decode_access_token, revoke_access_token
+            payload = decode_access_token(auth_header[7:])
+            jti = payload.get("jti")
+            if jti:
+                await revoke_access_token(jti)
+        except Exception:
+            pass  # Token may already be invalid — proceed with logout
 
     _clear_refresh_cookie(response)
     return {"detail": "Logged out"}
@@ -528,6 +542,10 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
     )
 
     await db.commit()
+
+    # Revoke all outstanding access tokens for this user via Redis blacklist
+    from app.core.security import revoke_all_user_tokens
+    await revoke_all_user_tokens(str(user.id))
 
     logger.info("password_reset_completed", user_id=str(user.id))
     return {"status": "reset", "message": "Password has been reset successfully."}

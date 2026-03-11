@@ -25,6 +25,7 @@ from decimal import Decimal
 
 import structlog
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis import redis_pool
@@ -419,7 +420,7 @@ class DollarWalletService:
             db.add(wallet)
             try:
                 await db.flush()
-            except Exception:
+            except IntegrityError:
                 await db.rollback()
                 result = await db.execute(
                     select(DollarWallet).where(DollarWallet.tenant_id == tenant_id)

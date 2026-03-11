@@ -46,6 +46,7 @@ dependencies = [
     "py-vapid>=1.9,<2",
     "py-webauthn>=2.0,<3",
     "websockets>=14.0,<15",
+    "mcp[cli]>=1.0,<2",
 ]
 
 [project.optional-dependencies]
@@ -57,9 +58,17 @@ dev = [
     "ruff>=0.9,<1",
     "mypy>=1.8,<2",
 ]
+cli = [
+    "typer>=0.12,<1",
+    "rich>=13.0,<14",
+]
 perf = [
     "locust>=2.20,<3",
 ]
+
+[project.scripts]
+cadprice-mcp = "app.mcp.run:main"
+cadprice = "app.cli.main:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
@@ -77,6 +86,8 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "PIE", "RUF", "C4", "DTZ", "T20"
 
 [tool.ruff.lint.per-file-ignores]
 "app/api/**/*.py" = ["B008"]  # Depends() in defaults is idiomatic FastAPI
+"app/cli/**/*.py" = ["B008", "T20"]  # typer.Option()/Argument() in defaults is idiomatic; CLI needs print
+"app/mcp/run.py" = ["T20"]  # CLI entry point needs print for error messages
 "app/db/migrations/**" = ["E501", "I001"]  # Auto-generated migrations
 
 [tool.mypy]
