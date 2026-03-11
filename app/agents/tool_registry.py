@@ -233,9 +233,16 @@ class ToolRegistry:
                 return response.json()
             else:
                 _tool_breaker.record_failure(breaker_key)
+                # Log the full response server-side but return only the status
+                # code to the caller to avoid leaking external service details.
+                logger.warning(
+                    "tool_invoke_external_error",
+                    tool_name=tool.tool_name,
+                    status_code=response.status_code,
+                    response_preview=response.text[:500],
+                )
                 return {
-                    "error": f"Tool returned status {response.status_code}",
-                    "body": response.text[:500],
+                    "error": f"Tool '{tool.tool_name}' returned status {response.status_code}",
                 }
 
         except Exception as exc:
@@ -246,7 +253,7 @@ class ToolRegistry:
                 endpoint=tool.endpoint_url,
                 error=str(exc),
             )
-            return {"error": f"Tool invocation failed: {exc}"}
+            return {"error": f"Tool '{tool.tool_name}' invocation failed"}
 
     async def health_check(
         self,

@@ -133,7 +133,7 @@ async def create_agent_definition(
 async def list_agent_definitions(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    status: str | None = None,
+    status: AgentStatus | None = None,
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
@@ -144,7 +144,7 @@ async def list_agent_definitions(
         AgentDefinition.tenant_id == tenant.id,
         AgentDefinition.deleted_at.is_(None),
     ]
-    if status:
+    if status is not None:
         conditions.append(AgentDefinition.status == status)
 
     # Count total
@@ -289,7 +289,7 @@ async def create_agent_instance(
         definition_id=str(agent.id),
         tenant_id=str(tenant.id),
         input_data=body.input_data,
-        api_key=api_key.key_hash,  # Worker resolves the actual key
+        api_key_id=str(api_key.id),  # Worker resolves key by ID — avoid passing hash through broker
         key_source="platform",
         session_id=str(body.session_id) if body.session_id else None,
     )
@@ -306,7 +306,7 @@ async def list_agent_instances(
     agent_id: uuid.UUID,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    status: str | None = None,
+    status: InstanceStatus | None = None,
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
@@ -317,7 +317,7 @@ async def list_agent_instances(
         AgentInstance.tenant_id == tenant.id,
         AgentInstance.definition_id == agent_id,
     ]
-    if status:
+    if status is not None:
         conditions.append(AgentInstance.status == status)
 
     count_stmt = select(func.count()).select_from(AgentInstance).where(*conditions)
@@ -625,7 +625,7 @@ async def run_workflow(
         workflow_id=str(workflow_id),
         tenant_id=str(tenant.id),
         input_data=body.input_data,
-        api_key=api_key.key_hash,
+        api_key_id=str(api_key.id),  # Worker resolves key by ID
     )
 
     return run

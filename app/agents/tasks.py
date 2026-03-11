@@ -22,6 +22,26 @@ from app.workers.celery_app import celery as celery_app
 logger = structlog.stdlib.get_logger()
 
 
+async def _resolve_api_key(db, api_key_id: str) -> str:
+    """Resolve an API key hash from its ID.
+
+    This avoids passing sensitive key hashes through the Celery broker.
+    """
+    from sqlalchemy import select
+
+    from app.db.models import ApiKey
+
+    stmt = select(ApiKey.key_hash).where(
+        ApiKey.id == uuid.UUID(api_key_id),
+        ApiKey.active.is_(True),
+    )
+    result = await db.execute(stmt)
+    key_hash = result.scalar_one_or_none()
+    if not key_hash:
+        raise ValueError(f"API key {api_key_id} not found or inactive")
+    return key_hash
+
+
 def _run_async(coro):
     """Run an async coroutine in a sync Celery task."""
     loop = asyncio.new_event_loop()
@@ -48,7 +68,7 @@ def execute_agent_run(
     definition_id: str,
     tenant_id: str,
     input_data: dict,
-    api_key: str,
+    api_key_id: str,
     key_source: str = "platform",
     session_id: str | None = None,
 ) -> dict:
@@ -61,6 +81,10 @@ def execute_agent_run(
         from app.db.session import async_session_factory
 
         async with async_session_factory() as db:
+            # Resolve the API key by ID rather than receiving the hash
+            # through the broker, which would expose it in task metadata.
+            api_key = await _resolve_api_key(db, api_key_id)
+
             executor = AgentExecutor(db)
             instance = await executor.run(
                 definition_id=uuid.UUID(definition_id),
@@ -152,7 +176,7 @@ def execute_workflow_run(
     workflow_id: str,
     tenant_id: str,
     input_data: dict,
-    api_key: str,
+    api_key_id: str,
     key_source: str = "platform",
 ) -> dict:
     """Execute a workflow asynchronously in a Celery worker."""
@@ -161,6 +185,8 @@ def execute_workflow_run(
         from app.db.session import async_session_factory
 
         async with async_session_factory() as db:
+            api_key = await _resolve_api_key(db, api_key_id)
+
             orchestrator = AgentOrchestrator(db)
             run = await orchestrator.run_workflow(
                 workflow_id=uuid.UUID(workflow_id),

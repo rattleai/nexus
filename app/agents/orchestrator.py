@@ -174,6 +174,16 @@ class AgentOrchestrator:
                     workflow_run=run,
                 )
 
+                # Truncate large step outputs to prevent unbounded JSONB growth.
+                _MAX_STEP_OUTPUT_SIZE = 50_000  # characters
+                import json as _json
+                serialized = _json.dumps(step_result, default=str)
+                if len(serialized) > _MAX_STEP_OUTPUT_SIZE:
+                    step_result = {
+                        "_truncated": True,
+                        "_original_size": len(serialized),
+                        "summary": serialized[:_MAX_STEP_OUTPUT_SIZE],
+                    }
                 step_outputs[current_step_name] = step_result
                 run.total_steps += 1
 
@@ -221,8 +231,22 @@ class AgentOrchestrator:
             return run
 
         except Exception as exc:
+            # Sanitize error messages: only expose OrchestrationError details
+            # (controlled messages). For unexpected errors, use a generic message
+            # and log the full trace server-side.
+            if isinstance(exc, OrchestrationError):
+                safe_error = str(exc)[:2000]
+            else:
+                safe_error = "Internal workflow execution error"
+                logger.error(
+                    "workflow_run_failed",
+                    workflow_id=str(workflow_id),
+                    run_id=str(run.id),
+                    exc_info=True,
+                )
+
             run.status = WorkflowRunStatus.FAILED
-            run.error = str(exc)[:2000]
+            run.error = safe_error
             run.completed_at = datetime.now(UTC)
             await self.db.commit()
 
@@ -231,7 +255,7 @@ class AgentOrchestrator:
                     tenant_id=str(tenant_id),
                     workflow_id=str(workflow_id),
                     run_id=str(run.id),
-                    error=str(exc)[:500],
+                    error=safe_error[:500],
                     failed_step=run.state.get("current_step", ""),
                 ),
                 durable=True,
@@ -306,6 +330,10 @@ class AgentOrchestrator:
 
         executor = AgentExecutor(self.db)
 
+        # Collect metrics separately to avoid concurrent += on the ORM object.
+        step_metrics: list[tuple[int, float]] = []
+        _metrics_lock = asyncio.Lock()
+
         async def run_one(aid: str) -> dict[str, Any]:
             instance = await executor.run(
                 definition_id=uuid.UUID(aid),
@@ -314,8 +342,8 @@ class AgentOrchestrator:
                 api_key=api_key,
                 key_source=key_source,
             )
-            workflow_run.total_tokens += instance.tokens_used
-            workflow_run.total_cost_usd += instance.cost_usd
+            async with _metrics_lock:
+                step_metrics.append((instance.tokens_used, instance.cost_usd))
             return {"agent_id": aid, "output": instance.output_data}
 
         results = await asyncio.gather(
@@ -323,10 +351,15 @@ class AgentOrchestrator:
             return_exceptions=True,
         )
 
+        # Apply accumulated metrics atomically after all tasks complete.
+        for tokens, cost in step_metrics:
+            workflow_run.total_tokens += tokens
+            workflow_run.total_cost_usd += cost
+
         outputs = []
         for r in results:
             if isinstance(r, Exception):
-                outputs.append({"error": str(r)})
+                outputs.append({"error": "Agent execution failed"})
             else:
                 outputs.append(r)
 

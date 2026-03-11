@@ -30,7 +30,7 @@ logger = structlog.stdlib.get_logger()
 _SPEND_RUN_KEY = "agent:gov:spend:run:{instance_id}"
 _SPEND_DAY_KEY = "agent:gov:spend:day:{tenant_id}:{agent_id}:{date}"
 _SPEND_MONTH_KEY = "agent:gov:spend:month:{tenant_id}:{agent_id}:{month}"
-_RATE_KEY = "agent:gov:rate:{instance_id}"
+_RATE_KEY = "agent:gov:rate:{tenant_id}:{instance_id}"
 
 
 class GovernanceViolation(Exception):
@@ -138,7 +138,9 @@ class GovernanceEngine:
                 details={"current_cost": current_cost, "limit": max_per_run},
             )
 
-        # Per-day limit (tracked in Redis)
+        # Per-day limit (tracked in Redis).
+        # Fail-closed: if Redis is unavailable and a daily limit is configured,
+        # block the action to prevent untracked spending.
         max_per_day = self.policy.get("max_spend_per_day_usd")
         if max_per_day is not None and instance_id:
             agent_id = context.get("agent_id", "unknown")
@@ -147,7 +149,15 @@ class GovernanceEngine:
             day_key = _SPEND_DAY_KEY.format(
                 tenant_id=tenant_id, agent_id=agent_id, date=today,
             )
-            daily_spend = float(await redis_pool.get(day_key) or 0)
+            try:
+                daily_spend = float(await redis_pool.get(day_key) or 0)
+            except Exception:
+                logger.error("governance_redis_unavailable", check="spending_limit", exc_info=True)
+                raise GovernanceViolation(
+                    "spending_limit",
+                    "Unable to verify spending limits (Redis unavailable). Action blocked.",
+                    details={"reason": "redis_unavailable"},
+                )
             if daily_spend + current_cost >= max_per_day:
                 await self._emit_violation(
                     tenant_id=tenant_id,
@@ -176,7 +186,7 @@ class GovernanceEngine:
         if not instance_id:
             return
 
-        rate_key = _RATE_KEY.format(instance_id=instance_id)
+        rate_key = _RATE_KEY.format(tenant_id=tenant_id, instance_id=instance_id)
         current = await redis_pool.incr(rate_key)
         if current == 1:
             await redis_pool.expire(rate_key, 60)

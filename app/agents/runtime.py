@@ -183,6 +183,12 @@ class AgentRuntime:
 
                         tool_result = await tool_executor(tc.name, tc.arguments)
 
+                        # Truncate oversized tool output to prevent token/memory exhaustion.
+                        _MAX_TOOL_OUTPUT = 20_000  # characters
+                        tool_result_str = str(tool_result)
+                        if len(tool_result_str) > _MAX_TOOL_OUTPUT:
+                            tool_result_str = tool_result_str[:_MAX_TOOL_OUTPUT] + "... [truncated]"
+
                         step_duration = int((time.monotonic() - step_start) * 1000)
                         step = StepResult(
                             step_number=step_num,
@@ -194,7 +200,7 @@ class AgentRuntime:
                             duration_ms=step_duration,
                         )
                         result.steps.append(step)
-                        tool_observations.append(f"Tool '{tc.name}' returned: {tool_result}")
+                        tool_observations.append(f"Tool '{tc.name}' returned: {tool_result_str}")
 
                         # Emit step event (best-effort)
                         try:
