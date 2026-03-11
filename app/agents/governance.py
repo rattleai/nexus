@@ -266,26 +266,41 @@ class GovernanceEngine:
         instance_id: str,
         cost_usd: float,
     ) -> None:
-        """Record spending for an agent execution (called after each LLM call)."""
+        """Record spending for an agent execution (called after each LLM call).
+
+        Best-effort: if Redis is unavailable, spending is logged but not tracked.
+        The governance check will fail-closed (block) if it can't read spending,
+        so missing a write here is safe — it only risks under-counting.
+        """
         from datetime import UTC, datetime
 
-        now = datetime.now(UTC)
+        try:
+            now = datetime.now(UTC)
 
-        # Per-run spending
-        run_key = _SPEND_RUN_KEY.format(instance_id=instance_id)
-        await redis_pool.incrbyfloat(run_key, cost_usd)
-        await redis_pool.expire(run_key, 3600)  # 1 hour TTL
+            # Per-run spending
+            run_key = _SPEND_RUN_KEY.format(instance_id=instance_id)
+            await redis_pool.incrbyfloat(run_key, cost_usd)
+            await redis_pool.expire(run_key, 3600)  # 1 hour TTL
 
-        # Per-day spending
-        day_key = _SPEND_DAY_KEY.format(
-            tenant_id=tenant_id, agent_id=agent_id, date=now.strftime("%Y-%m-%d"),
-        )
-        await redis_pool.incrbyfloat(day_key, cost_usd)
-        await redis_pool.expire(day_key, 86400 * 2)  # 2 days TTL
+            # Per-day spending
+            day_key = _SPEND_DAY_KEY.format(
+                tenant_id=tenant_id, agent_id=agent_id, date=now.strftime("%Y-%m-%d"),
+            )
+            await redis_pool.incrbyfloat(day_key, cost_usd)
+            await redis_pool.expire(day_key, 86400 * 2)  # 2 days TTL
 
-        # Per-month spending
-        month_key = _SPEND_MONTH_KEY.format(
-            tenant_id=tenant_id, agent_id=agent_id, month=now.strftime("%Y-%m"),
-        )
-        await redis_pool.incrbyfloat(month_key, cost_usd)
-        await redis_pool.expire(month_key, 86400 * 35)  # ~35 days TTL
+            # Per-month spending
+            month_key = _SPEND_MONTH_KEY.format(
+                tenant_id=tenant_id, agent_id=agent_id, month=now.strftime("%Y-%m"),
+            )
+            await redis_pool.incrbyfloat(month_key, cost_usd)
+            await redis_pool.expire(month_key, 86400 * 35)  # ~35 days TTL
+        except Exception:
+            logger.error(
+                "track_spending_failed",
+                tenant_id=str(tenant_id),
+                agent_id=agent_id,
+                instance_id=instance_id,
+                cost_usd=cost_usd,
+                exc_info=True,
+            )

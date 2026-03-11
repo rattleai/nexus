@@ -133,8 +133,17 @@ class AgentOrchestrator:
             start_time = datetime.now(UTC)
             step_outputs: dict[str, Any] = {"_input": input_data}
             current_step_name = entry_step
+            max_workflow_steps = len(steps) * 2 + 10  # Safety bound for cycles
+            executed_steps = 0
 
             while current_step_name:
+                executed_steps += 1
+                if executed_steps > max_workflow_steps:
+                    raise OrchestrationError(
+                        f"Workflow exceeded maximum step count ({max_workflow_steps}). "
+                        "Possible cyclic transition graph."
+                    )
+
                 step_def = steps.get(current_step_name)
                 if not step_def:
                     raise OrchestrationError(f"Unknown step: {current_step_name}")

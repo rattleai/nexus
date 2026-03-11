@@ -255,5 +255,8 @@ class EventBus:
         return await redis_pool.xtrim(stream_key, maxlen=target, approximate=True)
 
 
-# Module-level singleton
-event_bus = EventBus()
+# Module-level singleton — wired to application config.
+event_bus = EventBus(
+    stream_prefix=settings.EVENT_BUS_STREAM_PREFIX,
+    max_len=settings.EVENT_BUS_MAX_LEN,
+)

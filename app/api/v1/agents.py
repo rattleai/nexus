@@ -51,7 +51,7 @@ from app.agents.schemas import (
     WorkflowRunCreate,
     WorkflowRunResponse,
 )
-from app.api.deps import get_current_api_key, get_current_tenant, get_db
+from app.api.deps import RequireScopes, get_current_api_key, get_current_tenant, get_db
 from app.core.events import emit
 from app.db.models import ApiKey, Tenant
 from app.db.session import set_tenant_context
@@ -64,7 +64,12 @@ router = APIRouter(prefix="/agents")
 # ── Agent Definitions ──────────────────────────────────────────────────
 
 
-@router.post("/definitions", response_model=AgentDefinitionResponse, status_code=201)
+@router.post(
+    "/definitions",
+    response_model=AgentDefinitionResponse,
+    status_code=201,
+    dependencies=[Depends(RequireScopes("agents:write"))],
+)
 async def create_agent_definition(
     body: AgentDefinitionCreate,
     tenant: Tenant = Depends(get_current_tenant),
@@ -120,7 +125,11 @@ async def create_agent_definition(
     return agent
 
 
-@router.get("/definitions", response_model=PaginatedResponse)
+@router.get(
+    "/definitions",
+    response_model=PaginatedResponse,
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
 async def list_agent_definitions(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -162,7 +171,11 @@ async def list_agent_definitions(
     )
 
 
-@router.get("/definitions/{agent_id}", response_model=AgentDefinitionResponse)
+@router.get(
+    "/definitions/{agent_id}",
+    response_model=AgentDefinitionResponse,
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
 async def get_agent_definition(
     agent_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),
@@ -174,7 +187,11 @@ async def get_agent_definition(
     return agent
 
 
-@router.put("/definitions/{agent_id}", response_model=AgentDefinitionResponse)
+@router.put(
+    "/definitions/{agent_id}",
+    response_model=AgentDefinitionResponse,
+    dependencies=[Depends(RequireScopes("agents:write"))],
+)
 async def update_agent_definition(
     agent_id: uuid.UUID,
     body: AgentDefinitionUpdate,
@@ -211,7 +228,11 @@ async def update_agent_definition(
     return agent
 
 
-@router.delete("/definitions/{agent_id}", status_code=204)
+@router.delete(
+    "/definitions/{agent_id}",
+    status_code=204,
+    dependencies=[Depends(RequireScopes("agents:admin"))],
+)
 async def delete_agent_definition(
     agent_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),
@@ -231,7 +252,12 @@ async def delete_agent_definition(
 # ── Agent Instances ────────────────────────────────────────────────────
 
 
-@router.post("/definitions/{agent_id}/instances", response_model=AgentInstanceResponse, status_code=201)
+@router.post(
+    "/definitions/{agent_id}/instances",
+    response_model=AgentInstanceResponse,
+    status_code=201,
+    dependencies=[Depends(RequireScopes("agents:execute"))],
+)
 async def create_agent_instance(
     agent_id: uuid.UUID,
     body: AgentInstanceCreate,
@@ -271,7 +297,11 @@ async def create_agent_instance(
     return instance
 
 
-@router.get("/definitions/{agent_id}/instances", response_model=PaginatedResponse)
+@router.get(
+    "/definitions/{agent_id}/instances",
+    response_model=PaginatedResponse,
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
 async def list_agent_instances(
     agent_id: uuid.UUID,
     page: int = Query(1, ge=1),
@@ -312,7 +342,11 @@ async def list_agent_instances(
     )
 
 
-@router.get("/instances/{instance_id}", response_model=AgentInstanceResponse)
+@router.get(
+    "/instances/{instance_id}",
+    response_model=AgentInstanceResponse,
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
 async def get_agent_instance(
     instance_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),
@@ -326,7 +360,11 @@ async def get_agent_instance(
     return instance
 
 
-@router.post("/instances/{instance_id}/stop", response_model=AgentInstanceResponse)
+@router.post(
+    "/instances/{instance_id}/stop",
+    response_model=AgentInstanceResponse,
+    dependencies=[Depends(RequireScopes("agents:execute"))],
+)
 async def stop_agent_instance(
     instance_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),
@@ -347,26 +385,53 @@ async def stop_agent_instance(
 # ── Agent Sessions ─────────────────────────────────────────────────────
 
 
-@router.get("/instances/{instance_id}/sessions", response_model=list[AgentSessionResponse])
+@router.get(
+    "/instances/{instance_id}/sessions",
+    response_model=PaginatedResponse,
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
 async def list_agent_sessions(
     instance_id: uuid.UUID,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """List sessions for an agent instance."""
     await set_tenant_context(db, str(tenant.id))
-    stmt = select(AgentSession).where(
+    conditions = [
         AgentSession.instance_id == instance_id,
         AgentSession.tenant_id == tenant.id,
-    ).order_by(AgentSession.created_at.desc())
+    ]
+    count_stmt = select(func.count()).select_from(AgentSession).where(*conditions)
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    stmt = (
+        select(AgentSession)
+        .where(*conditions)
+        .order_by(AgentSession.created_at.desc())
+        .limit(page_size)
+        .offset((page - 1) * page_size)
+    )
     result = await db.execute(stmt)
-    return list(result.scalars().all())
+    items = list(result.scalars().all())
+
+    return PaginatedResponse(
+        items=[AgentSessionResponse.model_validate(s) for s in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=(total + page_size - 1) // page_size,
+    )
 
 
 # ── Agent Memory ───────────────────────────────────────────────────────
 
 
-@router.get("/instances/{instance_id}/memory")
+@router.get(
+    "/instances/{instance_id}/memory",
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
 async def read_agent_memory(
     instance_id: uuid.UUID,
     namespace: str = "default",
@@ -377,6 +442,7 @@ async def read_agent_memory(
     """Read agent memory entries."""
     from app.agents.memory import AgentMemoryManager
     await set_tenant_context(db, str(tenant.id))
+    await _verify_instance_ownership(db, instance_id, tenant.id)
     memory = AgentMemoryManager(db)
 
     if key:
@@ -392,7 +458,10 @@ async def read_agent_memory(
         ]
 
 
-@router.put("/instances/{instance_id}/memory")
+@router.put(
+    "/instances/{instance_id}/memory",
+    dependencies=[Depends(RequireScopes("agents:write"))],
+)
 async def write_agent_memory(
     instance_id: uuid.UUID,
     body: MemoryWriteRequest,
@@ -403,6 +472,7 @@ async def write_agent_memory(
     """Write an agent memory entry."""
     from app.agents.memory import AgentMemoryManager
     await set_tenant_context(db, str(tenant.id))
+    await _verify_instance_ownership(db, instance_id, tenant.id)
     memory = AgentMemoryManager(db)
 
     entry = await memory.set_long_term(
@@ -412,7 +482,11 @@ async def write_agent_memory(
     return {"namespace": entry.namespace, "key": entry.key, "value": entry.value}
 
 
-@router.delete("/instances/{instance_id}/memory", status_code=204)
+@router.delete(
+    "/instances/{instance_id}/memory",
+    status_code=204,
+    dependencies=[Depends(RequireScopes("agents:admin"))],
+)
 async def clear_agent_memory(
     instance_id: uuid.UUID,
     namespace: str | None = None,
@@ -423,6 +497,7 @@ async def clear_agent_memory(
     """Clear agent memory."""
     from app.agents.memory import AgentMemoryManager
     await set_tenant_context(db, str(tenant.id))
+    await _verify_instance_ownership(db, instance_id, tenant.id)
     memory = AgentMemoryManager(db)
     await memory.clear_long_term(instance_id, tenant.id, namespace)
     await db.commit()
@@ -431,7 +506,12 @@ async def clear_agent_memory(
 # ── Workflows ──────────────────────────────────────────────────────────
 
 
-@router.post("/workflows", response_model=WorkflowDefinitionResponse, status_code=201)
+@router.post(
+    "/workflows",
+    response_model=WorkflowDefinitionResponse,
+    status_code=201,
+    dependencies=[Depends(RequireScopes("agents:write"))],
+)
 async def create_workflow(
     body: WorkflowDefinitionCreate,
     tenant: Tenant = Depends(get_current_tenant),
@@ -440,6 +520,17 @@ async def create_workflow(
 ):
     """Create a new workflow definition."""
     await set_tenant_context(db, str(tenant.id))
+
+    # Check for duplicate slug
+    existing = await db.execute(
+        select(WorkflowDefinition).where(
+            WorkflowDefinition.tenant_id == tenant.id,
+            WorkflowDefinition.slug == body.slug,
+            WorkflowDefinition.deleted_at.is_(None),
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(409, f"Workflow with slug '{body.slug}' already exists")
 
     workflow = WorkflowDefinition(
         tenant_id=tenant.id,
@@ -456,7 +547,11 @@ async def create_workflow(
     return workflow
 
 
-@router.get("/workflows", response_model=PaginatedResponse)
+@router.get(
+    "/workflows",
+    response_model=PaginatedResponse,
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
 async def list_workflows(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -492,7 +587,12 @@ async def list_workflows(
     )
 
 
-@router.post("/workflows/{workflow_id}/run", response_model=WorkflowRunResponse, status_code=201)
+@router.post(
+    "/workflows/{workflow_id}/run",
+    response_model=WorkflowRunResponse,
+    status_code=201,
+    dependencies=[Depends(RequireScopes("agents:execute"))],
+)
 async def run_workflow(
     workflow_id: uuid.UUID,
     body: WorkflowRunCreate,
@@ -531,31 +631,55 @@ async def run_workflow(
     return run
 
 
-@router.get("/workflows/{workflow_id}/runs", response_model=list[WorkflowRunResponse])
+@router.get(
+    "/workflows/{workflow_id}/runs",
+    response_model=PaginatedResponse,
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
 async def list_workflow_runs(
     workflow_id: uuid.UUID,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """List runs for a workflow."""
     await set_tenant_context(db, str(tenant.id))
+    conditions = [
+        WorkflowRun.workflow_id == workflow_id,
+        WorkflowRun.tenant_id == tenant.id,
+    ]
+    count_stmt = select(func.count()).select_from(WorkflowRun).where(*conditions)
+    total = (await db.execute(count_stmt)).scalar() or 0
+
     stmt = (
         select(WorkflowRun)
-        .where(
-            WorkflowRun.workflow_id == workflow_id,
-            WorkflowRun.tenant_id == tenant.id,
-        )
+        .where(*conditions)
         .order_by(WorkflowRun.created_at.desc())
-        .limit(50)
+        .limit(page_size)
+        .offset((page - 1) * page_size)
     )
     result = await db.execute(stmt)
-    return list(result.scalars().all())
+    items = list(result.scalars().all())
+
+    return PaginatedResponse(
+        items=[WorkflowRunResponse.model_validate(r) for r in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=(total + page_size - 1) // page_size,
+    )
 
 
 # ── Tenant Tools ───────────────────────────────────────────────────────
 
 
-@router.post("/tools", response_model=TenantToolResponse, status_code=201)
+@router.post(
+    "/tools",
+    response_model=TenantToolResponse,
+    status_code=201,
+    dependencies=[Depends(RequireScopes("agents:admin"))],
+)
 async def register_tenant_tool(
     body: TenantToolCreate,
     tenant: Tenant = Depends(get_current_tenant),
@@ -564,6 +688,17 @@ async def register_tenant_tool(
 ):
     """Register a custom tool for agents."""
     await set_tenant_context(db, str(tenant.id))
+
+    # Check for duplicate tool name
+    existing = await db.execute(
+        select(TenantTool).where(
+            TenantTool.tenant_id == tenant.id,
+            TenantTool.tool_name == body.tool_name,
+            TenantTool.deleted_at.is_(None),
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(409, f"Tool '{body.tool_name}' already exists")
 
     tool = TenantTool(
         tenant_id=tenant.id,
@@ -582,7 +717,11 @@ async def register_tenant_tool(
     return tool
 
 
-@router.get("/tools", response_model=list[TenantToolResponse])
+@router.get(
+    "/tools",
+    response_model=list[TenantToolResponse],
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
 async def list_tools(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
@@ -594,7 +733,11 @@ async def list_tools(
     return tenant_tools
 
 
-@router.delete("/tools/{tool_id}", status_code=204)
+@router.delete(
+    "/tools/{tool_id}",
+    status_code=204,
+    dependencies=[Depends(RequireScopes("agents:admin"))],
+)
 async def remove_tenant_tool(
     tool_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),
@@ -615,7 +758,12 @@ async def remove_tenant_tool(
 # ── Agent Policies ─────────────────────────────────────────────────────
 
 
-@router.post("/policies", response_model=AgentPolicyResponse, status_code=201)
+@router.post(
+    "/policies",
+    response_model=AgentPolicyResponse,
+    status_code=201,
+    dependencies=[Depends(RequireScopes("agents:admin"))],
+)
 async def create_agent_policy(
     body: AgentPolicyCreate,
     tenant: Tenant = Depends(get_current_tenant),
@@ -647,16 +795,40 @@ async def create_agent_policy(
     return policy
 
 
-@router.get("/policies", response_model=list[AgentPolicyResponse])
+@router.get(
+    "/policies",
+    response_model=PaginatedResponse,
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
 async def list_agent_policies(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """List governance policies."""
     await set_tenant_context(db, str(tenant.id))
-    stmt = select(AgentPolicy).where(AgentPolicy.tenant_id == tenant.id)
+    conditions = [AgentPolicy.tenant_id == tenant.id]
+    count_stmt = select(func.count()).select_from(AgentPolicy).where(*conditions)
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    stmt = (
+        select(AgentPolicy)
+        .where(*conditions)
+        .order_by(AgentPolicy.created_at.desc())
+        .limit(page_size)
+        .offset((page - 1) * page_size)
+    )
     result = await db.execute(stmt)
-    return list(result.scalars().all())
+    items = list(result.scalars().all())
+
+    return PaginatedResponse(
+        items=[AgentPolicyResponse.model_validate(p) for p in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=(total + page_size - 1) // page_size,
+    )
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
@@ -671,3 +843,14 @@ async def _get_agent_or_404(
     if not agent or agent.tenant_id != tenant_id or agent.deleted_at:
         raise HTTPException(404, "Agent definition not found")
     return agent
+
+
+async def _verify_instance_ownership(
+    db: AsyncSession,
+    instance_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+) -> None:
+    """Verify the instance belongs to the tenant, raise 404 otherwise."""
+    instance = await db.get(AgentInstance, instance_id)
+    if not instance or instance.tenant_id != tenant_id:
+        raise HTTPException(404, "Instance not found")

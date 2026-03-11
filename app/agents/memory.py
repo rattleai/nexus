@@ -69,11 +69,31 @@ class AgentMemoryManager:
         value: Any,
         *,
         ttl_seconds: int = 3600,
+        max_entries: int = 100,
     ) -> None:
         """Write a value to short-term (session) memory."""
+        from app.config import settings
+
         redis_key = _SHORT_TERM_KEY.format(
             instance_id=instance_id, session_id=session_id,
         )
+
+        # Enforce max entries to prevent unbounded growth.
+        cap = max_entries or settings.AGENT_MEMORY_SHORT_MAX_ENTRIES
+        current_size = await redis_pool.hlen(redis_key)
+        if current_size >= cap:
+            # Key already exists → allow overwrite; new key → reject.
+            exists = await redis_pool.hexists(redis_key, key)
+            if not exists:
+                logger.warning(
+                    "short_term_memory_full",
+                    instance_id=str(instance_id),
+                    session_id=str(session_id),
+                    size=current_size,
+                    cap=cap,
+                )
+                return
+
         serialized = json.dumps(value, default=str)
         await redis_pool.hset(redis_key, key, serialized)
         await redis_pool.expire(redis_key, ttl_seconds)
@@ -285,7 +305,11 @@ class AgentMemoryManager:
         This implementation provides a compatible interface that works
         without pgvector installed.
         """
-        # Fetch all entries with embeddings in the namespace
+        # Fetch entries with embeddings in the namespace.
+        # Cap at 1000 to prevent unbounded memory usage in the fallback
+        # Python-based similarity computation.  For production workloads with
+        # larger memory stores, use the pgvector extension.
+        _MAX_CANDIDATES = 1000
         stmt = (
             select(AgentMemoryEntry)
             .where(
@@ -294,6 +318,7 @@ class AgentMemoryManager:
                 AgentMemoryEntry.namespace == namespace,
                 AgentMemoryEntry.embedding.isnot(None),
             )
+            .limit(_MAX_CANDIDATES)
         )
         result = await self.db.execute(stmt)
         entries = list(result.scalars().all())
