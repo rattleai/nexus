@@ -17,12 +17,20 @@ depends_on = None
 
 def upgrade() -> None:
     # ── FK cascade: agent_instances.definition_id → agent_definitions.id ──
-    # Drop existing FK and recreate with ON DELETE CASCADE
-    op.drop_constraint(
-        "fk_agent_instances_definition_id",
-        "agent_instances",
-        type_="foreignkey",
-    )
+    # Drop existing FK (auto-generated name) and recreate with ON DELETE CASCADE
+    conn = op.get_bind()
+    result = conn.execute(sa.text(
+        "SELECT con.conname "
+        "FROM pg_constraint con "
+        "JOIN pg_attribute att ON att.attnum = ANY(con.conkey) AND att.attrelid = con.conrelid "
+        "WHERE con.conrelid = 'agent_instances'::regclass "
+        "AND con.contype = 'f' "
+        "AND att.attname = 'definition_id' "
+        "LIMIT 1"
+    ))
+    row = result.fetchone()
+    if row:
+        op.drop_constraint(row[0], "agent_instances", type_="foreignkey")
     op.create_foreign_key(
         "fk_agent_instances_definition_id",
         "agent_instances",

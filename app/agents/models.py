@@ -94,7 +94,7 @@ class AgentDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Version
     slug: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
     status: Mapped[AgentStatus] = mapped_column(
-        Enum(AgentStatus, name="agent_status"), default=AgentStatus.DRAFT, nullable=False,
+        Enum(AgentStatus, name="agent_status", values_callable=lambda e: [m.value for m in e]), default=AgentStatus.DRAFT, nullable=False,
     )
 
     # AI configuration
@@ -147,7 +147,7 @@ class AgentInstance(Base, TimestampMixin):
     )
 
     status: Mapped[InstanceStatus] = mapped_column(
-        Enum(InstanceStatus, name="instance_status"), default=InstanceStatus.PENDING, nullable=False,
+        Enum(InstanceStatus, name="instance_status", values_callable=lambda e: [m.value for m in e]), default=InstanceStatus.PENDING, nullable=False,
     )
 
     # Execution tracking
@@ -198,7 +198,7 @@ class AgentSession(Base, TimestampMixin):
     )
 
     status: Mapped[SessionStatus] = mapped_column(
-        Enum(SessionStatus, name="session_status"), default=SessionStatus.ACTIVE, nullable=False,
+        Enum(SessionStatus, name="session_status", values_callable=lambda e: [m.value for m in e]), default=SessionStatus.ACTIVE, nullable=False,
     )
     messages: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, server_default="{}")
@@ -264,7 +264,7 @@ class WorkflowDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Vers
     slug: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
     status: Mapped[WorkflowStatus] = mapped_column(
-        Enum(WorkflowStatus, name="workflow_status"), default=WorkflowStatus.DRAFT, nullable=False,
+        Enum(WorkflowStatus, name="workflow_status", values_callable=lambda e: [m.value for m in e]), default=WorkflowStatus.DRAFT, nullable=False,
     )
 
     # DAG definition: list of steps with agent references and transitions
@@ -297,7 +297,7 @@ class WorkflowRun(Base, TimestampMixin):
     )
 
     status: Mapped[WorkflowRunStatus] = mapped_column(
-        Enum(WorkflowRunStatus, name="workflow_run_status"),
+        Enum(WorkflowRunStatus, name="workflow_run_status", values_callable=lambda e: [m.value for m in e]),
         default=WorkflowRunStatus.PENDING, nullable=False,
     )
 
@@ -335,7 +335,7 @@ class TenantTool(Base, TimestampMixin, SoftDeleteMixin):
     tool_name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
     source: Mapped[ToolSource] = mapped_column(
-        Enum(ToolSource, name="tool_source"), default=ToolSource.TENANT, nullable=False,
+        Enum(ToolSource, name="tool_source", values_callable=lambda e: [m.value for m in e]), default=ToolSource.TENANT, nullable=False,
     )
 
     # MCP tool schema
