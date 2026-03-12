@@ -12,6 +12,7 @@ Inspired by Google's A2A protocol, adapted for Redis-backed messaging.
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -32,7 +33,6 @@ _GROUP_KEY = "agent:a2a:group:{tenant_id}:{group_name}"
 _MAX_INBOX_SIZE = 1000
 
 # Allowed characters for group names to prevent Redis key injection.
-import re
 _SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$")
 
 

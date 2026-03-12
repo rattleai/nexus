@@ -25,17 +25,16 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin, VersionMixin
 
-
 # ── Enums ──────────────────────────────────────────────────────────────
 
 
-class AgentStatus(str, enum.Enum):
+class AgentStatus(enum.StrEnum):
     DRAFT = "draft"
     ACTIVE = "active"
     DISABLED = "disabled"
 
 
-class InstanceStatus(str, enum.Enum):
+class InstanceStatus(enum.StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     PAUSED = "paused"
@@ -44,19 +43,19 @@ class InstanceStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
-class SessionStatus(str, enum.Enum):
+class SessionStatus(enum.StrEnum):
     ACTIVE = "active"
     COMPLETED = "completed"
     EXPIRED = "expired"
 
 
-class WorkflowStatus(str, enum.Enum):
+class WorkflowStatus(enum.StrEnum):
     DRAFT = "draft"
     ACTIVE = "active"
     DISABLED = "disabled"
 
 
-class WorkflowRunStatus(str, enum.Enum):
+class WorkflowRunStatus(enum.StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     WAITING_APPROVAL = "waiting_approval"
@@ -65,7 +64,7 @@ class WorkflowRunStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
-class ToolSource(str, enum.Enum):
+class ToolSource(enum.StrEnum):
     BUILTIN = "builtin"
     TENANT = "tenant"
     MARKETPLACE = "marketplace"

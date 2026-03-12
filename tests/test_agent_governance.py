@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.agents.governance import GovernanceEngine, GovernanceViolation
+from app.agents.governance import GovernanceEngine, GovernanceViolationError
 
 
 @pytest.fixture
@@ -26,111 +26,127 @@ class TestToolAccessControl:
     @pytest.mark.asyncio
     async def test_allowed_tool_passes(self, strict_policy):
         engine = GovernanceEngine(strict_policy)
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with patch("app.agents.governance.redis_pool") as mock_redis:
-                mock_redis.incr = AsyncMock(return_value=1)
-                mock_redis.expire = AsyncMock()
-                # Should not raise
-                await engine.check(
-                    action="tool_call",
-                    context={"tool_name": "ai_complete", "instance_id": "x"},
-                    tenant_id=uuid.uuid4(),
-                )
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            patch("app.agents.governance.redis_pool") as mock_redis,
+        ):
+            mock_redis.incr = AsyncMock(return_value=1)
+            mock_redis.expire = AsyncMock()
+            # Should not raise
+            await engine.check(
+                action="tool_call",
+                context={"tool_name": "ai_complete", "instance_id": "x"},
+                tenant_id=uuid.uuid4(),
+            )
 
     @pytest.mark.asyncio
     async def test_denied_tool_raises(self, strict_policy):
         engine = GovernanceEngine(strict_policy)
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with pytest.raises(GovernanceViolation) as exc_info:
-                await engine.check(
-                    action="tool_call",
-                    context={"tool_name": "webhook_create", "instance_id": "x"},
-                    tenant_id=uuid.uuid4(),
-                )
-            assert exc_info.value.violation_type == "denied_tool"
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            pytest.raises(GovernanceViolationError) as exc_info,
+        ):
+            await engine.check(
+                action="tool_call",
+                context={"tool_name": "webhook_create", "instance_id": "x"},
+                tenant_id=uuid.uuid4(),
+            )
+        assert exc_info.value.violation_type == "denied_tool"
 
     @pytest.mark.asyncio
     async def test_unlisted_tool_raises(self, strict_policy):
         engine = GovernanceEngine(strict_policy)
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with pytest.raises(GovernanceViolation) as exc_info:
-                await engine.check(
-                    action="tool_call",
-                    context={"tool_name": "job_create", "instance_id": "x"},
-                    tenant_id=uuid.uuid4(),
-                )
-            assert exc_info.value.violation_type == "denied_tool"
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            pytest.raises(GovernanceViolationError) as exc_info,
+        ):
+            await engine.check(
+                action="tool_call",
+                context={"tool_name": "job_create", "instance_id": "x"},
+                tenant_id=uuid.uuid4(),
+            )
+        assert exc_info.value.violation_type == "denied_tool"
 
     @pytest.mark.asyncio
     async def test_non_tool_action_passes(self, strict_policy):
         engine = GovernanceEngine(strict_policy)
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with patch("app.agents.governance.redis_pool") as mock_redis:
-                mock_redis.incr = AsyncMock(return_value=1)
-                mock_redis.expire = AsyncMock()
-                # Non-tool actions should pass tool check
-                await engine.check(
-                    action="llm_call",
-                    context={"instance_id": "x"},
-                    tenant_id=uuid.uuid4(),
-                )
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            patch("app.agents.governance.redis_pool") as mock_redis,
+        ):
+            mock_redis.incr = AsyncMock(return_value=1)
+            mock_redis.expire = AsyncMock()
+            # Non-tool actions should pass tool check
+            await engine.check(
+                action="llm_call",
+                context={"instance_id": "x"},
+                tenant_id=uuid.uuid4(),
+            )
 
 
 class TestSpendingLimits:
     @pytest.mark.asyncio
     async def test_within_budget_passes(self, strict_policy):
         engine = GovernanceEngine(strict_policy)
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with patch("app.agents.governance.redis_pool") as mock_redis:
-                mock_redis.incr = AsyncMock(return_value=1)
-                mock_redis.expire = AsyncMock()
-                await engine.check(
-                    action="llm_call",
-                    context={"current_cost": 0.50, "instance_id": "x"},
-                    tenant_id=uuid.uuid4(),
-                )
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            patch("app.agents.governance.redis_pool") as mock_redis,
+        ):
+            mock_redis.incr = AsyncMock(return_value=1)
+            mock_redis.expire = AsyncMock()
+            await engine.check(
+                action="llm_call",
+                context={"current_cost": 0.50, "instance_id": "x"},
+                tenant_id=uuid.uuid4(),
+            )
 
     @pytest.mark.asyncio
     async def test_over_budget_raises(self, strict_policy):
         engine = GovernanceEngine(strict_policy)
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with pytest.raises(GovernanceViolation) as exc_info:
-                await engine.check(
-                    action="llm_call",
-                    context={"current_cost": 1.50, "instance_id": "x"},
-                    tenant_id=uuid.uuid4(),
-                )
-            assert exc_info.value.violation_type == "spending_limit"
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            pytest.raises(GovernanceViolationError) as exc_info,
+        ):
+            await engine.check(
+                action="llm_call",
+                context={"current_cost": 1.50, "instance_id": "x"},
+                tenant_id=uuid.uuid4(),
+            )
+        assert exc_info.value.violation_type == "spending_limit"
 
 
 class TestRateLimiting:
     @pytest.mark.asyncio
     async def test_within_rate_limit_passes(self, strict_policy):
         engine = GovernanceEngine(strict_policy)
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with patch("app.agents.governance.redis_pool") as mock_redis:
-                mock_redis.incr = AsyncMock(return_value=5)
-                mock_redis.expire = AsyncMock()
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            patch("app.agents.governance.redis_pool") as mock_redis,
+        ):
+            mock_redis.incr = AsyncMock(return_value=5)
+            mock_redis.expire = AsyncMock()
+            await engine.check(
+                action="llm_call",
+                context={"instance_id": "x"},
+                tenant_id=uuid.uuid4(),
+            )
+
+    @pytest.mark.asyncio
+    async def test_over_rate_limit_raises(self, strict_policy):
+        engine = GovernanceEngine(strict_policy)
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            patch("app.agents.governance.redis_pool") as mock_redis,
+        ):
+            mock_redis.incr = AsyncMock(return_value=11)
+            mock_redis.expire = AsyncMock()
+            with pytest.raises(GovernanceViolationError) as exc_info:
                 await engine.check(
                     action="llm_call",
                     context={"instance_id": "x"},
                     tenant_id=uuid.uuid4(),
                 )
-
-    @pytest.mark.asyncio
-    async def test_over_rate_limit_raises(self, strict_policy):
-        engine = GovernanceEngine(strict_policy)
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with patch("app.agents.governance.redis_pool") as mock_redis:
-                mock_redis.incr = AsyncMock(return_value=11)
-                mock_redis.expire = AsyncMock()
-                with pytest.raises(GovernanceViolation) as exc_info:
-                    await engine.check(
-                        action="llm_call",
-                        context={"instance_id": "x"},
-                        tenant_id=uuid.uuid4(),
-                    )
-                assert exc_info.value.violation_type == "rate_limit"
+            assert exc_info.value.violation_type == "rate_limit"
 
 
 class TestApprovalWorkflow:
@@ -143,30 +159,34 @@ class TestApprovalWorkflow:
             "approval_default_action": "deny",
         }
         engine = GovernanceEngine(policy)
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with patch("app.agents.governance.redis_pool") as mock_redis:
-                mock_redis.incr = AsyncMock(return_value=1)
-                mock_redis.expire = AsyncMock()
-                with pytest.raises(GovernanceViolation) as exc_info:
-                    await engine.check(
-                        action="tool_call",
-                        context={"tool_name": "team_invite", "instance_id": "x"},
-                        tenant_id=uuid.uuid4(),
-                    )
-                assert exc_info.value.violation_type == "approval_required"
-
-    @pytest.mark.asyncio
-    async def test_no_approval_policy_passes(self):
-        engine = GovernanceEngine({"require_approval_for": []})
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with patch("app.agents.governance.redis_pool") as mock_redis:
-                mock_redis.incr = AsyncMock(return_value=1)
-                mock_redis.expire = AsyncMock()
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            patch("app.agents.governance.redis_pool") as mock_redis,
+        ):
+            mock_redis.incr = AsyncMock(return_value=1)
+            mock_redis.expire = AsyncMock()
+            with pytest.raises(GovernanceViolationError) as exc_info:
                 await engine.check(
                     action="tool_call",
                     context={"tool_name": "team_invite", "instance_id": "x"},
                     tenant_id=uuid.uuid4(),
                 )
+            assert exc_info.value.violation_type == "approval_required"
+
+    @pytest.mark.asyncio
+    async def test_no_approval_policy_passes(self):
+        engine = GovernanceEngine({"require_approval_for": []})
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            patch("app.agents.governance.redis_pool") as mock_redis,
+        ):
+            mock_redis.incr = AsyncMock(return_value=1)
+            mock_redis.expire = AsyncMock()
+            await engine.check(
+                action="tool_call",
+                context={"tool_name": "team_invite", "instance_id": "x"},
+                tenant_id=uuid.uuid4(),
+            )
 
 
 class TestDailySpendingLimits:
@@ -174,51 +194,61 @@ class TestDailySpendingLimits:
     async def test_daily_within_budget_passes(self):
         policy = {"max_spend_per_day_usd": 10.0}
         engine = GovernanceEngine(policy)
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with patch("app.agents.governance.redis_pool") as mock_redis:
-                mock_redis.get = AsyncMock(return_value="5.0")  # $5 spent
-                mock_redis.incr = AsyncMock(return_value=1)
-                mock_redis.expire = AsyncMock()
-                await engine.check(
-                    action="tool_call",
-                    context={"tool_name": "test", "instance_id": "x", "current_cost": 0.5},
-                    tenant_id=uuid.uuid4(),
-                )
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            patch("app.agents.governance.redis_pool") as mock_redis,
+        ):
+            # Lua script returns 0 → within budget
+            mock_redis.eval = AsyncMock(return_value=0)
+            mock_redis.incr = AsyncMock(return_value=1)
+            mock_redis.expire = AsyncMock()
+            await engine.check(
+                action="tool_call",
+                context={"tool_name": "test", "instance_id": "x", "current_cost": 0.5},
+                tenant_id=uuid.uuid4(),
+            )
 
     @pytest.mark.asyncio
     async def test_daily_over_budget_raises(self):
         policy = {"max_spend_per_day_usd": 10.0}
         engine = GovernanceEngine(policy)
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with patch("app.agents.governance.redis_pool") as mock_redis:
-                mock_redis.get = AsyncMock(return_value="10.5")  # Over $10 limit
-                mock_redis.incr = AsyncMock(return_value=1)
-                mock_redis.expire = AsyncMock()
-                with pytest.raises(GovernanceViolation) as exc_info:
-                    await engine.check(
-                        action="tool_call",
-                        context={"tool_name": "test", "instance_id": "x", "current_cost": 0.5},
-                        tenant_id=uuid.uuid4(),
-                    )
-                assert exc_info.value.violation_type == "spending_limit"
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            patch("app.agents.governance.redis_pool") as mock_redis,
+        ):
+            # Lua script returns -1 → over budget
+            mock_redis.eval = AsyncMock(return_value=-1)
+            mock_redis.get = AsyncMock(return_value="10.5")
+            mock_redis.incr = AsyncMock(return_value=1)
+            mock_redis.expire = AsyncMock()
+            with pytest.raises(GovernanceViolationError) as exc_info:
+                await engine.check(
+                    action="tool_call",
+                    context={"tool_name": "test", "instance_id": "x", "current_cost": 0.5},
+                    tenant_id=uuid.uuid4(),
+                )
+            assert exc_info.value.violation_type == "spending_limit"
 
     @pytest.mark.asyncio
     async def test_redis_failure_blocks_spending_check(self):
         """When Redis is unavailable and a daily limit is configured, fail-closed."""
         policy = {"max_spend_per_day_usd": 10.0}
         engine = GovernanceEngine(policy)
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with patch("app.agents.governance.redis_pool") as mock_redis:
-                mock_redis.get = AsyncMock(side_effect=ConnectionError("Redis down"))
-                mock_redis.incr = AsyncMock(return_value=1)
-                mock_redis.expire = AsyncMock()
-                with pytest.raises(GovernanceViolation) as exc_info:
-                    await engine.check(
-                        action="tool_call",
-                        context={"tool_name": "test", "instance_id": "x", "current_cost": 0.5},
-                        tenant_id=uuid.uuid4(),
-                    )
-                assert "Redis unavailable" in str(exc_info.value)
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            patch("app.agents.governance.redis_pool") as mock_redis,
+        ):
+            # Lua eval fails → Redis unavailable
+            mock_redis.eval = AsyncMock(side_effect=ConnectionError("Redis down"))
+            mock_redis.incr = AsyncMock(return_value=1)
+            mock_redis.expire = AsyncMock()
+            with pytest.raises(GovernanceViolationError) as exc_info:
+                await engine.check(
+                    action="tool_call",
+                    context={"tool_name": "test", "instance_id": "x", "current_cost": 0.5},
+                    tenant_id=uuid.uuid4(),
+                )
+            assert "Redis unavailable" in str(exc_info.value)
 
 
 class TestRateLimitRedisFailure:
@@ -227,16 +257,18 @@ class TestRateLimitRedisFailure:
         """When Redis is unavailable for rate limiting, fail-closed."""
         policy = {"max_requests_per_minute": 10}
         engine = GovernanceEngine(policy)
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with patch("app.agents.governance.redis_pool") as mock_redis:
-                mock_redis.incr = AsyncMock(side_effect=ConnectionError("Redis down"))
-                with pytest.raises(GovernanceViolation) as exc_info:
-                    await engine.check(
-                        action="tool_call",
-                        context={"tool_name": "test", "instance_id": "x"},
-                        tenant_id=uuid.uuid4(),
-                    )
-                assert "Redis unavailable" in str(exc_info.value)
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            patch("app.agents.governance.redis_pool") as mock_redis,
+        ):
+            mock_redis.incr = AsyncMock(side_effect=ConnectionError("Redis down"))
+            with pytest.raises(GovernanceViolationError) as exc_info:
+                await engine.check(
+                    action="tool_call",
+                    context={"tool_name": "test", "instance_id": "x"},
+                    tenant_id=uuid.uuid4(),
+                )
+            assert "Redis unavailable" in str(exc_info.value)
 
 
 class TestSpendingTracking:
@@ -271,12 +303,14 @@ class TestEmptyPolicy:
     @pytest.mark.asyncio
     async def test_empty_policy_allows_everything(self):
         engine = GovernanceEngine({})
-        with patch("app.agents.governance.emit", new_callable=AsyncMock):
-            with patch("app.agents.governance.redis_pool") as mock_redis:
-                mock_redis.incr = AsyncMock(return_value=1)
-                mock_redis.expire = AsyncMock()
-                await engine.check(
-                    action="tool_call",
-                    context={"tool_name": "anything", "instance_id": "x"},
-                    tenant_id=uuid.uuid4(),
-                )
+        with (
+            patch("app.agents.governance.emit", new_callable=AsyncMock),
+            patch("app.agents.governance.redis_pool") as mock_redis,
+        ):
+            mock_redis.incr = AsyncMock(return_value=1)
+            mock_redis.expire = AsyncMock()
+            await engine.check(
+                action="tool_call",
+                context={"tool_name": "anything", "instance_id": "x"},
+                tenant_id=uuid.uuid4(),
+            )

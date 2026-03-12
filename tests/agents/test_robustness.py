@@ -11,11 +11,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.agents.governance import GovernanceEngine, GovernanceViolation
+from app.agents.governance import GovernanceEngine, GovernanceViolationError
 from app.agents.memory import AgentMemoryManager
 from app.agents.models import TenantTool
 from app.agents.tool_registry import ToolRegistry
-
 
 # ── Governance: Redis unavailable → fail-closed (spending) ────────────
 
@@ -23,7 +22,7 @@ from app.agents.tool_registry import ToolRegistry
 @pytest.mark.asyncio
 async def test_governance_spend_limit_fails_closed_when_redis_unavailable():
     """When max_spend_per_day_usd is set and Redis is down, the engine must
-    raise GovernanceViolation (fail-closed) rather than silently allowing
+    raise GovernanceViolationError (fail-closed) rather than silently allowing
     the action."""
     engine = GovernanceEngine({"max_spend_per_day_usd": 10.0})
 
@@ -33,18 +32,17 @@ async def test_governance_spend_limit_fails_closed_when_redis_unavailable():
 
     with (
         patch("app.agents.governance.redis_pool", mock_redis),
-        patch("app.agents.governance.emit", new_callable=AsyncMock),
+        patch("app.agents.governance.emit", new_callable=AsyncMock),pytest.raises(GovernanceViolationError) as exc_info
     ):
-        with pytest.raises(GovernanceViolation) as exc_info:
-            await engine.check(
-                action="tool_call",
-                context={
-                    "instance_id": "inst-1",
-                    "agent_id": "agent-1",
-                    "current_cost": 0.0,
-                },
-                tenant_id=uuid.uuid4(),
-            )
+        await engine.check(
+            action="tool_call",
+            context={
+                "instance_id": "inst-1",
+                "agent_id": "agent-1",
+                "current_cost": 0.0,
+            },
+            tenant_id=uuid.uuid4(),
+        )
 
     assert exc_info.value.violation_type == "spending_limit"
     assert "redis_unavailable" in exc_info.value.details.get("reason", "")
@@ -56,7 +54,7 @@ async def test_governance_spend_limit_fails_closed_when_redis_unavailable():
 @pytest.mark.asyncio
 async def test_governance_rate_limit_fails_closed_when_redis_unavailable():
     """When max_requests_per_minute is set and Redis is down, the engine
-    must raise GovernanceViolation (fail-closed)."""
+    must raise GovernanceViolationError (fail-closed)."""
     engine = GovernanceEngine({"max_requests_per_minute": 5})
 
     mock_redis = AsyncMock()
@@ -64,17 +62,16 @@ async def test_governance_rate_limit_fails_closed_when_redis_unavailable():
 
     with (
         patch("app.agents.governance.redis_pool", mock_redis),
-        patch("app.agents.governance.emit", new_callable=AsyncMock),
+        patch("app.agents.governance.emit", new_callable=AsyncMock),pytest.raises(GovernanceViolationError) as exc_info
     ):
-        with pytest.raises(GovernanceViolation) as exc_info:
-            await engine.check(
-                action="tool_call",
-                context={
-                    "instance_id": "inst-1",
-                    "agent_id": "agent-1",
-                },
-                tenant_id=uuid.uuid4(),
-            )
+        await engine.check(
+            action="tool_call",
+            context={
+                "instance_id": "inst-1",
+                "agent_id": "agent-1",
+            },
+            tenant_id=uuid.uuid4(),
+        )
 
     assert exc_info.value.violation_type == "rate_limit"
     assert "redis_unavailable" in exc_info.value.details.get("reason", "")
@@ -120,14 +117,13 @@ async def test_memory_set_short_term_propagates_redis_error():
         side_effect=ConnectionError("Redis unavailable"),
     )
 
-    with patch("app.agents.memory.redis_pool", mock_redis):
-        with pytest.raises(ConnectionError):
-            await manager.set_short_term(
-                instance_id=uuid.uuid4(),
-                session_id=uuid.uuid4(),
-                key="test_key",
-                value={"data": 1},
-            )
+    with patch("app.agents.memory.redis_pool", mock_redis), pytest.raises(ConnectionError):
+        await manager.set_short_term(
+            instance_id=uuid.uuid4(),
+            session_id=uuid.uuid4(),
+            key="test_key",
+            value={"data": 1},
+        )
 
 
 # ── Tool registry: external tool circuit breaker on failure ───────────

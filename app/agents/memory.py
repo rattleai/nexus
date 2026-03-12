@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +30,10 @@ logger = structlog.stdlib.get_logger()
 # Redis key patterns
 _SHORT_TERM_KEY = "agent:memory:short:{instance_id}:{session_id}"
 _SHARED_KEY = "agent:memory:shared:{tenant_id}:{workflow_id}"
+
+# Cap for fallback Python-based similarity computation.
+# For production workloads with larger memory stores, use the pgvector extension.
+_MAX_EMBEDDING_CANDIDATES = 1000
 
 
 class AgentMemoryManager:
@@ -157,7 +161,6 @@ return 1
         namespace: str = "default",
     ) -> dict[str, Any] | None:
         """Read a value from long-term (persistent) memory."""
-        from sqlalchemy import or_
         stmt = select(AgentMemoryEntry).where(
             AgentMemoryEntry.instance_id == instance_id,
             AgentMemoryEntry.tenant_id == tenant_id,
@@ -237,7 +240,6 @@ return 1
         offset: int = 0,
     ) -> list[AgentMemoryEntry]:
         """List long-term memory entries for an instance."""
-        from sqlalchemy import or_
         stmt = (
             select(AgentMemoryEntry)
             .where(
@@ -330,11 +332,6 @@ return 1
         This implementation provides a compatible interface that works
         without pgvector installed.
         """
-        # Fetch entries with embeddings in the namespace.
-        # Cap at 1000 to prevent unbounded memory usage in the fallback
-        # Python-based similarity computation.  For production workloads with
-        # larger memory stores, use the pgvector extension.
-        _MAX_CANDIDATES = 1000
         stmt = (
             select(AgentMemoryEntry)
             .where(
@@ -342,8 +339,9 @@ return 1
                 AgentMemoryEntry.tenant_id == tenant_id,
                 AgentMemoryEntry.namespace == namespace,
                 AgentMemoryEntry.embedding.isnot(None),
+                or_(AgentMemoryEntry.expires_at.is_(None), AgentMemoryEntry.expires_at > datetime.now(UTC)),
             )
-            .limit(_MAX_CANDIDATES)
+            .limit(_MAX_EMBEDDING_CANDIDATES)
         )
         result = await self.db.execute(stmt)
         entries = list(result.scalars().all())
@@ -413,7 +411,7 @@ return 1
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = sum(x * x for x in a) ** 0.5
     norm_b = sum(x * x for x in b) ** 0.5
     if norm_a == 0 or norm_b == 0:

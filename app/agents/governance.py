@@ -8,7 +8,7 @@ Provides:
     - Audit trail for all governance decisions
 
 The governance engine is invoked before every agent action (tool call, LLM
-request) by the runtime. It raises GovernanceViolation if the action is
+request) by the runtime. It raises GovernanceViolationError if the action is
 blocked.
 """
 
@@ -32,7 +32,7 @@ _SPEND_MONTH_KEY = "agent:gov:spend:month:{tenant_id}:{agent_id}:{month}"
 _RATE_KEY = "agent:gov:rate:{tenant_id}:{instance_id}"
 
 
-class GovernanceViolation(Exception):
+class GovernanceViolationError(Exception):
     """Raised when an agent action violates a governance policy."""
 
     def __init__(self, violation_type: str, message: str, *, details: dict[str, Any] | None = None):
@@ -41,34 +41,36 @@ class GovernanceViolation(Exception):
         super().__init__(message)
 
 
-# Atomic Lua script for check-and-increment spending.
-# Returns -1 if the limit would be exceeded, otherwise 0 (success).
-_CHECK_AND_INCREMENT_LUA = """
+# Atomic Lua script for checking spending against a limit.
+# Reads the current value and compares current + estimated against the limit.
+# Returns -1 if the limit would be exceeded, otherwise 0 (within bounds).
+# Does NOT increment — track_spending() is the sole writer to avoid double-counting.
+_CHECK_SPENDING_LUA = """
 local current = tonumber(redis.call('GET', KEYS[1]) or '0')
-local increment = tonumber(ARGV[1])
+local estimated = tonumber(ARGV[1])
 local limit = tonumber(ARGV[2])
-if current + increment > limit then
+if current + estimated >= limit then
     return -1
 end
-redis.call('INCRBYFLOAT', KEYS[1], increment)
 return 0
 """
 
 
-async def _atomic_check_and_increment(
-    key: str, increment: float, limit: float,
+async def _atomic_spend_check(
+    key: str, estimated_cost: float, limit: float,
 ) -> int:
-    """Atomically check spending against limit and increment if within bounds.
+    """Atomically check whether spending would exceed the limit.
 
-    Uses Redis server-side Lua script (NOT Python eval) for atomicity.
-    Returns 0 on success, -1 if limit would be exceeded.
+    Uses Redis server-side Lua script (NOT Python eval) for atomic read+compare.
+    Does NOT modify the key — track_spending() is the sole writer.
+    Returns 0 if within bounds, -1 if limit would be exceeded.
     """
     # redis_pool.eval() executes a Lua script on the Redis server
     return await redis_pool.eval(
-        _CHECK_AND_INCREMENT_LUA,
+        _CHECK_SPENDING_LUA,
         1,  # number of keys
         key,  # KEYS[1]
-        str(increment),  # ARGV[1]
+        str(estimated_cost),  # ARGV[1]
         str(limit),  # ARGV[2]
     )
 
@@ -93,7 +95,7 @@ class GovernanceEngine:
     ) -> None:
         """Run all governance checks for an action.
 
-        Raises GovernanceViolation if any check fails.
+        Raises GovernanceViolationError if any check fails.
         """
         await self._check_tool_access(action, context, tenant_id)
         await self._check_spending_limits(action, context, tenant_id)
@@ -123,7 +125,7 @@ class GovernanceEngine:
                 violation_type="denied_tool",
                 details=f"Tool '{tool_name}' is denied by policy",
             )
-            raise GovernanceViolation(
+            raise GovernanceViolationError(
                 "denied_tool",
                 f"Tool '{tool_name}' is denied by governance policy",
                 details={"tool_name": tool_name},
@@ -138,7 +140,7 @@ class GovernanceEngine:
                 violation_type="denied_tool",
                 details=f"Tool '{tool_name}' is not in the allowed list",
             )
-            raise GovernanceViolation(
+            raise GovernanceViolationError(
                 "denied_tool",
                 f"Tool '{tool_name}' is not in the allowed tools list",
                 details={"tool_name": tool_name, "allowed": allowed},
@@ -163,15 +165,17 @@ class GovernanceEngine:
                 violation_type="spending_limit",
                 details=f"Per-run spending limit exceeded: ${current_cost:.4f} >= ${max_per_run:.2f}",
             )
-            raise GovernanceViolation(
+            raise GovernanceViolationError(
                 "spending_limit",
                 f"Agent has exceeded per-run spending limit (${max_per_run:.2f})",
                 details={"current_cost": current_cost, "limit": max_per_run},
             )
 
-        # Per-day limit (tracked in Redis with atomic check-and-increment).
-        # Uses a Redis Lua script to atomically check + increment, preventing
-        # race conditions where two concurrent requests both pass the check.
+        # Per-day limit (tracked in Redis via atomic Lua check).
+        # The Lua script reads the current daily total and compares against the
+        # limit atomically, preventing TOCTOU races between concurrent requests.
+        # track_spending() is the sole writer to the daily key — the check here
+        # is read-only to avoid double-counting.
         # Fail-closed: if Redis is unavailable, block the action.
         max_per_day = self.policy.get("max_spend_per_day_usd")
         if max_per_day is not None and instance_id:
@@ -183,19 +187,16 @@ class GovernanceEngine:
                 tenant_id=tenant_id, agent_id=agent_id, date=today,
             )
             try:
-                lua_result = await _atomic_check_and_increment(
+                lua_result = await _atomic_spend_check(
                     day_key, estimated_cost, max_per_day,
                 )
-                await redis_pool.expire(day_key, 86400 * 2)  # 2 days TTL
-            except GovernanceViolation:
-                raise
-            except Exception:
+            except Exception as exc:
                 logger.error("governance_redis_unavailable", check="spending_limit", exc_info=True)
-                raise GovernanceViolation(
+                raise GovernanceViolationError(
                     "spending_limit",
                     "Unable to verify spending limits (Redis unavailable). Action blocked.",
                     details={"reason": "redis_unavailable"},
-                )
+                ) from exc
             if lua_result == -1:
                 daily_spend = float(await redis_pool.get(day_key) or 0)
                 await self._emit_violation(
@@ -204,7 +205,7 @@ class GovernanceEngine:
                     violation_type="spending_limit",
                     details=f"Daily spending limit exceeded: ${daily_spend:.4f} >= ${max_per_day:.2f}",
                 )
-                raise GovernanceViolation(
+                raise GovernanceViolationError(
                     "spending_limit",
                     f"Agent has exceeded daily spending limit (${max_per_day:.2f})",
                     details={"daily_spend": daily_spend, "limit": max_per_day},
@@ -230,14 +231,14 @@ class GovernanceEngine:
             current = await redis_pool.incr(rate_key)
             if current == 1:
                 await redis_pool.expire(rate_key, 60)
-        except Exception:
+        except Exception as exc:
             # Fail-closed: if Redis is unavailable, block the action
             logger.error("governance_redis_unavailable", check="rate_limit", exc_info=True)
-            raise GovernanceViolation(
+            raise GovernanceViolationError(
                 "rate_limit",
                 "Unable to verify rate limits (Redis unavailable). Action blocked.",
                 details={"reason": "redis_unavailable"},
-            )
+            ) from exc
 
         if current > max_rpm:
             await self._emit_violation(
@@ -246,7 +247,7 @@ class GovernanceEngine:
                 violation_type="rate_limit",
                 details=f"Rate limit exceeded: {current}/{max_rpm} requests/minute",
             )
-            raise GovernanceViolation(
+            raise GovernanceViolationError(
                 "rate_limit",
                 f"Agent rate limit exceeded ({max_rpm} requests/minute)",
                 details={"current": current, "limit": max_rpm},
@@ -260,7 +261,7 @@ class GovernanceEngine:
     ) -> None:
         """Check if the action requires human approval.
 
-        If approval is required, emits an event and raises GovernanceViolation
+        If approval is required, emits an event and raises GovernanceViolationError
         to pause the agent. The agent can be resumed after approval.
         """
         require_approval = self.policy.get("require_approval_for", [])
@@ -290,7 +291,7 @@ class GovernanceEngine:
         # via WebSocket notification. For now, apply the default action.
         default_action = self.policy.get("approval_default_action", "deny")
         if default_action == "deny":
-            raise GovernanceViolation(
+            raise GovernanceViolationError(
                 "approval_required",
                 f"Action '{tool_name}' requires human approval",
                 details={"approval_id": approval_id, "tool_name": tool_name},

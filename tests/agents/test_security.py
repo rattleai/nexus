@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.agents.executor import AgentExecutionError, AgentExecutor
 from app.agents.schemas import TenantToolResponse
-
 
 # ── Tenant isolation: _load_definition ────────────────────────────────
 
@@ -77,13 +76,15 @@ async def test_stop_wrong_tenant_raises_execution_error():
 
     executor = AgentExecutor(mock_db)
 
-    with patch("app.agents.executor.set_tenant_context", new_callable=AsyncMock):
-        with pytest.raises(AgentExecutionError, match="not found"):
-            await executor.stop(
-                instance_id=uuid.uuid4(),
-                tenant_id=uuid.uuid4(),
-                reason="test",
-            )
+    with (
+        patch("app.agents.executor.set_tenant_context", new_callable=AsyncMock),
+        pytest.raises(AgentExecutionError, match="not found"),
+    ):
+        await executor.stop(
+            instance_id=uuid.uuid4(),
+            tenant_id=uuid.uuid4(),
+            reason="test",
+        )
 
 
 # ── Auth config masking ──────────────────────────────────────────────
@@ -106,8 +107,8 @@ class TestTenantToolResponseAuthMasking:
             is_active=True,
             health_check_url=None,
             metadata={},
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
 
     def test_token_is_masked(self):

@@ -7,15 +7,13 @@ spending tracking, governance violations, and error handling.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.agents.runtime import AgentRuntime, RunResult, StepResult, ToolCall
-
+from app.agents.runtime import AgentRuntime, RunResult, ToolCall
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -260,11 +258,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, new_callable=AsyncMock),
             patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
-            MockGov.track_spending = AsyncMock()
+            mock_gov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {
                 "ai_complete": {
                     "description": "Run an AI completion",
@@ -320,11 +318,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, new_callable=AsyncMock),
             patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
-            MockGov.track_spending = AsyncMock()
+            mock_gov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
 
             await runtime.run(
@@ -334,9 +332,9 @@ class TestReActLoop:
                 db=None,
             )
 
-            assert MockGov.track_spending.await_count == 2
+            assert mock_gov.track_spending.await_count == 2
             # Verify the first call included the cost from step 1
-            first_call_kwargs = MockGov.track_spending.call_args_list[0].kwargs
+            first_call_kwargs = mock_gov.track_spending.call_args_list[0].kwargs
             assert first_call_kwargs["cost_usd"] == 0.001
             assert first_call_kwargs["tenant_id"] == TENANT_ID
 
@@ -358,11 +356,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, new_callable=AsyncMock),
             patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
-            MockGov.track_spending = AsyncMock()
+            mock_gov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
 
             result = await runtime.run(
@@ -395,11 +393,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, new_callable=AsyncMock),
             patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
-            MockGov.track_spending = AsyncMock()
+            mock_gov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
 
             result = await runtime.run(
@@ -437,11 +435,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, new_callable=AsyncMock),
             patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
-            MockGov.track_spending = AsyncMock()
+            mock_gov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
 
             await runtime.run(
@@ -490,11 +488,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, new_callable=AsyncMock),
             patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
-            MockGov.track_spending = AsyncMock()
+            mock_gov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
 
             result = await runtime.run(
@@ -526,11 +524,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, new_callable=AsyncMock),
             patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
-            MockGov.track_spending = AsyncMock()
+            mock_gov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
 
             result = await runtime.run(
@@ -555,11 +553,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, new_callable=AsyncMock),
             patch(_PATCH_TOOL_REGISTRY),
         ):
-            MockGov.track_spending = AsyncMock()
+            mock_gov.track_spending = AsyncMock()
 
             result = await runtime.run(
                 messages=[{"role": "user", "content": "test"}],
@@ -587,11 +585,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, new_callable=AsyncMock),
             patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
-            MockGov.track_spending = AsyncMock()
+            mock_gov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
 
             await runtime.run(
@@ -620,11 +618,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, new_callable=AsyncMock),
             patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
-            MockGov.track_spending = AsyncMock()
+            mock_gov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
 
             await runtime.run(
@@ -661,11 +659,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, new_callable=AsyncMock),
             patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
-            MockGov.track_spending = AsyncMock()
+            mock_gov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
 
             await runtime.run(
@@ -703,11 +701,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, mock_emit),
             patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
-            MockGov.track_spending = AsyncMock()
+            mock_gov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
 
             await runtime.run(
@@ -748,11 +746,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, new_callable=AsyncMock),
             patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
-            MockGov.track_spending = AsyncMock()
+            mock_gov.track_spending = AsyncMock()
             mock_registry.list_builtin_tools.return_value = {}
 
             result = await runtime.run(
@@ -795,11 +793,11 @@ class TestReActLoop:
 
         with (
             patch(_PATCH_AI_GW, mock_ai_gw),
-            patch(_PATCH_GOVERNANCE) as MockGov,
+            patch(_PATCH_GOVERNANCE) as mock_gov,
             patch(_PATCH_EMIT, new_callable=AsyncMock),
             patch(_PATCH_TOOL_REGISTRY) as mock_registry,
         ):
-            MockGov.track_spending = AsyncMock(side_effect=Exception("Redis down"))
+            mock_gov.track_spending = AsyncMock(side_effect=Exception("Redis down"))
             mock_registry.list_builtin_tools.return_value = {}
 
             result = await runtime.run(

@@ -60,7 +60,7 @@ services:
       - "127.0.0.1:6379:6379"
     command: redis-server --requirepass ${REDIS_PASSWORD:-changeme}
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD:-changeme} ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -100,7 +100,7 @@ services:
         condition: service_healthy
     command: celery -A app.workers.celery_app worker --loglevel=info
     healthcheck:
-      test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping"]
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping --timeout 5 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -136,7 +136,7 @@ services:
         condition: service_healthy
     command: celery -A app.workers.celery_app worker --loglevel=info -Q agents --concurrency=4
     healthcheck:
-      test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping"]
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping --timeout 5 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

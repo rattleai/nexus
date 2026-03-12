@@ -12,9 +12,7 @@ import pytest
 from app.agents.executor import AgentExecutionError, AgentExecutor
 from app.agents.models import AgentStatus, InstanceStatus, SessionStatus
 from app.agents.runtime import RunResult, StepResult
-
-from tests.agents.conftest import make_agent_definition
-
+from tests.agents.conftest import make_agent_definition, make_mock_db
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -89,7 +87,7 @@ def _build_executor_patches(
 class TestDefinitionValidation:
     @pytest.mark.asyncio
     async def test_run_raises_when_definition_not_found(self):
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
 
         with (
@@ -100,18 +98,18 @@ class TestDefinitionValidation:
                 new_callable=AsyncMock,
                 return_value=None,
             ),
+            pytest.raises(AgentExecutionError, match="not found"),
         ):
-            with pytest.raises(AgentExecutionError, match="not found"):
-                await executor.run(
-                    definition_id=uuid.uuid4(),
-                    tenant_id=uuid.uuid4(),
-                    input_data=_valid_input_data(),
-                    api_key="sk-test",
-                )
+            await executor.run(
+                definition_id=uuid.uuid4(),
+                tenant_id=uuid.uuid4(),
+                input_data=_valid_input_data(),
+                api_key="sk-test",
+            )
 
     @pytest.mark.asyncio
     async def test_run_raises_when_definition_not_active(self):
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
         inactive_def = make_agent_definition(status=AgentStatus.DRAFT)
 
@@ -123,18 +121,18 @@ class TestDefinitionValidation:
                 new_callable=AsyncMock,
                 return_value=inactive_def,
             ),
+            pytest.raises(AgentExecutionError, match="not active"),
         ):
-            with pytest.raises(AgentExecutionError, match="not active"):
-                await executor.run(
-                    definition_id=uuid.uuid4(),
-                    tenant_id=uuid.uuid4(),
-                    input_data=_valid_input_data(),
-                    api_key="sk-test",
-                )
+            await executor.run(
+                definition_id=uuid.uuid4(),
+                tenant_id=uuid.uuid4(),
+                input_data=_valid_input_data(),
+                api_key="sk-test",
+            )
 
     @pytest.mark.asyncio
     async def test_run_raises_when_definition_disabled(self):
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
         disabled_def = make_agent_definition(status=AgentStatus.DISABLED)
 
@@ -146,14 +144,14 @@ class TestDefinitionValidation:
                 new_callable=AsyncMock,
                 return_value=disabled_def,
             ),
+            pytest.raises(AgentExecutionError, match="not active"),
         ):
-            with pytest.raises(AgentExecutionError, match="not active"):
-                await executor.run(
-                    definition_id=uuid.uuid4(),
-                    tenant_id=uuid.uuid4(),
-                    input_data=_valid_input_data(),
-                    api_key="sk-test",
-                )
+            await executor.run(
+                definition_id=uuid.uuid4(),
+                tenant_id=uuid.uuid4(),
+                input_data=_valid_input_data(),
+                api_key="sk-test",
+            )
 
 
 # ── 2. Session creation and resumption ────────────────────────────────
@@ -164,7 +162,7 @@ class TestSessionManagement:
     async def test_new_session_created_when_session_id_is_none(self):
         """When session_id is None, _get_or_create_session should be called
         with session_id=None, which creates a fresh session."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
 
         patches, _, _ = _build_executor_patches()
@@ -190,7 +188,7 @@ class TestSessionManagement:
     async def test_existing_session_resumed_when_valid_session_id(self):
         """When a valid session_id is provided, _get_or_create_session is
         called with that session_id, enabling session resumption."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
 
         existing_session_id = uuid.uuid4()
@@ -219,7 +217,7 @@ class TestSessionManagement:
     async def test_session_history_prepended_to_messages(self):
         """When a session has existing messages, they are prepended to
         the new input messages before calling the runtime."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
 
         history = [
@@ -260,7 +258,7 @@ class TestErrorRecovery:
     async def test_instance_marked_failed_on_runtime_error(self):
         """When runtime.run raises an exception, the instance should be
         re-fetched after rollback and marked FAILED."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         # db.get returns a mock instance after rollback
         refetched_instance = MagicMock()
         refetched_instance.id = uuid.uuid4()
@@ -278,18 +276,24 @@ class TestErrorRecovery:
 
         with (
             patch("app.agents.executor.set_tenant_context", new_callable=AsyncMock),
-            patch.object(AgentExecutor, "_load_definition", new_callable=AsyncMock, return_value=definition),
-            patch.object(AgentExecutor, "_get_or_create_session", new_callable=AsyncMock, return_value=session),
+            patch.object(
+                AgentExecutor, "_load_definition",
+                new_callable=AsyncMock, return_value=definition,
+            ),
+            patch.object(
+                AgentExecutor, "_get_or_create_session",
+                new_callable=AsyncMock, return_value=session,
+            ),
             patch("app.agents.executor.AgentRuntime", mock_runtime_cls),
             patch("app.agents.executor.emit", new_callable=AsyncMock),
+            pytest.raises(AgentExecutionError, match="LLM timeout"),
         ):
-            with pytest.raises(AgentExecutionError, match="LLM timeout"):
-                await executor.run(
-                    definition_id=uuid.uuid4(),
-                    tenant_id=uuid.uuid4(),
-                    input_data=_valid_input_data(),
-                    api_key="sk-test",
-                )
+            await executor.run(
+                definition_id=uuid.uuid4(),
+                tenant_id=uuid.uuid4(),
+                input_data=_valid_input_data(),
+                api_key="sk-test",
+            )
 
         # Instance was marked FAILED
         assert refetched_instance.status == InstanceStatus.FAILED
@@ -299,7 +303,7 @@ class TestErrorRecovery:
     async def test_rollback_called_before_refetch_on_error(self):
         """db.rollback() must be called before re-fetching the instance
         so we have a clean transaction for the failure state update."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         refetched_instance = MagicMock()
         refetched_instance.id = uuid.uuid4()
         refetched_instance.steps_executed = 0
@@ -332,18 +336,24 @@ class TestErrorRecovery:
 
         with (
             patch("app.agents.executor.set_tenant_context", new_callable=AsyncMock),
-            patch.object(AgentExecutor, "_load_definition", new_callable=AsyncMock, return_value=definition),
-            patch.object(AgentExecutor, "_get_or_create_session", new_callable=AsyncMock, return_value=session),
+            patch.object(
+                AgentExecutor, "_load_definition",
+                new_callable=AsyncMock, return_value=definition,
+            ),
+            patch.object(
+                AgentExecutor, "_get_or_create_session",
+                new_callable=AsyncMock, return_value=session,
+            ),
             patch("app.agents.executor.AgentRuntime", mock_runtime_cls),
             patch("app.agents.executor.emit", new_callable=AsyncMock),
+            pytest.raises(AgentExecutionError),
         ):
-            with pytest.raises(AgentExecutionError):
-                await executor.run(
-                    definition_id=uuid.uuid4(),
-                    tenant_id=uuid.uuid4(),
-                    input_data=_valid_input_data(),
-                    api_key="sk-test",
-                )
+            await executor.run(
+                definition_id=uuid.uuid4(),
+                tenant_id=uuid.uuid4(),
+                input_data=_valid_input_data(),
+                api_key="sk-test",
+            )
 
         assert call_order == ["rollback", "get"], (
             f"Expected rollback before get, got: {call_order}"
@@ -353,7 +363,7 @@ class TestErrorRecovery:
     async def test_commit_called_after_marking_failed(self):
         """After marking the instance FAILED, db.commit() should be
         called to persist the failure state."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         refetched_instance = MagicMock()
         refetched_instance.id = uuid.uuid4()
         refetched_instance.steps_executed = 0
@@ -367,18 +377,24 @@ class TestErrorRecovery:
 
         with (
             patch("app.agents.executor.set_tenant_context", new_callable=AsyncMock),
-            patch.object(AgentExecutor, "_load_definition", new_callable=AsyncMock, return_value=make_agent_definition()),
-            patch.object(AgentExecutor, "_get_or_create_session", new_callable=AsyncMock, return_value=_make_session()),
+            patch.object(
+                AgentExecutor, "_load_definition",
+                new_callable=AsyncMock, return_value=make_agent_definition(),
+            ),
+            patch.object(
+                AgentExecutor, "_get_or_create_session",
+                new_callable=AsyncMock, return_value=_make_session(),
+            ),
             patch("app.agents.executor.AgentRuntime", mock_runtime_cls),
             patch("app.agents.executor.emit", new_callable=AsyncMock),
+            pytest.raises(AgentExecutionError),
         ):
-            with pytest.raises(AgentExecutionError):
-                await executor.run(
-                    definition_id=uuid.uuid4(),
-                    tenant_id=uuid.uuid4(),
-                    input_data=_valid_input_data(),
-                    api_key="sk-test",
-                )
+            await executor.run(
+                definition_id=uuid.uuid4(),
+                tenant_id=uuid.uuid4(),
+                input_data=_valid_input_data(),
+                api_key="sk-test",
+            )
 
         # commit was called (once during error recovery)
         assert mock_db.commit.await_count >= 1
@@ -392,7 +408,7 @@ class TestSessionMessageTruncation:
     async def test_messages_truncated_when_exceeding_max(self):
         """When session messages exceed AGENT_SESSION_MAX_MESSAGES, only
         the most recent N messages should be kept."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
 
         max_msgs = 5
@@ -436,7 +452,7 @@ class TestSessionMessageTruncation:
     @pytest.mark.asyncio
     async def test_messages_not_truncated_when_within_limit(self):
         """When session messages are within the limit, no truncation occurs."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
 
         max_msgs = 200
@@ -474,7 +490,7 @@ class TestSessionMessageTruncation:
     @pytest.mark.asyncio
     async def test_truncation_keeps_most_recent_messages(self):
         """Truncation should keep the tail (most recent) messages."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
 
         max_msgs = 3
@@ -518,7 +534,7 @@ class TestInputValidation:
     @pytest.mark.asyncio
     async def test_empty_messages_and_no_prompt_raises(self):
         """input_data with empty messages and no 'prompt' key should raise."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
         definition = make_agent_definition()
 
@@ -528,19 +544,19 @@ class TestInputValidation:
                 AgentExecutor, "_load_definition",
                 new_callable=AsyncMock, return_value=definition,
             ),
+            pytest.raises(AgentExecutionError, match=r"messages.*prompt"),
         ):
-            with pytest.raises(AgentExecutionError, match="messages.*prompt"):
-                await executor.run(
-                    definition_id=uuid.uuid4(),
-                    tenant_id=uuid.uuid4(),
-                    input_data={"messages": []},
-                    api_key="sk-test",
-                )
+            await executor.run(
+                definition_id=uuid.uuid4(),
+                tenant_id=uuid.uuid4(),
+                input_data={"messages": []},
+                api_key="sk-test",
+            )
 
     @pytest.mark.asyncio
     async def test_no_messages_key_and_no_prompt_raises(self):
         """input_data with neither 'messages' nor 'prompt' should raise."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
         definition = make_agent_definition()
 
@@ -550,19 +566,19 @@ class TestInputValidation:
                 AgentExecutor, "_load_definition",
                 new_callable=AsyncMock, return_value=definition,
             ),
+            pytest.raises(AgentExecutionError, match=r"messages.*prompt"),
         ):
-            with pytest.raises(AgentExecutionError, match="messages.*prompt"):
-                await executor.run(
-                    definition_id=uuid.uuid4(),
-                    tenant_id=uuid.uuid4(),
-                    input_data={},
-                    api_key="sk-test",
-                )
+            await executor.run(
+                definition_id=uuid.uuid4(),
+                tenant_id=uuid.uuid4(),
+                input_data={},
+                api_key="sk-test",
+            )
 
     @pytest.mark.asyncio
     async def test_invalid_message_structure_missing_role(self):
         """Messages missing the 'role' key should raise."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
         definition = make_agent_definition()
 
@@ -572,19 +588,19 @@ class TestInputValidation:
                 AgentExecutor, "_load_definition",
                 new_callable=AsyncMock, return_value=definition,
             ),
+            pytest.raises(AgentExecutionError, match=r"role.*content"),
         ):
-            with pytest.raises(AgentExecutionError, match="role.*content"):
-                await executor.run(
-                    definition_id=uuid.uuid4(),
-                    tenant_id=uuid.uuid4(),
-                    input_data={"messages": [{"content": "hello"}]},
-                    api_key="sk-test",
-                )
+            await executor.run(
+                definition_id=uuid.uuid4(),
+                tenant_id=uuid.uuid4(),
+                input_data={"messages": [{"content": "hello"}]},
+                api_key="sk-test",
+            )
 
     @pytest.mark.asyncio
     async def test_invalid_message_structure_missing_content(self):
         """Messages missing the 'content' key should raise."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
         definition = make_agent_definition()
 
@@ -594,19 +610,19 @@ class TestInputValidation:
                 AgentExecutor, "_load_definition",
                 new_callable=AsyncMock, return_value=definition,
             ),
+            pytest.raises(AgentExecutionError, match=r"role.*content"),
         ):
-            with pytest.raises(AgentExecutionError, match="role.*content"):
-                await executor.run(
-                    definition_id=uuid.uuid4(),
-                    tenant_id=uuid.uuid4(),
-                    input_data={"messages": [{"role": "user"}]},
-                    api_key="sk-test",
-                )
+            await executor.run(
+                definition_id=uuid.uuid4(),
+                tenant_id=uuid.uuid4(),
+                input_data={"messages": [{"role": "user"}]},
+                api_key="sk-test",
+            )
 
     @pytest.mark.asyncio
     async def test_invalid_message_structure_not_a_dict(self):
         """Messages that are not dicts should raise."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
         definition = make_agent_definition()
 
@@ -616,20 +632,20 @@ class TestInputValidation:
                 AgentExecutor, "_load_definition",
                 new_callable=AsyncMock, return_value=definition,
             ),
+            pytest.raises(AgentExecutionError, match=r"role.*content"),
         ):
-            with pytest.raises(AgentExecutionError, match="role.*content"):
-                await executor.run(
-                    definition_id=uuid.uuid4(),
-                    tenant_id=uuid.uuid4(),
-                    input_data={"messages": ["not a dict"]},
-                    api_key="sk-test",
-                )
+            await executor.run(
+                definition_id=uuid.uuid4(),
+                tenant_id=uuid.uuid4(),
+                input_data={"messages": ["not a dict"]},
+                api_key="sk-test",
+            )
 
     @pytest.mark.asyncio
     async def test_prompt_fallback_creates_valid_message(self):
         """When 'messages' is empty but 'prompt' is provided, it should
         be converted to a valid user message and the run should proceed."""
-        mock_db = AsyncMock()
+        mock_db = make_mock_db()
         executor = AgentExecutor(mock_db)
 
         patches, _, mock_runtime_instance = _build_executor_patches()

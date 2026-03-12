@@ -17,6 +17,7 @@ Integrates with:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -30,6 +31,9 @@ from app.config import settings
 from app.core.events import emit
 
 logger = structlog.stdlib.get_logger()
+
+# Maximum characters for tool output before truncation.
+_MAX_TOOL_OUTPUT = 20_000
 
 
 @dataclass
@@ -128,7 +132,9 @@ class AgentRuntime:
         _max_conv = settings.AGENT_MAX_CONVERSATION_MESSAGES
         if len(conversation) > _max_conv:
             sys_msgs = [m for m in conversation if m.get("role") == "system"]
-            conversation = sys_msgs + conversation[-(max(1, _max_conv - len(sys_msgs))):]
+            non_sys = [m for m in conversation if m.get("role") != "system"]
+            budget = max(1, _max_conv - len(sys_msgs))
+            conversation = sys_msgs + non_sys[-budget:]
 
         max_steps = self.definition.max_steps_per_run
         max_tokens = self.definition.max_tokens_per_run
@@ -172,15 +178,13 @@ class AgentRuntime:
                 result.total_cost_usd += step_cost
 
                 # Track spending after each LLM call (best-effort)
-                try:
+                with contextlib.suppress(Exception):
                     await GovernanceEngine.track_spending(
                         tenant_id=self.tenant_id,
                         agent_id=str(self.definition.id),
                         instance_id=str(instance_id),
                         cost_usd=step_cost,
                     )
-                except Exception:
-                    pass
 
                 # Check if the LLM wants to call a tool
                 tool_calls = self._extract_tool_calls(completion)
@@ -227,14 +231,13 @@ class AgentRuntime:
                                 tool_executor(tc.name, tc.arguments),
                                 timeout=settings.AGENT_TOOL_EXECUTION_TIMEOUT,
                             )
-                        except asyncio.TimeoutError:
+                        except TimeoutError:
                             tool_result = {
                                 "error": f"Tool '{tc.name}' timed out after "
                                 f"{settings.AGENT_TOOL_EXECUTION_TIMEOUT}s",
                             }
 
                         # Truncate oversized tool output to prevent token/memory exhaustion.
-                        _MAX_TOOL_OUTPUT = 20_000  # characters
                         tool_result_str = str(tool_result)
                         if len(tool_result_str) > _MAX_TOOL_OUTPUT:
                             tool_result_str = tool_result_str[:_MAX_TOOL_OUTPUT] + "... [truncated]"
@@ -259,7 +262,7 @@ class AgentRuntime:
                         })
 
                         # Emit step event (best-effort)
-                        try:
+                        with contextlib.suppress(Exception):
                             await emit(
                                 AgentStepCompleted(
                                     tenant_id=str(self.tenant_id),
@@ -272,8 +275,6 @@ class AgentRuntime:
                                 ),
                                 durable=True,
                             )
-                        except Exception:
-                            pass
                 else:
                     # LLM responded directly — agent run is complete
                     step_duration = int((time.monotonic() - step_start) * 1000)

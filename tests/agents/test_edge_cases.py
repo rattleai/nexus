@@ -9,13 +9,11 @@ and version fields in responses.
 from __future__ import annotations
 
 import asyncio
-import json
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.agents.governance import GovernanceEngine, GovernanceViolation
 from app.agents.schemas import (
     AgentDefinitionCreate,
     AgentDefinitionResponse,
@@ -27,7 +25,6 @@ from app.agents.schemas import (
     WorkflowDefinitionResponse,
     WorkflowRunCreate,
 )
-
 
 # ── SSRF URL Validation ──────────────────────────────────────────────
 
@@ -375,15 +372,15 @@ async def test_event_consumer_does_not_ack_failed_handler():
 
 @pytest.mark.asyncio
 async def test_governance_atomic_spending_check():
-    """Verify atomic check-and-increment is used for daily spending limits."""
-    from app.agents.governance import _atomic_check_and_increment
+    """Verify atomic spend check is used for daily spending limits."""
+    from app.agents.governance import _atomic_spend_check
 
     mock_redis = AsyncMock()
-    # Simulate the Lua script returning 0 (success)
+    # Simulate the Lua script returning 0 (within bounds)
     mock_redis.eval = AsyncMock(return_value=0)
 
     with patch("app.agents.governance.redis_pool", mock_redis):
-        result = await _atomic_check_and_increment("test:key", 0.5, 10.0)
+        result = await _atomic_spend_check("test:key", 0.5, 10.0)
 
     assert result == 0
     mock_redis.eval.assert_called_once()
@@ -392,13 +389,13 @@ async def test_governance_atomic_spending_check():
 @pytest.mark.asyncio
 async def test_governance_atomic_spending_rejects_over_limit():
     """Verify atomic check returns -1 when limit would be exceeded."""
-    from app.agents.governance import _atomic_check_and_increment
+    from app.agents.governance import _atomic_spend_check
 
     mock_redis = AsyncMock()
     # Simulate the Lua script returning -1 (limit exceeded)
     mock_redis.eval = AsyncMock(return_value=-1)
 
     with patch("app.agents.governance.redis_pool", mock_redis):
-        result = await _atomic_check_and_increment("test:key", 5.0, 10.0)
+        result = await _atomic_spend_check("test:key", 5.0, 10.0)
 
     assert result == -1

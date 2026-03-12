@@ -20,6 +20,7 @@ Security model:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import shutil
@@ -174,17 +175,15 @@ class ExecutionSandbox:
                     process.communicate(),
                     timeout=self.config.timeout_seconds,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Graceful shutdown: SIGTERM first, then SIGKILL
-                try:
+                with contextlib.suppress(ProcessLookupError):
                     process.terminate()
                     try:
                         await asyncio.wait_for(process.wait(), timeout=3)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         process.kill()
                         await process.wait()
-                except ProcessLookupError:
-                    pass  # Process already exited
 
                 return SandboxResult(
                     success=False,
@@ -207,11 +206,8 @@ class ExecutionSandbox:
                     # Limit result file size
                     stat = os.stat(result_file)
                     if stat.st_size <= self.config.max_output_bytes:
-                        with open(result_file) as f:
-                            try:
-                                return_value = json.load(f)
-                            except json.JSONDecodeError:
-                                pass
+                        with open(result_file) as f, contextlib.suppress(json.JSONDecodeError):
+                            return_value = json.load(f)
 
             return SandboxResult(
                 success=process.returncode == 0,

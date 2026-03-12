@@ -9,7 +9,6 @@ import pytest
 
 from app.agents.models import AgentStatus, InstanceStatus
 
-
 # ── Factory Functions ─────────────────────────────────────────────────
 
 
@@ -87,11 +86,21 @@ def mock_redis_pool():
         yield redis
 
 
+def make_mock_db():
+    """Create an AsyncMock for AsyncSession with sync methods properly mocked.
+
+    SQLAlchemy's AsyncSession.add() is synchronous — using AsyncMock would
+    return an unawaited coroutine and trigger RuntimeWarnings in tests.
+    """
+    session = AsyncMock()
+    session.add = MagicMock()  # add() is sync on AsyncSession
+    return session
+
+
 @pytest.fixture()
 def mock_db_session():
     """Return an AsyncMock standing in for an AsyncSession."""
-    session = AsyncMock()
-    return session
+    return make_mock_db()
 
 
 @pytest.fixture()

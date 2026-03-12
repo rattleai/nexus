@@ -103,9 +103,9 @@ async def create_agent_definition(
     db.add(agent)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(409, f"Agent with slug '{body.slug}' already exists")
+        raise HTTPException(409, f"Agent with slug '{body.slug}' already exists") from exc
     await db.refresh(agent)
 
     await emit(
@@ -209,7 +209,7 @@ async def update_agent_definition(
         if field == "expected_version":
             continue
         if field == "metadata":
-            setattr(agent, "metadata_", value)
+            agent.metadata_ = value  # type: ignore[assignment]
         else:
             setattr(agent, field, value)
         changes[field] = value
@@ -303,25 +303,29 @@ async def create_agent_instance(
     db.add(instance)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
         # Race: another request with the same key was inserted concurrently
         existing_result = await db.execute(existing_stmt)
         existing_instance = existing_result.scalar_one_or_none()
         if existing_instance:
             return existing_instance
-        raise HTTPException(409, "Duplicate idempotency key")
+        raise HTTPException(409, "Duplicate idempotency key") from exc
     await db.refresh(instance)
 
-    # Dispatch to Celery for async execution
+    # Dispatch to Celery for async execution.
+    # Use instance.id as the Celery task_id so stop_agent_instance can revoke it.
     from app.agents.tasks import execute_agent_run
-    execute_agent_run.delay(
-        definition_id=str(agent.id),
-        tenant_id=str(tenant.id),
-        input_data=body.input_data,
-        api_key_id=str(api_key.id),  # Worker resolves key by ID — avoid passing hash through broker
-        key_source="platform",
-        session_id=str(body.session_id) if body.session_id else None,
+    execute_agent_run.apply_async(
+        kwargs={
+            "definition_id": str(agent.id),
+            "tenant_id": str(tenant.id),
+            "input_data": body.input_data,
+            "api_key_id": str(api_key.id),  # Worker resolves key by ID
+            "key_source": "platform",
+            "session_id": str(body.session_id) if body.session_id else None,
+        },
+        task_id=str(instance.id),
     )
 
     return instance
@@ -571,9 +575,9 @@ async def create_workflow(
     db.add(workflow)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(409, f"Workflow with slug '{body.slug}' already exists")
+        raise HTTPException(409, f"Workflow with slug '{body.slug}' already exists") from exc
     await db.refresh(workflow)
     return workflow
 
@@ -742,9 +746,9 @@ async def register_tenant_tool(
     db.add(tool)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(409, f"Tool '{body.tool_name}' already exists")
+        raise HTTPException(409, f"Tool '{body.tool_name}' already exists") from exc
     await db.refresh(tool)
     return tool
 
@@ -849,9 +853,9 @@ async def create_agent_policy(
     db.add(policy)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(409, f"Policy with name '{body.name}' already exists")
+        raise HTTPException(409, f"Policy with name '{body.name}' already exists") from exc
     await db.refresh(policy)
     return policy
 

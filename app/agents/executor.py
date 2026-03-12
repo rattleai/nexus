@@ -29,6 +29,7 @@ from app.agents.events import (
     AgentInstanceStarted,
     AgentInstanceStopped,
 )
+from app.agents.governance import GovernanceViolationError
 from app.agents.models import (
     AgentDefinition,
     AgentInstance,
@@ -246,8 +247,7 @@ class AgentExecutor:
                 instance.completed_at = datetime.now(UTC)
 
                 # Structured error classification for better client UX
-                from app.agents.governance import GovernanceViolation
-                if isinstance(exc, GovernanceViolation):
+                if isinstance(exc, GovernanceViolationError):
                     instance.output_data = {
                         "error_code": "GOVERNANCE_VIOLATION",
                         "violation_type": exc.violation_type,
@@ -278,7 +278,7 @@ class AgentExecutor:
                 "agent_execution_failed",
                 instance_id=str(instance.id) if instance else "unknown",
                 agent_id=str(definition_id),
-                error=str(exc),
+                error=_sanitize_error(exc),
                 exc_info=True,
             )
             raise AgentExecutionError(_sanitize_error(exc)) from exc

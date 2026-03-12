@@ -203,9 +203,15 @@ class WorkflowDefinitionCreate(BaseModel):
             raise ValueError("Workflow definition must have at least one step")
         if not isinstance(v["transitions"], list):
             raise ValueError("Workflow transitions must be a list")
+        step_names = set()
         for step in v["steps"]:
             if not isinstance(step, dict) or "name" not in step or "agent_id" not in step:
                 raise ValueError("Each workflow step must have 'name' and 'agent_id'")
+            step_names.add(step["name"])
+        if not isinstance(v["entry_step"], str) or not v["entry_step"]:
+            raise ValueError("entry_step must be a non-empty string")
+        if v["entry_step"] not in step_names:
+            raise ValueError(f"entry_step '{v['entry_step']}' does not match any step name")
         return v
 
     @field_validator("governance", "metadata")
@@ -290,7 +296,8 @@ class TenantToolCreate(BaseModel):
         import ipaddress
         try:
             ip = ipaddress.ip_address(parsed.hostname)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            if (ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
                 raise ValueError("URLs pointing to private/internal networks are not allowed")
         except ValueError as exc:
             if "not allowed" in str(exc):

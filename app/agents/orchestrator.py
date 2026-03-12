@@ -12,6 +12,7 @@ The engine manages state transitions and coordinates agent execution.
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -37,6 +38,9 @@ from app.core.events import emit
 from app.db.session import set_tenant_context
 
 logger = structlog.stdlib.get_logger()
+
+# Maximum characters for serialized step output before truncation.
+_MAX_STEP_OUTPUT_SIZE = 50_000
 
 
 class OrchestrationError(Exception):
@@ -174,8 +178,6 @@ class AgentOrchestrator:
                 )
 
                 # Truncate large step outputs to prevent unbounded JSONB growth.
-                _MAX_STEP_OUTPUT_SIZE = 50_000  # characters
-                import json as _json
                 serialized = _json.dumps(step_result, default=str)
                 if len(serialized) > _MAX_STEP_OUTPUT_SIZE:
                     step_result = {
@@ -296,10 +298,10 @@ class AgentOrchestrator:
         if timeout:
             try:
                 return await asyncio.wait_for(coro, timeout=timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError as exc:
                 raise OrchestrationError(
                     f"Step '{step_def.get('name', '?')}' timed out after {timeout}s"
-                )
+                ) from exc
         return await coro
 
     async def _execute_single(
@@ -342,10 +344,11 @@ class AgentOrchestrator:
     ) -> dict[str, Any]:
         """Execute multiple agents in parallel (fan-out pattern).
 
-        NOTE: Parallel steps currently share the same DB session.
-        This is safe because asyncio.gather runs on a single thread,
-        but for true production parallel execution each branch should
-        use its own session via a session factory.
+        WARNING: Parallel steps currently share the same DB session.
+        AsyncSession is NOT safe for concurrent use even within a single
+        event loop — interleaved awaits on flush/commit can corrupt session
+        state. For production parallel execution, each branch must use its
+        own session via a session factory. This is a known limitation.
         """
         agent_ids = step_def.get("agent_ids", [])
         if not agent_ids:
@@ -463,14 +466,12 @@ class AgentOrchestrator:
                 continue
 
             condition = t.get("condition", "always")
-            if condition == "always":
+            if (
+                condition == "always"
+                or (condition == "on_success" and not step_result.get("error"))
+                or (condition == "on_failure" and step_result.get("error"))
+            ):
                 return t.get("to")
-            elif condition == "on_success":
-                if not step_result.get("error"):
-                    return t.get("to")
-            elif condition == "on_failure":
-                if step_result.get("error"):
-                    return t.get("to")
 
         return None  # No more steps — workflow complete
 
