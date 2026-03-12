@@ -87,7 +87,7 @@ fi
 
 if [ "$MIGRATE" = true ]; then
     log "Recording current migration revision for rollback..."
-    PRE_MIGRATE_REVISION=$(docker compose -f "$COMPOSE_FILE" run --rm api alembic current 2>/dev/null | grep -oP '[a-f0-9]+' | head -1 || echo "")
+    PRE_MIGRATE_REVISION=$(docker compose -f "$COMPOSE_FILE" run --rm api alembic current 2>/dev/null | grep -oE '[a-f0-9]+' | head -1 || echo "")
     log "Pre-migration revision: ${PRE_MIGRATE_REVISION:-none}"
     log "Running database migrations..."
     docker compose -f "$COMPOSE_FILE" run --rm api alembic upgrade head

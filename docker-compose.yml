@@ -19,7 +19,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "alembic upgrade head && python -m scripts.seed_dev && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     restart: unless-stopped
 
   frontend:

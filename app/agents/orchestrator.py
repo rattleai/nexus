@@ -35,7 +35,7 @@ from app.agents.models import (
     WorkflowStatus,
 )
 from app.core.events import emit
-from app.db.session import set_tenant_context
+from app.db.session import async_session_factory, set_tenant_context
 
 logger = structlog.stdlib.get_logger()
 
@@ -344,33 +344,33 @@ class AgentOrchestrator:
     ) -> dict[str, Any]:
         """Execute multiple agents in parallel (fan-out pattern).
 
-        WARNING: Parallel steps currently share the same DB session.
-        AsyncSession is NOT safe for concurrent use even within a single
-        event loop — interleaved awaits on flush/commit can corrupt session
-        state. For production parallel execution, each branch must use its
-        own session via a session factory. This is a known limitation.
+        Each parallel branch gets its own AsyncSession to prevent session
+        state corruption from concurrent coroutines. Metrics are accumulated
+        under a lock and applied to the parent workflow run after completion.
         """
         agent_ids = step_def.get("agent_ids", [])
         if not agent_ids:
             raise OrchestrationError(f"Parallel step '{step_def['name']}' has no agent_ids")
-
-        executor = AgentExecutor(self.db)
 
         # Collect metrics separately to avoid concurrent += on the ORM object.
         step_metrics: list[tuple[int, float]] = []
         _metrics_lock = asyncio.Lock()
 
         async def run_one(aid: str) -> dict[str, Any]:
-            instance = await executor.run(
-                definition_id=uuid.UUID(aid),
-                tenant_id=tenant_id,
-                input_data=step_input,
-                api_key=api_key,
-                key_source=key_source,
-            )
-            async with _metrics_lock:
-                step_metrics.append((instance.tokens_used, instance.cost_usd))
-            return {"agent_id": aid, "output": instance.output_data}
+            # Each branch gets its own session to avoid AsyncSession corruption.
+            async with async_session_factory() as branch_session:
+                await set_tenant_context(branch_session, str(tenant_id))
+                executor = AgentExecutor(branch_session)
+                instance = await executor.run(
+                    definition_id=uuid.UUID(aid),
+                    tenant_id=tenant_id,
+                    input_data=step_input,
+                    api_key=api_key,
+                    key_source=key_source,
+                )
+                async with _metrics_lock:
+                    step_metrics.append((instance.tokens_used, instance.cost_usd))
+                return {"agent_id": aid, "output": instance.output_data}
 
         results = await asyncio.gather(
             *[run_one(aid) for aid in agent_ids],

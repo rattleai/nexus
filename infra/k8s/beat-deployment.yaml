@@ -26,6 +26,7 @@ spec:
     spec:
       serviceAccountName: cadprice
       automountServiceAccountToken: false
+      priorityClassName: cadprice-standard
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
@@ -37,7 +38,7 @@ spec:
       containers:
         - name: beat
           image: ghcr.io/OWNER/cadprice:latest
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           command:
             - celery
             - -A
@@ -71,6 +72,10 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
             failureThreshold: 10
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
           resources:
             requests:
               memory: 64Mi
@@ -91,3 +96,19 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 50Mi
+---
+# P1-3: PodDisruptionBudget for beat
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cadprice-beat-pdb
+  namespace: cadprice
+  labels:
+    app.kubernetes.io/name: beat
+    app.kubernetes.io/part-of: cadprice
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: beat
+      app.kubernetes.io/part-of: cadprice

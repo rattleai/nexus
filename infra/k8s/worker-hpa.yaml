@@ -1,18 +1,18 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: cadprice-api
+  name: cadprice-worker
   namespace: cadprice
   labels:
-    app.kubernetes.io/name: api
+    app.kubernetes.io/name: worker
     app.kubernetes.io/part-of: cadprice
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: cadprice-api
-  minReplicas: 2
-  maxReplicas: 6
+    name: cadprice-worker
+  minReplicas: 1
+  maxReplicas: 5
   metrics:
     - type: Resource
       resource:
@@ -28,7 +28,7 @@ spec:
           averageUtilization: 80
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 60
+      stabilizationWindowSeconds: 30
       policies:
         - type: Pods
           value: 2

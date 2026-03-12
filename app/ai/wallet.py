@@ -132,33 +132,35 @@ class DollarWalletService:
     ) -> Decimal:
         """Atomically deduct USD from wallet.
 
-        Strategy: Deduct in Redis (fast, atomic), record in DB, reconcile on failure.
+        Strategy: DB-first with SELECT ... FOR UPDATE for authoritative locking.
+        Redis is updated as a best-effort cache afterwards. On Redis sync failure,
+        the next initialize_balance() call will resync from DB.
+
         Returns new balance. Raises InsufficientBalanceError if balance too low.
         """
         if amount_usd <= 0:
             return await self.get_balance(tenant_id)
 
-        amount_micro = _to_micro(amount_usd)
+        # Step 1: Lock the wallet row and check balance (DB is authoritative)
+        result = await db.execute(
+            select(DollarWallet)
+            .where(DollarWallet.tenant_id == tenant_id)
+            .with_for_update()
+        )
+        wallet = result.scalar_one_or_none()
+        if not wallet:
+            wallet = DollarWallet(tenant_id=tenant_id, balance_usd=Decimal("0"))
+            db.add(wallet)
+            await db.flush()
 
-        # Step 1: Atomic deduction in Redis
-        key = _balance_key(tenant_id)
-        try:
-            new_balance_micro = int(await redis_pool.eval(_DEDUCT_SCRIPT, 1, key, str(amount_micro)))
-        except Exception:
-            logger.error("wallet_deduct_redis_error", tenant_id=str(tenant_id))
-            raise
+        if wallet.balance_usd < amount_usd:
+            raise InsufficientBalanceError(tenant_id, amount_usd, wallet.balance_usd)
 
-        if new_balance_micro < 0:
-            # The Lua script did NOT deduct (balance unchanged).
-            try:
-                current_micro = int(await redis_pool.get(key) or 0)
-            except Exception:
-                current_micro = 0
-            raise InsufficientBalanceError(tenant_id, amount_usd, _from_micro(current_micro))
+        new_balance = wallet.balance_usd - amount_usd
+        wallet.balance_usd = new_balance
+        wallet.lifetime_consumed_usd += amount_usd
 
-        new_balance = _from_micro(new_balance_micro)
-
-        # Step 2: Record in DB (transaction + wallet update)
+        # Step 2: Record transaction
         tx = WalletTransaction(
             tenant_id=tenant_id,
             type=WalletTransactionType.CONSUMPTION,
@@ -170,29 +172,18 @@ class DollarWalletService:
         )
         db.add(tx)
 
-        await self._update_db_wallet_direct(tenant_id, db, balance_usd=new_balance, consumed_delta=amount_usd)
+        await db.commit()
 
+        # Step 3: Sync to Redis (best-effort cache update)
+        key = _balance_key(tenant_id)
         try:
-            await db.commit()
+            await redis_pool.set(key, str(_to_micro(new_balance)))
         except Exception:
-            logger.error(
-                "wallet_deduct_db_commit_failed",
+            logger.warning(
+                "wallet_deduct_redis_sync_failed",
                 tenant_id=str(tenant_id),
                 amount_usd=str(amount_usd),
-                redis_balance=str(new_balance),
             )
-            await db.rollback()
-            # Redis was already deducted. Refund Redis to stay consistent.
-            try:
-                await redis_pool.eval(_CREDIT_SCRIPT, 1, key, str(amount_micro), str(_MAX_BALANCE_MICRO))
-                logger.info("wallet_deduct_redis_rollback_ok", tenant_id=str(tenant_id))
-            except Exception:
-                logger.critical(
-                    "wallet_deduct_redis_rollback_failed",
-                    tenant_id=str(tenant_id),
-                    amount_usd=str(amount_usd),
-                )
-            raise
 
         return new_balance
 
@@ -207,30 +198,29 @@ class DollarWalletService:
     ) -> Decimal:
         """Refund USD to wallet (e.g., after failed AI call).
 
-        Strategy: atomic credit in Redis first (to get accurate balance_after),
-        then record in DB. On DB failure, roll back Redis.
+        Strategy: DB-first with FOR UPDATE lock. Redis synced afterwards.
         """
         if amount_usd <= 0:
             return await self.get_balance(tenant_id)
 
-        amount_micro = _to_micro(amount_usd)
+        # Step 1: Lock wallet and apply refund in DB
+        result = await db.execute(
+            select(DollarWallet)
+            .where(DollarWallet.tenant_id == tenant_id)
+            .with_for_update()
+        )
+        wallet = result.scalar_one_or_none()
+        if not wallet:
+            wallet = DollarWallet(tenant_id=tenant_id, balance_usd=Decimal("0"))
+            db.add(wallet)
+            await db.flush()
 
-        # Step 1: Atomic credit in Redis
-        key = _balance_key(tenant_id)
-        try:
-            new_balance_micro = int(
-                await redis_pool.eval(_CREDIT_SCRIPT, 1, key, str(amount_micro), str(_MAX_BALANCE_MICRO))
-            )
-        except Exception:
-            logger.error("wallet_refund_redis_error", tenant_id=str(tenant_id))
-            raise
-
-        if new_balance_micro == -2:
+        new_balance = wallet.balance_usd + amount_usd
+        if new_balance > _MAX_BALANCE:
             raise WalletOverflowError("Refund would exceed maximum wallet balance")
 
-        new_balance = _from_micro(new_balance_micro)
+        wallet.balance_usd = new_balance
 
-        # Step 2: Record in DB
         tx = WalletTransaction(
             tenant_id=tenant_id,
             type=WalletTransactionType.REFUND,
@@ -241,29 +231,14 @@ class DollarWalletService:
         )
         db.add(tx)
 
-        result = await db.execute(
-            select(DollarWallet).where(DollarWallet.tenant_id == tenant_id)
-        )
-        wallet = result.scalar_one_or_none()
-        if wallet:
-            wallet.balance_usd = new_balance
+        await db.commit()
 
+        # Step 2: Sync to Redis (best-effort)
+        key = _balance_key(tenant_id)
         try:
-            await db.commit()
+            await redis_pool.set(key, str(_to_micro(new_balance)))
         except Exception:
-            logger.error("wallet_refund_db_error", tenant_id=str(tenant_id))
-            await db.rollback()
-            # Redis was already credited. Reverse it.
-            try:
-                await redis_pool.eval(_DEDUCT_SCRIPT, 1, key, str(amount_micro))
-                logger.info("wallet_refund_redis_rollback_ok", tenant_id=str(tenant_id))
-            except Exception:
-                logger.critical(
-                    "wallet_refund_redis_rollback_failed",
-                    tenant_id=str(tenant_id),
-                    amount_usd=str(amount_usd),
-                )
-            raise
+            logger.warning("wallet_refund_redis_sync_failed", tenant_id=str(tenant_id))
 
         return new_balance
 
@@ -303,8 +278,17 @@ class DollarWalletService:
                 wallet = await self._get_or_create_wallet(tenant_id, db)
                 return wallet.balance_usd
 
-        # DB first: update wallet record
-        wallet = await self._get_or_create_wallet(tenant_id, db)
+        # DB first: lock wallet row for atomic update
+        result = await db.execute(
+            select(DollarWallet)
+            .where(DollarWallet.tenant_id == tenant_id)
+            .with_for_update()
+        )
+        wallet = result.scalar_one_or_none()
+        if not wallet:
+            wallet = DollarWallet(tenant_id=tenant_id, balance_usd=Decimal("0"))
+            db.add(wallet)
+            await db.flush()
         new_balance = wallet.balance_usd + amount_usd
 
         if new_balance > _MAX_BALANCE:

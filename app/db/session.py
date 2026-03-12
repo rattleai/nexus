@@ -40,6 +40,7 @@ async_engine = create_async_engine(
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_pre_ping=True,
     pool_recycle=300,
+    pool_timeout=30,  # Wait max 30s for a connection from the pool
     connect_args=_connect_args,
 )
 async_session_factory = async_sessionmaker(async_engine, expire_on_commit=False)

@@ -10,17 +10,22 @@ labels:
 resources:
   - namespace.yaml
   - configmap.yaml
+  # secrets.yaml is created locally from secrets.yaml.template — never committed.
+  # For production, use sealed-secrets.yaml instead.
   - secrets.yaml
+  - rbac.yaml
+  - priority-classes.yaml
   - api-deployment.yaml
   - api-service.yaml
   - api-hpa.yaml
   - worker-deployment.yaml
+  - worker-hpa.yaml
   - beat-deployment.yaml
   - ingress.yaml
   - networkpolicy.yaml
 
 images:
   - name: ghcr.io/OWNER/cadprice
-    # IMPORTANT: Replace with immutable tag (git SHA or semver) before production deploy.
-    # Example: newTag: sha-abc1234f or newTag: v1.2.3
+    # Set by CI: kustomize edit set image ghcr.io/OWNER/cadprice=ghcr.io/OWNER/cadprice:sha-<commit>
+    # NEVER use "latest" in production — use immutable SHA-based tags.
     newTag: latest

@@ -74,6 +74,19 @@ async def get_current_tenant(
     return tenant
 
 
+async def get_tenant_db(
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+) -> AsyncSession:
+    """Get a DB session with RLS tenant context already set.
+
+    Use this instead of manually calling set_tenant_context() in every endpoint.
+    The tenant context is guaranteed to be set before the session is returned.
+    """
+    await set_tenant_context(db, str(tenant.id))
+    return db
+
+
 # ── JWT auth (new, opt-in via AUTH_ENABLED) ──────────────
 
 

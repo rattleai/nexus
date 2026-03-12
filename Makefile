@@ -1,4 +1,5 @@
-.PHONY: dev dev-up dev-down test lint format migrate seed build mcp mcp-http
+.PHONY: dev dev-up dev-down test lint format migrate seed build seed-docker mcp mcp-http \
+       prod-up prod-down prod-logs prod-deploy prod-backup prod-certbot-init
 
 # ── Development ──────────────────────────────────────────────
 dev-up:  ## Start all services (DB, Redis, API, frontend, worker)
@@ -60,9 +61,35 @@ mcp:  ## Start MCP server (stdio transport)
 mcp-http:  ## Start MCP server (HTTP transport on port 8001)
 	MCP_ENABLED=true MCP_TRANSPORT=streamable-http cadprice-mcp
 
+# ── Seed ────────────────────────────────────────────────────
+seed:  ## Seed dev database with test user (run locally)
+	python -m scripts.seed_dev
+
+seed-docker:  ## Seed dev database via docker compose
+	docker compose exec api python -m scripts.seed_dev
+
 # ── Docker ───────────────────────────────────────────────────
 build:  ## Build production Docker image
 	docker build -t saas-platform .
+
+# ── Production ───────────────────────────────────────────
+prod-up:  ## Start production services
+	docker compose -f docker-compose.prod.yml up -d
+
+prod-down:  ## Stop production services
+	docker compose -f docker-compose.prod.yml down
+
+prod-logs:  ## Tail production logs
+	docker compose -f docker-compose.prod.yml logs -f
+
+prod-deploy:  ## Deploy with build and migrations
+	./infra/scripts/deploy.sh --build --migrate
+
+prod-backup:  ## Run manual database backup
+	./infra/scripts/backup-db.sh
+
+prod-certbot-init:  ## Get initial TLS cert from Let's Encrypt
+	docker compose -f docker-compose.prod.yml run --rm certbot certonly --webroot -w /var/www/certbot -d $${DOMAIN:?Set DOMAIN}
 
 # ── Help ─────────────────────────────────────────────────────
 help:  ## Show this help

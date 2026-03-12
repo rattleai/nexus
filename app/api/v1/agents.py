@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.agents.events import AgentDefinitionCreated, AgentDefinitionUpdated
 from app.agents.models import (
@@ -511,10 +512,26 @@ async def write_agent_memory(
     api_key: ApiKey = Depends(get_current_api_key),
     db: AsyncSession = Depends(get_db),
 ):
-    """Write an agent memory entry."""
+    """Write an agent memory entry (rate-limited per instance)."""
     from app.agents.memory import AgentMemoryManager
+    from app.core.redis import redis_pool
+
     await set_tenant_context(db, str(tenant.id))
     await _verify_instance_ownership(db, instance_id, tenant.id)
+
+    # Per-instance write rate limit (60 writes/minute)
+    rate_key = f"agent:memory:rate:{instance_id}"
+    try:
+        current = await redis_pool.incr(rate_key)
+        if current == 1:
+            await redis_pool.expire(rate_key, 60)
+        if current > 60:
+            raise HTTPException(429, "Memory write rate limit exceeded (60/minute)")
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # If Redis is down, allow the write
+
     memory = AgentMemoryManager(db)
 
     entry = await memory.set_long_term(
