@@ -168,20 +168,6 @@
     @apply border-border;
   }
 
-  /* Minimum touch target size (WCAG 2.5.8) */
-  button, a, [role="button"], input[type="checkbox"], input[type="radio"] {
-    min-height: 44px;
-    min-width: 44px;
-  }
-
-  /* Compact touch targets inside data-dense UI (tables, menus) */
-  .touch-compact button,
-  .touch-compact a,
-  .touch-compact [role="button"] {
-    min-height: 36px;
-    min-width: 36px;
-  }
-
   /* Reduced motion support */
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
