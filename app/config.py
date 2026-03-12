@@ -147,6 +147,33 @@ class Settings(BaseSettings):
     # ── Agent / Bot API Enhancements ──────────────────────
     AGENT_HINTS_ENABLED: bool = True
     AGENT_RATE_LIMIT_REQUESTS: int = 300
+
+    # ── Agent Execution Layer ──────────────────────────────
+    AGENT_EXECUTION_ENABLED: bool = True
+    AGENT_MAX_STEPS_PER_RUN: int = 50
+    AGENT_MAX_DURATION_SECONDS: int = 300
+    AGENT_MAX_TOKENS_PER_RUN: int = 100_000
+    AGENT_SANDBOX_ENABLED: bool = False       # Opt-in code execution sandbox
+    AGENT_SANDBOX_MEMORY_MB: int = 256
+    AGENT_SANDBOX_CPU_SECONDS: int = 30
+    AGENT_SANDBOX_TIMEOUT_SECONDS: int = 60
+    AGENT_SANDBOX_NETWORK_ENABLED: bool = False
+    AGENT_SESSION_MAX_MESSAGES: int = 200
+    AGENT_TOOL_EXECUTION_TIMEOUT: int = 120  # Max seconds for individual tool execution
+    AGENT_MAX_CONVERSATION_MESSAGES: int = 100  # Max messages in conversation window
+
+    # Agent Memory
+    AGENT_MEMORY_SHORT_TTL_SECONDS: int = 3600
+    AGENT_MEMORY_SHORT_MAX_ENTRIES: int = 100
+    AGENT_MEMORY_VECTOR_ENABLED: bool = False  # Requires pgvector extension
+    AGENT_MEMORY_VECTOR_DIMENSIONS: int = 1536
+
+    # Durable Event Bus (Redis Streams)
+    EVENT_BUS_ENABLED: bool = True
+    EVENT_BUS_STREAM_PREFIX: str = "events"
+    EVENT_BUS_MAX_LEN: int = 100_000
+    EVENT_BUS_CONSUMER_GROUP: str = "platform"
+    EVENT_BUS_BLOCK_MS: int = 5000
     AGENT_RATE_LIMIT_WINDOW_SECONDS: int = 60
     OAUTH_CLIENT_CREDENTIALS_ENABLED: bool = False
 
@@ -161,6 +188,7 @@ class Settings(BaseSettings):
         "audit:read",
         "ai:read", "ai:write", "ai:admin",
         "mcp:read", "mcp:write",
+        "agents:read", "agents:write", "agents:admin", "agents:execute",
     ]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
