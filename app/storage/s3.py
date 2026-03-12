@@ -236,6 +236,58 @@ class S3Storage:
             raise StorageError("List failed: storage service unavailable") from exc
         return keys
 
+    def generate_presigned_url(
+        self,
+        key: str,
+        *,
+        expiry_seconds: int = 3600,
+        content_type: str | None = None,
+        method: str = "get_object",
+    ) -> str:
+        """Generate a presigned URL for temporary direct access to an S3 object.
+
+        Args:
+            key: The S3 object key.
+            expiry_seconds: URL validity duration (default 1 hour, max 7 days).
+            content_type: Optional content type for upload URLs.
+            method: S3 operation — "get_object" for downloads, "put_object" for uploads.
+
+        Returns:
+            A presigned URL string.
+        """
+        key = _validate_key(key)
+        expiry_seconds = min(expiry_seconds, 604800)  # Cap at 7 days
+
+        params: dict = {"Bucket": self._bucket, "Key": key}
+        if content_type and method == "put_object":
+            params["ContentType"] = content_type
+
+        try:
+            return self._client.generate_presigned_url(
+                method,
+                Params=params,
+                ExpiresIn=expiry_seconds,
+            )
+        except (ClientError, BotoCoreError) as exc:
+            logger.error("s3_presigned_url_failed", key=key, error=str(exc))
+            raise StorageError("Failed to generate presigned URL") from exc
+
+    async def async_generate_presigned_url(
+        self,
+        key: str,
+        *,
+        expiry_seconds: int = 3600,
+        content_type: str | None = None,
+        method: str = "get_object",
+    ) -> str:
+        return await asyncio.to_thread(
+            self.generate_presigned_url,
+            key,
+            expiry_seconds=expiry_seconds,
+            content_type=content_type,
+            method=method,
+        )
+
     # ── async interface (FastAPI handlers) ───────────────────
 
     async def async_upload(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:

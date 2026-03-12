@@ -187,6 +187,40 @@ class CircuitBreaker:
 
         self._evict_stale_keys()
 
+    def get_state(self, key: str) -> dict:
+        """Return the circuit state for API error responses.
+
+        Exposes circuit_state and retry_after_seconds so clients can
+        implement backoff without polling.
+        """
+        r = self._get_redis()
+        failures = 0
+        last_fail = 0.0
+
+        if r is not None:
+            try:
+                failures = int(r.get(self._redis_failures_key(key)) or 0)
+                last_fail = float(r.get(self._redis_last_fail_key(key)) or 0)
+            except Exception:
+                pass
+
+        if failures == 0:
+            with self._lock:
+                failures = self._failures.get(key, 0)
+                last_fail = self._last_failure_time.get(key, 0)
+
+        if failures < self.failure_threshold:
+            return {"circuit_state": "closed", "retry_after_seconds": 0}
+
+        elapsed = time.time() - last_fail
+        if elapsed > self.recovery_timeout:
+            return {"circuit_state": "half_open", "retry_after_seconds": 0}
+
+        return {
+            "circuit_state": "open",
+            "retry_after_seconds": max(0, int(self.recovery_timeout - elapsed)),
+        }
+
     @staticmethod
     def host_key(url: str) -> str:
         """Extract host from URL for use as a circuit breaker key."""
@@ -198,3 +232,4 @@ webhook_breaker = CircuitBreaker("webhook", failure_threshold=5, recovery_timeou
 storage_breaker = CircuitBreaker("storage", failure_threshold=3, recovery_timeout=120)
 email_breaker = CircuitBreaker("email", failure_threshold=3, recovery_timeout=180)
 oauth_breaker = CircuitBreaker("oauth", failure_threshold=5, recovery_timeout=300)
+ai_breaker = CircuitBreaker("ai", failure_threshold=3, recovery_timeout=60)

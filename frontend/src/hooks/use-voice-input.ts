@@ -24,7 +24,8 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
   const [interimTranscript, setInterimTranscript] = useState("")
   const [error, setError] = useState<string | null>(null)
 
-  const recognitionRef = useRef<SpeechRecognition | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isSupported =
@@ -54,8 +55,9 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
     setTranscript("")
     setInterimTranscript("")
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SpeechRecognitionAPI =
-      window.SpeechRecognition || (window as unknown as { webkitSpeechRecognition: typeof SpeechRecognition }).webkitSpeechRecognition
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
 
     const recognition = new SpeechRecognitionAPI()
     recognition.lang = language

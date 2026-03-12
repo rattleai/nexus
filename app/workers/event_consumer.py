@@ -3,6 +3,8 @@
 Reads events from Redis Streams and routes them to handlers.
 Can run as a standalone process or as a Celery task.
 
+Includes Redis-based event deduplication to ensure idempotent processing.
+
 Usage:
     # Standalone:
     python -m app.workers.event_consumer
@@ -19,11 +21,16 @@ import structlog
 
 from app.config import settings
 from app.core.event_bus import event_bus
+from app.core.redis import redis_pool
 
 logger = structlog.stdlib.get_logger()
 
 # Event handlers: event_type pattern → async handler function
 _EVENT_HANDLERS: dict[str, list] = {}
+
+# Deduplication: processed event IDs are stored in Redis with a TTL
+_DEDUP_KEY_PREFIX = "event:processed:"
+_DEDUP_TTL_SECONDS = 86400 * 2  # 2 days — covers replay windows
 
 
 def on_event(event_type: str):
@@ -32,6 +39,17 @@ def on_event(event_type: str):
         _EVENT_HANDLERS.setdefault(event_type, []).append(func)
         return func
     return decorator
+
+
+async def _is_duplicate(event_id: str) -> bool:
+    """Check if an event has already been processed (Redis SET with NX)."""
+    try:
+        key = f"{_DEDUP_KEY_PREFIX}{event_id}"
+        was_set = await redis_pool.set(key, "1", ex=_DEDUP_TTL_SECONDS, nx=True)
+        return was_set is None  # None means key already existed
+    except Exception:
+        logger.warning("event_dedup_check_failed", event_id=event_id, exc_info=True)
+        return False  # On Redis failure, process the event (at-least-once)
 
 
 @on_event("AgentInstanceCompleted")
@@ -105,6 +123,12 @@ async def consume_loop(
             )
 
             for event in events:
+                # Deduplication: skip already-processed events
+                if await _is_duplicate(event.id):
+                    logger.debug("event_consumer_duplicate_skipped", event_id=event.id)
+                    await event_bus.ack(group, event.stream, event.id)
+                    continue
+
                 handlers = _EVENT_HANDLERS.get(event.event_type, [])
                 all_ok = True
                 for handler in handlers:

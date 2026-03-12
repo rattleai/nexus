@@ -34,7 +34,14 @@ USER appuser
 
 EXPOSE 8000
 
+# WEB_CONCURRENCY controls the number of uvicorn worker processes.
+# With deploy.replicas in docker-compose, 1-2 workers per container is typical.
+ENV WEB_CONCURRENCY=1
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD ["curl", "-sf", "http://localhost:8000/api/v1/health/live"]
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers: trust X-Forwarded-For/Proto from reverse proxy (nginx)
+# --forwarded-allow-ips=*: accept proxy headers from any IP (nginx is the only ingress)
+# exec: replaces shell with uvicorn for proper PID 1 signal handling
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY} --proxy-headers --forwarded-allow-ips='*'"]

@@ -274,6 +274,25 @@ jobs:
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # P1-7: SAST with Bandit
+  sast:
+    name: SAST (Bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install bandit[toml]
+      - run: bandit -r app/ -c pyproject.toml -f json -o bandit-report.json || true
+      - run: bandit -r app/ -c pyproject.toml --severity-level high --confidence-level high
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-report
+          path: bandit-report.json
+
   docker-build-push:
     name: Docker Build & Push
     runs-on: ubuntu-latest
@@ -281,6 +300,9 @@ jobs:
     permissions:
       packages: write
       contents: read
+      id-token: write  # Required for cosign OIDC signing
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -290,15 +312,27 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
           tags: |
+            ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
             ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # P1-8: Sign container image with cosign (keyless OIDC)
+      - name: Install cosign
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: sigstore/cosign-installer@v3
+      - name: Sign container image
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE_REPO: ghcr.io/${{ github.repository }}
+        run: cosign sign --yes "${IMAGE_REPO}@${IMAGE_DIGEST}"
 
   dependency-audit:
     name: Dependency Audit
@@ -371,14 +405,15 @@ jobs:
           host: ${{ steps.config.outputs.deploy_host }}
           username: ${{ steps.config.outputs.deploy_user }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: GITHUB_TOKEN,GITHUB_ACTOR,GITHUB_REPOSITORY,GITHUB_SHA
           script: |
             set -euo pipefail
             cd /opt/saas-platform
 
-            # Pull the latest image
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker pull ghcr.io/${{ github.repository }}:${{ github.sha }}
-            docker tag ghcr.io/${{ github.repository }}:${{ github.sha }} ghcr.io/${{ github.repository }}:latest
+            # Pull the SHA-tagged image (immutable)
+            echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+            docker pull "ghcr.io/${GITHUB_REPOSITORY}:sha-${GITHUB_SHA}"
+            docker tag "ghcr.io/${GITHUB_REPOSITORY}:sha-${GITHUB_SHA}" "ghcr.io/${GITHUB_REPOSITORY}:latest"
 
             # Run deployment script with backup and migration
             ./infra/scripts/deploy.sh --build --migrate

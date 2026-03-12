@@ -193,6 +193,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             client_ip=request.client.host if request.client else "unknown",
         )
 
+        # ── API versioning deprecation headers ──
+        if request.url.path.startswith("/api/v1/"):
+            response.headers["X-API-Version"] = "v1"
+            # When v2 is available, add deprecation notice:
+            # response.headers["Deprecation"] = "true"
+            # response.headers["Sunset"] = "2027-01-01T00:00:00Z"
+            # response.headers["Link"] = '</api/v2/>; rel="successor-version"'
+
         # ── Security headers & timing ──
         _add_security_headers(response, request_id)
         response.headers["X-Response-Time"] = f"{duration_ms}ms"

@@ -188,6 +188,24 @@ return 1
         Uses INSERT ... ON CONFLICT DO UPDATE for atomic upsert,
         avoiding TOCTOU race between SELECT and INSERT.
         """
+        # Validate embedding dimensions and types
+        if embedding is not None:
+            from app.config import settings
+            expected_dims = settings.AGENT_MEMORY_VECTOR_DIMENSIONS
+            if not isinstance(embedding, list):
+                raise ValueError("Embedding must be a list of floats")
+            if len(embedding) != expected_dims:
+                raise ValueError(
+                    f"Embedding dimension mismatch: got {len(embedding)}, "
+                    f"expected {expected_dims}"
+                )
+            if not all(isinstance(v, (int, float)) for v in embedding):
+                raise ValueError("All embedding values must be numeric (int or float)")
+            # Ensure all values are finite
+            import math
+            if any(math.isnan(v) or math.isinf(v) for v in embedding):
+                raise ValueError("Embedding contains NaN or Inf values")
+
         insert_values = {
             "tenant_id": tenant_id,
             "instance_id": instance_id,

@@ -41,10 +41,27 @@ class GovernanceViolationError(Exception):
         super().__init__(message)
 
 
-# Atomic Lua script for checking spending against a limit.
-# Reads the current value and compares current + estimated against the limit.
-# Returns -1 if the limit would be exceeded, otherwise 0 (within bounds).
-# Does NOT increment — track_spending() is the sole writer to avoid double-counting.
+# Atomic Lua script that checks spending AND increments in one operation.
+# Prevents TOCTOU race: if the check passes, the amount is atomically added.
+# Returns new total if within limit, or -1 if the limit would be exceeded.
+# Also sets TTL on first write.
+_CHECK_AND_INCREMENT_LUA = """
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+local amount = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3])
+if current + amount > limit then
+    return -1
+end
+local new_total = current + amount
+redis.call('SET', KEYS[1], new_total)
+if ttl > 0 then
+    redis.call('EXPIRE', KEYS[1], ttl)
+end
+return new_total
+"""
+
+# Read-only check (no increment) for per-run checks where cost is already tracked.
 _CHECK_SPENDING_LUA = """
 local current = tonumber(redis.call('GET', KEYS[1]) or '0')
 local estimated = tonumber(ARGV[1])
@@ -56,23 +73,45 @@ return 0
 """
 
 
+async def _atomic_check_and_increment(
+    key: str, amount: float, limit: float, ttl_seconds: int = 0,
+) -> int:
+    """Atomically check spending limit AND increment in a single Lua call.
+
+    Prevents TOCTOU races by merging check + track into one atomic operation.
+    Returns new total if within limit, or -1 if limit would be exceeded.
+    Uses Redis server-side Lua scripting (not Python eval).
+    """
+    # redis_pool.eval runs a Lua script on the Redis server (not Python eval)
+    result = await redis_pool.eval(  # noqa: S307
+        _CHECK_AND_INCREMENT_LUA,
+        1,  # number of keys
+        key,  # KEYS[1]
+        str(amount),  # ARGV[1]
+        str(limit),  # ARGV[2]
+        str(ttl_seconds),  # ARGV[3]
+    )
+    return int(result)
+
+
 async def _atomic_spend_check(
     key: str, estimated_cost: float, limit: float,
 ) -> int:
-    """Atomically check whether spending would exceed the limit.
+    """Atomically check whether spending would exceed the limit (read-only).
 
-    Uses Redis server-side Lua script (NOT Python eval) for atomic read+compare.
-    Does NOT modify the key — track_spending() is the sole writer.
+    Uses Redis server-side Lua scripting for atomic read+compare.
+    Does NOT modify the key.
     Returns 0 if within bounds, -1 if limit would be exceeded.
     """
-    # redis_pool.eval() executes a Lua script on the Redis server
-    return await redis_pool.eval(
+    # redis_pool.eval runs a Lua script on the Redis server (not Python eval)
+    result = await redis_pool.eval(  # noqa: S307
         _CHECK_SPENDING_LUA,
         1,  # number of keys
         key,  # KEYS[1]
         str(estimated_cost),  # ARGV[1]
         str(limit),  # ARGV[2]
     )
+    return int(result)
 
 
 class GovernanceEngine:
@@ -171,11 +210,9 @@ class GovernanceEngine:
                 details={"current_cost": current_cost, "limit": max_per_run},
             )
 
-        # Per-day limit (tracked in Redis via atomic Lua check).
-        # The Lua script reads the current daily total and compares against the
-        # limit atomically, preventing TOCTOU races between concurrent requests.
-        # track_spending() is the sole writer to the daily key — the check here
-        # is read-only to avoid double-counting.
+        # Per-day limit — atomic check-and-increment via Lua script.
+        # Merges the check + spending tracking into a single atomic operation
+        # to prevent TOCTOU races between concurrent requests.
         # Fail-closed: if Redis is unavailable, block the action.
         max_per_day = self.policy.get("max_spend_per_day_usd")
         if max_per_day is not None and instance_id:
@@ -187,8 +224,8 @@ class GovernanceEngine:
                 tenant_id=tenant_id, agent_id=agent_id, date=today,
             )
             try:
-                lua_result = await _atomic_spend_check(
-                    day_key, estimated_cost, max_per_day,
+                lua_result = await _atomic_check_and_increment(
+                    day_key, estimated_cost, max_per_day, ttl_seconds=86400 * 2,
                 )
             except Exception as exc:
                 logger.error("governance_redis_unavailable", check="spending_limit", exc_info=True)

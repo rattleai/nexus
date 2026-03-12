@@ -263,7 +263,25 @@ class ToolRegistry:
         tool: TenantTool,
         arguments: dict[str, Any],
     ) -> Any:
-        """Invoke a tenant-registered external tool via HTTP."""
+        """Invoke a tenant-registered external tool via HTTP.
+
+        Re-validates the URL at invocation time to prevent SSRF via
+        URL modification after initial registration.
+        """
+        # Re-validate URL at invocation to catch SSRF from modified URLs
+        from app.core.url_validation import validate_url
+
+        try:
+            validate_url(tool.endpoint_url)
+        except ValueError as exc:
+            logger.warning(
+                "tool_ssrf_blocked",
+                tool_name=tool.tool_name,
+                endpoint=tool.endpoint_url,
+                error=str(exc),
+            )
+            return {"error": f"Tool '{tool.tool_name}' has an invalid endpoint URL"}
+
         # Per-tenant circuit breaker key to prevent cross-tenant impact
         breaker_key = f"{tool.tenant_id}:{CircuitBreaker.host_key(tool.endpoint_url)}"
 

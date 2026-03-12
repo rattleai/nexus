@@ -28,10 +28,10 @@ class Invitation(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.MEMBER, nullable=False)
+    role: Mapped[UserRole] = mapped_column(Enum(UserRole, values_callable=lambda e: [m.value for m in e]), default=UserRole.MEMBER, nullable=False)
     invited_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    status: Mapped[InvitationStatus] = mapped_column(Enum(InvitationStatus), default=InvitationStatus.PENDING)
+    status: Mapped[InvitationStatus] = mapped_column(Enum(InvitationStatus, values_callable=lambda e: [m.value for m in e]), default=InvitationStatus.PENDING)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

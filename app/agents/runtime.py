@@ -128,6 +128,13 @@ class AgentRuntime:
 
         conversation = system_messages + list(messages)
 
+        # Enforce per-message length limits to prevent governance bypass
+        max_msg_len = settings.AI_MAX_MESSAGE_LENGTH
+        for msg in conversation:
+            content = msg.get("content", "")
+            if isinstance(content, str) and len(content) > max_msg_len:
+                msg["content"] = content[:max_msg_len] + "... [truncated]"
+
         # Guard against unbounded conversation growth
         _max_conv = settings.AGENT_MAX_CONVERSATION_MESSAGES
         if len(conversation) > _max_conv:
@@ -159,18 +166,38 @@ class AgentRuntime:
             step_start = time.monotonic()
 
             try:
-                # Call LLM
-                completion = await ai_gateway.completion(
-                    tenant_id=self.tenant_id,
-                    model=self.definition.model,
-                    messages=conversation,
-                    api_key=self.api_key,
-                    key_source=self.key_source,
-                    max_tokens=self.definition.max_tokens,
-                    temperature=self.definition.temperature,
-                    db=db,
-                    tools=tools_schema,
-                )
+                # Call LLM with timeout to prevent indefinite hangs
+                llm_timeout = settings.AI_REQUEST_TIMEOUT_SECONDS
+                try:
+                    completion = await asyncio.wait_for(
+                        ai_gateway.completion(
+                            tenant_id=self.tenant_id,
+                            model=self.definition.model,
+                            messages=conversation,
+                            api_key=self.api_key,
+                            key_source=self.key_source,
+                            max_tokens=self.definition.max_tokens,
+                            temperature=self.definition.temperature,
+                            db=db,
+                            tools=tools_schema,
+                        ),
+                        timeout=llm_timeout,
+                    )
+                except TimeoutError:
+                    logger.warning(
+                        "agent_llm_timeout",
+                        instance_id=str(instance_id),
+                        step=step_num,
+                        timeout=llm_timeout,
+                    )
+                    result.finish_reason = "error"
+                    result.steps.append(StepResult(
+                        step_number=step_num,
+                        action="error",
+                        content=f"LLM call timed out after {llm_timeout}s",
+                        duration_ms=int((time.monotonic() - step_start) * 1000),
+                    ))
+                    break
 
                 step_tokens = completion.total_tokens
                 step_cost = completion.cost_usd

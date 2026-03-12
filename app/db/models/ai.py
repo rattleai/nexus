@@ -39,7 +39,7 @@ class TenantAIProviderKey(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    provider: Mapped[AIProvider] = mapped_column(Enum(AIProvider), nullable=False)
+    provider: Mapped[AIProvider] = mapped_column(Enum(AIProvider, values_callable=lambda e: [m.value for m in e]), nullable=False)
     encrypted_api_key: Mapped[str] = mapped_column(Text, nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), default="default")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -118,7 +118,7 @@ class WalletTransaction(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    type: Mapped[WalletTransactionType] = mapped_column(Enum(WalletTransactionType), nullable=False)
+    type: Mapped[WalletTransactionType] = mapped_column(Enum(WalletTransactionType, values_callable=lambda e: [m.value for m in e]), nullable=False)
     amount_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
     balance_after_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
     provider_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)

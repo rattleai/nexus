@@ -51,6 +51,9 @@ coverage.xml
 .env.*
 !.env.example
 
+# Kubernetes secrets (use secrets.yaml.template + SealedSecrets)
+infra/k8s/secrets.yaml
+
 # ──────────────────────────────────────────────
 # Node / Frontend
 # ──────────────────────────────────────────────

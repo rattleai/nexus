@@ -21,13 +21,23 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
 
-    # Security headers
+    # WebSocket support
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
     nginx.ingress.kubernetes.io/configuration-snippet: |
       more_set_headers "X-Content-Type-Options: nosniff";
       more_set_headers "X-Frame-Options: DENY";
       more_set_headers "X-XSS-Protection: 1; mode=block";
       more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
       more_set_headers "Permissions-Policy: camera=(), microphone=(), geolocation=()";
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+
+    # Gzip compression
+    nginx.ingress.kubernetes.io/enable-brotli: "true"
+    nginx.ingress.kubernetes.io/use-gzip: "true"
+    nginx.ingress.kubernetes.io/gzip-min-length: "1000"
+    nginx.ingress.kubernetes.io/gzip-types: "application/json application/javascript text/css text/plain text/html application/xml"
 
     # SSL redirect
     nginx.ingress.kubernetes.io/ssl-redirect: "true"

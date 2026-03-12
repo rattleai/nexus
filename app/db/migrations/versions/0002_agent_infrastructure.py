@@ -7,7 +7,7 @@ Create Date: 2026-03-10
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ENUM as PgENUM, JSONB, UUID
 
 revision = "0002_agent_infrastructure"
 down_revision = "0001_consolidated_schema"
@@ -77,7 +77,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("slug", sa.String(255), nullable=False),
         sa.Column("description", sa.Text, server_default=""),
-        sa.Column("status", sa.Enum("draft", "active", "disabled", name="workflow_status", create_type=False), server_default="draft"),
+        sa.Column("status", PgENUM("draft", "active", "disabled", name="workflow_status", create_type=False), server_default="draft"),
         sa.Column("definition", JSONB, nullable=False, server_default="{}"),
         sa.Column("governance", JSONB, server_default="{}"),
         sa.Column("metadata", JSONB, server_default="{}"),
@@ -97,7 +97,7 @@ def upgrade() -> None:
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("tenant_id", UUID(as_uuid=True), nullable=False, index=True),
         sa.Column("workflow_id", UUID(as_uuid=True), sa.ForeignKey("workflow_definitions.id"), nullable=False),
-        sa.Column("status", sa.Enum("pending", "running", "waiting_approval", "completed", "failed", "cancelled", name="workflow_run_status", create_type=False), server_default="pending"),
+        sa.Column("status", PgENUM("pending", "running", "waiting_approval", "completed", "failed", "cancelled", name="workflow_run_status", create_type=False), server_default="pending"),
         sa.Column("state", JSONB, server_default="{}"),
         sa.Column("input_data", JSONB, server_default="{}"),
         sa.Column("output_data", JSONB, server_default="{}"),
@@ -122,7 +122,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("slug", sa.String(255), nullable=False),
         sa.Column("description", sa.Text, server_default=""),
-        sa.Column("status", sa.Enum("draft", "active", "disabled", name="agent_status", create_type=False), server_default="draft"),
+        sa.Column("status", PgENUM("draft", "active", "disabled", name="agent_status", create_type=False), server_default="draft"),
         sa.Column("system_prompt", sa.Text, server_default=""),
         sa.Column("model", sa.String(100), server_default="gpt-4o"),
         sa.Column("temperature", sa.Float, nullable=True),
@@ -152,7 +152,7 @@ def upgrade() -> None:
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("tenant_id", UUID(as_uuid=True), nullable=False, index=True),
         sa.Column("definition_id", UUID(as_uuid=True), sa.ForeignKey("agent_definitions.id"), nullable=False),
-        sa.Column("status", sa.Enum("pending", "running", "paused", "completed", "failed", "cancelled", name="instance_status", create_type=False), server_default="pending"),
+        sa.Column("status", PgENUM("pending", "running", "paused", "completed", "failed", "cancelled", name="instance_status", create_type=False), server_default="pending"),
         sa.Column("steps_executed", sa.Integer, server_default="0"),
         sa.Column("tokens_used", sa.Integer, server_default="0"),
         sa.Column("cost_usd", sa.Float, server_default="0"),
@@ -176,7 +176,7 @@ def upgrade() -> None:
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("tenant_id", UUID(as_uuid=True), nullable=False, index=True),
         sa.Column("instance_id", UUID(as_uuid=True), sa.ForeignKey("agent_instances.id"), nullable=False),
-        sa.Column("status", sa.Enum("active", "completed", "expired", name="session_status", create_type=False), server_default="active"),
+        sa.Column("status", PgENUM("active", "completed", "expired", name="session_status", create_type=False), server_default="active"),
         sa.Column("messages", JSONB, server_default="[]"),
         sa.Column("metadata", JSONB, server_default="{}"),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
@@ -213,7 +213,7 @@ def upgrade() -> None:
         sa.Column("tenant_id", UUID(as_uuid=True), nullable=False, index=True),
         sa.Column("tool_name", sa.String(100), nullable=False),
         sa.Column("description", sa.Text, server_default=""),
-        sa.Column("source", sa.Enum("builtin", "tenant", "marketplace", name="tool_source", create_type=False), server_default="tenant"),
+        sa.Column("source", PgENUM("builtin", "tenant", "marketplace", name="tool_source", create_type=False), server_default="tenant"),
         sa.Column("input_schema", JSONB, server_default="{}"),
         sa.Column("output_schema", JSONB, server_default="{}"),
         sa.Column("endpoint_url", sa.String(2048), nullable=True),
