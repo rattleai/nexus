@@ -157,11 +157,13 @@ return 1
         namespace: str = "default",
     ) -> dict[str, Any] | None:
         """Read a value from long-term (persistent) memory."""
+        from sqlalchemy import or_
         stmt = select(AgentMemoryEntry).where(
             AgentMemoryEntry.instance_id == instance_id,
             AgentMemoryEntry.tenant_id == tenant_id,
             AgentMemoryEntry.namespace == namespace,
             AgentMemoryEntry.key == key,
+            or_(AgentMemoryEntry.expires_at.is_(None), AgentMemoryEntry.expires_at > datetime.now(UTC)),
         )
         result = await self.db.execute(stmt)
         entry = result.scalar_one_or_none()
@@ -235,12 +237,14 @@ return 1
         offset: int = 0,
     ) -> list[AgentMemoryEntry]:
         """List long-term memory entries for an instance."""
+        from sqlalchemy import or_
         stmt = (
             select(AgentMemoryEntry)
             .where(
                 AgentMemoryEntry.instance_id == instance_id,
                 AgentMemoryEntry.tenant_id == tenant_id,
                 AgentMemoryEntry.namespace == namespace,
+                or_(AgentMemoryEntry.expires_at.is_(None), AgentMemoryEntry.expires_at > datetime.now(UTC)),
             )
             .order_by(AgentMemoryEntry.updated_at.desc())
             .limit(limit)

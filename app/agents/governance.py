@@ -41,6 +41,38 @@ class GovernanceViolation(Exception):
         super().__init__(message)
 
 
+# Atomic Lua script for check-and-increment spending.
+# Returns -1 if the limit would be exceeded, otherwise 0 (success).
+_CHECK_AND_INCREMENT_LUA = """
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+local increment = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+if current + increment > limit then
+    return -1
+end
+redis.call('INCRBYFLOAT', KEYS[1], increment)
+return 0
+"""
+
+
+async def _atomic_check_and_increment(
+    key: str, increment: float, limit: float,
+) -> int:
+    """Atomically check spending against limit and increment if within bounds.
+
+    Uses Redis server-side Lua script (NOT Python eval) for atomicity.
+    Returns 0 on success, -1 if limit would be exceeded.
+    """
+    # redis_pool.eval() executes a Lua script on the Redis server
+    return await redis_pool.eval(
+        _CHECK_AND_INCREMENT_LUA,
+        1,  # number of keys
+        key,  # KEYS[1]
+        str(increment),  # ARGV[1]
+        str(limit),  # ARGV[2]
+    )
+
+
 class GovernanceEngine:
     """Evaluates governance policies before agent actions.
 
@@ -137,19 +169,26 @@ class GovernanceEngine:
                 details={"current_cost": current_cost, "limit": max_per_run},
             )
 
-        # Per-day limit (tracked in Redis).
-        # Fail-closed: if Redis is unavailable and a daily limit is configured,
-        # block the action to prevent untracked spending.
+        # Per-day limit (tracked in Redis with atomic check-and-increment).
+        # Uses a Redis Lua script to atomically check + increment, preventing
+        # race conditions where two concurrent requests both pass the check.
+        # Fail-closed: if Redis is unavailable, block the action.
         max_per_day = self.policy.get("max_spend_per_day_usd")
         if max_per_day is not None and instance_id:
             agent_id = context.get("agent_id", "unknown")
+            estimated_cost = context.get("estimated_cost", 0.01)
             from datetime import UTC, datetime
             today = datetime.now(UTC).strftime("%Y-%m-%d")
             day_key = _SPEND_DAY_KEY.format(
                 tenant_id=tenant_id, agent_id=agent_id, date=today,
             )
             try:
-                daily_spend = float(await redis_pool.get(day_key) or 0)
+                lua_result = await _atomic_check_and_increment(
+                    day_key, estimated_cost, max_per_day,
+                )
+                await redis_pool.expire(day_key, 86400 * 2)  # 2 days TTL
+            except GovernanceViolation:
+                raise
             except Exception:
                 logger.error("governance_redis_unavailable", check="spending_limit", exc_info=True)
                 raise GovernanceViolation(
@@ -157,7 +196,8 @@ class GovernanceEngine:
                     "Unable to verify spending limits (Redis unavailable). Action blocked.",
                     details={"reason": "redis_unavailable"},
                 )
-            if daily_spend >= max_per_day:
+            if lua_result == -1:
+                daily_spend = float(await redis_pool.get(day_key) or 0)
                 await self._emit_violation(
                     tenant_id=tenant_id,
                     context=context,

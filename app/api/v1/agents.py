@@ -58,6 +58,9 @@ from app.db.session import set_tenant_context
 
 logger = structlog.stdlib.get_logger()
 
+# Sensitive field names in auth_config that must be encrypted/masked
+_AUTH_SENSITIVE_KEYS = {"token", "key", "secret", "password", "client_secret", "api_key"}
+
 router = APIRouter(prefix="/agents")
 
 
@@ -196,9 +199,15 @@ async def update_agent_definition(
     await set_tenant_context(db, str(tenant.id))
     agent = await _get_agent_or_404(db, agent_id, tenant.id)
 
+    # Optimistic concurrency control
+    if body.expected_version is not None and agent.version != body.expected_version:
+        raise HTTPException(409, "Agent was modified concurrently. Refresh and retry.")
+
     changes = {}
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
+        if field == "expected_version":
+            continue
         if field == "metadata":
             setattr(agent, "metadata_", value)
         else:
@@ -275,6 +284,12 @@ async def create_agent_instance(
         existing_result = await db.execute(existing_stmt)
         existing_instance = existing_result.scalar_one_or_none()
         if existing_instance:
+            if existing_instance.status == InstanceStatus.FAILED:
+                raise HTTPException(
+                    409,
+                    "Previous execution with this idempotency key failed. "
+                    "Use a new key to retry.",
+                )
             return existing_instance
 
     # Create instance record
@@ -394,6 +409,14 @@ async def stop_agent_instance(
         instance_id=instance_id,
         tenant_id=tenant.id,
     )
+
+    # Revoke the Celery task to stop worker-side execution
+    try:
+        from app.workers.celery_app import celery_app
+        celery_app.control.revoke(str(instance_id), terminate=True, signal="SIGTERM")
+    except Exception:
+        logger.warning("celery_revoke_failed", instance_id=str(instance_id), exc_info=True)
+
     return instance
 
 
@@ -697,14 +720,13 @@ async def register_tenant_tool(
     """Register a custom tool for agents."""
     await set_tenant_context(db, str(tenant.id))
 
-    # Encrypt sensitive auth_config fields before storage
+    # Encrypt all sensitive auth_config fields before storage
     encrypted_auth_config = dict(body.auth_config) if body.auth_config else {}
     if encrypted_auth_config:
         from app.core.encryption import encrypt
-        if encrypted_auth_config.get("type") == "bearer" and encrypted_auth_config.get("token"):
-            encrypted_auth_config["token"] = encrypt(encrypted_auth_config["token"])
-        elif encrypted_auth_config.get("type") == "api_key" and encrypted_auth_config.get("key"):
-            encrypted_auth_config["key"] = encrypt(encrypted_auth_config["key"])
+        for field_name in _AUTH_SENSITIVE_KEYS:
+            if encrypted_auth_config.get(field_name):
+                encrypted_auth_config[field_name] = encrypt(encrypted_auth_config[field_name])
 
     tool = TenantTool(
         tenant_id=tenant.id,
@@ -729,18 +751,43 @@ async def register_tenant_tool(
 
 @router.get(
     "/tools",
-    response_model=list[TenantToolResponse],
+    response_model=PaginatedResponse,
     dependencies=[Depends(RequireScopes("agents:read"))],
 )
 async def list_tools(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """List all tools available to agents (built-in + custom)."""
     await set_tenant_context(db, str(tenant.id))
-    from app.agents.tool_registry import tool_registry
-    tenant_tools = await tool_registry.list_tenant_tools(tenant.id, db)
-    return tenant_tools
+
+    conditions = [
+        TenantTool.tenant_id == tenant.id,
+        TenantTool.is_active.is_(True),
+        TenantTool.deleted_at.is_(None),
+    ]
+    count_stmt = select(func.count()).select_from(TenantTool).where(*conditions)
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    stmt = (
+        select(TenantTool)
+        .where(*conditions)
+        .order_by(TenantTool.created_at.desc())
+        .limit(page_size)
+        .offset((page - 1) * page_size)
+    )
+    result = await db.execute(stmt)
+    items = list(result.scalars().all())
+
+    return PaginatedResponse(
+        items=[TenantToolResponse.model_validate(t) for t in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=(total + page_size - 1) // page_size,
+    )
 
 
 @router.delete(
@@ -758,7 +805,7 @@ async def remove_tenant_tool(
     from datetime import UTC, datetime
     await set_tenant_context(db, str(tenant.id))
     tool = await db.get(TenantTool, tool_id)
-    if not tool or tool.tenant_id != tenant.id:
+    if not tool or tool.tenant_id != tenant.id or tool.deleted_at:
         raise HTTPException(404, "Tool not found")
     tool.deleted_at = datetime.now(UTC)
     tool.is_active = False
@@ -800,7 +847,11 @@ async def create_agent_policy(
         rules=body.rules,
     )
     db.add(policy)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, f"Policy with name '{body.name}' already exists")
     await db.refresh(policy)
     return policy
 

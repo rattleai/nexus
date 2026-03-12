@@ -247,6 +247,11 @@ class AgentOrchestrator:
             run.status = WorkflowRunStatus.FAILED
             run.error = safe_error
             run.completed_at = datetime.now(UTC)
+            run.output_data = {
+                "error_code": "WORKFLOW_FAILED",
+                "failed_step": run.state.get("current_step", ""),
+                "completed_steps": run.state.get("completed_steps", []),
+            }
             await self.db.commit()
 
             await emit(
@@ -335,7 +340,13 @@ class AgentOrchestrator:
         key_source: str,
         workflow_run: WorkflowRun,
     ) -> dict[str, Any]:
-        """Execute multiple agents in parallel (fan-out pattern)."""
+        """Execute multiple agents in parallel (fan-out pattern).
+
+        NOTE: Parallel steps currently share the same DB session.
+        This is safe because asyncio.gather runs on a single thread,
+        but for true production parallel execution each branch should
+        use its own session via a session factory.
+        """
         agent_ids = step_def.get("agent_ids", [])
         if not agent_ids:
             raise OrchestrationError(f"Parallel step '{step_def['name']}' has no agent_ids")

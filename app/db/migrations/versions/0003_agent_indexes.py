@@ -42,6 +42,13 @@ def upgrade() -> None:
         ["workflow_id", "status"],
     )
 
+    # ── Compound index for common (tenant_id, definition_id) query pattern ──
+    op.create_index(
+        "ix_agent_inst_tenant_def",
+        "agent_instances",
+        ["tenant_id", "definition_id"],
+    )
+
     # ── Idempotency key on agent_instances ──
     op.add_column(
         "agent_instances",
@@ -134,6 +141,7 @@ def downgrade() -> None:
     op.drop_column("agent_instances", "idempotency_key")
 
     # ── Remove indexes ──
+    op.drop_index("ix_agent_inst_tenant_def", "agent_instances")
     op.drop_index("ix_workflow_run_workflow_status", "workflow_runs")
     op.drop_index("ix_agent_inst_status_created", "agent_instances")
     op.drop_index("ix_agent_session_expires_at", "agent_sessions")

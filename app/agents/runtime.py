@@ -16,6 +16,7 @@ Integrates with:
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -25,6 +26,7 @@ import structlog
 
 from app.agents.events import AgentStepCompleted
 from app.agents.models import AgentDefinition
+from app.config import settings
 from app.core.events import emit
 
 logger = structlog.stdlib.get_logger()
@@ -109,8 +111,8 @@ class AgentRuntime:
             governance_checker: Callable(action, context) → bool (raises on violation).
             db: Database session for AI gateway.
         """
-        from app.ai.gateway import ai_gateway
         from app.agents.governance import GovernanceEngine
+        from app.ai.gateway import ai_gateway
 
         result = RunResult()
         start_time = time.monotonic()
@@ -121,6 +123,12 @@ class AgentRuntime:
             system_messages.append({"role": "system", "content": self.definition.system_prompt})
 
         conversation = system_messages + list(messages)
+
+        # Guard against unbounded conversation growth
+        _max_conv = settings.AGENT_MAX_CONVERSATION_MESSAGES
+        if len(conversation) > _max_conv:
+            sys_msgs = [m for m in conversation if m.get("role") == "system"]
+            conversation = sys_msgs + conversation[-(max(1, _max_conv - len(sys_msgs))):]
 
         max_steps = self.definition.max_steps_per_run
         max_tokens = self.definition.max_tokens_per_run
@@ -214,7 +222,16 @@ class AgentRuntime:
                                 },
                             )
 
-                        tool_result = await tool_executor(tc.name, tc.arguments)
+                        try:
+                            tool_result = await asyncio.wait_for(
+                                tool_executor(tc.name, tc.arguments),
+                                timeout=settings.AGENT_TOOL_EXECUTION_TIMEOUT,
+                            )
+                        except asyncio.TimeoutError:
+                            tool_result = {
+                                "error": f"Tool '{tc.name}' timed out after "
+                                f"{settings.AGENT_TOOL_EXECUTION_TIMEOUT}s",
+                            }
 
                         # Truncate oversized tool output to prevent token/memory exhaustion.
                         _MAX_TOOL_OUTPUT = 20_000  # characters
@@ -282,6 +299,13 @@ class AgentRuntime:
                     exc_info=True,
                 )
                 result.finish_reason = "error"
+                # Include error context in the result for debugging
+                result.steps.append(StepResult(
+                    step_number=step_num,
+                    action="error",
+                    content=str(exc)[:500],
+                    duration_ms=int((time.monotonic() - step_start) * 1000),
+                ))
                 break
         else:
             result.finish_reason = "max_steps"

@@ -13,6 +13,8 @@ via an API request or asynchronously via a Celery task.
 
 from __future__ import annotations
 
+import asyncio
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -54,6 +56,14 @@ _FINISH_STATUS_MAP = {
 
 class AgentExecutionError(Exception):
     """Raised when agent execution fails."""
+
+
+def _sanitize_error(exc: Exception, max_len: int = 2000) -> str:
+    """Sanitize error messages to prevent leaking sensitive data."""
+    msg = str(exc)
+    msg = re.sub(r'(sk-|pk_|Bearer\s+)\S+', '[REDACTED]', msg)
+    msg = re.sub(r'(/Users/|/home/|/var/)\S+', '[PATH]', msg)
+    return msg[:max_len]
 
 
 class AgentExecutor:
@@ -232,8 +242,22 @@ class AgentExecutor:
             instance = await self.db.get(AgentInstance, instance.id)
             if instance:
                 instance.status = InstanceStatus.FAILED
-                instance.error = str(exc)[:2000]
+                instance.error = _sanitize_error(exc)
                 instance.completed_at = datetime.now(UTC)
+
+                # Structured error classification for better client UX
+                from app.agents.governance import GovernanceViolation
+                if isinstance(exc, GovernanceViolation):
+                    instance.output_data = {
+                        "error_code": "GOVERNANCE_VIOLATION",
+                        "violation_type": exc.violation_type,
+                        "details": exc.details,
+                    }
+                elif isinstance(exc, asyncio.TimeoutError):
+                    instance.output_data = {"error_code": "TIMEOUT"}
+                else:
+                    instance.output_data = {"error_code": "EXECUTION_ERROR"}
+
                 await self.db.commit()
 
             try:
@@ -242,7 +266,7 @@ class AgentExecutor:
                         tenant_id=str(tenant_id),
                         instance_id=str(instance.id) if instance else "unknown",
                         agent_id=str(definition_id),
-                        error=str(exc)[:500],
+                        error=_sanitize_error(exc, max_len=500),
                         step_number=instance.steps_executed if instance else 0,
                     ),
                     durable=True,
@@ -257,7 +281,7 @@ class AgentExecutor:
                 error=str(exc),
                 exc_info=True,
             )
-            raise AgentExecutionError(str(exc)) from exc
+            raise AgentExecutionError(_sanitize_error(exc)) from exc
 
         return instance
 

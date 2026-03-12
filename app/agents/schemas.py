@@ -2,11 +2,33 @@
 
 from __future__ import annotations
 
+import json as _json
 import uuid
 from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+# ── Shared Validators ─────────────────────────────────────────────────
+
+
+def _validate_json_size(v: dict[str, Any], max_bytes: int = 65_536) -> dict[str, Any]:
+    """Reject payloads larger than max_bytes when serialized."""
+    if len(_json.dumps(v, default=str)) > max_bytes:
+        raise ValueError(f"JSON payload exceeds maximum size of {max_bytes} bytes")
+    return v
+
+
+_SENSITIVE_KEYS = {"token", "key", "secret", "password", "client_secret", "api_key"}
+
+
+def _validate_tool_names(v: list[str]) -> list[str]:
+    if len(v) > 100:
+        raise ValueError("Maximum 100 tools allowed")
+    for name in v:
+        if not name or len(name) > 100:
+            raise ValueError("Invalid tool name: must be 1-100 characters")
+    return v
 
 
 # ── Agent Definition ───────────────────────────────────────────────────
@@ -29,6 +51,16 @@ class AgentDefinitionCreate(BaseModel):
     governance_policy: dict[str, Any] = {}
     metadata: dict[str, Any] = {}
 
+    @field_validator("allowed_tools")
+    @classmethod
+    def validate_tool_names(cls, v: list[str]) -> list[str]:
+        return _validate_tool_names(v)
+
+    @field_validator("memory_config", "governance_policy", "metadata")
+    @classmethod
+    def validate_json_size(cls, v: dict[str, Any]) -> dict[str, Any]:
+        return _validate_json_size(v)
+
 
 class AgentDefinitionUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=255)
@@ -46,6 +78,14 @@ class AgentDefinitionUpdate(BaseModel):
     governance_policy: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
     status: Literal["draft", "active", "disabled"] | None = None
+    expected_version: int | None = None
+
+    @field_validator("allowed_tools")
+    @classmethod
+    def validate_tool_names(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
+        return _validate_tool_names(v)
 
 
 class AgentDefinitionResponse(BaseModel):
@@ -55,6 +95,7 @@ class AgentDefinitionResponse(BaseModel):
     slug: str
     description: str
     status: str
+    version: int
     system_prompt: str
     model: str
     temperature: float | None
@@ -151,6 +192,27 @@ class WorkflowDefinitionCreate(BaseModel):
     governance: dict[str, Any] = {}
     metadata: dict[str, Any] = {}
 
+    @field_validator("definition")
+    @classmethod
+    def validate_workflow_structure(cls, v: dict[str, Any]) -> dict[str, Any]:
+        required_keys = {"steps", "transitions", "entry_step"}
+        missing = required_keys - set(v.keys())
+        if missing:
+            raise ValueError(f"Workflow definition missing required keys: {missing}")
+        if not isinstance(v["steps"], list) or not v["steps"]:
+            raise ValueError("Workflow definition must have at least one step")
+        if not isinstance(v["transitions"], list):
+            raise ValueError("Workflow transitions must be a list")
+        for step in v["steps"]:
+            if not isinstance(step, dict) or "name" not in step or "agent_id" not in step:
+                raise ValueError("Each workflow step must have 'name' and 'agent_id'")
+        return v
+
+    @field_validator("governance", "metadata")
+    @classmethod
+    def validate_json_size(cls, v: dict[str, Any]) -> dict[str, Any]:
+        return _validate_json_size(v)
+
 
 class WorkflowDefinitionResponse(BaseModel):
     id: uuid.UUID
@@ -159,6 +221,7 @@ class WorkflowDefinitionResponse(BaseModel):
     slug: str
     description: str
     status: str
+    version: int
     definition: dict[str, Any]
     governance: dict[str, Any]
     metadata: dict[str, Any]
@@ -170,6 +233,13 @@ class WorkflowDefinitionResponse(BaseModel):
 
 class WorkflowRunCreate(BaseModel):
     input_data: dict[str, Any] = {}
+
+    @field_validator("input_data")
+    @classmethod
+    def validate_input_size(cls, v: dict[str, Any]) -> dict[str, Any]:
+        if len(_json.dumps(v, default=str)) > 1_048_576:  # 1MB
+            raise ValueError("input_data exceeds maximum size of 1MB")
+        return v
 
 
 class WorkflowRunResponse(BaseModel):
@@ -210,9 +280,28 @@ class TenantToolCreate(BaseModel):
     def validate_url_scheme(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        if not v.startswith(("https://",)):
+        from urllib.parse import urlparse
+        parsed = urlparse(v)
+        if parsed.scheme != "https":
             raise ValueError("Only HTTPS URLs are allowed")
+        if not parsed.hostname:
+            raise ValueError("URL must have a valid hostname")
+        # Block private/reserved IP ranges (SSRF protection)
+        import ipaddress
+        try:
+            ip = ipaddress.ip_address(parsed.hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                raise ValueError("URLs pointing to private/internal networks are not allowed")
+        except ValueError as exc:
+            if "not allowed" in str(exc):
+                raise
+            # hostname is a domain name, not IP — that's fine
         return v
+
+    @field_validator("input_schema", "output_schema", "auth_config", "metadata")
+    @classmethod
+    def validate_json_size(cls, v: dict[str, Any]) -> dict[str, Any]:
+        return _validate_json_size(v)
 
 
 class TenantToolResponse(BaseModel):
@@ -240,10 +329,9 @@ class TenantToolResponse(BaseModel):
         if not v:
             return {}
         masked = dict(v)
-        if masked.get("token"):
-            masked["token"] = "***"
-        if masked.get("key"):
-            masked["key"] = "***"
+        for field_name in _SENSITIVE_KEYS:
+            if masked.get(field_name):
+                masked[field_name] = "***"
         return masked
 
 
@@ -265,12 +353,23 @@ class AgentPolicyCreate(BaseModel):
     max_steps_per_run: int | None = Field(None, ge=1, le=10_000)
     rules: dict[str, Any] = {}
 
+    @field_validator("allowed_tools", "denied_tools", "require_approval_for")
+    @classmethod
+    def validate_tool_names(cls, v: list[str]) -> list[str]:
+        return _validate_tool_names(v)
+
+    @field_validator("rules")
+    @classmethod
+    def validate_rules_size(cls, v: dict[str, Any]) -> dict[str, Any]:
+        return _validate_json_size(v)
+
 
 class AgentPolicyResponse(BaseModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
     name: str
     description: str
+    version: int
     max_spend_per_run_usd: float | None
     max_spend_per_day_usd: float | None
     max_spend_per_month_usd: float | None

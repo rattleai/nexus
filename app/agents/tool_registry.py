@@ -295,7 +295,9 @@ class ToolRegistry:
                         pass  # Use as-is if not encrypted (legacy data)
                 headers[header_name] = key
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(connect=5.0, read=25.0, write=10.0, pool=5.0),
+            ) as client:
                 response = await client.post(
                     tool.endpoint_url,
                     json={"arguments": arguments},

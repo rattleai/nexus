@@ -106,6 +106,7 @@ async def consume_loop(
 
             for event in events:
                 handlers = _EVENT_HANDLERS.get(event.event_type, [])
+                all_ok = True
                 for handler in handlers:
                     try:
                         await handler(event.data)
@@ -116,9 +117,17 @@ async def consume_loop(
                             handler=handler.__qualname__,
                             exc_info=True,
                         )
+                        all_ok = False
 
-                # Acknowledge after processing
-                await event_bus.ack(group, event.stream, event.id)
+                # Only acknowledge if all handlers succeeded
+                if all_ok:
+                    await event_bus.ack(group, event.stream, event.id)
+                else:
+                    logger.warning(
+                        "event_not_acked",
+                        event_type=event.event_type,
+                        event_id=event.id,
+                    )
 
         except asyncio.CancelledError:
             logger.info("event_consumer_shutting_down")

@@ -29,6 +29,7 @@ async def test_governance_spend_limit_fails_closed_when_redis_unavailable():
 
     mock_redis = AsyncMock()
     mock_redis.get = AsyncMock(side_effect=ConnectionError("Redis unavailable"))
+    mock_redis.eval = AsyncMock(side_effect=ConnectionError("Redis unavailable"))
 
     with (
         patch("app.agents.governance.redis_pool", mock_redis),
