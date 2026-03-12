@@ -1,7 +1,8 @@
 import { Link, useRouterState } from "@tanstack/react-router"
-import { LayoutDashboard, Briefcase, MessageSquare, Bell, Menu } from "lucide-react"
+import { LayoutDashboard, Briefcase, MessageSquare, FolderOpen, Menu } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useSidebar } from "@/components/ui/sidebar"
 
 interface NavItem {
   href: string
@@ -13,17 +14,14 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Home", icon: LayoutDashboard },
   { href: "/jobs", label: "Jobs", icon: Briefcase },
   { href: "/chat", label: "AI Chat", icon: MessageSquare },
-  { href: "/notifications", label: "Alerts", icon: Bell },
+  { href: "/files", label: "Files", icon: FolderOpen },
 ]
 
-interface BottomNavProps {
-  onMenuClick?: () => void
-}
-
-export function BottomNav({ onMenuClick }: BottomNavProps) {
+export function BottomNav() {
   const isMobile = useIsMobile()
   const router = useRouterState()
   const currentPath = router.location.pathname
+  const { toggleSidebar } = useSidebar()
 
   if (!isMobile) return null
 
@@ -57,7 +55,7 @@ export function BottomNav({ onMenuClick }: BottomNavProps) {
         })}
         <button
           type="button"
-          onClick={onMenuClick}
+          onClick={toggleSidebar}
           className="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
           aria-label="Open menu"
         >
