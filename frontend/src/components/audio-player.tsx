@@ -1,5 +1,3 @@
-"use client"
-
 import * as React from "react"
 import { Pause, Play, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"

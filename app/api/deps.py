@@ -61,17 +61,115 @@ async def get_current_api_key(
     return api_key
 
 
+async def _resolve_api_key(request: Request, db: AsyncSession) -> ApiKey | None:
+    """Try to resolve an API key from the X-API-Key header. Returns None if absent."""
+    x_api_key = request.headers.get("X-API-Key")
+    if not x_api_key:
+        return None
+
+    key_hash = hash_api_key(x_api_key)
+    result = await db.execute(
+        select(ApiKey).options(selectinload(ApiKey.tenant)).where(ApiKey.key_hash == key_hash, ApiKey.active.is_(True))
+    )
+    api_key = result.scalar_one_or_none()
+    if api_key is None:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    tenant = api_key.tenant
+    if tenant is None or not tenant.is_active:
+        raise HTTPException(status_code=403, detail="Tenant not found or inactive")
+
+    request.state.api_key = api_key
+    return api_key
+
+
+async def _resolve_user_from_jwt(request: Request, db: AsyncSession) -> User | None:
+    """Try to resolve a user from a JWT Bearer token. Returns None if absent."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+
+    from app.core.security import decode_access_token, is_token_revoked, is_user_token_revoked
+
+    token = auth_header[7:]
+    try:
+        payload = decode_access_token(token)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired") from None
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token") from None
+
+    jti = payload.get("jti")
+    if jti and await is_token_revoked(jti):
+        raise HTTPException(status_code=401, detail="Token has been revoked")
+
+    user_id_str = payload.get("sub")
+    if not user_id_str:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    iat = payload.get("iat")
+    if user_id_str and iat and await is_user_token_revoked(user_id_str, int(iat)):
+        raise HTTPException(status_code=401, detail="Token has been revoked")
+
+    try:
+        user_id = uuid.UUID(user_id_str)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=401, detail="Invalid token payload") from None
+
+    result = await db.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))
+    user = result.scalar_one_or_none()
+
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    jwt_tenant_id = payload.get("tenant_id")
+    if jwt_tenant_id and str(user.tenant_id) != str(jwt_tenant_id):
+        raise HTTPException(status_code=401, detail="Token tenant mismatch — please re-authenticate")
+
+    return user
+
+
 async def get_current_tenant(
-    api_key: ApiKey = Depends(get_current_api_key),
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> Tenant:
-    """Return the tenant associated with the current API key.
+    """Return the tenant for the current request.
 
+    Accepts either a JWT Bearer token or an X-API-Key header.
+    JWT is checked first; if absent, falls back to API key.
     Also sets PostgreSQL RLS tenant context for defense-in-depth isolation.
     """
-    tenant = api_key.tenant
+    # Try JWT auth first (frontend users)
+    user = await _resolve_user_from_jwt(request, db)
+    if user:
+        result = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id, Tenant.is_active.is_(True)))
+        tenant = result.scalar_one_or_none()
+        if not tenant:
+            raise HTTPException(status_code=403, detail="Tenant not found or inactive")
+        await set_tenant_context(db, str(tenant.id))
+        return tenant
+
+    # Fall back to API key auth
+    api_key = await _resolve_api_key(request, db)
+    if api_key:
+        tenant = api_key.tenant
+        await set_tenant_context(db, str(tenant.id))
+        return tenant
+
+    raise HTTPException(status_code=401, detail="Authentication required (Bearer token or X-API-Key)")
+
+
+async def get_tenant_db(
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+) -> AsyncSession:
+    """Get a DB session with RLS tenant context already set.
+
+    Use this instead of manually calling set_tenant_context() in every endpoint.
+    The tenant context is guaranteed to be set before the session is returned.
+    """
     await set_tenant_context(db, str(tenant.id))
-    return tenant
+    return db
 
 
 # ── JWT auth (new, opt-in via AUTH_ENABLED) ──────────────
@@ -85,7 +183,7 @@ async def get_current_user_from_token(
 
     Raises 401 if the token is missing, expired, or invalid.
     """
-    from app.core.security import decode_access_token
+    from app.core.security import decode_access_token, is_token_revoked, is_user_token_revoked
 
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
@@ -99,9 +197,19 @@ async def get_current_user_from_token(
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token") from None
 
+    # Check token revocation blacklist (P0-7: JWT revocation)
+    jti = payload.get("jti")
+    if jti and await is_token_revoked(jti):
+        raise HTTPException(status_code=401, detail="Token has been revoked")
+
     user_id_str = payload.get("sub")
     if not user_id_str:
         raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    # Check if all user tokens were bulk-revoked (e.g. after password reset)
+    iat = payload.get("iat")
+    if user_id_str and iat and await is_user_token_revoked(user_id_str, int(iat)):
+        raise HTTPException(status_code=401, detail="Token has been revoked")
 
     try:
         user_id = uuid.UUID(user_id_str)
@@ -165,12 +273,23 @@ class RequireScopes:
         async def create_job(...): ...
 
     API keys must have explicit scopes granted. Empty scopes = no access.
+    JWT-authenticated users bypass scope checks (scopes are an API-key concept).
     """
 
     def __init__(self, *required: str):
         self.required = set(required)
 
-    async def __call__(self, api_key: ApiKey = Depends(get_current_api_key)) -> None:
+    async def __call__(self, request: Request, db: AsyncSession = Depends(get_db)) -> None:
+        # JWT-authenticated users bypass API key scope checks
+        user = await _resolve_user_from_jwt(request, db)
+        if user:
+            return
+
+        # For API key auth, enforce scopes
+        api_key = await _resolve_api_key(request, db)
+        if not api_key:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
         granted = set(api_key.scopes) if api_key.scopes else set()
         if not granted:
             raise HTTPException(
@@ -184,6 +303,69 @@ class RequireScopes:
                 status_code=403,
                 detail="Insufficient API key permissions",
             )
+
+
+# ── OAuth Client Credentials auth ──────────────────────
+
+
+async def get_tenant_from_client_credentials(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Tenant:
+    """Authenticate via OAuth Client Credentials JWT (Bearer token).
+
+    Validates the token was issued by the Client Credentials flow,
+    resolves the tenant, and sets RLS context.
+    """
+    from app.core.security import _get_effective_algorithm, _get_jwt_verification_key, is_token_revoked
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    token = auth_header[7:]
+    algorithm = _get_effective_algorithm()
+    try:
+        payload = jwt.decode(
+            token,
+            _get_jwt_verification_key(),
+            algorithms=[algorithm],
+            audience="cadprice-api",
+            issuer="cadprice",
+        )
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired") from None
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token") from None
+
+    if payload.get("type") != "client_credentials":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+
+    # Check token revocation blacklist
+    jti = payload.get("jti")
+    if jti and await is_token_revoked(jti):
+        raise HTTPException(status_code=401, detail="Token has been revoked")
+
+    tenant_id_str = payload.get("tenant_id")
+    if not tenant_id_str:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    try:
+        tenant_id = uuid.UUID(tenant_id_str)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=401, detail="Invalid token payload") from None
+
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)))
+    tenant = result.scalar_one_or_none()
+
+    if not tenant:
+        raise HTTPException(status_code=401, detail="Tenant not found or inactive")
+
+    # Propagate client scopes for downstream RequireScopes checks
+    request.state.client_scopes = payload.get("scopes", [])
+
+    await set_tenant_context(db, str(tenant.id))
+    return tenant
 
 
 async def require_admin_key(

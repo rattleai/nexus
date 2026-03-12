@@ -53,7 +53,9 @@ class Settings(BaseSettings):
     AUTH_ENABLED: bool = False
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
+    JWT_PRIVATE_KEY: str = ""  # PEM-encoded RSA private key for RS256 JWT signing
+    JWT_PUBLIC_KEY: str = ""   # PEM-encoded RSA public key for RS256 JWT verification
     OAUTH_GOOGLE_CLIENT_ID: str = ""
     OAUTH_GOOGLE_CLIENT_SECRET: str = ""
     OAUTH_GITHUB_CLIENT_ID: str = ""
@@ -71,6 +73,9 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+
+    # Database SSL mode for production connections
+    DATABASE_SSL_MODE: str = ""  # Set to "require" in production for encrypted DB connections
 
     # Database sync URL (for Celery workers — avoids fragile string replacement)
     DATABASE_SYNC_URL: str = ""
@@ -131,6 +136,47 @@ class Settings(BaseSettings):
     # Rate limiting for AI endpoints (per window)
     RATE_LIMIT_AI_REQUESTS: int = 60
 
+    # ── MCP Server ───────────────────────────────────────────
+    MCP_ENABLED: bool = False
+    MCP_SERVER_NAME: str = "cadprice"
+    MCP_TRANSPORT: str = "streamable-http"  # "stdio" or "streamable-http"
+    MCP_HTTP_PORT: int = 8001
+    MCP_LOG_TOOL_CALLS: bool = True
+    MCP_RATE_LIMIT_REQUESTS: int = 300  # Max MCP requests per tenant per minute
+
+    # ── Agent / Bot API Enhancements ──────────────────────
+    AGENT_HINTS_ENABLED: bool = True
+    AGENT_RATE_LIMIT_REQUESTS: int = 300
+
+    # ── Agent Execution Layer ──────────────────────────────
+    AGENT_EXECUTION_ENABLED: bool = True
+    AGENT_MAX_STEPS_PER_RUN: int = 50
+    AGENT_MAX_DURATION_SECONDS: int = 300
+    AGENT_MAX_TOKENS_PER_RUN: int = 100_000
+    AGENT_SANDBOX_ENABLED: bool = False       # Opt-in code execution sandbox
+    AGENT_SANDBOX_MEMORY_MB: int = 256
+    AGENT_SANDBOX_CPU_SECONDS: int = 30
+    AGENT_SANDBOX_TIMEOUT_SECONDS: int = 60
+    AGENT_SANDBOX_NETWORK_ENABLED: bool = False
+    AGENT_SESSION_MAX_MESSAGES: int = 200
+    AGENT_TOOL_EXECUTION_TIMEOUT: int = 120  # Max seconds for individual tool execution
+    AGENT_MAX_CONVERSATION_MESSAGES: int = 100  # Max messages in conversation window
+
+    # Agent Memory
+    AGENT_MEMORY_SHORT_TTL_SECONDS: int = 3600
+    AGENT_MEMORY_SHORT_MAX_ENTRIES: int = 100
+    AGENT_MEMORY_VECTOR_ENABLED: bool = False  # Requires pgvector extension
+    AGENT_MEMORY_VECTOR_DIMENSIONS: int = 1536
+
+    # Durable Event Bus (Redis Streams)
+    EVENT_BUS_ENABLED: bool = True
+    EVENT_BUS_STREAM_PREFIX: str = "events"
+    EVENT_BUS_MAX_LEN: int = 100_000
+    EVENT_BUS_CONSUMER_GROUP: str = "platform"
+    EVENT_BUS_BLOCK_MS: int = 5000
+    AGENT_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    OAUTH_CLIENT_CREDENTIALS_ENABLED: bool = False
+
     # Allowed scope values for API keys
     VALID_SCOPES: list[str] = [
         "jobs:read", "jobs:write",
@@ -141,6 +187,8 @@ class Settings(BaseSettings):
         "billing:read", "billing:write",
         "audit:read",
         "ai:read", "ai:write", "ai:admin",
+        "mcp:read", "mcp:write",
+        "agents:read", "agents:write", "agents:admin", "agents:execute",
     ]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
@@ -228,6 +276,36 @@ def validate_settings() -> None:
                 "ENCRYPTION_KEY must be set in production (DEBUG=false). "
                 "Use a unique high-entropy value separate from SECRET_KEY."
             )
+
+    # JWT asymmetric key validation
+    if settings.JWT_ALGORITHM in ("RS256", "ES256"):
+        if not settings.JWT_PRIVATE_KEY or not settings.JWT_PUBLIC_KEY:
+            if settings.DEBUG:
+                warnings.warn(
+                    f"JWT_ALGORITHM is {settings.JWT_ALGORITHM} but JWT_PRIVATE_KEY/JWT_PUBLIC_KEY are not set. "
+                    "Falling back to HS256 with SECRET_KEY. Set RSA keys for production.",
+                    stacklevel=2,
+                )
+            else:
+                raise RuntimeError(
+                    f"JWT_ALGORITHM is {settings.JWT_ALGORITHM} — JWT_PRIVATE_KEY and JWT_PUBLIC_KEY must be set "
+                    "in production. Generate with: openssl genrsa -out private.pem 2048 && "
+                    "openssl rsa -in private.pem -pubout -out public.pem"
+                )
+
+    # Database SSL in production
+    if not settings.DEBUG and not settings.DATABASE_SSL_MODE:
+        warnings.warn(
+            "DATABASE_SSL_MODE is not set. Set to 'verify-full' (recommended) or 'require' "
+            "in production for encrypted DB connections.",
+            stacklevel=2,
+        )
+    elif not settings.DEBUG and settings.DATABASE_SSL_MODE == "require":
+        warnings.warn(
+            "DATABASE_SSL_MODE='require' encrypts traffic but does NOT verify the server certificate. "
+            "Consider 'verify-full' for MITM protection.",
+            stacklevel=2,
+        )
 
     if not settings.storage_configured:
         warnings.warn(

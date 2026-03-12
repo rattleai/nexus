@@ -1,5 +1,5 @@
 import { Extension } from "@tiptap/react"
-import type { Editor, Range } from "@tiptap/react"
+import type { Editor } from "@tiptap/react"
 import { ReactRenderer } from "@tiptap/react"
 import Suggestion from "@tiptap/suggestion"
 import type { SuggestionOptions, SuggestionProps } from "@tiptap/suggestion"

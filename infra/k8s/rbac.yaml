@@ -1,0 +1,28 @@
+# Explicit zero-permission Role + RoleBinding for the cadprice ServiceAccount.
+# Ensures that even if automountServiceAccountToken is later enabled,
+# the SA has no permissions by default (least-privilege).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cadprice-no-permissions
+  namespace: cadprice
+  labels:
+    app.kubernetes.io/part-of: cadprice
+# rules intentionally empty — grants zero permissions
+rules: []
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cadprice-no-permissions
+  namespace: cadprice
+  labels:
+    app.kubernetes.io/part-of: cadprice
+subjects:
+  - kind: ServiceAccount
+    name: cadprice
+    namespace: cadprice
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cadprice-no-permissions

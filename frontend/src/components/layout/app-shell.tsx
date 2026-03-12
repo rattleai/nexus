@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useState } from "react"
+import { type ReactNode } from "react"
 import { Link, useRouterState } from "@tanstack/react-router"
 import {
   LayoutDashboard,
@@ -78,14 +78,9 @@ export function AppShell({ children }: AppShellProps) {
   const router = useRouterState()
   const currentPath = router.location.pathname
   const isMobile = useIsMobile()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-
-  const handleMenuClick = useCallback(() => {
-    setMobileMenuOpen((prev) => !prev)
-  }, [])
 
   return (
-    <SidebarProvider open={isMobile ? mobileMenuOpen : undefined} onOpenChange={isMobile ? setMobileMenuOpen : undefined}>
+    <SidebarProvider>
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-background focus:text-foreground"
@@ -145,7 +140,7 @@ export function AppShell({ children }: AppShellProps) {
           {children}
         </main>
       </SidebarInset>
-      <BottomNav onMenuClick={handleMenuClick} />
+      <BottomNav />
     </SidebarProvider>
   )
 }

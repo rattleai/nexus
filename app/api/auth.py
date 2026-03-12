@@ -10,5 +10,5 @@ def hash_api_key(raw_key: str) -> str:
     """
     from app.config import settings
 
-    pepper = (settings.SECRET_KEY or "default-pepper").encode()
+    pepper = settings.SECRET_KEY.encode()
     return hmac.new(pepper, raw_key.encode(), hashlib.sha256).hexdigest()

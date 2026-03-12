@@ -19,6 +19,7 @@ class JobStatus(enum.StrEnum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class Job(SyncMixin, SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
@@ -27,7 +28,7 @@ class Job(SyncMixin, SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     type: Mapped[str] = mapped_column(String(50), nullable=False)
-    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.PENDING, index=True)
+    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus, values_callable=lambda e: [m.value for m in e]), default=JobStatus.PENDING, index=True)
     input_hash: Mapped[str | None] = mapped_column(String(64))
     webhook_url: Mapped[str | None] = mapped_column(String(2048))
     payload: Mapped[dict | None] = mapped_column(JSONB)

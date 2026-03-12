@@ -1,4 +1,3 @@
-import * as React from "react"
 import { cn } from "@/lib/utils"
 import { formatCompactNumber } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"

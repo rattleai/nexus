@@ -115,3 +115,17 @@ async def health_check():
     """Combined health check (backward compatible)."""
     data = await _readiness_check()
     return HealthResponse(**data)
+
+
+@router.get("/.well-known/jwks.json")
+async def jwks():
+    """JWKS endpoint for RS256/ES256 public key discovery.
+
+    Services that need to verify JWTs can fetch the public key from here
+    instead of sharing the signing secret.
+    """
+    from app.core.security import get_jwks_public_key
+    key = get_jwks_public_key()
+    if key is None:
+        return {"keys": []}
+    return {"keys": [key]}

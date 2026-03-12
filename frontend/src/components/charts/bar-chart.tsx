@@ -1,5 +1,3 @@
-"use client"
-
 import {
   BarChart as RechartsBarChart,
   Bar,

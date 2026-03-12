@@ -109,6 +109,12 @@ class RateLimiter:
         key = f"{self.key_prefix}:{client_ip}:{normalized_path}"
         request_count = await _check_rate(key, self.max_requests, self.window)
 
+        # Store rate limit info on request state for response headers (P1-12)
+        remaining = max(0, self.max_requests - request_count)
+        request.state.rate_limit_limit = self.max_requests
+        request.state.rate_limit_remaining = remaining
+        request.state.rate_limit_reset = int(time.time()) + self.window
+
         if request_count > self.max_requests:
             logger.warning(
                 "rate_limit_exceeded",
@@ -120,7 +126,91 @@ class RateLimiter:
             raise HTTPException(
                 status_code=429,
                 detail="Too many requests",
-                headers={"Retry-After": str(self.window)},
+                headers={
+                    "Retry-After": str(self.window),
+                    "X-RateLimit-Limit": str(self.max_requests),
+                    "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Reset": str(int(time.time()) + self.window),
+                },
+            )
+
+
+# Known agent User-Agent prefixes
+_AGENT_UA_PREFIXES = (
+    "mcp-client/",
+    "claude-code/",
+    "openai-agent/",
+    "cadprice-cli/",
+    "github-copilot/",
+    "cursor/",
+)
+
+
+def _is_agent_request(request: Request) -> bool:
+    """Detect if the request comes from an AI agent.
+
+    Checks for X-Agent-Name header or known agent User-Agent patterns.
+    """
+    if request.headers.get("X-Agent-Name"):
+        return True
+    ua = request.headers.get("User-Agent", "").lower()
+    return any(ua.startswith(prefix) for prefix in _AGENT_UA_PREFIXES)
+
+
+class AgentAwareRateLimiter:
+    """Rate limiter that applies higher limits to identified agent traffic.
+
+    Agents are identified by User-Agent patterns or the X-Agent-Name header.
+    Non-agent traffic uses the standard rate limit.
+    """
+
+    def __init__(
+        self,
+        max_requests: int | None = None,
+        agent_max_requests: int | None = None,
+        window: int | None = None,
+        key_prefix: str = "rl",
+    ):
+        self.max_requests = max_requests or settings.RATE_LIMIT_DEFAULT
+        self.agent_max_requests = agent_max_requests or settings.AGENT_RATE_LIMIT_REQUESTS
+        self.window = window or settings.RATE_LIMIT_WINDOW_SECONDS
+        self.key_prefix = key_prefix
+
+    async def __call__(self, request: Request) -> None:
+        is_agent = _is_agent_request(request)
+        effective_limit = self.agent_max_requests if is_agent else self.max_requests
+        effective_window = settings.AGENT_RATE_LIMIT_WINDOW_SECONDS if is_agent else self.window
+
+        client_ip = _get_client_ip(request)
+        normalized_path = request.url.path.rstrip("/").lower().replace("//", "/")
+        tier = "agent" if is_agent else "std"
+        key = f"{self.key_prefix}:{tier}:{client_ip}:{normalized_path}"
+
+        request_count = await _check_rate(key, effective_limit, effective_window)
+
+        remaining = max(0, effective_limit - request_count)
+        request.state.rate_limit_limit = effective_limit
+        request.state.rate_limit_remaining = remaining
+        request.state.rate_limit_reset = int(time.time()) + effective_window
+
+        if request_count > effective_limit:
+            logger.warning(
+                "rate_limit_exceeded",
+                client_ip=client_ip,
+                path=request.url.path,
+                count=request_count,
+                limit=effective_limit,
+                is_agent=is_agent,
+            )
+            raise HTTPException(
+                status_code=429,
+                detail="Too many requests",
+                headers={
+                    "Retry-After": str(effective_window),
+                    "X-RateLimit-Limit": str(effective_limit),
+                    "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Reset": str(int(time.time()) + effective_window),
+                },
             )
 
 

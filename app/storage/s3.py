@@ -80,10 +80,10 @@ class S3Storage:
 
     # ── sync interface (Celery workers) ──────────────────────
 
-    def upload(self, key: str, data: bytes) -> None:
+    def upload(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
         key = _validate_key(key)
         try:
-            self._client.put_object(Bucket=self._bucket, Key=key, Body=data)
+            self._client.put_object(Bucket=self._bucket, Key=key, Body=data, ContentType=content_type)
         except ClientError as exc:
             error_code = exc.response.get("Error", {}).get("Code", "Unknown")
             logger.error("s3_upload_failed", key=key, error_code=error_code, error=str(exc))
@@ -134,10 +134,168 @@ class S3Storage:
             logger.error("s3_delete_failed", key=key, error=str(exc))
             raise StorageError("Delete failed: storage error") from exc
 
+    def upload_fileobj(self, key: str, file_obj, max_size: int) -> int:
+        """Upload a file-like object to S3 using multipart upload.
+
+        Streams data in chunks to avoid loading entire file into memory.
+        Enforces max_size limit during upload, aborting if exceeded.
+        Returns the total number of bytes uploaded.
+        """
+        key = _validate_key(key)
+        chunk_size = 5 * 1024 * 1024  # 5 MB (S3 minimum part size for multipart)
+        total_size = 0
+        buffer = b""
+
+        try:
+            # Read first chunk to determine if we need multipart
+            first_chunk = file_obj.read(chunk_size)
+            if not first_chunk:
+                self._client.put_object(Bucket=self._bucket, Key=key, Body=b"")
+                return 0
+
+            total_size = len(first_chunk)
+            if total_size > max_size:
+                raise StorageError(f"File too large (max {max_size // (1024 * 1024)} MB)", status_code=413)
+
+            # Check if there's more data
+            next_chunk = file_obj.read(chunk_size)
+            if not next_chunk:
+                # Small file — use simple put_object
+                self._client.put_object(Bucket=self._bucket, Key=key, Body=first_chunk)
+                return total_size
+
+            # Large file — use multipart upload
+            mpu = self._client.create_multipart_upload(Bucket=self._bucket, Key=key)
+            upload_id = mpu["UploadId"]
+            parts = []
+            part_number = 1
+
+            try:
+                # Upload first chunk as part 1
+                part = self._client.upload_part(
+                    Bucket=self._bucket, Key=key, UploadId=upload_id,
+                    PartNumber=part_number, Body=first_chunk,
+                )
+                parts.append({"PartNumber": part_number, "ETag": part["ETag"]})
+                part_number += 1
+
+                # Upload remaining chunks
+                chunk = next_chunk
+                while chunk:
+                    total_size += len(chunk)
+                    if total_size > max_size:
+                        raise StorageError(f"File too large (max {max_size // (1024 * 1024)} MB)", status_code=413)
+
+                    part = self._client.upload_part(
+                        Bucket=self._bucket, Key=key, UploadId=upload_id,
+                        PartNumber=part_number, Body=chunk,
+                    )
+                    parts.append({"PartNumber": part_number, "ETag": part["ETag"]})
+                    part_number += 1
+                    chunk = file_obj.read(chunk_size)
+
+                self._client.complete_multipart_upload(
+                    Bucket=self._bucket, Key=key, UploadId=upload_id,
+                    MultipartUpload={"Parts": parts},
+                )
+            except Exception:
+                self._client.abort_multipart_upload(Bucket=self._bucket, Key=key, UploadId=upload_id)
+                raise
+
+            return total_size
+
+        except StorageError:
+            raise
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.error("s3_streaming_upload_failed", key=key, error_code=error_code)
+            raise StorageError(f"Upload failed: {error_code}") from exc
+        except BotoCoreError as exc:
+            logger.error("s3_streaming_upload_failed", key=key, error=str(exc))
+            raise StorageError("Upload failed: storage service unavailable") from exc
+
+    def list_objects(self, prefix: str) -> list[str]:
+        """List object keys under the given prefix with pagination."""
+        prefix = _validate_key(prefix)
+        keys: list[str] = []
+        try:
+            kwargs = {"Bucket": self._bucket, "Prefix": prefix}
+            while True:
+                response = self._client.list_objects_v2(**kwargs)
+                for obj in response.get("Contents", []):
+                    keys.append(obj["Key"])
+                if not response.get("IsTruncated"):
+                    break
+                kwargs["ContinuationToken"] = response["NextContinuationToken"]
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.error("s3_list_failed", prefix=prefix, error_code=error_code)
+            raise StorageError(f"List failed: {error_code}") from exc
+        except BotoCoreError as exc:
+            logger.error("s3_list_failed", prefix=prefix, error=str(exc))
+            raise StorageError("List failed: storage service unavailable") from exc
+        return keys
+
+    def generate_presigned_url(
+        self,
+        key: str,
+        *,
+        expiry_seconds: int = 3600,
+        content_type: str | None = None,
+        method: str = "get_object",
+    ) -> str:
+        """Generate a presigned URL for temporary direct access to an S3 object.
+
+        Args:
+            key: The S3 object key.
+            expiry_seconds: URL validity duration (default 1 hour, max 7 days).
+            content_type: Optional content type for upload URLs.
+            method: S3 operation — "get_object" for downloads, "put_object" for uploads.
+
+        Returns:
+            A presigned URL string.
+        """
+        key = _validate_key(key)
+        expiry_seconds = min(expiry_seconds, 604800)  # Cap at 7 days
+
+        params: dict = {"Bucket": self._bucket, "Key": key}
+        if content_type and method == "put_object":
+            params["ContentType"] = content_type
+
+        try:
+            return self._client.generate_presigned_url(
+                method,
+                Params=params,
+                ExpiresIn=expiry_seconds,
+            )
+        except (ClientError, BotoCoreError) as exc:
+            logger.error("s3_presigned_url_failed", key=key, error=str(exc))
+            raise StorageError("Failed to generate presigned URL") from exc
+
+    async def async_generate_presigned_url(
+        self,
+        key: str,
+        *,
+        expiry_seconds: int = 3600,
+        content_type: str | None = None,
+        method: str = "get_object",
+    ) -> str:
+        return await asyncio.to_thread(
+            self.generate_presigned_url,
+            key,
+            expiry_seconds=expiry_seconds,
+            content_type=content_type,
+            method=method,
+        )
+
     # ── async interface (FastAPI handlers) ───────────────────
 
-    async def async_upload(self, key: str, data: bytes) -> None:
-        await asyncio.to_thread(self.upload, key, data)
+    async def async_upload(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
+        await asyncio.to_thread(self.upload, key, data, content_type)
+
+    async def async_upload_fileobj(self, key: str, file_obj, max_size: int) -> int:
+        """Stream a file-like object to S3 without loading into memory."""
+        return await asyncio.to_thread(self.upload_fileobj, key, file_obj, max_size)
 
     async def async_download(self, key: str) -> bytes:
         return await asyncio.to_thread(self.download, key)
@@ -147,6 +305,9 @@ class S3Storage:
 
     async def async_delete(self, key: str) -> None:
         await asyncio.to_thread(self.delete, key)
+
+    async def async_list_objects(self, prefix: str) -> list[str]:
+        return await asyncio.to_thread(self.list_objects, prefix)
 
 
 def handle_storage_error(exc: StorageError) -> HTTPException:

@@ -1,3 +1,5 @@
+import json
+
 from celery import Celery
 from celery.schedules import crontab
 
@@ -17,6 +19,13 @@ celery.conf.update(
     result_expires=86400,
     task_time_limit=600,       # Hard kill after 10 minutes
     task_soft_time_limit=540,  # Raise SoftTimeLimitExceeded after 9 minutes
+    task_reject_on_worker_lost=True,  # Re-queue tasks when worker is force-killed
+    # Task routing — separate queues for isolation
+    task_routes={
+        "app.agents.*": {"queue": "agents"},
+        "app.billing.*": {"queue": "billing"},
+    },
+    task_default_queue="default",
     # Beat schedule
     beat_schedule={
         "cleanup-expired-jobs": {
@@ -43,19 +52,51 @@ celery.conf.update(
             "task": "app.workers.periodic.cleanup_expired_invitations",
             "schedule": crontab(hour=3, minute=30),
         },
+        "cleanup-stale-agent-instances": {
+            "task": "agents.cleanup_stale_instances",
+            "schedule": crontab(minute="*/15"),
+        },
     },
     beat_max_loop_interval=60,
     beat_scheduler="redbeat.RedBeatScheduler",
     redbeat_redis_url=settings.REDIS_URL,
 )
 
-celery.autodiscover_tasks(["app.workers"])
+celery.autodiscover_tasks(["app.workers", "app.agents"])
+
+
+# ── Dead Letter Queue: publish failed tasks to Redis Stream ──────────
+
+from celery.signals import task_failure, task_postrun, task_prerun  # noqa: E402
+
+
+@task_failure.connect
+def _publish_to_dlq(sender=None, task_id=None, exception=None, traceback=None, args=None, kwargs=None, **kw):
+    """Publish failed task metadata to a Redis Stream dead letter queue.
+
+    Enables monitoring, alerting, and replay of failed tasks.
+    """
+    import redis
+
+    try:
+        dlq_entry = {
+            "task_id": task_id or "",
+            "task_name": sender.name if sender else "unknown",
+            "exception_type": type(exception).__name__ if exception else "Unknown",
+            "exception_message": str(exception)[:1000] if exception else "",
+            "args": json.dumps(args, default=str)[:2000] if args else "[]",
+            "kwargs": json.dumps(kwargs, default=str)[:2000] if kwargs else "{}",
+        }
+        r = redis.from_url(settings.REDIS_URL)
+        r.xadd("dlq:celery", dlq_entry, maxlen=10000)
+    except Exception:
+        import structlog
+        structlog.stdlib.get_logger().error(
+            "dlq_publish_failed", task_id=task_id, exc_info=True,
+        )
 
 
 # ── Context propagation: bind request_id/tenant_id to worker logs ──────────
-
-
-from celery.signals import task_postrun, task_prerun  # noqa: E402
 
 
 @task_prerun.connect

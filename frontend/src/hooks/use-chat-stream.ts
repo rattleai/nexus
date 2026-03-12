@@ -1,5 +1,3 @@
-"use client"
-
 import * as React from "react"
 
 export interface ChatStreamMessage {
@@ -191,7 +189,7 @@ export function useChatStream({
 
     // Remove last assistant message and the user message
     setMessages((prev) => {
-      const lastUserIdx = prev.findLastIndex((m) => m.role === "user")
+      const lastUserIdx = prev.findLastIndex((m: ChatStreamMessage) => m.role === "user")
       if (lastUserIdx === -1) return prev
       return prev.slice(0, lastUserIdx)
     })

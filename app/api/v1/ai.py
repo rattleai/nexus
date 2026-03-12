@@ -43,6 +43,7 @@ from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.schemas import CursorPaginatedResponse, JobResponse
 from app.config import settings
 from app.core.events import emit
+from app.core.idempotency import IdempotencyGuard
 from app.core.quotas import QuotaMetric, increment_usage
 from app.db.models.ai import AIProvider, AIUsageLog, PromptTemplate, TenantAIProviderKey
 from app.db.models.core import Tenant
@@ -63,6 +64,7 @@ router = APIRouter(prefix="/ai", dependencies=[Depends(require_ai_enabled)])
         Depends(RequireScopes("ai:write")),
         Depends(RequireWalletBalance()),
         Depends(AIQuotaEnforcer()),
+        Depends(IdempotencyGuard()),
     ],
     responses={
         402: {"description": "Insufficient wallet balance"},
@@ -325,6 +327,7 @@ async def create_completion(
         Depends(RequireScopes("ai:write")),
         Depends(RequireWalletBalance()),
         Depends(AIQuotaEnforcer()),
+        Depends(IdempotencyGuard()),
     ],
 )
 async def create_async_completion(

@@ -1,4 +1,3 @@
-export { useUIStore } from "@/stores/ui-store"
 export { useChatStore } from "@/stores/chat-store"
 export { useAIPlaygroundStore } from "@/stores/ai-playground-store"
 

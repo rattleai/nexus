@@ -56,10 +56,19 @@ class ApiKey(TimestampMixin, Base):
 
 
 class User(SoftDeleteMixin, TimestampMixin, Base):
+    """User account — supports multi-org membership.
+
+    `tenant_id` is the user's *default* tenant for backward compatibility.
+    It is nullable to support users who belong to multiple organizations
+    (their active tenant is derived from TenantMembership at request time).
+    The `default_tenant_id` property returns the tenant_id or falls back
+    to the first membership.
+    """
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    # Nullable: users can belong to multiple tenants via TenantMembership (P0-9)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tenants.id"), nullable=True, index=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -67,13 +76,21 @@ class User(SoftDeleteMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    tenant: Mapped["Tenant"] = relationship(back_populates="users")
+    tenant: Mapped["Tenant | None"] = relationship(back_populates="users")
     oauth_accounts: Mapped[list["OAuthAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     memberships: Mapped[list["TenantMembership"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_users_email_unique", "email", unique=True, postgresql_where=text("deleted_at IS NULL")),
     )
+
+    @property
+    def default_tenant_id(self) -> uuid.UUID | None:
+        """Return the user's default tenant ID.
+
+        Falls back to tenant_id for backward compatibility.
+        """
+        return self.tenant_id
 
 
 class TenantMembership(TimestampMixin, Base):
@@ -82,7 +99,7 @@ class TenantMembership(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.MEMBER, nullable=False)
+    role: Mapped[UserRole] = mapped_column(Enum(UserRole, values_callable=lambda e: [m.value for m in e]), default=UserRole.MEMBER, nullable=False)
 
     tenant: Mapped["Tenant"] = relationship(back_populates="memberships")
     user: Mapped["User"] = relationship(back_populates="memberships")

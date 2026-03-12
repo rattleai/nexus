@@ -1,5 +1,3 @@
-"use client"
-
 import {
   AreaChart as RechartsAreaChart,
   Area,

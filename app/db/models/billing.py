@@ -26,7 +26,7 @@ class Plan(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    tier: Mapped[PlanTier] = mapped_column(Enum(PlanTier), nullable=False)
+    tier: Mapped[PlanTier] = mapped_column(Enum(PlanTier, values_callable=lambda e: [m.value for m in e]), nullable=False)
     stripe_price_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     price_cents: Mapped[int] = mapped_column(Integer, default=0)
     billing_period: Mapped[str] = mapped_column(String(20), default="monthly")
@@ -51,7 +51,7 @@ class Subscription(TimestampMixin, Base):
     plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("plans.id"), nullable=False)
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    status: Mapped[SubscriptionStatus] = mapped_column(Enum(SubscriptionStatus), default=SubscriptionStatus.ACTIVE)
+    status: Mapped[SubscriptionStatus] = mapped_column(Enum(SubscriptionStatus, values_callable=lambda e: [m.value for m in e]), default=SubscriptionStatus.ACTIVE)
     current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancel_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

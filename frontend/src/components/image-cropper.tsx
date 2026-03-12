@@ -1,5 +1,3 @@
-"use client"
-
 import * as React from "react"
 import { Crop, X } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -243,6 +241,7 @@ export function ImageCropper({
   const handles: DragHandle[] = ["nw", "ne", "sw", "se", "n", "s", "e", "w"]
 
   const handlePositions: Record<DragHandle, React.CSSProperties> = {
+    move: { cursor: "move" },
     nw: { top: -4, left: -4, cursor: "nw-resize" },
     ne: { top: -4, right: -4, cursor: "ne-resize" },
     sw: { bottom: -4, left: -4, cursor: "sw-resize" },

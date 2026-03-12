@@ -24,7 +24,7 @@ interface PlaygroundPanel {
 
 interface PlaygroundProps {
   models: AIModel[]
-  onSubmit?: (prompt: string, modelId: string, params: Record<string, number>) => Promise<PlaygroundResponse>
+  onSubmit?: (prompt: string, modelId: string, params: ModelParameters) => Promise<PlaygroundResponse>
   className?: string
 }
 

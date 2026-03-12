@@ -71,6 +71,7 @@ class AICompletionResult:
     latency_ms: int = 0
     key_source: str = "platform"
     finish_reason: str | None = None
+    tool_calls: list[dict] | None = None
 
 
 class AIGatewayError(Exception):
@@ -109,6 +110,8 @@ class AIGateway:
         request_id: str | None = None,
         tenant_settings: dict | None = None,
         db: AsyncSession | None = None,
+        tools: list[dict] | None = None,
+        tool_choice: str | None = None,
     ) -> AICompletionResult:
         """Execute a non-streaming AI completion with full infrastructure integration.
 
@@ -201,6 +204,8 @@ class AIGateway:
                         top_p=top_p,
                         request_id=request_id,
                         tenant_settings=tenant_settings,
+                        tools=tools,
+                        tool_choice=tool_choice,
                     ),
                     timeout=settings.AI_REQUEST_TIMEOUT_SECONDS + 5,  # LiteLLM timeout + buffer
                 )
@@ -423,6 +428,8 @@ class AIGateway:
         top_p: float | None,
         request_id: str,
         tenant_settings: dict | None,
+        tools: list[dict] | None = None,
+        tool_choice: str | None = None,
     ) -> AICompletionResult:
         """Execute a single LiteLLM call and process the response."""
         provider = model_info.provider.value
@@ -430,6 +437,11 @@ class AIGateway:
         start = time.monotonic()
 
         kwargs = self._build_litellm_kwargs(model_info, api_key, max_tokens, temperature, top_p)
+
+        if tools:
+            kwargs["tools"] = tools
+        if tool_choice:
+            kwargs["tool_choice"] = tool_choice
 
         response = await litellm.acompletion(
             model=model,
@@ -445,10 +457,28 @@ class AIGateway:
         # Extract response data
         content = ""
         finish_reason = None
+        raw_tool_calls = None
         if response.choices:
             choice = response.choices[0]
             content = choice.message.content or ""
             finish_reason = choice.finish_reason
+
+            # Extract tool calls from LLM response
+            if hasattr(choice.message, "tool_calls") and choice.message.tool_calls:
+                import json as _json
+                raw_tool_calls = []
+                for tc in choice.message.tool_calls:
+                    args = tc.function.arguments
+                    if isinstance(args, str):
+                        try:
+                            args = _json.loads(args)
+                        except (_json.JSONDecodeError, TypeError):
+                            args = {}
+                    raw_tool_calls.append({
+                        "id": tc.id,
+                        "name": tc.function.name,
+                        "arguments": args,
+                    })
 
         prompt_tokens, completion_tokens, total_tokens = get_response_tokens(response)
         cost_usd = get_response_cost(response)
@@ -482,6 +512,7 @@ class AIGateway:
             latency_ms=latency_ms,
             key_source=key_source,
             finish_reason=finish_reason,
+            tool_calls=raw_tool_calls,
         )
 
     def _build_litellm_kwargs(

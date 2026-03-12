@@ -1,5 +1,3 @@
-"use client"
-
 import * as React from "react"
 import { ChevronRight, File } from "lucide-react"
 import type { LucideIcon } from "lucide-react"

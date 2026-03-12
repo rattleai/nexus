@@ -26,15 +26,27 @@ for arg in "$@"; do
     esac
 done
 
+# Track pre-migration alembic revision for rollback
+PRE_MIGRATE_REVISION=""
+
 # Rollback function — restore previous state on failure
 rollback() {
+    # Prevent double-rollback from trap + explicit call
+    trap - ERR
     err "Deployment failed. Initiating rollback..."
     docker compose -f "$COMPOSE_FILE" logs api --tail=100
     docker compose -f "$COMPOSE_FILE" logs worker --tail=50
 
+    # Roll back database migration if we recorded a previous revision
+    if [ -n "$PRE_MIGRATE_REVISION" ]; then
+        log "Rolling back database migration to revision $PRE_MIGRATE_REVISION..."
+        docker compose -f "$COMPOSE_FILE" run --rm api alembic downgrade "$PRE_MIGRATE_REVISION" || \
+            err "Migration rollback failed — manual intervention may be required"
+    fi
+
     # Restart previous containers (docker compose keeps previous image)
     log "Restarting previous service versions..."
-    if ! docker compose -f "$COMPOSE_FILE" up -d api worker nginx; then
+    if ! docker compose -f "$COMPOSE_FILE" up -d api worker beat nginx; then
         err "Rollback also failed! Services may be in a broken state."
         err "Manual intervention required: check 'docker compose -f $COMPOSE_FILE ps'"
     fi
@@ -74,17 +86,20 @@ if [ "$MIGRATE" = true ] && [ "$SKIP_BACKUP" = false ]; then
 fi
 
 if [ "$MIGRATE" = true ]; then
+    log "Recording current migration revision for rollback..."
+    PRE_MIGRATE_REVISION=$(docker compose -f "$COMPOSE_FILE" run --rm api alembic current 2>/dev/null | grep -oE '[a-f0-9]+' | head -1 || echo "")
+    log "Pre-migration revision: ${PRE_MIGRATE_REVISION:-none}"
     log "Running database migrations..."
     docker compose -f "$COMPOSE_FILE" run --rm api alembic upgrade head
 fi
 
 log "Starting application services..."
-docker compose -f "$COMPOSE_FILE" up -d api worker nginx
+docker compose -f "$COMPOSE_FILE" up -d api worker beat nginx
 
 log "Waiting for API health check (timeout: ${HEALTH_CHECK_TIMEOUT}s)..."
 max_attempts=$((HEALTH_CHECK_TIMEOUT / HEALTH_CHECK_INTERVAL))
 for i in $(seq 1 "$max_attempts"); do
-    if docker compose -f "$COMPOSE_FILE" exec -T nginx curl -sf http://api:8000/api/v1/health/live > /dev/null 2>&1; then
+    if docker compose -f "$COMPOSE_FILE" exec -T api curl -sf http://localhost:8000/api/v1/health/live > /dev/null 2>&1; then
         log "API is healthy!"
         break
     fi
