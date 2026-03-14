@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import json
 import re
 import secrets
 import time
@@ -10,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from app.api.rate_limit import is_agent_request
 from app.config import settings
 
 logger = structlog.stdlib.get_logger()
@@ -71,8 +73,16 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def _add_security_headers(response: Response, request_id: str) -> None:
+def _add_security_headers(response: Response, request_id: str, *, is_agent: bool = False) -> None:
+    response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
+
+    if is_agent:
+        # Agents only need request tracing and content-type protection.
+        # Skip browser-only headers (CSP, X-Frame-Options, HSTS, etc.)
+        # to reduce ~400 bytes of overhead per response.
+        return
+
     response.headers["X-Frame-Options"] = "DENY"
     if not settings.DEBUG:
         response.headers["Strict-Transport-Security"] = (
@@ -93,7 +103,6 @@ def _add_security_headers(response: Response, request_id: str) -> None:
         "base-uri 'self'; "
         "form-action 'self'"
     )
-    response.headers["X-Request-ID"] = request_id
 
 
 def _generate_csrf_token() -> str:
@@ -118,11 +127,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             request_id = str(uuid.uuid4())
         request.state.request_id = request_id
 
+        # ── Agent detection (early, cached on request.state for all downstream) ──
+        _is_agent = is_agent_request(request)
+
         # ── CSRF protection (double-submit cookie pattern, P1-1) ──
         # Only enforce for cookie-based auth on state-changing methods.
-        # API key auth (X-API-Key header) is inherently CSRF-safe.
+        # API key auth (X-API-Key header) and agent requests are inherently CSRF-safe.
         if (
             settings.AUTH_ENABLED
+            and not _is_agent
             and request.method in _STATE_CHANGING_METHODS
             and not request.headers.get("X-API-Key")
             and not any(request.url.path.startswith(p) for p in _CSRF_EXEMPT_PREFIXES)
@@ -202,7 +215,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             # response.headers["Link"] = '</api/v2/>; rel="successor-version"'
 
         # ── Security headers & timing ──
-        _add_security_headers(response, request_id)
+        _add_security_headers(response, request_id, is_agent=_is_agent)
         response.headers["X-Response-Time"] = f"{duration_ms}ms"
 
         # ── Rate limit headers on successful responses (P1-12) ──
@@ -216,8 +229,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 getattr(request.state, "rate_limit_reset", 0)
             )
 
-        # ── CSRF cookie (set/refresh on every response for cookie-based auth) ──
-        if settings.AUTH_ENABLED:
+        # ── CSRF cookie (only for browser sessions, not agents) ──
+        if settings.AUTH_ENABLED and not _is_agent:
             csrf_token = request.cookies.get("csrf_token")
             if not csrf_token:
                 csrf_token = _generate_csrf_token()
@@ -229,6 +242,71 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 samesite="lax",
                 path="/",
                 max_age=86400,
+            )
+
+        return response
+
+
+# Fields to keep when Prefer: return=minimal is set
+_MINIMAL_FIELDS = {"id", "status", "code", "created_at"}
+
+_MUTATION_METHODS = {"POST", "PUT", "PATCH"}
+
+
+class PreferMinimalMiddleware(BaseHTTPMiddleware):
+    """Support RFC 7240 'Prefer: return=minimal' for mutation responses.
+
+    When an agent sends 'Prefer: return=minimal' on a POST/PUT/PATCH request,
+    successful responses (2xx with JSON body) are trimmed to only include
+    essential fields (id, status, code, created_at), reducing payload size
+    significantly for agents that only need confirmation of the operation.
+
+    The response includes 'Preference-Applied: return=minimal' to confirm.
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        response = await call_next(request)
+
+        # Only apply to mutation methods with minimal preference
+        if request.method not in _MUTATION_METHODS:
+            return response
+
+        prefer = request.headers.get("Prefer", "")
+        if "return=minimal" not in prefer:
+            return response
+
+        # Only trim successful JSON responses
+        if response.status_code < 200 or response.status_code >= 300:
+            return response
+
+        if not hasattr(response, "body"):
+            return response
+
+        content_type = response.headers.get("content-type", "")
+        if "application/json" not in content_type:
+            return response
+
+        try:
+            body = json.loads(response.body)
+        except (json.JSONDecodeError, ValueError):
+            return response
+
+        # Trim to minimal fields
+        if isinstance(body, dict):
+            minimal = {k: v for k, v in body.items() if k in _MINIMAL_FIELDS}
+            return JSONResponse(
+                status_code=response.status_code,
+                content=minimal,
+                headers={**dict(response.headers), "Preference-Applied": "return=minimal"},
+            )
+
+        # For list responses, trim each item
+        if isinstance(body, list):
+            minimal = [{k: v for k, v in item.items() if k in _MINIMAL_FIELDS} for item in body if isinstance(item, dict)]
+            return JSONResponse(
+                status_code=response.status_code,
+                content=minimal,
+                headers={**dict(response.headers), "Preference-Applied": "return=minimal"},
             )
 
         return response

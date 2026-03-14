@@ -131,6 +131,13 @@ _ENRICHMENTS: dict[tuple[str, str], dict[str, Any]] = {
     ("get", "/health/ready"): {
         "x-agent-hint": "Readiness check including DB and Redis connectivity.",
     },
+    # ── Agent ──
+    ("get", "/agent/capabilities"): {
+        "x-agent-hint": (
+            "Start here. Returns API capabilities, auth methods, rate limits, "
+            "and available optimizations. No auth required."
+        ),
+    },
 }
 
 

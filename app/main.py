@@ -12,7 +12,7 @@ import app.core.event_handlers as _event_handlers  # noqa: F401 — registers ha
 from app import __version__
 from app.api.etag import ETagMiddleware
 from app.api.exceptions import register_exception_handlers
-from app.api.middleware import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
+from app.api.middleware import PreferMinimalMiddleware, RequestSizeLimitMiddleware, SecurityHeadersMiddleware
 from app.api.v1 import v1_router
 from app.config import settings, validate_settings
 from app.core.logging import setup_logging
@@ -129,6 +129,7 @@ def create_app() -> FastAPI:
     # preventing gzip bombs from exhausting memory.
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(ETagMiddleware)
+    app.add_middleware(PreferMinimalMiddleware)
     app.add_middleware(RequestSizeLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
@@ -139,12 +140,12 @@ def create_app() -> FastAPI:
         allow_headers=[
             "Authorization", "Content-Type", "X-API-Key", "X-Admin-Key",
             "X-Request-ID", "X-Idempotency-Key", "If-None-Match", "X-CSRF-Token",
-            "X-Agent-Name",
+            "X-Agent-Name", "Prefer",
         ],
         expose_headers=[
             "ETag", "X-Request-ID", "X-Response-Time", "Retry-After",
             "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset",
-            "X-CSRF-Token", "X-Agent-Name",
+            "X-CSRF-Token", "X-Agent-Name", "Preference-Applied",
         ],
         max_age=86400,
     )
