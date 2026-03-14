@@ -282,6 +282,9 @@ async def login(body: UserLogin, request: Request, response: Response, db: Async
     )
 
 
+_REFRESH_GRACE_SECONDS = 30  # Allow replay of recently-revoked token (lost response recovery)
+
+
 @router.post("/refresh", response_model=TokenResponse, dependencies=[Depends(_auth_rate_limit)])
 async def refresh(
     response: Response,
@@ -305,7 +308,17 @@ async def refresh(
     )
     row = revoke_result.first()
 
-    if not row or row.expires_at < datetime.now(UTC):
+    if not row:
+        # Token not found or already revoked.
+        # Grace period: if the previous refresh response was lost in transit,
+        # the client still holds the old (now revoked) cookie. Allow recovery
+        # by checking if this token was very recently consumed and a replacement exists.
+        row = await _try_grace_period_refresh(token_hash, db)
+        if not row:
+            _clear_refresh_cookie(response)
+            raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    if row.expires_at < datetime.now(UTC):
         _clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
@@ -334,6 +347,55 @@ async def refresh(
         access_token=access_token,
         expires_in=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
+
+
+async def _try_grace_period_refresh(token_hash: str, db: AsyncSession):
+    """Handle the case where a refresh token was consumed but the response was lost.
+
+    If the revoked token has a recently-created replacement (within grace window),
+    consume the replacement and return its row so the caller can re-issue tokens.
+    This prevents permanent logout when a refresh response is lost in transit.
+    """
+    # Look up the revoked token
+    result = await db.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
+    revoked_token = result.scalar_one_or_none()
+
+    if not revoked_token or revoked_token.expires_at < datetime.now(UTC):
+        return None
+
+    # Only allow grace period if the token was revoked very recently
+    # (created_at of a newer token for this user is within the grace window)
+    grace_cutoff = datetime.now(UTC) - timedelta(seconds=_REFRESH_GRACE_SECONDS)
+    replacement_result = await db.execute(
+        select(RefreshToken)
+        .where(
+            RefreshToken.user_id == revoked_token.user_id,
+            RefreshToken.revoked.is_(False),
+            RefreshToken.created_at >= grace_cutoff,
+        )
+        .order_by(RefreshToken.created_at.desc())
+        .limit(1)
+    )
+    replacement = replacement_result.scalar_one_or_none()
+
+    if not replacement:
+        return None
+
+    # Consume the replacement token (it was never delivered to the client)
+    replacement.revoked = True
+    logger.info(
+        "refresh_token_grace_period_used",
+        user_id=str(revoked_token.user_id),
+        original_token_id=str(revoked_token.id),
+        replacement_token_id=str(replacement.id),
+    )
+
+    # Return a row-like object matching what the caller expects
+    return type("Row", (), {
+        "id": replacement.id,
+        "user_id": replacement.user_id,
+        "expires_at": replacement.expires_at,
+    })()
 
 
 @router.post("/logout", dependencies=[Depends(_auth_rate_limit)])

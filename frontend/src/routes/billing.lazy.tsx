@@ -21,6 +21,7 @@ import {
 import { useUsage } from "@/hooks/use-usage"
 import { parseApiError } from "@/lib/api-client"
 import { formatDate, formatBytes } from "@/lib/format"
+import { getBillingReturnUrl } from "@/lib/app-config"
 import type { UsageMetric } from "@/types/api"
 import { cn } from "@/lib/utils"
 
@@ -88,10 +89,13 @@ function BillingPage() {
   }
 
   const handleSelectPlan = async (planId: string) => {
-    const plan = plans?.find((p) => p.id === planId)
-    if (!plan?.stripe_price_id) return
+    if (!planId) return
     try {
-      const { url } = await createCheckout.mutateAsync({ price_id: plan.stripe_price_id })
+      const returnUrl = getBillingReturnUrl()
+      const { url } = await createCheckout.mutateAsync({
+        plan_id: planId,
+        return_url: returnUrl,
+      })
       window.location.href = url
     } catch (err) {
       const e = await parseApiError(err)
@@ -208,7 +212,7 @@ function BillingPage() {
                   plans={plans.map((p) => ({
                     id: p.id,
                     name: p.name,
-                    price: p.price_monthly,
+                    price: p.price_cents / 100,
                     interval: "month" as const,
                     features: p.features,
                     isPopular: p.name.toLowerCase() === "pro",

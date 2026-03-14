@@ -10,6 +10,7 @@ architectures, with HS256 fallback for development.
 
 import hashlib
 import secrets
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -20,6 +21,36 @@ from passlib.context import CryptContext
 from app.config import settings
 
 logger = structlog.stdlib.get_logger()
+
+# ---------------------------------------------------------------------------
+# Short-lived in-memory cache for "not revoked" token checks.
+#
+# When Redis is healthy, we cache negative revocation results (token NOT
+# revoked) for a few seconds.  If Redis becomes unreachable, recently-verified
+# tokens continue to work instead of instantly logging out every user.
+#
+# ONLY "not revoked" results are cached — positive revocations are never
+# cached so that token revocation remains immediate.
+# ---------------------------------------------------------------------------
+_NOT_REVOKED_CACHE: dict[str, float] = {}
+_NOT_REVOKED_CACHE_TTL = 5  # seconds
+_NOT_REVOKED_CACHE_MAX = 2000
+
+
+def _cache_check(key: str) -> bool | None:
+    """Return False (not revoked) if cached and fresh, else None."""
+    ts = _NOT_REVOKED_CACHE.get(key)
+    if ts is not None and (time.monotonic() - ts) < _NOT_REVOKED_CACHE_TTL:
+        return False
+    return None
+
+
+def _cache_set(key: str) -> None:
+    """Cache a 'not revoked' result."""
+    if len(_NOT_REVOKED_CACHE) >= _NOT_REVOKED_CACHE_MAX:
+        # Simple eviction: drop all entries (rare — ~2k active tokens needed)
+        _NOT_REVOKED_CACHE.clear()
+    _NOT_REVOKED_CACHE[key] = time.monotonic()
 
 # argon2id primary, bcrypt as deprecated fallback for existing hashes.
 # passlib auto-flags bcrypt hashes as needing rehash.
@@ -113,15 +144,35 @@ def decode_access_token(token: str) -> dict:
 
 
 async def is_token_revoked(jti: str) -> bool:
-    """Check if a JWT access token has been revoked via Redis blacklist."""
+    """Check if a JWT access token has been revoked via Redis blacklist.
+
+    Uses a short in-memory cache for 'not revoked' results so that a brief
+    Redis outage does not instantly log out every user.  Positive revocations
+    (token IS revoked) are never cached — revocation takes effect immediately.
+    """
+    cache_key = f"jti:{jti}"
+
+    # Fast path: recently verified as not-revoked
+    cached = _cache_check(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         from app.core.redis import redis_pool
         result = await redis_pool.get(f"jwt:revoked:{jti}")
-        return result is not None
+        if result is not None:
+            # Token IS revoked — remove any stale cache entry
+            _NOT_REVOKED_CACHE.pop(cache_key, None)
+            return True
+        # Token is not revoked — cache briefly
+        _cache_set(cache_key)
+        return False
     except Exception:
-        # Redis unavailable — fail CLOSED to prevent use of revoked tokens.
-        # This means all JWT auth fails during Redis outage, but prevents
-        # a revoked token from being accepted. Prefer safety over availability.
+        # Redis unavailable — use cached "not revoked" if we have one
+        if cache_key in _NOT_REVOKED_CACHE:
+            logger.warning("token_revocation_redis_unavailable_using_cache", jti=jti)
+            return False
+        # No cache entry — fail closed (safe default)
         logger.error("token_revocation_check_failed_closing", jti=jti)
         return True
 
@@ -156,15 +207,29 @@ async def revoke_all_user_tokens(user_id: str) -> None:
 
 
 async def is_user_token_revoked(user_id: str, issued_at: int) -> bool:
-    """Check if a user's tokens issued before a certain time have been revoked."""
+    """Check if a user's tokens issued before a certain time have been revoked.
+
+    Same caching strategy as is_token_revoked — brief Redis outages do not
+    cause mass logouts for users whose tokens were recently verified.
+    """
+    cache_key = f"user:{user_id}:{issued_at}"
+
+    cached = _cache_check(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         from app.core.redis import redis_pool
         revoked_since = await redis_pool.get(f"jwt:user_revoked:{user_id}")
         if revoked_since and issued_at < int(revoked_since):
+            _NOT_REVOKED_CACHE.pop(cache_key, None)
             return True
+        _cache_set(cache_key)
         return False
     except Exception:
-        # Redis unavailable — fail CLOSED (consistent with is_token_revoked)
+        if cache_key in _NOT_REVOKED_CACHE:
+            logger.warning("user_revocation_redis_unavailable_using_cache", user_id=user_id)
+            return False
         logger.error("user_revocation_check_failed_closing", user_id=user_id)
         return True
 

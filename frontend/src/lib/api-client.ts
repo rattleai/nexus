@@ -13,15 +13,20 @@ export interface ApiError {
  * Stored in a module-level variable (not localStorage) for security.
  */
 let _accessToken: string | null = null
-let _isRefreshing = false
+let _tokenVersion = 0
 let _refreshPromise: Promise<boolean> | null = null
 
 export function setAccessToken(token: string | null) {
   _accessToken = token
+  _tokenVersion++
 }
 
 export function getAccessToken(): string | null {
   return _accessToken
+}
+
+export function getTokenVersion(): number {
+  return _tokenVersion
 }
 
 /**
@@ -30,28 +35,39 @@ export function getAccessToken(): string | null {
  * Coalesces concurrent refresh attempts into a single request.
  */
 async function attemptTokenRefresh(): Promise<boolean> {
-  if (_isRefreshing && _refreshPromise) {
+  // Coalesce: all concurrent callers share the same in-flight promise
+  if (_refreshPromise) {
     return _refreshPromise
   }
-  _isRefreshing = true
-  _refreshPromise = (async () => {
+
+  const innerPromise = (async () => {
     try {
       const res = await ky
-        .post("auth/refresh", { prefixUrl: "/api/v1", credentials: "include", timeout: 10_000 })
+        .post("auth/refresh", { prefixUrl: "/api/v1", credentials: "include", timeout: 15_000 })
         .json<{ access_token: string }>()
       _accessToken = res.access_token
+      _tokenVersion++
       window.dispatchEvent(new Event("auth-change"))
       return true
-    } catch {
+    } catch (err) {
+      console.warn("Token refresh failed:", err instanceof Error ? err.message : String(err))
       _accessToken = null
+      _tokenVersion++
       window.dispatchEvent(new Event("auth-change"))
       return false
-    } finally {
-      _isRefreshing = false
-      _refreshPromise = null
     }
   })()
-  return _refreshPromise
+
+  _refreshPromise = innerPromise
+
+  try {
+    return await innerPromise
+  } finally {
+    // Only clear if this is still the current promise (avoids clearing a newer one)
+    if (_refreshPromise === innerPromise) {
+      _refreshPromise = null
+    }
+  }
 }
 
 export const api = ky.create({
@@ -70,6 +86,8 @@ export const api = ky.create({
         // Prefer JWT Bearer token if available
         if (_accessToken) {
           request.headers.set("Authorization", `Bearer ${_accessToken}`)
+          // Tag request with token version for staleness detection in afterResponse
+          ;(request as Record<string, unknown>).__tokenVersion = _tokenVersion
           return
         }
         // Fall back to API key auth
@@ -85,14 +103,27 @@ export const api = ky.create({
     ],
     afterResponse: [
       async (request, options, response) => {
-        // Auto-refresh JWT on 401 (only if we had a token)
-        if (response.status === 401 && _accessToken) {
-          const refreshed = await attemptTokenRefresh()
-          if (refreshed) {
-            // Retry the original request with the new token
+        if (response.status === 401) {
+          const reqVersion = (request as Record<string, unknown>).__tokenVersion as number | undefined
+
+          // Only handle 401 for requests that were sent with a JWT token
+          if (reqVersion === undefined) return
+
+          // If the token was already refreshed since this request was sent,
+          // just retry with the new token — no need to trigger another refresh
+          if (reqVersion !== _tokenVersion && _accessToken) {
             request.headers.set("Authorization", `Bearer ${_accessToken}`)
             return ky(request, options)
           }
+
+          // Token hasn't changed — attempt a refresh
+          const refreshed = await attemptTokenRefresh()
+          if (refreshed && _accessToken) {
+            request.headers.set("Authorization", `Bearer ${_accessToken}`)
+            return ky(request, options)
+          }
+          // Refresh failed — let the 401 propagate
+          return
         }
 
         if (response.status === 429) {
@@ -102,6 +133,10 @@ export const api = ky.create({
               ? `Please wait ${retryAfter} seconds before trying again.`
               : "Please slow down and try again shortly.",
           })
+        }
+
+        if (response.status === 403) {
+          console.warn("Access forbidden - check server permissions")
         }
       },
     ],

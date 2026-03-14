@@ -6,16 +6,34 @@ import type { Notification } from "@/types/api"
 export function useNotifications() {
   return useQuery({
     queryKey: queryKeys.notifications.list(),
-    queryFn: ({ signal }) =>
-      api.get("notifications", { signal }).json<Notification[]>(),
+    queryFn: async ({ signal }) => {
+      try {
+        const data = await api.get("notifications", { signal }).json<Notification[]>()
+        return data || []
+      } catch (error) {
+        console.warn("Failed to fetch notifications:", error)
+        return []
+      }
+    },
+    retry: 1,
+    retryDelay: 1000,
   })
 }
 
 export function useUnreadCount() {
   return useQuery({
     queryKey: queryKeys.notifications.unread(),
-    queryFn: ({ signal }) =>
-      api.get("notifications/unread-count", { signal }).json<{ count: number }>(),
+    queryFn: async ({ signal }) => {
+      try {
+        const data = await api.get("notifications/unread-count", { signal }).json<{ count: number }>()
+        return data
+      } catch (error) {
+        console.warn("Failed to fetch unread count:", error)
+        return { count: 0 }
+      }
+    },
+    retry: 1,
+    retryDelay: 1000,
   })
 }
 

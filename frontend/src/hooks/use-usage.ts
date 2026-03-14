@@ -22,30 +22,35 @@ export function useUsage() {
           api.get("billing/subscription", { signal }).json<Subscription>(),
         ])
 
-      const limits =
-        subscriptionResult.status === "fulfilled"
-          ? subscriptionResult.value.plan?.limits ?? {}
-          : {}
+      // Safely extract limits from subscription, handling both null and failed requests
+      let limits: Record<string, number | null> = {}
+      if (subscriptionResult.status === "fulfilled" && subscriptionResult.value) {
+        try {
+          limits = subscriptionResult.value.plan?.limits ?? {}
+        } catch (err) {
+          console.warn("Failed to extract subscription limits:", err)
+        }
+      }
 
       return {
         jobs: {
           used:
-            jobsResult.status === "fulfilled"
-              ? jobsResult.value.items.length
+            jobsResult.status === "fulfilled" && jobsResult.value
+              ? jobsResult.value.items?.length ?? 0
               : 0,
           limit: limits.jobs ?? null,
         },
         api_keys: {
           used:
-            apiKeysResult.status === "fulfilled"
-              ? apiKeysResult.value.items.length
+            apiKeysResult.status === "fulfilled" && apiKeysResult.value
+              ? apiKeysResult.value.items?.length ?? 0
               : 0,
           limit: limits.api_keys ?? null,
         },
         team_members: {
           used:
-            membersResult.status === "fulfilled"
-              ? membersResult.value.length
+            membersResult.status === "fulfilled" && membersResult.value
+              ? membersResult.value.length ?? 0
               : 0,
           limit: limits.team_members ?? null,
         },
@@ -55,6 +60,8 @@ export function useUsage() {
         },
       }
     },
+    retry: 1,
+    retryDelay: 1000,
   })
 }
 

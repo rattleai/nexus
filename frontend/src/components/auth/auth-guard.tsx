@@ -22,10 +22,16 @@ export function AuthGuard({
   requiredRole,
   fallback,
 }: AuthGuardProps) {
-  const { isAuthenticated } = useAuth()
-  const { user } = useAuthContext()
+  const { isAuthenticated: isApiKeyAuth } = useAuth()
+  const { isAuthenticated: isJwtAuth, isLoading, user } = useAuthContext()
 
-  if (!isAuthenticated) {
+  // While session is being restored (refresh in flight), don't flash the login prompt.
+  // This prevents the ApiKeyPrompt from appearing briefly on page load / tab refocus.
+  if (isLoading) {
+    return null
+  }
+
+  if (!isJwtAuth && !isApiKeyAuth) {
     return <>{fallback ?? <ApiKeyPrompt />}</>
   }
 
