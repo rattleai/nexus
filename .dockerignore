@@ -11,7 +11,7 @@ infra
 tests
 *.pyc
 *.md
-!README.md
+!.agents/README.md
 .env
 .env.*
 !.env.example
