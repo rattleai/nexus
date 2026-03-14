@@ -138,7 +138,10 @@ export function AppShell({ children }: AppShellProps) {
             </SidebarGroup>
           ))}
         </SidebarContent>
-        <SidebarFooter className="p-4">
+        <SidebarFooter className="p-4 space-y-2">
+          <div className="group-data-[collapsible=icon]:hidden">
+            <LanguageSwitcher />
+          </div>
           <p className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
             v{APP_VERSION}
           </p>
@@ -149,7 +152,6 @@ export function AppShell({ children }: AppShellProps) {
           {!isMobile && <SidebarTrigger />}
           {!isMobile && <Separator orientation="vertical" className="h-6" />}
           <div className="flex-1" />
-          <LanguageSwitcher />
           <ThemeToggle />
           <NotificationBell />
           <UserMenu />

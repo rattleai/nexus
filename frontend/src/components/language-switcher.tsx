@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next"
 import { Globe, Check } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +13,8 @@ import { api } from "@/lib/api-client"
 export function LanguageSwitcher() {
   const { i18n } = useTranslation()
   const { isAuthenticated } = useAuthContext()
+
+  const currentLang = supportedLanguages.find((l) => l.code === i18n.language)
 
   const changeLanguage = async (lng: string) => {
     await i18n.changeLanguage(lng)
@@ -31,11 +32,16 @@ export function LanguageSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" aria-label="Change language">
-          <Globe className="h-4 w-4" />
-        </Button>
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+          aria-label="Change language"
+        >
+          <Globe className="h-4 w-4 shrink-0" />
+          <span className="truncate">{currentLang?.nativeName ?? i18n.language}</span>
+        </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent side="top" align="start" className="w-48">
         {supportedLanguages.map((lang) => (
           <DropdownMenuItem
             key={lang.code}
