@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { toast } from "sonner"
+import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,35 +15,37 @@ export const Route = createLazyFileRoute("/register")({
   component: RegisterPage,
 })
 
-const registerSchema = z
-  .object({
-    email: z.string().min(1, "Email is required").email("Invalid email address"),
-    displayName: z.string().min(1, "Display name is required"),
-    tenantSlug: z
-      .string()
-      .min(1, "Organization slug is required")
-      .regex(
-        /^[a-z0-9][a-z0-9-]*[a-z0-9]$/,
-        "Must be lowercase letters, numbers, and hyphens only (cannot start or end with a hyphen)",
-      ),
-    password: z
-      .string()
-      .min(8, "Password must be at least 8 characters")
-      .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-      .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-      .regex(/\d/, "Password must contain at least one digit"),
-    confirmPassword: z.string().min(1, "Please confirm your password"),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
-  })
-
-type RegisterFormValues = z.infer<typeof registerSchema>
-
 function RegisterPage() {
   const { register: registerUser, isLoading } = useAuthContext()
   const navigate = useNavigate()
+  const { t } = useTranslation("auth")
+  const { t: tv } = useTranslation("validation")
+
+  const registerSchema = z
+    .object({
+      email: z.string().min(1, tv("email_required")).email(tv("invalid_email")),
+      displayName: z.string().min(1, tv("display_name_required")),
+      tenantSlug: z
+        .string()
+        .min(1, tv("org_slug_required"))
+        .regex(
+          /^[a-z0-9][a-z0-9-]*[a-z0-9]$/,
+          tv("org_slug_format"),
+        ),
+      password: z
+        .string()
+        .min(8, tv("password_min_length", { count: 8 }))
+        .regex(/[a-z]/, tv("password_lowercase"))
+        .regex(/[A-Z]/, tv("password_uppercase"))
+        .regex(/\d/, tv("password_digit")),
+      confirmPassword: z.string().min(1, tv("confirm_password_required")),
+    })
+    .refine((data) => data.password === data.confirmPassword, {
+      message: tv("passwords_not_match"),
+      path: ["confirmPassword"],
+    })
+
+  type RegisterFormValues = z.infer<typeof registerSchema>
 
   const {
     register,
@@ -63,7 +66,7 @@ function RegisterPage() {
   const onSubmit = async (data: RegisterFormValues) => {
     try {
       await registerUser(data.email, data.password, data.displayName, data.tenantSlug)
-      toast.success("Account created successfully")
+      toast.success(t("register.success"))
       navigate({ to: "/" })
     } catch (err) {
       const apiError = await parseApiError(err)
@@ -75,7 +78,7 @@ function RegisterPage() {
     <div className="min-h-[60vh] flex items-center justify-center">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Create Account</CardTitle>
+          <CardTitle>{t("register.title")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
@@ -85,11 +88,11 @@ function RegisterPage() {
               </p>
             )}
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t("register.email_label")}</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="you@example.com"
+                placeholder={t("register.email_placeholder")}
                 autoComplete="email"
                 autoFocus
                 disabled={isLoading}
@@ -104,11 +107,11 @@ function RegisterPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="displayName">Display Name</Label>
+              <Label htmlFor="displayName">{t("register.display_name_label")}</Label>
               <Input
                 id="displayName"
                 type="text"
-                placeholder="Jane Doe"
+                placeholder={t("register.display_name_placeholder")}
                 autoComplete="name"
                 disabled={isLoading}
                 aria-invalid={!!errors.displayName}
@@ -122,11 +125,11 @@ function RegisterPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="tenantSlug">Organization Slug</Label>
+              <Label htmlFor="tenantSlug">{t("register.org_slug_label")}</Label>
               <Input
                 id="tenantSlug"
                 type="text"
-                placeholder="my-org"
+                placeholder={t("register.org_slug_placeholder")}
                 disabled={isLoading}
                 aria-invalid={!!errors.tenantSlug}
                 aria-describedby={errors.tenantSlug ? "tenantSlug-error" : undefined}
@@ -139,7 +142,7 @@ function RegisterPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t("register.password_label")}</Label>
               <Input
                 id="password"
                 type="password"
@@ -156,7 +159,7 @@ function RegisterPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <Label htmlFor="confirmPassword">{t("register.confirm_password_label")}</Label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -173,12 +176,12 @@ function RegisterPage() {
               )}
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Creating account..." : "Create Account"}
+              {isLoading ? t("register.submitting") : t("register.submit")}
             </Button>
             <p className="text-sm text-center text-muted-foreground">
-              Already have an account?{" "}
+              {t("register.has_account")}{" "}
               <Link to="/login" className="text-primary underline">
-                Sign in
+                {t("register.sign_in_link")}
               </Link>
             </p>
           </form>

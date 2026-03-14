@@ -1,0 +1,27 @@
+{
+  "title": "Claves API",
+  "description": "Administre las claves API para acceso programático.",
+  "search_placeholder": "Buscar claves...",
+  "no_keys": "Aún no hay claves API",
+  "no_keys_desc": "Cree una clave API para comenzar con el acceso programático.",
+  "create_key": "Crear clave",
+  "create_dialog_title": "Crear clave API",
+  "create_dialog_desc": "Asigne un nombre descriptivo a su clave.",
+  "key_name_label": "Nombre de la clave",
+  "key_name_placeholder": "ej. producción, staging",
+  "key_created_title": "Clave creada",
+  "key_created_desc": "Copie esta clave ahora. No podrá verla de nuevo.",
+  "table": {
+    "name": "Nombre",
+    "status": "Estado",
+    "scopes": "Alcances",
+    "rate_limit": "Límite de frecuencia",
+    "created": "Creado"
+  },
+  "revoke_title": "Revocar clave API",
+  "revoke_desc": "¿Está seguro de que desea revocar \"{{keyName}}\"? Esta acción no se puede deshacer.",
+  "revoke_success": "Clave API revocada",
+  "create_success": "Clave API creada",
+  "all_scopes": "Todos",
+  "rate_limit_per_min": "{{limit}}/min"
+}

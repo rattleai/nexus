@@ -1,0 +1,24 @@
+{
+  "title": "Aufträge",
+  "description": "Verwalten Sie asynchrone Verarbeitungsaufträge.",
+  "search_placeholder": "Aufträge suchen...",
+  "no_jobs": "Noch keine Aufträge",
+  "no_jobs_desc": "Erstellen Sie einen Auftrag, um die Verarbeitung zu starten.",
+  "create_job": "Auftrag erstellen",
+  "create_dialog_title": "Auftrag erstellen",
+  "create_dialog_desc": "Geben Sie den Auftragstyp an.",
+  "job_type_label": "Auftragstyp",
+  "job_type_placeholder": "z. B. Datenexport, Bericht",
+  "table": {
+    "type": "Typ",
+    "status": "Status",
+    "created": "Erstellt",
+    "completed": "Abgeschlossen",
+    "error": "Fehler"
+  },
+  "cancel_title": "Auftrag abbrechen",
+  "cancel_desc": "Auftrag \"{{jobType}}\" abbrechen? Dies kann nicht rückgängig gemacht werden.",
+  "cancel_button": "Auftrag abbrechen",
+  "cancel_success": "Auftrag abgebrochen",
+  "create_success": "Auftrag erstellt"
+}

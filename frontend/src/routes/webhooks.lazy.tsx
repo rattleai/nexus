@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { createLazyFileRoute } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import type { ColumnDef } from "@tanstack/react-table"
 import { Webhook, Plus, History, Send, Trash2 } from "lucide-react"
@@ -37,20 +38,24 @@ export const Route = createLazyFileRoute("/webhooks")({
   component: WebhooksPage,
 })
 
-const EVENT_OPTIONS = [
-  { value: "job.created", label: "Job Created" },
-  { value: "job.completed", label: "Job Completed" },
-  { value: "job.failed", label: "Job Failed" },
-  { value: "file.uploaded", label: "File Uploaded" },
-  { value: "file.deleted", label: "File Deleted" },
-  { value: "member.invited", label: "Member Invited" },
-  { value: "member.removed", label: "Member Removed" },
-  { value: "subscription.created", label: "Subscription Created" },
-  { value: "subscription.canceled", label: "Subscription Canceled" },
-  { value: "export.completed", label: "Export Completed" },
-]
+function useEventOptions() {
+  const { t } = useTranslation("webhooks")
+  return [
+    { value: "job.created", label: t("events.job_created") },
+    { value: "job.completed", label: t("events.job_completed") },
+    { value: "job.failed", label: t("events.job_failed") },
+    { value: "file.uploaded", label: t("events.file_uploaded") },
+    { value: "file.deleted", label: t("events.file_deleted") },
+    { value: "member.invited", label: t("events.member_invited") },
+    { value: "member.removed", label: t("events.member_removed") },
+    { value: "subscription.created", label: t("events.subscription_created") },
+    { value: "subscription.canceled", label: t("events.subscription_canceled") },
+    { value: "export.completed", label: t("events.export_completed") },
+  ]
+}
 
 function ActiveToggle({ endpoint }: { endpoint: WebhookEndpoint }) {
+  const { t } = useTranslation("webhooks")
   const updateWebhook = useUpdateWebhook()
 
   return (
@@ -59,7 +64,7 @@ function ActiveToggle({ endpoint }: { endpoint: WebhookEndpoint }) {
       onCheckedChange={async (active) => {
         try {
           await updateWebhook.mutateAsync({ id: endpoint.id, active })
-          toast.success(active ? "Webhook enabled" : "Webhook disabled")
+          toast.success(active ? t("enabled") : t("disabled"))
         } catch (err) {
           const e = await parseApiError(err)
           toast.error(e.detail)
@@ -70,6 +75,8 @@ function ActiveToggle({ endpoint }: { endpoint: WebhookEndpoint }) {
 }
 
 function WebhookActions({ endpoint }: { endpoint: WebhookEndpoint }) {
+  const { t } = useTranslation("webhooks")
+  const { t: tc } = useTranslation("common")
   const [historyOpen, setHistoryOpen] = useState(false)
   const testWebhook = useTestWebhook()
   const deleteWebhook = useDeleteWebhook()
@@ -77,7 +84,7 @@ function WebhookActions({ endpoint }: { endpoint: WebhookEndpoint }) {
   const handleTest = async () => {
     try {
       await testWebhook.mutateAsync(endpoint.id)
-      toast.success("Test delivery sent")
+      toast.success(t("test_delivery"))
     } catch (err) {
       const e = await parseApiError(err)
       toast.error(e.detail)
@@ -91,22 +98,22 @@ function WebhookActions({ endpoint }: { endpoint: WebhookEndpoint }) {
         size="sm"
         onClick={handleTest}
         disabled={testWebhook.isPending}
-        title="Send test"
+        title={t("send_test")}
       >
         <Send className="h-4 w-4" />
       </Button>
-      <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)} title="Delivery history">
+      <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)} title={t("delivery_history_tooltip")}>
         <History className="h-4 w-4" />
       </Button>
       <ConfirmDialog
-        title="Delete Webhook"
-        description={`Delete the webhook for ${endpoint.url}? This cannot be undone.`}
+        title={t("delete_title")}
+        description={t("delete_desc", { url: endpoint.url })}
         variant="destructive"
-        confirmLabel="Delete"
+        confirmLabel={tc("buttons.delete")}
         onConfirm={async () => {
           try {
             await deleteWebhook.mutateAsync(endpoint.id)
-            toast.success("Webhook deleted")
+            toast.success(t("delete_success"))
           } catch (err) {
             const e = await parseApiError(err)
             toast.error(e.detail)
@@ -138,6 +145,7 @@ function DeliveryHistoryDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { t } = useTranslation("webhooks")
   const { data, isLoading } = useWebhookDeliveries(open ? endpointId : "")
 
   const deliveries: WebhookDelivery[] = data
@@ -148,13 +156,13 @@ function DeliveryHistoryDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Delivery History</DialogTitle>
+          <DialogTitle>{t("delivery_history")}</DialogTitle>
           <DialogDescription className="truncate">{url}</DialogDescription>
         </DialogHeader>
         {isLoading ? (
           <LoadingState variant="skeleton" rows={3} />
         ) : deliveries.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">No deliveries yet.</p>
+          <p className="text-sm text-muted-foreground py-4 text-center">{t("no_deliveries")}</p>
         ) : (
           <div className="space-y-3">
             {deliveries.map((d) => (
@@ -167,7 +175,7 @@ function DeliveryHistoryDialog({
                     <span className="text-sm font-medium">{d.event_type}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {d.attempts} attempt(s)
+                    {t("delivery_attempts", { count: d.attempts })}
                     {d.delivered_at && <> &middot; {formatDateTime(d.delivered_at)}</>}
                   </p>
                 </div>
@@ -180,55 +188,65 @@ function DeliveryHistoryDialog({
   )
 }
 
-const columns: ColumnDef<WebhookEndpoint>[] = [
-  {
-    accessorKey: "url",
-    header: "URL",
-    cell: ({ row }) => (
-      <span className="text-sm font-mono truncate max-w-[200px] block" title={row.original.url}>
-        {row.original.url}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "events",
-    header: "Events",
-    cell: ({ row }) => (
-      <Badge variant="secondary">{row.original.events.length} event(s)</Badge>
-    ),
-  },
-  {
-    accessorKey: "active",
-    header: "Active",
-    cell: ({ row }) => <ActiveToggle endpoint={row.original} />,
-  },
-  {
-    accessorKey: "created_at",
-    header: "Created",
-    cell: ({ row }) => formatDate(row.original.created_at),
-  },
-  {
-    id: "actions",
-    header: () => <span className="sr-only">Actions</span>,
-    cell: ({ row }) => <WebhookActions endpoint={row.original} />,
-  },
-]
+function useWebhookColumns(): ColumnDef<WebhookEndpoint>[] {
+  const { t } = useTranslation("webhooks")
+  const { t: tc } = useTranslation("common")
+
+  return [
+    {
+      accessorKey: "url",
+      header: t("table.url"),
+      cell: ({ row }) => (
+        <span className="text-sm font-mono truncate max-w-[200px] block" title={row.original.url}>
+          {row.original.url}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "events",
+      header: t("table.events"),
+      cell: ({ row }) => (
+        <Badge variant="secondary">{t("event_count", { count: row.original.events.length })}</Badge>
+      ),
+    },
+    {
+      accessorKey: "active",
+      header: t("table.active"),
+      cell: ({ row }) => <ActiveToggle endpoint={row.original} />,
+    },
+    {
+      accessorKey: "created_at",
+      header: t("table.created"),
+      cell: ({ row }) => formatDate(row.original.created_at),
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">{tc("labels.actions")}</span>,
+      cell: ({ row }) => <WebhookActions endpoint={row.original} />,
+    },
+  ]
+}
 
 function WebhooksPage() {
+  const { t } = useTranslation("webhooks")
+  const { t: tc } = useTranslation("common")
+  const { t: tv } = useTranslation("validation")
   const queryResult = useWebhooks()
   const createWebhook = useCreateWebhook()
   const [createOpen, setCreateOpen] = useState(false)
   const [newUrl, setNewUrl] = useState("")
   const [newEvents, setNewEvents] = useState<string[]>([])
+  const columns = useWebhookColumns()
+  const eventOptions = useEventOptions()
 
   const handleCreate = async () => {
     if (!newUrl.trim() || newEvents.length === 0) {
-      toast.error("URL and at least one event are required")
+      toast.error(tv("url_and_events_required"))
       return
     }
     try {
       await createWebhook.mutateAsync({ url: newUrl.trim(), events: newEvents })
-      toast.success("Webhook created")
+      toast.success(t("create_success"))
       setCreateOpen(false)
       setNewUrl("")
       setNewEvents([])
@@ -241,27 +259,27 @@ function WebhooksPage() {
   return (
     <AuthGuard>
       <ResourcePage
-        title="Webhooks"
-        description="Receive real-time notifications for events in your workspace."
+        title={t("title")}
+        description={t("description")}
         queryResult={queryResult}
         columns={columns}
         searchKey="url"
-        searchPlaceholder="Search webhooks..."
+        searchPlaceholder={t("search_placeholder")}
         emptyState={{
           icon: Webhook,
-          title: "No webhooks yet",
-          description: "Create a webhook to receive event notifications.",
+          title: t("no_webhooks"),
+          description: t("no_webhooks_desc"),
           action: (
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Create Webhook
+              {t("create_webhook")}
             </Button>
           ),
         }}
         actions={
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            Create Webhook
+            {t("create_webhook")}
           </Button>
         }
       />
@@ -274,32 +292,32 @@ function WebhooksPage() {
             setNewEvents([])
           }
         }}
-        title="Create Webhook"
-        description="Configure a URL to receive event notifications."
+        title={t("create_dialog_title")}
+        description={t("create_dialog_desc")}
         isPending={createWebhook.isPending}
         onSubmit={handleCreate}
-        submitLabel="Create"
+        submitLabel={tc("buttons.create")}
       >
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="webhook-url">Endpoint URL</Label>
+            <Label htmlFor="webhook-url">{t("endpoint_url_label")}</Label>
             <Input
               id="webhook-url"
               type="url"
-              placeholder="https://example.com/webhook"
+              placeholder={t("endpoint_url_placeholder")}
               value={newUrl}
               onChange={(e) => setNewUrl(e.target.value)}
               autoFocus
             />
           </div>
           <div className="space-y-2">
-            <Label>Events</Label>
+            <Label>{t("events_label")}</Label>
             <MultiSelect
-              options={EVENT_OPTIONS}
+              options={eventOptions}
               selected={newEvents}
               onChange={setNewEvents}
-              placeholder="Select events..."
-              searchPlaceholder="Search events..."
+              placeholder={t("events_placeholder")}
+              searchPlaceholder={t("events_search_placeholder")}
             />
           </div>
         </div>

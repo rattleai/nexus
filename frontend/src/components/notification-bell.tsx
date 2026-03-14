@@ -1,4 +1,5 @@
 import { Bell } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import {
   Popover,
@@ -23,13 +24,15 @@ export function NotificationBell() {
   const { data: unread } = useUnreadCount()
   const markAsRead = useMarkAsRead()
   const markAllAsRead = useMarkAllAsRead()
+  const { t } = useTranslation("notifications")
+  const { t: tc } = useTranslation("common")
 
   const count = unread?.count ?? 0
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="relative" aria-label="Notifications">
+        <Button variant="ghost" size="sm" className="relative" aria-label={t("title")}>
           <Bell className="h-4 w-4" />
           {count > 0 && (
             <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white">
@@ -40,7 +43,7 @@ export function NotificationBell() {
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="end">
         <div className="flex items-center justify-between px-4 py-3 border-b">
-          <h4 className="text-sm font-semibold">Notifications</h4>
+          <h4 className="text-sm font-semibold">{t("title")}</h4>
           {count > 0 && (
             <Button
               variant="ghost"
@@ -48,14 +51,14 @@ export function NotificationBell() {
               className="text-xs h-auto py-1"
               onClick={() => markAllAsRead.mutate()}
             >
-              Mark all read
+              {tc("buttons.mark_all_read")}
             </Button>
           )}
         </div>
         <ScrollArea className="max-h-80">
           {!notifications?.length ? (
             <p className="p-4 text-center text-sm text-muted-foreground">
-              No notifications
+              {t("no_notifications")}
             </p>
           ) : (
             notifications.map((n) => (

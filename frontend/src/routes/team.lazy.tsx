@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { createLazyFileRoute } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import type { ColumnDef } from "@tanstack/react-table"
 import { Users, Plus, Mail, X } from "lucide-react"
@@ -44,6 +45,8 @@ const roleVariant: Record<TeamRole, "default" | "secondary" | "outline"> = {
 }
 
 function MemberActions({ member }: { member: TeamMember }) {
+  const { t } = useTranslation("team")
+  const { t: tc } = useTranslation("common")
   const updateRole = useUpdateMemberRole()
   const removeMember = useRemoveMember()
 
@@ -56,7 +59,7 @@ function MemberActions({ member }: { member: TeamMember }) {
         onValueChange={async (role: string) => {
           try {
             await updateRole.mutateAsync({ id: member.id, role: role as TeamRole })
-            toast.success("Role updated")
+            toast.success(t("role_updated"))
           } catch (err) {
             const e = await parseApiError(err)
             toast.error(e.detail)
@@ -67,20 +70,20 @@ function MemberActions({ member }: { member: TeamMember }) {
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="admin">Admin</SelectItem>
-          <SelectItem value="member">Member</SelectItem>
-          <SelectItem value="viewer">Viewer</SelectItem>
+          <SelectItem value="admin">{t("roles.admin")}</SelectItem>
+          <SelectItem value="member">{t("roles.member")}</SelectItem>
+          <SelectItem value="viewer">{t("roles.viewer")}</SelectItem>
         </SelectContent>
       </Select>
       <ConfirmDialog
-        title="Remove Member"
-        description={`Remove ${member.display_name || member.email} from the team? They will lose access immediately.`}
+        title={t("remove_title")}
+        description={t("remove_desc", { name: member.display_name || member.email })}
         variant="destructive"
-        confirmLabel="Remove"
+        confirmLabel={tc("buttons.remove")}
         onConfirm={async () => {
           try {
             await removeMember.mutateAsync(member.id)
-            toast.success("Member removed")
+            toast.success(t("remove_success"))
           } catch (err) {
             const e = await parseApiError(err)
             toast.error(e.detail)
@@ -88,47 +91,54 @@ function MemberActions({ member }: { member: TeamMember }) {
         }}
       >
         <Button variant="ghost" size="sm">
-          Remove
+          {tc("buttons.remove")}
         </Button>
       </ConfirmDialog>
     </div>
   )
 }
 
-const columns: ColumnDef<TeamMember>[] = [
-  {
-    accessorKey: "display_name",
-    header: "Name",
-    cell: ({ row }) => (
-      <div>
-        <p className="font-medium">{row.original.display_name || row.original.email}</p>
-        {row.original.display_name && (
-          <p className="text-xs text-muted-foreground">{row.original.email}</p>
-        )}
-      </div>
-    ),
-  },
-  { accessorKey: "email", header: "Email" },
-  {
-    accessorKey: "role",
-    header: "Role",
-    cell: ({ row }) => (
-      <Badge variant={roleVariant[row.original.role]}>{row.original.role}</Badge>
-    ),
-  },
-  {
-    accessorKey: "joined_at",
-    header: "Joined",
-    cell: ({ row }) => formatDate(row.original.joined_at),
-  },
-  {
-    id: "actions",
-    header: () => <span className="sr-only">Actions</span>,
-    cell: ({ row }) => <MemberActions member={row.original} />,
-  },
-]
+function useTeamColumns(): ColumnDef<TeamMember>[] {
+  const { t } = useTranslation("team")
+  const { t: tc } = useTranslation("common")
+
+  return [
+    {
+      accessorKey: "display_name",
+      header: t("table.name"),
+      cell: ({ row }) => (
+        <div>
+          <p className="font-medium">{row.original.display_name || row.original.email}</p>
+          {row.original.display_name && (
+            <p className="text-xs text-muted-foreground">{row.original.email}</p>
+          )}
+        </div>
+      ),
+    },
+    { accessorKey: "email", header: t("table.email") },
+    {
+      accessorKey: "role",
+      header: t("table.role"),
+      cell: ({ row }) => (
+        <Badge variant={roleVariant[row.original.role]}>{row.original.role}</Badge>
+      ),
+    },
+    {
+      accessorKey: "joined_at",
+      header: t("table.joined"),
+      cell: ({ row }) => formatDate(row.original.joined_at),
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">{tc("labels.actions")}</span>,
+      cell: ({ row }) => <MemberActions member={row.original} />,
+    },
+  ]
+}
 
 function InvitationRow({ invitation }: { invitation: Invitation }) {
+  const { t } = useTranslation("team")
+  const { t: tc } = useTranslation("common")
   const revokeInvitation = useRevokeInvitation()
 
   return (
@@ -138,19 +148,19 @@ function InvitationRow({ invitation }: { invitation: Invitation }) {
         <div>
           <p className="text-sm font-medium">{invitation.email}</p>
           <p className="text-xs text-muted-foreground">
-            Role: {invitation.role} &middot; Expires {formatDate(invitation.expires_at)}
+            {t("table.role")}: {invitation.role} &middot; {t("expires")} {formatDate(invitation.expires_at)}
           </p>
         </div>
       </div>
       <ConfirmDialog
-        title="Revoke Invitation"
-        description={`Revoke the invitation sent to ${invitation.email}?`}
+        title={t("revoke_invitation_title")}
+        description={t("revoke_invitation_desc", { email: invitation.email })}
         variant="destructive"
-        confirmLabel="Revoke"
+        confirmLabel={tc("buttons.revoke")}
         onConfirm={async () => {
           try {
             await revokeInvitation.mutateAsync(invitation.id)
-            toast.success("Invitation revoked")
+            toast.success(t("revoke_success"))
           } catch (err) {
             const e = await parseApiError(err)
             toast.error(e.detail)
@@ -166,18 +176,20 @@ function InvitationRow({ invitation }: { invitation: Invitation }) {
 }
 
 function TeamPage() {
+  const { t } = useTranslation("team")
   const membersQuery = useTeamMembers()
   const { data: invitations, isLoading: invitationsLoading } = useInvitations()
   const inviteMember = useInviteMember()
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState<TeamRole>("member")
+  const columns = useTeamColumns()
 
   const handleInvite = async () => {
     if (!inviteEmail.trim()) return
     try {
       await inviteMember.mutateAsync({ email: inviteEmail.trim(), role: inviteRole })
-      toast.success("Invitation sent")
+      toast.success(t("invite_success"))
       setInviteOpen(false)
       setInviteEmail("")
       setInviteRole("member")
@@ -194,27 +206,27 @@ function TeamPage() {
   return (
     <AuthGuard requiredRole="admin">
       <ResourcePage
-        title="Team"
-        description="Manage your team members and invitations."
+        title={t("title")}
+        description={t("description")}
         queryResult={queryResult}
         columns={columns}
         searchKey="email"
-        searchPlaceholder="Search members..."
+        searchPlaceholder={t("search_placeholder")}
         emptyState={{
           icon: Users,
-          title: "No team members",
-          description: "Invite someone to join your team.",
+          title: t("no_members"),
+          description: t("no_members_desc"),
           action: (
             <Button onClick={() => setInviteOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Invite Member
+              {t("invite_member")}
             </Button>
           ),
         }}
         actions={
           <Button onClick={() => setInviteOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            Invite Member
+            {t("invite_member")}
           </Button>
         }
       />
@@ -222,14 +234,14 @@ function TeamPage() {
       {/* Pending Invitations */}
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle>Pending Invitations</CardTitle>
-          <CardDescription>Invitations that haven't been accepted yet.</CardDescription>
+          <CardTitle>{t("pending_invitations")}</CardTitle>
+          <CardDescription>{t("pending_invitations_desc")}</CardDescription>
         </CardHeader>
         <CardContent>
           {invitationsLoading ? (
             <LoadingState variant="skeleton" rows={2} />
           ) : !invitations || invitations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No pending invitations.</p>
+            <p className="text-sm text-muted-foreground">{t("no_pending_invitations")}</p>
           ) : (
             <div className="divide-y">
               {invitations.map((inv) => (
@@ -250,34 +262,34 @@ function TeamPage() {
             setInviteRole("member")
           }
         }}
-        title="Invite Team Member"
-        description="Send an email invitation to join your team."
+        title={t("invite_dialog_title")}
+        description={t("invite_dialog_desc")}
         isPending={inviteMember.isPending}
         onSubmit={handleInvite}
-        submitLabel="Send Invitation"
+        submitLabel={t("send_invitation")}
       >
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="invite-email">Email address</Label>
+            <Label htmlFor="invite-email">{t("invite_email_label")}</Label>
             <Input
               id="invite-email"
               type="email"
-              placeholder="colleague@example.com"
+              placeholder={t("invite_email_placeholder")}
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
               autoFocus
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="invite-role">Role</Label>
+            <Label htmlFor="invite-role">{t("invite_role_label")}</Label>
             <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as TeamRole)}>
               <SelectTrigger id="invite-role">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="admin">Admin</SelectItem>
-                <SelectItem value="member">Member</SelectItem>
-                <SelectItem value="viewer">Viewer</SelectItem>
+                <SelectItem value="admin">{t("roles.admin")}</SelectItem>
+                <SelectItem value="member">{t("roles.member")}</SelectItem>
+                <SelectItem value="viewer">{t("roles.viewer")}</SelectItem>
               </SelectContent>
             </Select>
           </div>

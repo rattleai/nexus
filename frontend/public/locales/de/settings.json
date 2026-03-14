@@ -1,0 +1,62 @@
+{
+  "title": "Einstellungen",
+  "description": "Verwalten Sie Ihr Konto und Ihre Einstellungen.",
+  "tabs": {
+    "profile": "Profil",
+    "security": "Sicherheit",
+    "data": "Daten",
+    "danger": "Gefahrenzone",
+    "language": "Sprache"
+  },
+  "profile": {
+    "title": "Profil",
+    "display_name": "Anzeigename",
+    "email": "E-Mail",
+    "resend_verification": "Bestätigungs-E-Mail erneut senden",
+    "save_success": "Profil aktualisiert",
+    "verification_sent": "Bestätigungs-E-Mail gesendet"
+  },
+  "platform_info": {
+    "title": "Plattforminformationen",
+    "version": "Version",
+    "status": "Status"
+  },
+  "api_key_auth": {
+    "title": "API-Schlüssel-Authentifizierung",
+    "current_key": "Aktueller API-Schlüssel",
+    "disconnect": "Trennen"
+  },
+  "security": {
+    "title": "Passwort ändern",
+    "description": "Aktualisieren Sie Ihr Passwort, um Ihr Konto zu schützen.",
+    "current_password": "Aktuelles Passwort",
+    "new_password": "Neues Passwort",
+    "confirm_password": "Neues Passwort bestätigen",
+    "submit": "Passwort ändern",
+    "submitting": "Wird geändert...",
+    "success": "Passwort geändert"
+  },
+  "data": {
+    "title": "Datenexport",
+    "description": "Exportieren Sie Ihre Daten im JSON- oder CSV-Format.",
+    "format_label": "Exportformat",
+    "export_workspace": "Arbeitsbereichsdaten exportieren",
+    "export_personal": "Persönliche Daten exportieren",
+    "export_success": "Export gestartet. Sie erhalten eine Benachrichtigung, sobald er bereit ist."
+  },
+  "danger": {
+    "title": "Gefahrenzone",
+    "description": "Unwiderrufliche Aktionen. Bitte seien Sie sich sicher, bevor Sie fortfahren.",
+    "delete_info": "Das Löschen Ihres Kontos entfernt alle Ihre Daten nach einer 30-tägigen Schonfrist. Während dieser Zeit können Sie den Support kontaktieren, um Ihr Konto wiederherzustellen.",
+    "delete_title": "Konto löschen",
+    "delete_description": "Dadurch werden Ihr Konto und alle zugehörigen Daten nach einer 30-tägigen Schonfrist dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "delete_confirm": "Konto löschen",
+    "delete_success": "Kontolöschung geplant"
+  },
+  "language": {
+    "title": "Sprache & Region",
+    "description": "Wählen Sie Ihre bevorzugte Sprache für die Benutzeroberfläche.",
+    "select_label": "Anzeigesprache",
+    "save_success": "Spracheinstellung gespeichert"
+  }
+}

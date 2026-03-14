@@ -1,4 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { LayoutDashboard, Briefcase, MessageSquare, FolderOpen, Menu } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -6,15 +7,15 @@ import { useSidebar } from "@/components/ui/sidebar"
 
 interface NavItem {
   href: string
-  label: string
+  labelKey: string
   icon: React.ComponentType<{ className?: string }>
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Home", icon: LayoutDashboard },
-  { href: "/jobs", label: "Jobs", icon: Briefcase },
-  { href: "/chat", label: "AI Chat", icon: MessageSquare },
-  { href: "/files", label: "Files", icon: FolderOpen },
+  { href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { href: "/jobs", labelKey: "nav.jobs", icon: Briefcase },
+  { href: "/chat", labelKey: "nav.ai_chat", icon: MessageSquare },
+  { href: "/files", labelKey: "nav.files", icon: FolderOpen },
 ]
 
 export function BottomNav() {
@@ -22,6 +23,7 @@ export function BottomNav() {
   const router = useRouterState()
   const currentPath = router.location.pathname
   const { toggleSidebar } = useSidebar()
+  const { t } = useTranslation()
 
   if (!isMobile) return null
 
@@ -49,7 +51,7 @@ export function BottomNav() {
               aria-current={isActive ? "page" : undefined}
             >
               <item.icon className={cn("h-5 w-5", isActive && "text-primary")} />
-              <span>{item.label}</span>
+              <span>{t(item.labelKey as never)}</span>
             </Link>
           )
         })}
@@ -60,7 +62,7 @@ export function BottomNav() {
           aria-label="Open menu"
         >
           <Menu className="h-5 w-5" />
-          <span>More</span>
+          <span>{t("nav.more", { defaultValue: "More" })}</span>
         </button>
       </div>
     </nav>

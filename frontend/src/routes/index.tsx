@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import {
   Briefcase,
   Key,
@@ -43,49 +44,51 @@ function Dashboard() {
 }
 
 function GuestDashboard() {
+  const { t } = useTranslation("dashboard")
+  const { t: tc } = useTranslation("common")
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Welcome to your platform</h1>
+        <h1 className="text-2xl font-bold">{t("guest.title")}</h1>
         <p className="mt-1 text-muted-foreground">
-          Sign in or enter your API key to get started.
+          {t("guest.subtitle")}
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardContent className="p-6 text-center space-y-3">
             <Briefcase className="h-8 w-8 mx-auto text-muted-foreground" />
-            <h3 className="font-semibold">Async Jobs</h3>
+            <h3 className="font-semibold">{t("guest.async_jobs_title")}</h3>
             <p className="text-sm text-muted-foreground">
-              Create and manage background processing jobs.
+              {t("guest.async_jobs_desc")}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6 text-center space-y-3">
             <Key className="h-8 w-8 mx-auto text-muted-foreground" />
-            <h3 className="font-semibold">API Keys</h3>
+            <h3 className="font-semibold">{t("guest.api_keys_title")}</h3>
             <p className="text-sm text-muted-foreground">
-              Secure programmatic access to the platform.
+              {t("guest.api_keys_desc")}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6 text-center space-y-3">
             <Users className="h-8 w-8 mx-auto text-muted-foreground" />
-            <h3 className="font-semibold">Team Management</h3>
+            <h3 className="font-semibold">{t("guest.team_mgmt_title")}</h3>
             <p className="text-sm text-muted-foreground">
-              Invite and manage team members with roles.
+              {t("guest.team_mgmt_desc")}
             </p>
           </CardContent>
         </Card>
       </div>
       <div className="flex gap-3">
         <Button asChild>
-          <Link to="/login">Sign in</Link>
+          <Link to="/login">{tc("buttons.sign_in")}</Link>
         </Button>
         <Button variant="outline" asChild>
-          <Link to="/register">Create account</Link>
+          <Link to="/register">{tc("buttons.create_account")}</Link>
         </Button>
       </div>
     </div>
@@ -96,14 +99,16 @@ function AuthenticatedDashboard() {
   const { data: usage, isLoading: usageLoading } = useUsage()
   const { data: jobs } = useJobs()
   const { data: health } = useHealth()
+  const { t } = useTranslation("dashboard")
+  const { t: tc } = useTranslation("common")
 
   const recentJobs = jobs?.items?.slice(0, 5) ?? []
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="mt-1 text-muted-foreground">Overview of your workspace.</p>
+        <h1 className="text-2xl font-bold">{t("authenticated.title")}</h1>
+        <p className="mt-1 text-muted-foreground">{t("authenticated.subtitle")}</p>
       </div>
 
       {usageLoading ? (
@@ -111,41 +116,41 @@ function AuthenticatedDashboard() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
-            title="Total Jobs"
+            title={t("authenticated.total_jobs")}
             value={formatCompactNumber(usage?.jobs.used ?? 0)}
             icon={Briefcase}
             description={
-              usage?.jobs.limit ? `of ${formatCompactNumber(usage.jobs.limit)} limit` : "unlimited"
+              usage?.jobs.limit ? tc("labels.of_limit", { limit: formatCompactNumber(usage.jobs.limit) }) : tc("status.unlimited")
             }
           />
           <StatCard
-            title="API Keys"
+            title={t("authenticated.api_keys")}
             value={usage?.api_keys.used ?? 0}
             icon={Key}
             description={
               usage?.api_keys.limit
-                ? `of ${usage.api_keys.limit} limit`
-                : "unlimited"
+                ? tc("labels.of_limit", { limit: usage.api_keys.limit })
+                : tc("status.unlimited")
             }
           />
           <StatCard
-            title="Team Members"
+            title={t("authenticated.team_members")}
             value={usage?.team_members.used ?? 0}
             icon={Users}
             description={
               usage?.team_members.limit
-                ? `of ${usage.team_members.limit} limit`
-                : "unlimited"
+                ? tc("labels.of_limit", { limit: usage.team_members.limit })
+                : tc("status.unlimited")
             }
           />
           <StatCard
-            title="Storage"
+            title={t("authenticated.storage")}
             value={formatBytes(usage?.storage_bytes.used ?? 0)}
             icon={HardDrive}
             description={
               usage?.storage_bytes.limit
-                ? `of ${formatBytes(usage.storage_bytes.limit)} limit`
-                : "unlimited"
+                ? tc("labels.of_limit", { limit: formatBytes(usage.storage_bytes.limit) })
+                : tc("status.unlimited")
             }
           />
         </div>
@@ -154,17 +159,17 @@ function AuthenticatedDashboard() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Recent Activity</CardTitle>
+            <CardTitle className="text-base">{t("authenticated.recent_activity")}</CardTitle>
             <Button variant="ghost" size="sm" asChild>
               <Link to="/jobs">
-                View all <ArrowRight className="ml-1 h-4 w-4" />
+                {tc("buttons.view_all")} <ArrowRight className="ml-1 h-4 w-4" />
               </Link>
             </Button>
           </CardHeader>
           <CardContent>
             {recentJobs.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
-                No recent activity
+                {t("authenticated.no_recent_activity")}
               </p>
             ) : (
               <div className="space-y-3">
@@ -186,7 +191,7 @@ function AuthenticatedDashboard() {
                             : "secondary"
                       }
                     >
-                      {job.status}
+                      {tc(`status.${job.status}`)}
                     </Badge>
                   </div>
                 ))}
@@ -199,7 +204,7 @@ function AuthenticatedDashboard() {
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Heart className="h-4 w-4" />
-              Service Health
+              {t("authenticated.service_health")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -235,30 +240,30 @@ function AuthenticatedDashboard() {
       </div>
 
       <div>
-        <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
+        <h2 className="text-lg font-semibold mb-3">{t("authenticated.quick_actions")}</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Button variant="outline" className="h-auto py-3 justify-start" asChild>
             <Link to="/jobs">
               <Plus className="mr-2 h-4 w-4" />
-              Create Job
+              {t("authenticated.create_job")}
             </Link>
           </Button>
           <Button variant="outline" className="h-auto py-3 justify-start" asChild>
             <Link to="/files">
               <Upload className="mr-2 h-4 w-4" />
-              Upload File
+              {t("authenticated.upload_file")}
             </Link>
           </Button>
           <Button variant="outline" className="h-auto py-3 justify-start" asChild>
             <Link to="/team">
               <Users className="mr-2 h-4 w-4" />
-              Manage Team
+              {t("authenticated.manage_team")}
             </Link>
           </Button>
           <Button variant="outline" className="h-auto py-3 justify-start" asChild>
             <Link to="/api-keys">
               <Key className="mr-2 h-4 w-4" />
-              API Keys
+              {t("authenticated.api_keys")}
             </Link>
           </Button>
         </div>

@@ -1,0 +1,29 @@
+{
+  "title": "审计日志",
+  "description": "跟踪工作区中的所有活动。",
+  "action_filter": "操作",
+  "resource_filter": "资源",
+  "no_entries": "暂无审计日志条目",
+  "no_entries_desc": "执行操作后，活动记录将显示在此处。",
+  "actions": {
+    "all": "所有操作",
+    "create": "创建",
+    "read": "读取",
+    "update": "更新",
+    "delete": "删除",
+    "login": "登录",
+    "logout": "退出"
+  },
+  "resources": {
+    "all": "所有资源",
+    "user": "用户",
+    "tenant": "租户",
+    "api_key": "API 密钥",
+    "job": "任务",
+    "file": "文件",
+    "webhook": "Webhook",
+    "subscription": "订阅"
+  },
+  "metadata": "元数据",
+  "load_failed": "加载审计日志失败。"
+}

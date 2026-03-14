@@ -1,0 +1,20 @@
+{
+  "required": "Este campo es obligatorio",
+  "email_required": "El correo electrónico es obligatorio",
+  "invalid_email": "Dirección de correo electrónico inválida",
+  "password_required": "La contraseña es obligatoria",
+  "display_name_required": "El nombre para mostrar es obligatorio",
+  "org_slug_required": "El identificador de organización es obligatorio",
+  "org_slug_format": "Debe contener solo letras minúsculas, números y guiones (no puede comenzar ni terminar con un guion)",
+  "password_min_length": "La contraseña debe tener al menos {{count}} caracteres",
+  "password_lowercase": "Debe contener una letra minúscula",
+  "password_uppercase": "Debe contener una letra mayúscula",
+  "password_digit": "Debe contener un dígito",
+  "confirm_password_required": "Por favor confirme su contraseña",
+  "passwords_not_match": "Las contraseñas no coinciden",
+  "current_password_required": "La contraseña actual es obligatoria",
+  "url_and_events_required": "La URL y al menos un evento son obligatorios",
+  "key_name_required": "El nombre de la clave es obligatorio",
+  "job_type_required": "El tipo de trabajo es obligatorio",
+  "invite_email_required": "La dirección de correo electrónico es obligatoria"
+}

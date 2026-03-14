@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { createLazyFileRoute } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { Shield, ChevronDown } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
@@ -44,28 +45,8 @@ const actionColors: Record<string, string> = {
   logout: "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400",
 }
 
-const ACTION_OPTIONS = [
-  { value: "all", label: "All Actions" },
-  { value: "create", label: "Create" },
-  { value: "read", label: "Read" },
-  { value: "update", label: "Update" },
-  { value: "delete", label: "Delete" },
-  { value: "login", label: "Login" },
-  { value: "logout", label: "Logout" },
-]
-
-const RESOURCE_OPTIONS = [
-  { value: "all", label: "All Resources" },
-  { value: "user", label: "User" },
-  { value: "tenant", label: "Tenant" },
-  { value: "api_key", label: "API Key" },
-  { value: "job", label: "Job" },
-  { value: "file", label: "File" },
-  { value: "webhook", label: "Webhook" },
-  { value: "subscription", label: "Subscription" },
-]
-
 function AuditEntry({ entry }: { entry: AuditLog }) {
+  const { t } = useTranslation("audit_log")
   const colorClass = actionColors[entry.action] ?? actionColors.read
 
   return (
@@ -115,7 +96,7 @@ function AuditEntry({ entry }: { entry: AuditLog }) {
           <Collapsible>
             <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
               <ChevronDown className="h-3 w-3" />
-              Metadata
+              {t("metadata")}
             </CollapsibleTrigger>
             <CollapsibleContent>
               <pre className="mt-2 rounded-md bg-muted p-3 text-xs overflow-x-auto">
@@ -129,9 +110,39 @@ function AuditEntry({ entry }: { entry: AuditLog }) {
   )
 }
 
+function useActionOptions() {
+  const { t } = useTranslation("audit_log")
+  return [
+    { value: "all", label: t("actions.all") },
+    { value: "create", label: t("actions.create") },
+    { value: "read", label: t("actions.read") },
+    { value: "update", label: t("actions.update") },
+    { value: "delete", label: t("actions.delete") },
+    { value: "login", label: t("actions.login") },
+    { value: "logout", label: t("actions.logout") },
+  ]
+}
+
+function useResourceOptions() {
+  const { t } = useTranslation("audit_log")
+  return [
+    { value: "all", label: t("resources.all") },
+    { value: "user", label: t("resources.user") },
+    { value: "tenant", label: t("resources.tenant") },
+    { value: "api_key", label: t("resources.api_key") },
+    { value: "job", label: t("resources.job") },
+    { value: "file", label: t("resources.file") },
+    { value: "webhook", label: t("resources.webhook") },
+    { value: "subscription", label: t("resources.subscription") },
+  ]
+}
+
 function AuditLogPage() {
+  const { t } = useTranslation("audit_log")
   const [actionFilter, setActionFilter] = useState("all")
   const [resourceFilter, setResourceFilter] = useState("all")
+  const actionOptions = useActionOptions()
+  const resourceOptions = useResourceOptions()
 
   const { data, isLoading, error, refetch } = useAuditLogs({
     action: actionFilter === "all" ? undefined : actionFilter,
@@ -141,16 +152,16 @@ function AuditLogPage() {
   return (
     <AuthGuard requiredRole="admin">
       <div className="space-y-6">
-        <PageHeader title="Audit Log" description="Track all activity across your workspace." />
+        <PageHeader title={t("title")} description={t("description")} />
 
         {/* Filters */}
         <div className="flex items-center gap-3">
           <Select value={actionFilter} onValueChange={setActionFilter}>
             <SelectTrigger className="w-40">
-              <SelectValue placeholder="Action" />
+              <SelectValue placeholder={t("action_filter")} />
             </SelectTrigger>
             <SelectContent>
-              {ACTION_OPTIONS.map((opt) => (
+              {actionOptions.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
                   {opt.label}
                 </SelectItem>
@@ -159,10 +170,10 @@ function AuditLogPage() {
           </Select>
           <Select value={resourceFilter} onValueChange={setResourceFilter}>
             <SelectTrigger className="w-40">
-              <SelectValue placeholder="Resource" />
+              <SelectValue placeholder={t("resource_filter")} />
             </SelectTrigger>
             <SelectContent>
-              {RESOURCE_OPTIONS.map((opt) => (
+              {resourceOptions.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
                   {opt.label}
                 </SelectItem>
@@ -178,14 +189,14 @@ function AuditLogPage() {
               <LoadingState variant="skeleton" rows={5} />
             ) : error ? (
               <ErrorState
-                message={error instanceof Error ? error.message : "Failed to load audit logs."}
+                message={error instanceof Error ? error.message : t("load_failed")}
                 onRetry={() => refetch()}
               />
             ) : !data || data.length === 0 ? (
               <EmptyState
                 icon={Shield}
-                title="No audit log entries"
-                description="Activity will appear here as actions are performed."
+                title={t("no_entries")}
+                description={t("no_entries_desc")}
               />
             ) : (
               <div className="space-y-0">

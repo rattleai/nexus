@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { LogOut, Settings, User as UserIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -14,11 +15,12 @@ import { useAuthContext } from "@/lib/auth-context"
 
 export function UserMenu() {
   const { user, logout, isAuthenticated } = useAuthContext()
+  const { t } = useTranslation()
 
   if (!isAuthenticated || !user) {
     return (
       <Button variant="outline" size="sm" asChild>
-        <Link to="/login">Sign in</Link>
+        <Link to="/login">{t("buttons.sign_in")}</Link>
       </Button>
     )
   }
@@ -53,19 +55,19 @@ export function UserMenu() {
         <DropdownMenuItem asChild>
           <Link to="/settings">
             <Settings className="mr-2 h-4 w-4" />
-            Settings
+            {t("nav.settings")}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link to="/api-keys">
             <UserIcon className="mr-2 h-4 w-4" />
-            API Keys
+            {t("nav.api_keys")}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => logout()} className="text-destructive">
           <LogOut className="mr-2 h-4 w-4" />
-          Sign out
+          {t("buttons.sign_out")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

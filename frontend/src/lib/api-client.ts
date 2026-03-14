@@ -1,4 +1,5 @@
 import ky, { HTTPError } from "ky"
+import i18n from "i18next"
 import { toast } from "sonner"
 import { AUTH_STORAGE_KEY } from "./constants"
 
@@ -67,6 +68,11 @@ export const api = ky.create({
   hooks: {
     beforeRequest: [
       (request) => {
+        // Set Accept-Language header for locale-aware responses
+        if (i18n.language) {
+          request.headers.set("Accept-Language", i18n.language)
+        }
+
         // Prefer JWT Bearer token if available
         if (_accessToken) {
           request.headers.set("Authorization", `Bearer ${_accessToken}`)
@@ -97,10 +103,10 @@ export const api = ky.create({
 
         if (response.status === 429) {
           const retryAfter = response.headers.get("Retry-After")
-          toast.warning("Too many requests", {
+          toast.warning(i18n.t("too_many_requests"), {
             description: retryAfter
-              ? `Please wait ${retryAfter} seconds before trying again.`
-              : "Please slow down and try again shortly.",
+              ? i18n.t("too_many_requests_with_retry", { seconds: retryAfter })
+              : i18n.t("too_many_requests_generic"),
           })
         }
       },
@@ -119,5 +125,5 @@ export async function parseApiError(error: unknown): Promise<ApiError> {
       return { detail: error.message, code: `HTTP_${error.response.status}` }
     }
   }
-  return { detail: error instanceof Error ? error.message : "An unexpected error occurred" }
+  return { detail: error instanceof Error ? error.message : i18n.t("unexpected_error") }
 }

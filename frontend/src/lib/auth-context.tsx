@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
+import i18n from "i18next"
 import { api, setAccessToken as setApiClientToken } from "./api-client"
 
 interface AuthUser {
@@ -9,6 +10,7 @@ interface AuthUser {
   is_active: boolean
   tenant_id: string
   role: string | null
+  locale: string | null
   created_at: string
 }
 
@@ -57,7 +59,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             setApiClientToken(res.access_token)
             const profile = await api.get("auth/me").json<AuthUser>()
-            if (!cancelled) setUser(profile)
+            if (!cancelled) {
+              setUser(profile)
+              if (profile.locale) {
+                i18n.changeLanguage(profile.locale)
+              }
+            }
           } catch {
             // Token works but profile fetch failed — still authenticated
           }
@@ -82,6 +89,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }>()
       syncToken(res.access_token, _setAccessToken)
       setUser(res.user)
+      if (res.user.locale) {
+        i18n.changeLanguage(res.user.locale)
+      }
       window.dispatchEvent(new Event("auth-change"))
     } finally {
       setIsLoading(false)

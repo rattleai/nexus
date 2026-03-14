@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { createLazyFileRoute } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import type { ColumnDef } from "@tanstack/react-table"
 import { Key, Plus } from "lucide-react"
@@ -22,58 +23,68 @@ export const Route = createLazyFileRoute("/api-keys")({
   component: ApiKeysPage,
 })
 
-const columns: ColumnDef<ApiKey>[] = [
-  { accessorKey: "name", header: "Name" },
-  {
-    accessorKey: "active",
-    header: "Status",
-    cell: ({ row }) => (
-      <Badge variant={row.original.active ? "default" : "secondary"}>
-        {row.original.active ? "Active" : "Revoked"}
-      </Badge>
-    ),
-  },
-  {
-    accessorKey: "scopes",
-    header: "Scopes",
-    cell: ({ row }) => (
-      <span className="text-xs text-muted-foreground">
-        {row.original.scopes?.join(", ") || "All"}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "rate_limit",
-    header: "Rate Limit",
-    cell: ({ row }) => `${row.original.rate_limit ?? "Unlimited"}/min`,
-  },
-  {
-    accessorKey: "created_at",
-    header: "Created",
-    cell: ({ row }) => formatDate(row.original.created_at),
-  },
-  {
-    id: "actions",
-    header: () => <span className="sr-only">Actions</span>,
-    cell: ({ row }) => <RevokeButton apiKey={row.original} />,
-  },
-]
+function useApiKeyColumns(): ColumnDef<ApiKey>[] {
+  const { t } = useTranslation("api_keys")
+  const { t: tc } = useTranslation("common")
+
+  return [
+    { accessorKey: "name", header: t("table.name") },
+    {
+      accessorKey: "active",
+      header: t("table.status"),
+      cell: ({ row }) => (
+        <Badge variant={row.original.active ? "default" : "secondary"}>
+          {row.original.active ? tc("status.active") : tc("status.revoked")}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: "scopes",
+      header: t("table.scopes"),
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {row.original.scopes?.join(", ") || t("all_scopes")}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "rate_limit",
+      header: t("table.rate_limit"),
+      cell: ({ row }) =>
+        row.original.rate_limit
+          ? t("rate_limit_per_min", { limit: row.original.rate_limit })
+          : `${tc("status.unlimited")}/min`,
+    },
+    {
+      accessorKey: "created_at",
+      header: t("table.created"),
+      cell: ({ row }) => formatDate(row.original.created_at),
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">{tc("labels.actions")}</span>,
+      cell: ({ row }) => <RevokeButton apiKey={row.original} />,
+    },
+  ]
+}
 
 function RevokeButton({ apiKey }: { apiKey: ApiKey }) {
+  const { t } = useTranslation("api_keys")
+  const { t: tc } = useTranslation("common")
   const revokeKey = useRevokeApiKey()
 
   if (!apiKey.active) return null
 
   return (
     <ConfirmDialog
-      title="Revoke API Key"
-      description={`Are you sure you want to revoke "${apiKey.name}"? This cannot be undone.`}
+      title={t("revoke_title")}
+      description={t("revoke_desc", { keyName: apiKey.name })}
       variant="destructive"
-      confirmLabel="Revoke"
+      confirmLabel={tc("buttons.revoke")}
       onConfirm={async () => {
         try {
           await revokeKey.mutateAsync(apiKey.id)
-          toast.success("API key revoked")
+          toast.success(t("revoke_success"))
         } catch (err) {
           const e = await parseApiError(err)
           toast.error(e.detail)
@@ -81,40 +92,42 @@ function RevokeButton({ apiKey }: { apiKey: ApiKey }) {
       }}
     >
       <Button variant="ghost" size="sm">
-        Revoke
+        {tc("buttons.revoke")}
       </Button>
     </ConfirmDialog>
   )
 }
 
 function ApiKeysPage() {
+  const { t } = useTranslation("api_keys")
   const queryResult = useApiKeys()
   const [createOpen, setCreateOpen] = useState(false)
+  const columns = useApiKeyColumns()
 
   return (
     <AuthGuard>
       <ResourcePage
-        title="API Keys"
-        description="Manage API keys for programmatic access."
+        title={t("title")}
+        description={t("description")}
         queryResult={queryResult}
         columns={columns}
         searchKey="name"
-        searchPlaceholder="Search keys..."
+        searchPlaceholder={t("search_placeholder")}
         emptyState={{
           icon: Key,
-          title: "No API keys yet",
-          description: "Create an API key to get started with programmatic access.",
+          title: t("no_keys"),
+          description: t("no_keys_desc"),
           action: (
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Create Key
+              {t("create_key")}
             </Button>
           ),
         }}
         actions={
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            Create Key
+            {t("create_key")}
           </Button>
         }
       />
@@ -130,6 +143,8 @@ function CreateKeyDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { t } = useTranslation("api_keys")
+  const { t: tc } = useTranslation("common")
   const [name, setName] = useState("")
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const createKey = useCreateApiKey()
@@ -138,7 +153,7 @@ function CreateKeyDialog({
     try {
       const result = await createKey.mutateAsync({ name: name || "default" })
       setCreatedKey(result.raw_key)
-      toast.success("API key created")
+      toast.success(t("create_success"))
     } catch (err) {
       const e = await parseApiError(err)
       toast.error(e.detail)
@@ -156,11 +171,11 @@ function CreateKeyDialog({
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Key Created</DialogTitle>
+            <DialogTitle>{t("key_created_title")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Copy this key now. You won't be able to see it again.
+              {t("key_created_desc")}
             </p>
             <div className="flex items-center gap-2">
               <code className="flex-1 p-3 bg-muted rounded text-sm break-all font-mono">
@@ -169,7 +184,7 @@ function CreateKeyDialog({
               <CopyButton value={createdKey} />
             </div>
             <Button onClick={handleClose} className="w-full">
-              Done
+              {tc("buttons.done")}
             </Button>
           </div>
         </DialogContent>
@@ -181,17 +196,17 @@ function CreateKeyDialog({
     <FormDialog
       open={open}
       onOpenChange={handleClose}
-      title="Create API Key"
-      description="Give your key a descriptive name."
+      title={t("create_dialog_title")}
+      description={t("create_dialog_desc")}
       isPending={createKey.isPending}
       onSubmit={handleCreate}
-      submitLabel="Create"
+      submitLabel={tc("buttons.create")}
     >
       <div className="space-y-2">
-        <Label htmlFor="key-name">Key name</Label>
+        <Label htmlFor="key-name">{t("key_name_label")}</Label>
         <Input
           id="key-name"
-          placeholder="e.g. production, staging"
+          placeholder={t("key_name_placeholder")}
           value={name}
           onChange={(e) => setName(e.target.value)}
           maxLength={255}

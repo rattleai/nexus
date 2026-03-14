@@ -1,0 +1,37 @@
+{
+  "title": "团队",
+  "description": "管理您的团队成员和邀请。",
+  "search_placeholder": "搜索成员...",
+  "no_members": "暂无团队成员",
+  "no_members_desc": "邀请成员加入您的团队。",
+  "invite_member": "邀请成员",
+  "invite_dialog_title": "邀请团队成员",
+  "invite_dialog_desc": "发送邮件邀请加入您的团队。",
+  "invite_email_label": "邮箱地址",
+  "invite_email_placeholder": "colleague@example.com",
+  "invite_role_label": "角色",
+  "send_invitation": "发送邀请",
+  "pending_invitations": "待处理的邀请",
+  "pending_invitations_desc": "尚未被接受的邀请。",
+  "no_pending_invitations": "暂无待处理的邀请。",
+  "invite_success": "邀请已发送",
+  "table": {
+    "name": "姓名",
+    "email": "邮箱",
+    "role": "角色",
+    "joined": "加入时间"
+  },
+  "roles": {
+    "admin": "管理员",
+    "member": "成员",
+    "viewer": "查看者"
+  },
+  "remove_title": "移除成员",
+  "remove_desc": "从团队中移除 {{name}}？该成员将立即失去访问权限。",
+  "remove_success": "成员已移除",
+  "role_updated": "角色已更新",
+  "revoke_invitation_title": "撤销邀请",
+  "revoke_invitation_desc": "撤销发送给 {{email}} 的邀请？",
+  "revoke_success": "邀请已撤销",
+  "expires": "过期时间"
+}

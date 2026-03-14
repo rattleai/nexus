@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,13 +27,14 @@ interface ConfirmDialogProps {
 export function ConfirmDialog({
   title,
   description,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   variant = "default",
   onConfirm,
   children,
 }: ConfirmDialogProps) {
   const [loading, setLoading] = useState(false)
+  const { t } = useTranslation()
 
   const handleConfirm = async () => {
     setLoading(true)
@@ -52,7 +54,9 @@ export function ConfirmDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={loading}>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel disabled={loading}>
+            {cancelLabel ?? t("buttons.cancel")}
+          </AlertDialogCancel>
           <AlertDialogAction
             className={cn(
               variant === "destructive" && buttonVariants({ variant: "destructive" }),
@@ -60,7 +64,7 @@ export function ConfirmDialog({
             onClick={handleConfirm}
             disabled={loading}
           >
-            {confirmLabel}
+            {confirmLabel ?? t("buttons.confirm")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

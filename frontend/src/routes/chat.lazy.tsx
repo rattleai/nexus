@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react"
 import { createLazyFileRoute } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import { AuthGuard } from "@/components/auth/auth-guard"
 import { PageHeader } from "@/components/page-header"
@@ -20,6 +21,7 @@ interface ChatMessage {
 }
 
 function ChatPage() {
+  const { t } = useTranslation("chat")
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const idCounter = useRef(0)
@@ -55,19 +57,19 @@ function ChatPage() {
         {
           id: String(++idCounter.current),
           role: "assistant",
-          content: "Sorry, I encountered an error processing your message. Please try again.",
+          content: t("error_message"),
           timestamp: new Date().toISOString(),
         },
       ])
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [t])
 
   return (
     <AuthGuard>
       <div className="flex flex-col h-[calc(100vh-8rem)]">
-        <PageHeader title="AI Chat" description="Chat with the AI assistant." />
+        <PageHeader title={t("title")} description={t("description")} />
         <Card className="flex-1 mt-4 flex flex-col overflow-hidden">
           <CardContent className="flex-1 flex flex-col p-4 overflow-hidden">
             <div className="flex-1 overflow-auto">

@@ -1,0 +1,29 @@
+{
+  "title": "Registro de auditoría",
+  "description": "Rastree toda la actividad en su espacio de trabajo.",
+  "action_filter": "Acción",
+  "resource_filter": "Recurso",
+  "no_entries": "No hay entradas en el registro de auditoría",
+  "no_entries_desc": "La actividad aparecerá aquí a medida que se realicen acciones.",
+  "actions": {
+    "all": "Todas las acciones",
+    "create": "Crear",
+    "read": "Leer",
+    "update": "Actualizar",
+    "delete": "Eliminar",
+    "login": "Inicio de sesión",
+    "logout": "Cierre de sesión"
+  },
+  "resources": {
+    "all": "Todos los recursos",
+    "user": "Usuario",
+    "tenant": "Inquilino",
+    "api_key": "Clave API",
+    "job": "Trabajo",
+    "file": "Archivo",
+    "webhook": "Webhook",
+    "subscription": "Suscripción"
+  },
+  "metadata": "Metadatos",
+  "load_failed": "No se pudieron cargar los registros de auditoría."
+}

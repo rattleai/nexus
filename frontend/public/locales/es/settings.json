@@ -1,0 +1,62 @@
+{
+  "title": "Configuración",
+  "description": "Administre su cuenta y preferencias.",
+  "tabs": {
+    "profile": "Perfil",
+    "security": "Seguridad",
+    "data": "Datos",
+    "danger": "Zona de peligro",
+    "language": "Idioma"
+  },
+  "profile": {
+    "title": "Perfil",
+    "display_name": "Nombre para mostrar",
+    "email": "Correo electrónico",
+    "resend_verification": "Reenviar correo de verificación",
+    "save_success": "Perfil actualizado",
+    "verification_sent": "Correo de verificación enviado"
+  },
+  "platform_info": {
+    "title": "Información de la plataforma",
+    "version": "Versión",
+    "status": "Estado"
+  },
+  "api_key_auth": {
+    "title": "Autenticación con clave API",
+    "current_key": "Clave API actual",
+    "disconnect": "Desconectar"
+  },
+  "security": {
+    "title": "Cambiar contraseña",
+    "description": "Actualice su contraseña para mantener su cuenta segura.",
+    "current_password": "Contraseña actual",
+    "new_password": "Nueva contraseña",
+    "confirm_password": "Confirmar nueva contraseña",
+    "submit": "Cambiar contraseña",
+    "submitting": "Cambiando...",
+    "success": "Contraseña cambiada"
+  },
+  "data": {
+    "title": "Exportación de datos",
+    "description": "Exporte sus datos en formato JSON o CSV.",
+    "format_label": "Formato de exportación",
+    "export_workspace": "Exportar datos del espacio de trabajo",
+    "export_personal": "Exportar datos personales",
+    "export_success": "Exportación iniciada. Recibirá una notificación cuando esté lista."
+  },
+  "danger": {
+    "title": "Zona de peligro",
+    "description": "Acciones irreversibles. Por favor asegúrese antes de continuar.",
+    "delete_info": "Eliminar su cuenta eliminará todos sus datos después de un período de gracia de 30 días. Durante este tiempo puede contactar a soporte para recuperar su cuenta.",
+    "delete_title": "Eliminar cuenta",
+    "delete_description": "Esto eliminará permanentemente su cuenta y todos los datos asociados después de un período de gracia de 30 días. Esta acción no se puede deshacer.",
+    "delete_confirm": "Eliminar cuenta",
+    "delete_success": "Eliminación de cuenta programada"
+  },
+  "language": {
+    "title": "Idioma y región",
+    "description": "Elija su idioma preferido para la interfaz.",
+    "select_label": "Idioma de la interfaz",
+    "save_success": "Preferencia de idioma guardada"
+  }
+}

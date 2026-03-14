@@ -1,0 +1,16 @@
+{
+  "boundary": {
+    "title": "Algo salió mal",
+    "description": "Ocurrió un error inesperado. Por favor intente recargar la página.",
+    "reload": "Recargar aplicación"
+  },
+  "not_found": {
+    "code": "404",
+    "title": "Página no encontrada",
+    "description": "La página que busca no existe."
+  },
+  "root_error": {
+    "title": "Algo salió mal",
+    "description": "Ocurrió un error inesperado. Por favor intente de nuevo."
+  }
+}

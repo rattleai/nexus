@@ -1,5 +1,6 @@
 import { type ReactNode } from "react"
 import { Link, useRouterState } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import {
   LayoutDashboard,
   Briefcase,
@@ -29,43 +30,57 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
+import { LanguageSwitcher } from "@/components/language-switcher"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { NotificationBell } from "@/components/notification-bell"
 import { UserMenu } from "@/components/user-menu"
 import { BottomNav } from "@/components/layout/bottom-nav"
 import { useIsMobile } from "@/hooks/use-mobile"
 
+import type { LucideIcon } from "lucide-react"
+
 const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? "0.1.0"
 
-const NAV_GROUPS = [
+interface NavItem {
+  href: string
+  labelKey: string
+  icon: LucideIcon
+}
+
+interface NavGroup {
+  labelKey: string
+  items: NavItem[]
+}
+
+const NAV_GROUPS: NavGroup[] = [
   {
-    label: "Overview",
+    labelKey: "nav.overview",
     items: [
-      { href: "/", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
     ],
   },
   {
-    label: "Platform",
+    labelKey: "nav.platform",
     items: [
-      { href: "/jobs", label: "Jobs", icon: Briefcase },
-      { href: "/files", label: "Files", icon: FolderOpen },
-      { href: "/api-keys", label: "API Keys", icon: Key },
-      { href: "/chat", label: "AI Chat", icon: MessageSquare },
+      { href: "/jobs", labelKey: "nav.jobs", icon: Briefcase },
+      { href: "/files", labelKey: "nav.files", icon: FolderOpen },
+      { href: "/api-keys", labelKey: "nav.api_keys", icon: Key },
+      { href: "/chat", labelKey: "nav.ai_chat", icon: MessageSquare },
     ],
   },
   {
-    label: "Organization",
+    labelKey: "nav.organization",
     items: [
-      { href: "/billing", label: "Billing", icon: CreditCard },
-      { href: "/team", label: "Team", icon: Users },
-      { href: "/webhooks", label: "Webhooks", icon: Webhook },
-      { href: "/audit-log", label: "Audit Log", icon: Shield },
+      { href: "/billing", labelKey: "nav.billing", icon: CreditCard },
+      { href: "/team", labelKey: "nav.team", icon: Users },
+      { href: "/webhooks", labelKey: "nav.webhooks", icon: Webhook },
+      { href: "/audit-log", labelKey: "nav.audit_log", icon: Shield },
     ],
   },
   {
-    label: "Account",
+    labelKey: "nav.account",
     items: [
-      { href: "/settings", label: "Settings", icon: Settings },
+      { href: "/settings", labelKey: "nav.settings", icon: Settings },
     ],
   },
 ]
@@ -78,6 +93,7 @@ export function AppShell({ children }: AppShellProps) {
   const router = useRouterState()
   const currentPath = router.location.pathname
   const isMobile = useIsMobile()
+  const { t } = useTranslation()
 
   return (
     <SidebarProvider>
@@ -85,7 +101,7 @@ export function AppShell({ children }: AppShellProps) {
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-background focus:text-foreground"
       >
-        Skip to main content
+        {t("labels.skip_to_main")}
       </a>
       <Sidebar collapsible="icon">
         <SidebarHeader className="p-4">
@@ -96,8 +112,8 @@ export function AppShell({ children }: AppShellProps) {
         </SidebarHeader>
         <SidebarContent>
           {NAV_GROUPS.map((group) => (
-            <SidebarGroup key={group.label}>
-              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarGroup key={group.labelKey}>
+              <SidebarGroupLabel>{t(group.labelKey as never)}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {group.items.map((item) => {
@@ -105,12 +121,13 @@ export function AppShell({ children }: AppShellProps) {
                       item.href === "/"
                         ? currentPath === "/"
                         : currentPath.startsWith(item.href)
+                    const label = t(item.labelKey as never) as string
                     return (
                       <SidebarMenuItem key={item.href}>
-                        <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                        <SidebarMenuButton asChild isActive={isActive} tooltip={label}>
                           <Link to={item.href}>
                             <item.icon className="h-4 w-4" />
-                            <span>{item.label}</span>
+                            <span>{label}</span>
                           </Link>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
@@ -132,6 +149,7 @@ export function AppShell({ children }: AppShellProps) {
           {!isMobile && <SidebarTrigger />}
           {!isMobile && <Separator orientation="vertical" className="h-6" />}
           <div className="flex-1" />
+          <LanguageSwitcher />
           <ThemeToggle />
           <NotificationBell />
           <UserMenu />

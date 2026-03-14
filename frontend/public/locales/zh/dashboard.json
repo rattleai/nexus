@@ -1,0 +1,27 @@
+{
+  "guest": {
+    "title": "欢迎使用您的平台",
+    "subtitle": "请登录或输入您的 API 密钥以开始使用。",
+    "async_jobs_title": "异步任务",
+    "async_jobs_desc": "创建和管理后台处理任务。",
+    "api_keys_title": "API 密钥",
+    "api_keys_desc": "安全的平台编程访问。",
+    "team_mgmt_title": "团队管理",
+    "team_mgmt_desc": "邀请和管理具有不同角色的团队成员。"
+  },
+  "authenticated": {
+    "title": "仪表盘",
+    "subtitle": "您的工作区概览。",
+    "total_jobs": "任务总数",
+    "api_keys": "API 密钥",
+    "team_members": "团队成员",
+    "storage": "存储空间",
+    "recent_activity": "最近活动",
+    "no_recent_activity": "暂无最近活动",
+    "service_health": "服务状态",
+    "quick_actions": "快捷操作",
+    "create_job": "创建任务",
+    "upload_file": "上传文件",
+    "manage_team": "管理团队"
+  }
+}

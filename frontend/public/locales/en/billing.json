@@ -1,0 +1,18 @@
+{
+  "title": "Billing",
+  "description": "Manage your subscription and usage.",
+  "current_plan": "Current Plan",
+  "usage": "Usage",
+  "usage_desc": "Current resource usage for your workspace.",
+  "available_plans": "Available Plans",
+  "manage_billing": "Manage Billing",
+  "cancel_subscription": "Cancel Subscription",
+  "cancel_confirm": "Are you sure you want to cancel your subscription? You'll retain access until the end of your current billing period.",
+  "cancel_success": "Subscription canceled",
+  "cancels_at_period_end": "Cancels at end of billing period",
+  "jobs_label": "Jobs",
+  "api_keys_label": "API Keys",
+  "team_members_label": "Team Members",
+  "storage_label": "Storage",
+  "load_failed": "Failed to load billing data."
+}

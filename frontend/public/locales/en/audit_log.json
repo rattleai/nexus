@@ -1,0 +1,29 @@
+{
+  "title": "Audit Log",
+  "description": "Track all activity across your workspace.",
+  "action_filter": "Action",
+  "resource_filter": "Resource",
+  "no_entries": "No audit log entries",
+  "no_entries_desc": "Activity will appear here as actions are performed.",
+  "actions": {
+    "all": "All Actions",
+    "create": "Create",
+    "read": "Read",
+    "update": "Update",
+    "delete": "Delete",
+    "login": "Login",
+    "logout": "Logout"
+  },
+  "resources": {
+    "all": "All Resources",
+    "user": "User",
+    "tenant": "Tenant",
+    "api_key": "API Key",
+    "job": "Job",
+    "file": "File",
+    "webhook": "Webhook",
+    "subscription": "Subscription"
+  },
+  "metadata": "Metadata",
+  "load_failed": "Failed to load audit logs."
+}

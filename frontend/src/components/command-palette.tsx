@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import type { LucideIcon } from "lucide-react"
 import {
   CommandDialog,
@@ -30,9 +31,10 @@ export function CommandPalette({
   actions,
   open: controlledOpen,
   onOpenChange,
-  placeholder = "Type a command or search...",
+  placeholder,
 }: CommandPaletteProps) {
   const [internalOpen, setInternalOpen] = React.useState(false)
+  const { t } = useTranslation()
 
   const isControlled = controlledOpen !== undefined
   const open = isControlled ? controlledOpen : internalOpen
@@ -74,9 +76,9 @@ export function CommandPalette({
 
   return (
     <CommandDialog open={open} onOpenChange={handleOpenChange}>
-      <CommandInput placeholder={placeholder} />
+      <CommandInput placeholder={placeholder ?? t("labels.type_command", { defaultValue: "Type a command or search..." })} />
       <CommandList>
-        <CommandEmpty>No results found.</CommandEmpty>
+        <CommandEmpty>{t("labels.no_results_found")}</CommandEmpty>
         {[...grouped.entries()].map(([group, items]) => (
           <CommandGroup key={group} heading={group || undefined}>
             {items.map((action) => {
