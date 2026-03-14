@@ -14,5 +14,7 @@
   "api_keys_label": "API 密钥",
   "team_members_label": "团队成员",
   "storage_label": "存储空间",
-  "load_failed": "加载账单数据失败。"
+  "load_failed": "加载账单数据失败。",
+  "most_popular": "最受欢迎",
+  "select_plan": "选择方案"
 }

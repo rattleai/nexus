@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 
 interface DiffLine {
@@ -203,11 +204,14 @@ function SplitView({ lines }: { lines: DiffLine[] }) {
 export function DiffViewer({
   oldValue,
   newValue,
-  oldTitle = "Original",
-  newTitle = "Modified",
+  oldTitle,
+  newTitle,
   mode = "split",
   className,
 }: DiffViewerProps) {
+  const { t } = useTranslation()
+  const resolvedOldTitle = oldTitle ?? t("labels.original")
+  const resolvedNewTitle = newTitle ?? t("labels.modified")
   const lines = React.useMemo(() => computeDiff(oldValue, newValue), [oldValue, newValue])
 
   return (
@@ -216,17 +220,17 @@ export function DiffViewer({
       {mode === "split" ? (
         <div className="grid grid-cols-2 border-b bg-muted/50">
           <div className="border-r border-border px-4 py-2 text-sm font-medium text-muted-foreground">
-            {oldTitle}
+            {resolvedOldTitle}
           </div>
           <div className="px-4 py-2 text-sm font-medium text-muted-foreground">
-            {newTitle}
+            {resolvedNewTitle}
           </div>
         </div>
       ) : (
         <div className="flex items-center gap-4 border-b bg-muted/50 px-4 py-2">
-          <span className="text-sm font-medium text-muted-foreground">{oldTitle}</span>
+          <span className="text-sm font-medium text-muted-foreground">{resolvedOldTitle}</span>
           <span className="text-xs text-muted-foreground">&rarr;</span>
-          <span className="text-sm font-medium text-muted-foreground">{newTitle}</span>
+          <span className="text-sm font-medium text-muted-foreground">{resolvedNewTitle}</span>
         </div>
       )}
 
@@ -243,11 +247,11 @@ export function DiffViewer({
       <div className="flex items-center gap-4 border-t bg-muted/50 px-4 py-2 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2.5 w-2.5 rounded-sm bg-green-500/60" />
-          {lines.filter((l) => l.type === "added").length} added
+          {lines.filter((l) => l.type === "added").length} {t("labels.added")}
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500/60" />
-          {lines.filter((l) => l.type === "removed").length} removed
+          {lines.filter((l) => l.type === "removed").length} {t("labels.removed")}
         </span>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import {
   flexRender,
   getCoreRowModel,
@@ -36,9 +37,10 @@ export function DataTable<TData, TValue>({
   columns,
   data,
   searchKey,
-  searchPlaceholder = "Search...",
+  searchPlaceholder,
   pageSize = 10,
 }: DataTableProps<TData, TValue>) {
+  const { t } = useTranslation()
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
@@ -64,7 +66,7 @@ export function DataTable<TData, TValue>({
       {searchKey && (
         <div className="flex items-center">
           <Input
-            placeholder={searchPlaceholder}
+            placeholder={searchPlaceholder ?? t("labels.search")}
             value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ""}
             onChange={(e) => table.getColumn(searchKey)?.setFilterValue(e.target.value)}
             className="max-w-sm"
@@ -100,7 +102,7 @@ export function DataTable<TData, TValue>({
             ) : (
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-24 text-center">
-                  No results.
+                  {t("data_table.no_results")}
                 </TableCell>
               </TableRow>
             )}
@@ -117,26 +119,27 @@ interface DataTablePaginationProps<TData> {
 }
 
 function DataTablePagination<TData>({ table }: DataTablePaginationProps<TData>) {
+  const { t } = useTranslation()
+
   return (
     <div className="flex items-center justify-between px-2">
       <div className="text-sm text-muted-foreground">
         {table.getFilteredSelectedRowModel().rows.length > 0 && (
           <span>
-            {table.getFilteredSelectedRowModel().rows.length} of{" "}
-            {table.getFilteredRowModel().rows.length} row(s) selected
+            {t("labels.rows_selected", { selected: table.getFilteredSelectedRowModel().rows.length, total: table.getFilteredRowModel().rows.length })}
           </span>
         )}
       </div>
       <div className="flex items-center gap-2">
         <span className="text-sm text-muted-foreground">
-          Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+          {t("labels.page_x_of_y", { page: table.getState().pagination.pageIndex + 1, total: table.getPageCount() })}
         </span>
         <Button
           variant="outline"
           size="sm"
           onClick={() => table.previousPage()}
           disabled={!table.getCanPreviousPage()}
-          aria-label="Previous page"
+          aria-label={t("aria.previous_page")}
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
@@ -145,7 +148,7 @@ function DataTablePagination<TData>({ table }: DataTablePaginationProps<TData>) 
           size="sm"
           onClick={() => table.nextPage()}
           disabled={!table.getCanNextPage()}
-          aria-label="Next page"
+          aria-label={t("aria.next_page")}
         >
           <ChevronRight className="h-4 w-4" />
         </Button>

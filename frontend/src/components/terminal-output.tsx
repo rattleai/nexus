@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { Check, Copy } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard"
@@ -33,11 +34,12 @@ const lineTypePrefix: Record<NonNullable<TerminalLine["type"]>, string> = {
 
 export function TerminalOutput({
   lines,
-  title = "Terminal",
+  title,
   className,
   maxHeight = 400,
   showLineNumbers = false,
 }: TerminalOutputProps) {
+  const { t } = useTranslation()
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const { copied, copy } = useCopyToClipboard()
 
@@ -70,23 +72,23 @@ export function TerminalOutput({
             <span className="h-3 w-3 rounded-full bg-yellow-500" />
             <span className="h-3 w-3 rounded-full bg-green-500" />
           </div>
-          <span className="text-xs font-medium text-zinc-400">{title}</span>
+          <span className="text-xs font-medium text-zinc-400">{title ?? t("terminal.title")}</span>
         </div>
         <button
           type="button"
           onClick={() => copy(fullText)}
           className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
-          aria-label={copied ? "Copied" : "Copy all"}
+          aria-label={copied ? t("status.copied") : t("aria.copy_all")}
         >
           {copied ? (
             <>
               <Check className="h-3.5 w-3.5" />
-              Copied
+              {t("status.copied")}
             </>
           ) : (
             <>
               <Copy className="h-3.5 w-3.5" />
-              Copy
+              {t("buttons.copy")}
             </>
           )}
         </button>
@@ -124,7 +126,7 @@ export function TerminalOutput({
         })}
 
         {lines.length === 0 && (
-          <span className="text-zinc-600">No output</span>
+          <span className="text-zinc-600">{t("labels.no_output")}</span>
         )}
       </div>
     </div>

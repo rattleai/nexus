@@ -6,6 +6,7 @@ import {
   CheckCircle,
   Circle,
 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 
 export type AgentState = "idle" | "thinking" | "acting" | "waiting" | "error" | "complete"
@@ -18,47 +19,48 @@ export interface AgentStatusProps {
 
 const stateConfig: Record<
   AgentState,
-  { icon: React.ElementType; color: string; pulseColor: string; label: string }
+  { icon: React.ElementType; color: string; pulseColor: string; labelKey: string }
 > = {
   idle: {
     icon: Circle,
     color: "text-muted-foreground",
     pulseColor: "",
-    label: "Idle",
+    labelKey: "status.idle",
   },
   thinking: {
     icon: Brain,
     color: "text-purple-500",
     pulseColor: "bg-purple-500/20",
-    label: "Thinking",
+    labelKey: "status.thinking",
   },
   acting: {
     icon: Zap,
     color: "text-blue-500",
     pulseColor: "bg-blue-500/20",
-    label: "Acting",
+    labelKey: "status.acting",
   },
   waiting: {
     icon: Clock,
     color: "text-yellow-500",
     pulseColor: "bg-yellow-500/20",
-    label: "Waiting",
+    labelKey: "status.waiting",
   },
   error: {
     icon: AlertCircle,
     color: "text-red-500",
     pulseColor: "",
-    label: "Error",
+    labelKey: "status.error",
   },
   complete: {
     icon: CheckCircle,
     color: "text-green-500",
     pulseColor: "",
-    label: "Complete",
+    labelKey: "status.complete",
   },
 }
 
 export function AgentStatus({ state, message, className }: AgentStatusProps) {
+  const { t: tc } = useTranslation()
   const config = stateConfig[state]
   const Icon = config.icon
   const isActive = state === "thinking" || state === "acting" || state === "waiting"
@@ -83,7 +85,7 @@ export function AgentStatus({ state, message, className }: AgentStatusProps) {
         )}
         <Icon className={cn("relative h-4 w-4", config.color)} />
       </span>
-      <span className="font-medium">{message ?? config.label}</span>
+      <span className="font-medium">{message ?? tc(config.labelKey as never)}</span>
     </div>
   )
 }

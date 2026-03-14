@@ -15,6 +15,7 @@ import {
   verticalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable"
+import { useTranslation } from "react-i18next"
 import { GripVertical } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -76,6 +77,7 @@ function SortableItem({
   id: string
   children: React.ReactNode
 }) {
+  const { t } = useTranslation()
   const {
     attributes,
     listeners,
@@ -105,7 +107,7 @@ function SortableItem({
       <button
         type="button"
         className="shrink-0 cursor-grab touch-none text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 active:cursor-grabbing"
-        aria-label="Drag to reorder"
+        aria-label={t("aria.drag_to_reorder")}
         {...attributes}
         {...listeners}
       >

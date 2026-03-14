@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 
 interface TypingIndicatorProps {
@@ -5,6 +6,8 @@ interface TypingIndicatorProps {
 }
 
 export function TypingIndicator({ className }: TypingIndicatorProps) {
+  const { t } = useTranslation("chat")
+
   return (
     <div className={cn("flex items-center gap-1 px-2 py-1", className)}>
       <span
@@ -19,7 +22,7 @@ export function TypingIndicator({ className }: TypingIndicatorProps) {
         className="inline-block h-2 w-2 rounded-full bg-muted-foreground/40 animate-[bounce_1.4s_infinite_400ms]"
         aria-hidden="true"
       />
-      <span className="sr-only">Assistant is typing</span>
+      <span className="sr-only">{t("typing")}</span>
     </div>
   )
 }

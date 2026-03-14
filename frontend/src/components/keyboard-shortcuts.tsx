@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 import {
   Dialog,
@@ -23,13 +24,15 @@ export function KeyboardShortcutsDialog({
   open,
   onOpenChange,
 }: KeyboardShortcutsDialogProps) {
+  const { t } = useTranslation()
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Keyboard Shortcuts</DialogTitle>
+          <DialogTitle>{t("keyboard_shortcuts.title")}</DialogTitle>
           <DialogDescription>
-            Quick reference for available keyboard shortcuts.
+            {t("keyboard_shortcuts.description")}
           </DialogDescription>
         </DialogHeader>
 

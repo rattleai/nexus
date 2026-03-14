@@ -37,7 +37,29 @@
     "sign_in": "Iniciar sesión",
     "sign_out": "Cerrar sesión",
     "create_account": "Crear cuenta",
-    "mark_all_read": "Marcar todo como leído"
+    "mark_all_read": "Marcar todo como leído",
+    "skip": "Omitir",
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "finish": "Finalizar",
+    "reset": "Restablecer",
+    "run": "Ejecutar",
+    "compare": "Comparar",
+    "upload": "Subir",
+    "open": "Abrir",
+    "download": "Descargar",
+    "copy": "Copiar",
+    "rename": "Renombrar",
+    "pin": "Fijar",
+    "unpin": "Desfijar",
+    "select": "Seleccionar",
+    "connect": "Conectar",
+    "crop": "Recortar",
+    "cropping": "Recortando...",
+    "new_chat": "Nuevo chat",
+    "or": "O",
+    "undo": "Deshacer",
+    "redo": "Rehacer"
   },
   "status": {
     "active": "Activo",
@@ -48,7 +70,19 @@
     "pending": "pendiente",
     "processing": "procesando",
     "completed": "completado",
-    "failed": "fallido"
+    "failed": "fallido",
+    "connected": "Conectado",
+    "unavailable": "No disponible",
+    "checking": "Verificando…",
+    "idle": "Inactivo",
+    "thinking": "Pensando",
+    "acting": "Actuando",
+    "waiting": "Esperando",
+    "error": "Error",
+    "complete": "Completo",
+    "generating": "Generando...",
+    "uploading": "Subiendo...",
+    "copied": "Copiado"
   },
   "labels": {
     "actions": "Acciones",
@@ -58,7 +92,88 @@
     "loading": "Cargando...",
     "no_results_found": "No se encontraron resultados.",
     "of_limit": "de {{limit}} límite",
-    "skip_to_main": "Ir al contenido principal"
+    "skip_to_main": "Ir al contenido principal",
+    "search": "Buscar...",
+    "no_results": "Sin resultados.",
+    "original": "Original",
+    "modified": "Modificado",
+    "added": "añadido",
+    "removed": "eliminado",
+    "page_x_of_y": "Página {{page}} de {{total}}",
+    "rows_selected": "{{selected}} de {{total}} fila(s) seleccionada(s)",
+    "loading_more": "Cargando más elementos",
+    "no_output": "Sin salida",
+    "user": "Usuario",
+    "type_command": "Escriba un comando o busque...",
+    "pinned": "Fijados",
+    "recent": "Recientes",
+    "select_items": "Seleccionar elementos...",
+    "no_items_found": "No se encontraron elementos.",
+    "tour_step": "Paso {{current}} de {{total}}"
+  },
+  "aria": {
+    "toggle_theme": "Cambiar tema",
+    "change_language": "Cambiar idioma",
+    "user_menu": "Menú de usuario",
+    "upload_files": "Subir archivos",
+    "close": "Cerrar",
+    "previous_image": "Imagen anterior",
+    "next_image": "Imagen siguiente",
+    "play": "Reproducir",
+    "pause": "Pausar",
+    "seek": "Buscar",
+    "mute": "Silenciar",
+    "unmute": "Activar sonido",
+    "volume": "Volumen",
+    "open_new_tab": "Abrir en nueva pestaña",
+    "send_message": "Enviar mensaje",
+    "drag_to_reorder": "Arrastrar para reordenar",
+    "copy_to_clipboard": "Copiar al portapapeles",
+    "remove_item": "Eliminar {{item}}",
+    "previous_page": "Página anterior",
+    "next_page": "Página siguiente",
+    "open_menu": "Abrir menú",
+    "kanban_board": "Tablero Kanban",
+    "image_lightbox": "Visor de imágenes",
+    "close_lightbox": "Cerrar visor",
+    "download_pdf": "Descargar PDF",
+    "copy_all": "Copiar todo"
+  },
+  "theme": {
+    "light": "Claro",
+    "dark": "Oscuro",
+    "system": "Sistema"
+  },
+  "error_state": {
+    "default_title": "Algo salió mal",
+    "default_message": "Ocurrió un error al cargar los datos.",
+    "access_denied": "Acceso denegado",
+    "access_denied_message": "Necesita acceso de {{role}} o superior para ver esta página."
+  },
+  "file_upload": {
+    "drag_drop": "Arrastre y suelte archivos aquí, o haga clic para explorar",
+    "max_size": "Máx. {{size}} por archivo",
+    "upload_count": "Subir {{count}} archivo(s)"
+  },
+  "data_table": {
+    "no_results": "Sin resultados."
+  },
+  "keyboard_shortcuts": {
+    "title": "Atajos de teclado",
+    "description": "Referencia rápida de los atajos de teclado disponibles."
+  },
+  "getting_started": {
+    "title": "Primeros pasos",
+    "description": "Bienvenido a su plataforma SaaS multi-inquilino. Use el panel para monitorear el estado de los servicios y administrar su aplicación."
+  },
+  "pdf_viewer": {
+    "unable_to_display": "No se puede mostrar el PDF",
+    "browser_no_support": "Es posible que su navegador no admita la visualización de PDF integrada.",
+    "open_new_tab": "Abrir en nueva pestaña",
+    "browser_no_embed": "Su navegador no admite PDFs integrados."
+  },
+  "terminal": {
+    "title": "Terminal"
   },
   "offline_banner": "Está sin conexión — los cambios se sincronizarán cuando se reconecte",
   "too_many_requests": "Demasiadas solicitudes",

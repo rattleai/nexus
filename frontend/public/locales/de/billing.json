@@ -14,5 +14,7 @@
   "api_keys_label": "API-Schlüssel",
   "team_members_label": "Teammitglieder",
   "storage_label": "Speicher",
-  "load_failed": "Abrechnungsdaten konnten nicht geladen werden."
+  "load_failed": "Abrechnungsdaten konnten nicht geladen werden.",
+  "most_popular": "Am beliebtesten",
+  "select_plan": "Tarif wählen"
 }

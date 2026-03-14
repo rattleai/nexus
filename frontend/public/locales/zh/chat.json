@@ -1,5 +1,13 @@
 {
   "title": "AI 对话",
   "description": "与 AI 助手对话。",
-  "error_message": "抱歉，处理您的消息时遇到了错误。请重试。"
+  "error_message": "抱歉，处理您的消息时遇到了错误。请重试。",
+  "no_messages": "暂无消息。开始一段对话吧。",
+  "prompt_placeholder": "输入消息...",
+  "typing": "助手正在输入",
+  "conversations": {
+    "search_placeholder": "搜索对话...",
+    "no_conversations": "暂无对话。",
+    "no_conversations_found": "未找到对话。"
+  }
 }

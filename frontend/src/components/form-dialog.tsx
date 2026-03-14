@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 import {
   Dialog,
   DialogContent,
@@ -27,9 +28,11 @@ export function FormDialog({
   description,
   isPending = false,
   onSubmit,
-  submitLabel = "Save",
+  submitLabel,
   children,
 }: FormDialogProps) {
+  const { t } = useTranslation()
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     await onSubmit()
@@ -51,10 +54,10 @@ export function FormDialog({
               onClick={() => onOpenChange(false)}
               disabled={isPending}
             >
-              Cancel
+              {t("buttons.cancel")}
             </Button>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : submitLabel}
+              {isPending ? t("buttons.saving") : (submitLabel ?? t("buttons.save"))}
             </Button>
           </DialogFooter>
         </form>

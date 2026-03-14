@@ -1,5 +1,13 @@
 {
   "title": "KI-Chat",
   "description": "Chatten Sie mit dem KI-Assistenten.",
-  "error_message": "Entschuldigung, bei der Verarbeitung Ihrer Nachricht ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut."
+  "error_message": "Entschuldigung, bei der Verarbeitung Ihrer Nachricht ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.",
+  "no_messages": "Noch keine Nachrichten. Starten Sie eine Unterhaltung.",
+  "prompt_placeholder": "Nachricht eingeben...",
+  "typing": "Assistent schreibt",
+  "conversations": {
+    "search_placeholder": "Unterhaltungen suchen...",
+    "no_conversations": "Noch keine Unterhaltungen.",
+    "no_conversations_found": "Keine Unterhaltungen gefunden."
+  }
 }

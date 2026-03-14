@@ -14,5 +14,7 @@
   "api_keys_label": "Claves API",
   "team_members_label": "Miembros del equipo",
   "storage_label": "Almacenamiento",
-  "load_failed": "No se pudieron cargar los datos de facturación."
+  "load_failed": "No se pudieron cargar los datos de facturación.",
+  "most_popular": "Más popular",
+  "select_plan": "Seleccionar plan"
 }

@@ -1,5 +1,6 @@
 import * as React from "react"
 import { createPortal } from "react-dom"
+import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
@@ -25,6 +26,7 @@ interface TargetRect {
 }
 
 export function Tour({ steps, active, onComplete, onSkip }: TourProps) {
+  const { t } = useTranslation()
   const [currentStep, setCurrentStep] = React.useState(0)
   const [targetRect, setTargetRect] = React.useState<TargetRect | null>(null)
 
@@ -99,7 +101,7 @@ export function Tour({ steps, active, onComplete, onSkip }: TourProps) {
       className="fixed inset-0 z-[9999]"
       role="dialog"
       aria-modal="true"
-      aria-label={`Tour step ${currentStep + 1} of ${steps.length}`}
+      aria-label={t("labels.tour_step", { current: currentStep + 1, total: steps.length })}
     >
       {/* Overlay with cutout */}
       <svg
@@ -170,16 +172,16 @@ export function Tour({ steps, active, onComplete, onSkip }: TourProps) {
             <div className="flex items-center gap-2">
               {onSkip && (
                 <Button variant="ghost" size="sm" onClick={onSkip}>
-                  Skip
+                  {t("buttons.skip")}
                 </Button>
               )}
               {!isFirst && (
                 <Button variant="outline" size="sm" onClick={handlePrev}>
-                  Previous
+                  {t("buttons.previous")}
                 </Button>
               )}
               <Button size="sm" onClick={handleNext}>
-                {isLast ? "Finish" : "Next"}
+                {isLast ? t("buttons.finish") : t("buttons.next")}
               </Button>
             </div>
           </div>

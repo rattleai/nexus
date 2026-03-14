@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { Download, ExternalLink, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -16,6 +17,7 @@ export function PDFViewer({
   className,
   height = 600,
 }: PDFViewerProps) {
+  const { t } = useTranslation()
   const [hasError, setHasError] = React.useState(false)
 
   const computedHeight = typeof height === "number" ? `${height}px` : height
@@ -54,19 +56,19 @@ export function PDFViewer({
             variant="ghost"
             size="sm"
             onClick={handleOpenNewTab}
-            aria-label="Open in new tab"
+            aria-label={t("aria.open_new_tab")}
           >
             <ExternalLink className="mr-1.5 h-4 w-4" />
-            Open
+            {t("buttons.open")}
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={handleDownload}
-            aria-label="Download PDF"
+            aria-label={t("aria.download_pdf")}
           >
             <Download className="mr-1.5 h-4 w-4" />
-            Download
+            {t("buttons.download")}
           </Button>
         </div>
       </div>
@@ -79,19 +81,19 @@ export function PDFViewer({
         >
           <FileText className="h-12 w-12 text-muted-foreground/50" />
           <div>
-            <p className="text-sm font-medium">Unable to display PDF</p>
+            <p className="text-sm font-medium">{t("pdf_viewer.unable_to_display")}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Your browser may not support embedded PDF viewing.
+              {t("pdf_viewer.browser_no_support")}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleOpenNewTab}>
               <ExternalLink className="mr-1.5 h-4 w-4" />
-              Open in new tab
+              {t("pdf_viewer.open_new_tab")}
             </Button>
             <Button variant="outline" size="sm" onClick={handleDownload}>
               <Download className="mr-1.5 h-4 w-4" />
-              Download
+              {t("buttons.download")}
             </Button>
           </div>
         </div>
@@ -113,10 +115,10 @@ export function PDFViewer({
           >
             <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
               <p className="text-sm text-muted-foreground">
-                Your browser does not support embedded PDFs.
+                {t("pdf_viewer.browser_no_embed")}
               </p>
               <Button variant="outline" size="sm" onClick={handleOpenNewTab}>
-                Open in new tab
+                {t("pdf_viewer.open_new_tab")}
               </Button>
             </div>
           </iframe>

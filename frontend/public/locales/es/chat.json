@@ -1,5 +1,13 @@
 {
   "title": "Chat IA",
   "description": "Converse con el asistente de IA.",
-  "error_message": "Lo sentimos, ocurrió un error al procesar su mensaje. Por favor intente de nuevo."
+  "error_message": "Lo sentimos, ocurrió un error al procesar su mensaje. Por favor intente de nuevo.",
+  "no_messages": "Aún no hay mensajes. Inicie una conversación.",
+  "prompt_placeholder": "Escriba un mensaje...",
+  "typing": "El asistente está escribiendo",
+  "conversations": {
+    "search_placeholder": "Buscar conversaciones...",
+    "no_conversations": "Aún no hay conversaciones.",
+    "no_conversations_found": "No se encontraron conversaciones."
+  }
 }

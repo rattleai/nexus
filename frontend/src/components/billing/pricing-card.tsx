@@ -1,4 +1,5 @@
 import { Check } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -27,6 +28,8 @@ export function PricingCard({
   disabled = false,
   className,
 }: PricingCardProps) {
+  const { t } = useTranslation("billing")
+
   return (
     <Card
       className={cn(
@@ -37,7 +40,7 @@ export function PricingCard({
     >
       {isPopular && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <Badge>Most Popular</Badge>
+          <Badge>{t("most_popular")}</Badge>
         </div>
       )}
 
@@ -74,7 +77,7 @@ export function PricingCard({
           variant={isPopular ? "default" : "outline"}
           className="w-full"
         >
-          {isCurrent ? "Current Plan" : "Select Plan"}
+          {isCurrent ? t("current_plan") : t("select_plan")}
         </Button>
       </CardContent>
     </Card>

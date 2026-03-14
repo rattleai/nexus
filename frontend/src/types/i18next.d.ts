@@ -15,6 +15,7 @@ import type webhooks from "../../public/locales/en/webhooks.json"
 import type audit_log from "../../public/locales/en/audit_log.json"
 import type chat from "../../public/locales/en/chat.json"
 import type notifications from "../../public/locales/en/notifications.json"
+import type ai from "../../public/locales/en/ai.json"
 
 declare module "i18next" {
   interface CustomTypeOptions {
@@ -40,6 +41,7 @@ declare module "i18next" {
       audit_log: typeof audit_log
       chat: typeof chat
       notifications: typeof notifications
+      ai: typeof ai
     }
   }
 }

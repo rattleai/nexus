@@ -59,7 +59,7 @@ export function BottomNav() {
           type="button"
           onClick={toggleSidebar}
           className="flex flex-1 flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Open menu"
+          aria-label={t("aria.open_menu")}
         >
           <Menu className="h-5 w-5" />
           <span>{t("nav.more", { defaultValue: "More" })}</span>

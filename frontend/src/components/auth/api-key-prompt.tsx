@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -7,6 +8,8 @@ import { useAuth } from "@/hooks/use-auth"
 
 export function ApiKeyPrompt() {
   const { setApiKey } = useAuth()
+  const { t } = useTranslation("auth")
+  const { t: tc } = useTranslation()
   const [value, setValue] = useState("")
   const [error, setError] = useState("")
 
@@ -15,7 +18,7 @@ export function ApiKeyPrompt() {
     const trimmed = value.trim()
     if (!trimmed) return
     if (trimmed.length < 10) {
-      setError("API key is too short")
+      setError(t("api_key_prompt.too_short"))
       return
     }
     setError("")
@@ -26,13 +29,13 @@ export function ApiKeyPrompt() {
     <div className="min-h-[60vh] flex items-center justify-center">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="text-lg font-semibold text-gray-900">Enter API Key</CardTitle>
+          <CardTitle className="text-lg font-semibold text-gray-900">{t("api_key_prompt.title")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <p className="text-sm text-gray-600">
-                Enter your API key to access the platform. You can find it in your tenant settings.
+                {t("api_key_prompt.description")}
               </p>
               <Label htmlFor="api-key-input" className="sr-only">
                 API Key
@@ -57,14 +60,14 @@ export function ApiKeyPrompt() {
               )}
             </div>
             <Button type="submit" className="w-full" disabled={!value.trim()}>
-              Connect
+              {tc("buttons.connect")}
             </Button>
           </form>
           <div className="mt-4 pt-4 border-t text-center">
             <p className="text-sm text-gray-600">
-              Or{" "}
+              {tc("buttons.or")}{" "}
               <a href="/login" className="text-primary underline">
-                sign in with email
+                {t("api_key_prompt.sign_in_with_email")}
               </a>
             </p>
           </div>

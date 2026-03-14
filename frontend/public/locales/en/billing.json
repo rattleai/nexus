@@ -14,5 +14,7 @@
   "api_keys_label": "API Keys",
   "team_members_label": "Team Members",
   "storage_label": "Storage",
-  "load_failed": "Failed to load billing data."
+  "load_failed": "Failed to load billing data.",
+  "most_popular": "Most Popular",
+  "select_plan": "Select Plan"
 }

@@ -29,6 +29,7 @@ export const ns = [
   "audit_log",
   "chat",
   "notifications",
+  "ai",
 ] as const
 
 i18n

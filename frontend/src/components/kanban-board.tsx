@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import {
   DndContext,
   closestCenter,
@@ -48,6 +49,7 @@ export function KanbanBoard({
   renderCard,
   className,
 }: KanbanBoardProps) {
+  const { t } = useTranslation()
   const [activeCard, setActiveCard] = React.useState<KanbanCard | null>(null)
 
   const sensors = useSensors(
@@ -105,7 +107,7 @@ export function KanbanBoard({
           className,
         )}
         role="region"
-        aria-label="Kanban board"
+        aria-label={t("aria.kanban_board")}
       >
         {columns.map((column) => (
           <Column

@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react"
+import { useTranslation } from "react-i18next"
 import { X, Check, ChevronsUpDown } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -32,11 +33,12 @@ export function MultiSelect({
   options,
   selected,
   onChange,
-  placeholder = "Select items...",
-  searchPlaceholder = "Search...",
-  emptyMessage = "No items found.",
+  placeholder,
+  searchPlaceholder,
+  emptyMessage,
   className,
 }: MultiSelectProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
 
   const handleSelect = useCallback(
@@ -68,7 +70,7 @@ export function MultiSelect({
         >
           <div className="flex flex-wrap gap-1">
             {selected.length === 0 ? (
-              <span className="text-muted-foreground">{placeholder}</span>
+              <span className="text-muted-foreground">{placeholder ?? t("labels.select_items")}</span>
             ) : (
               selected.map((value) => {
                 const option = options.find((o) => o.value === value)
@@ -81,7 +83,7 @@ export function MultiSelect({
                         e.stopPropagation()
                         handleRemove(value)
                       }}
-                      aria-label={`Remove ${option?.label ?? value}`}
+                      aria-label={t("aria.remove_item", { item: option?.label ?? value })}
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -95,9 +97,9 @@ export function MultiSelect({
       </PopoverTrigger>
       <PopoverContent className="w-full p-0" align="start">
         <Command>
-          <CommandInput placeholder={searchPlaceholder} />
+          <CommandInput placeholder={searchPlaceholder ?? t("labels.search")} />
           <CommandList>
-            <CommandEmpty>{emptyMessage}</CommandEmpty>
+            <CommandEmpty>{emptyMessage ?? t("labels.no_items_found")}</CommandEmpty>
             <CommandGroup>
               {options.map((option) => (
                 <CommandItem

@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -22,6 +23,7 @@ export function InfiniteList<T>({
   isLoading = false,
   className,
 }: InfiniteListProps<T>) {
+  const { t } = useTranslation()
   const parentRef = React.useRef<HTMLDivElement>(null)
   const sentinelRef = React.useRef<HTMLDivElement>(null)
 
@@ -82,7 +84,7 @@ export function InfiniteList<T>({
       {isLoading && (
         <div className="flex items-center justify-center py-4">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          <span className="sr-only">Loading more items</span>
+          <span className="sr-only">{t("labels.loading_more")}</span>
         </div>
       )}
     </div>

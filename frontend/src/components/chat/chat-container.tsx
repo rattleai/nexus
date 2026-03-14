@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 import { ChatMessage } from "./chat-message"
 import { TypingIndicator } from "./typing-indicator"
@@ -21,6 +22,7 @@ export function ChatContainer({
   isLoading = false,
   className,
 }: ChatContainerProps) {
+  const { t } = useTranslation("chat")
   const bottomRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
@@ -36,7 +38,7 @@ export function ChatContainer({
     >
       {messages.length === 0 && (
         <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-          No messages yet. Start a conversation.
+          {t("no_messages")}
         </div>
       )}
 

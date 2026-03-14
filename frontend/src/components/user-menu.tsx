@@ -37,7 +37,7 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-2" aria-label="User menu">
+        <Button variant="ghost" size="sm" className="gap-2" aria-label={t("aria.user_menu")}>
           <Avatar className="h-6 w-6">
             <AvatarFallback className="text-xs">{initials}</AvatarFallback>
           </Avatar>
@@ -48,7 +48,7 @@ export function UserMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>
-          <p className="text-sm font-medium">{user.display_name ?? "User"}</p>
+          <p className="text-sm font-medium">{user.display_name ?? t("labels.user")}</p>
           <p className="text-xs text-muted-foreground">{user.email}</p>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
