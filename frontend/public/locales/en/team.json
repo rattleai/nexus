@@ -33,5 +33,16 @@
   "revoke_invitation_title": "Revoke Invitation",
   "revoke_invitation_desc": "Revoke the invitation sent to {{email}}?",
   "revoke_success": "Invitation revoked",
-  "expires": "Expires"
+  "expires": "Expires",
+  "accept_invitation": {
+    "title": "Accept Invitation",
+    "description": "You have been invited to join an organization. Click the button below to accept.",
+    "accept": "Accept Invitation",
+    "accepting": "Accepting...",
+    "success": "Invitation accepted!",
+    "error": "Failed to accept invitation",
+    "invalid_token": "Invalid or missing invitation token.",
+    "go_to_sign_in": "Go to Sign In",
+    "back_to_sign_in": "Back to Sign In"
+  }
 }

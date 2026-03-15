@@ -23,7 +23,7 @@ declare module "i18next" {
     // Return string to avoid ReactI18NextChildren conflicts with React 19
     returnNull: false
     returnEmptyString: false
-    // Disable strict key checking to allow cross-namespace refs and dynamic keys
+    // Namespace separator for cross-namespace key access (e.g., "errors:not_found.title")
     nsSeparator: ":"
     resources: {
       common: typeof common

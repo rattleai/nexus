@@ -9,18 +9,20 @@ export function useFormattedDate(
   options?: Intl.DateTimeFormatOptions,
 ): string {
   const { i18n } = useTranslation()
+  const stableOptions = JSON.stringify(options)
   return useMemo(() => {
     if (!date) return "\u2014"
     try {
       const d = typeof date === "string" ? new Date(date) : date
+      const opts = stableOptions ? JSON.parse(stableOptions) : undefined
       return new Intl.DateTimeFormat(i18n.language, {
         dateStyle: "medium",
-        ...options,
+        ...opts,
       }).format(d)
     } catch {
       return String(date)
     }
-  }, [date, i18n.language, options])
+  }, [date, i18n.language, stableOptions])
 }
 
 /**
@@ -31,14 +33,16 @@ export function useFormattedNumber(
   options?: Intl.NumberFormatOptions,
 ): string {
   const { i18n } = useTranslation()
+  const stableOptions = JSON.stringify(options)
   return useMemo(() => {
     if (num == null) return "\u2014"
     try {
-      return new Intl.NumberFormat(i18n.language, options).format(num)
+      const opts = stableOptions ? JSON.parse(stableOptions) : undefined
+      return new Intl.NumberFormat(i18n.language, opts).format(num)
     } catch {
       return String(num)
     }
-  }, [num, i18n.language, options])
+  }, [num, i18n.language, stableOptions])
 }
 
 /**

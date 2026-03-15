@@ -33,5 +33,16 @@
   "revoke_invitation_title": "撤销邀请",
   "revoke_invitation_desc": "撤销发送给 {{email}} 的邀请？",
   "revoke_success": "邀请已撤销",
-  "expires": "过期时间"
+  "expires": "过期时间",
+  "accept_invitation": {
+    "title": "接受邀请",
+    "description": "您已被邀请加入一个组织。点击下方按钮接受邀请。",
+    "accept": "接受邀请",
+    "accepting": "接受中...",
+    "success": "邀请已接受！",
+    "error": "接受邀请失败",
+    "invalid_token": "无效或缺失的邀请令牌。",
+    "go_to_sign_in": "前往登录",
+    "back_to_sign_in": "返回登录"
+  }
 }

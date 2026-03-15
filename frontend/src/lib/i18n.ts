@@ -64,10 +64,13 @@ i18n
     },
   })
 
-// Update HTML lang attribute on language change
+// RTL languages for future-proof direction support
+const RTL_LANGUAGES = ["ar", "he", "fa", "ur"]
+
+// Update HTML lang and dir attributes on language change
 i18n.on("languageChanged", (lng) => {
   document.documentElement.lang = lng
-  document.documentElement.dir = "ltr"
+  document.documentElement.dir = RTL_LANGUAGES.includes(lng) ? "rtl" : "ltr"
 })
 
 export default i18n

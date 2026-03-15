@@ -149,8 +149,12 @@ AGENT_UA_PREFIXES = (
 def is_agent_request(request: Request) -> bool:
     """Detect if the request comes from an AI agent.
 
-    Checks for X-Agent-Name header, X-API-Key header (programmatic access),
-    or known agent User-Agent patterns. Result is cached on request.state.
+    Checks for X-Agent-Name header or known agent User-Agent patterns.
+    Result is cached on request.state.
+
+    Note: X-API-Key alone does NOT imply agent traffic — regular programmatic
+    consumers (mobile apps, integrations) also use API keys. API key auth is
+    already CSRF-safe by nature and handled separately in middleware.
     """
     # Return cached result if already computed
     cached = getattr(request.state, "is_agent", None)
@@ -158,9 +162,6 @@ def is_agent_request(request: Request) -> bool:
         return cached
 
     if request.headers.get("X-Agent-Name"):
-        result = True
-    elif request.headers.get("X-API-Key"):
-        # API key auth implies programmatic access — treat as agent
         result = True
     else:
         ua = request.headers.get("User-Agent", "").lower()
