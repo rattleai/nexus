@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 import { useAuth } from "@/hooks/use-auth"
 import { useAuthContext } from "@/lib/auth-context"
 import { ApiKeyPrompt } from "@/components/auth/api-key-prompt"
@@ -24,6 +25,7 @@ export function AuthGuard({
 }: AuthGuardProps) {
   const { isAuthenticated: isApiKeyAuth } = useAuth()
   const { isAuthenticated: isJwtAuth, isLoading, user } = useAuthContext()
+  const { t } = useTranslation()
 
   // While session is being restored (refresh in flight), don't flash the login prompt.
   // This prevents the ApiKeyPrompt from appearing briefly on page load / tab refocus.
@@ -41,9 +43,9 @@ export function AuthGuard({
     if (userLevel < requiredLevel) {
       return (
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <h2 className="text-lg font-semibold">Access Denied</h2>
+          <h2 className="text-lg font-semibold">{t("error_state.access_denied")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            You need {requiredRole} access or higher to view this page.
+            {t("error_state.access_denied_message", { role: requiredRole })}
           </p>
         </div>
       )

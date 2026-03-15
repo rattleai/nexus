@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { Check, ChevronDown, Cpu } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatCompactNumber } from "@/lib/format"
@@ -55,9 +56,11 @@ export function ModelSelector({
   models,
   value,
   onChange,
-  placeholder = "Select a model...",
+  placeholder,
   className,
 }: ModelSelectorProps) {
+  const { t } = useTranslation("ai")
+  const resolvedPlaceholder = placeholder ?? t("model_selector.placeholder")
   const [open, setOpen] = React.useState(false)
   const selectedModel = models.find((m) => m.id === value)
   const grouped = React.useMemo(() => groupModelsByProvider(models), [models])
@@ -81,7 +84,7 @@ export function ModelSelector({
             ) : (
               <>
                 <Cpu className="h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground">{placeholder}</span>
+                <span className="text-muted-foreground">{resolvedPlaceholder}</span>
               </>
             )}
           </span>
@@ -90,9 +93,9 @@ export function ModelSelector({
       </PopoverTrigger>
       <PopoverContent className="w-[340px] p-0" align="start">
         <Command>
-          <CommandInput placeholder="Search models..." />
+          <CommandInput placeholder={t("model_selector.search_placeholder")} />
           <CommandList>
-            <CommandEmpty>No models found.</CommandEmpty>
+            <CommandEmpty>{t("model_selector.no_models")}</CommandEmpty>
             {Object.entries(grouped).map(([provider, providerModels]) => (
               <CommandGroup key={provider} heading={provider}>
                 {providerModels.map((model) => (

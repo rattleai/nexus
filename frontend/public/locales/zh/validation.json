@@ -1,0 +1,20 @@
+{
+  "required": "此字段为必填项",
+  "email_required": "邮箱为必填项",
+  "invalid_email": "邮箱地址无效",
+  "password_required": "密码为必填项",
+  "display_name_required": "显示名称为必填项",
+  "org_slug_required": "组织标识为必填项",
+  "org_slug_format": "只能包含小写字母、数字和连字符（不能以连字符开头或结尾）",
+  "password_min_length": "密码至少需要 {{count}} 个字符",
+  "password_lowercase": "必须包含一个小写字母",
+  "password_uppercase": "必须包含一个大写字母",
+  "password_digit": "必须包含一个数字",
+  "confirm_password_required": "请确认您的密码",
+  "passwords_not_match": "两次输入的密码不一致",
+  "current_password_required": "当前密码为必填项",
+  "url_and_events_required": "URL 和至少一个事件为必填项",
+  "key_name_required": "密钥名称为必填项",
+  "job_type_required": "任务类型为必填项",
+  "invite_email_required": "邮箱地址为必填项"
+}

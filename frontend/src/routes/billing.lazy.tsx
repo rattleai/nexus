@@ -1,4 +1,5 @@
 import { createLazyFileRoute } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import { CreditCard, ExternalLink } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -29,14 +30,15 @@ export const Route = createLazyFileRoute("/billing")({
   component: BillingPage,
 })
 
-const usageLabels: Record<string, string> = {
-  jobs: "Jobs",
-  api_keys: "API Keys",
-  team_members: "Team Members",
-  storage_bytes: "Storage",
+const usageLabelKeys: Record<string, string> = {
+  jobs: "jobs_label",
+  api_keys: "api_keys_label",
+  team_members: "team_members_label",
+  storage_bytes: "storage_label",
 }
 
 function UsageBar({ label, metric, isBytes }: { label: string; metric: UsageMetric; isBytes?: boolean }) {
+  const { t: tc } = useTranslation("common")
   const percent = metric.limit ? Math.min((metric.used / metric.limit) * 100, 100) : 0
   const isWarning = percent >= 80 && percent < 100
   const isAlert = percent >= 100
@@ -52,7 +54,7 @@ function UsageBar({ label, metric, isBytes }: { label: string; metric: UsageMetr
           isWarning && "text-amber-600 dark:text-amber-400 font-medium",
           isAlert && "text-red-600 dark:text-red-400 font-medium",
         )}>
-          {formatValue(metric.used)} / {metric.limit ? formatValue(metric.limit) : "Unlimited"}
+          {formatValue(metric.used)} / {metric.limit ? formatValue(metric.limit) : tc("status.unlimited")}
         </span>
       </div>
       {metric.limit ? (
@@ -71,6 +73,7 @@ function UsageBar({ label, metric, isBytes }: { label: string; metric: UsageMetr
 }
 
 function BillingPage() {
+  const { t } = useTranslation("billing")
   const { data: subscription, isLoading: subLoading, error: subError, refetch: subRefetch } = useSubscription()
   const { data: plans, isLoading: plansLoading } = usePlans()
   const { data: usage, isLoading: usageLoading } = useUsage()
@@ -109,12 +112,12 @@ function BillingPage() {
     <AuthGuard requiredRole="admin">
       <div className="space-y-6">
         <PageHeader
-          title="Billing"
-          description="Manage your subscription and usage."
+          title={t("title")}
+          description={t("description")}
           actions={
             <Button variant="outline" onClick={handleManageBilling} disabled={billingPortal.isPending}>
               <ExternalLink className="mr-2 h-4 w-4" />
-              Manage Billing
+              {t("manage_billing")}
             </Button>
           }
         />
@@ -123,7 +126,7 @@ function BillingPage() {
           <LoadingState variant="skeleton" rows={4} />
         ) : subError ? (
           <ErrorState
-            message={subError instanceof Error ? subError.message : "Failed to load billing data."}
+            message={subError instanceof Error ? subError.message : t("load_failed")}
             onRetry={() => subRefetch()}
           />
         ) : (
@@ -133,7 +136,7 @@ function BillingPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-3">
                   <CreditCard className="h-5 w-5" />
-                  Current Plan
+                  {t("current_plan")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -151,20 +154,20 @@ function BillingPage() {
                     )}
                     {subscription?.cancel_at_period_end && (
                       <p className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-                        Cancels at end of billing period
+                        {t("cancels_at_period_end")}
                       </p>
                     )}
                   </div>
                   {subscription?.status === "active" && !subscription.cancel_at_period_end && (
                     <ConfirmDialog
-                      title="Cancel Subscription"
-                      description="Are you sure you want to cancel your subscription? You'll retain access until the end of your current billing period."
+                      title={t("cancel_subscription")}
+                      description={t("cancel_confirm")}
                       variant="destructive"
-                      confirmLabel="Cancel Subscription"
+                      confirmLabel={t("cancel_subscription")}
                       onConfirm={async () => {
                         try {
                           await cancelSubscription.mutateAsync()
-                          toast.success("Subscription canceled")
+                          toast.success(t("cancel_success"))
                         } catch (err) {
                           const e = await parseApiError(err)
                           toast.error(e.detail)
@@ -172,7 +175,7 @@ function BillingPage() {
                       }}
                     >
                       <Button variant="destructive" size="sm">
-                        Cancel Subscription
+                        {t("cancel_subscription")}
                       </Button>
                     </ConfirmDialog>
                   )}
@@ -184,17 +187,17 @@ function BillingPage() {
             {usage && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Usage</CardTitle>
-                  <CardDescription>Current resource usage for your workspace.</CardDescription>
+                  <CardTitle>{t("usage")}</CardTitle>
+                  <CardDescription>{t("usage_desc")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
-                  {(Object.keys(usageLabels) as Array<keyof typeof usageLabels>).map((key) => {
+                  {(Object.keys(usageLabelKeys) as Array<keyof typeof usageLabelKeys>).map((key) => {
                     const metric = usage[key as keyof typeof usage]
                     if (!metric) return null
                     return (
                       <UsageBar
                         key={key}
-                        label={usageLabels[key]}
+                        label={t(usageLabelKeys[key] as never)}
                         metric={metric}
                         isBytes={key === "storage_bytes"}
                       />
@@ -207,7 +210,7 @@ function BillingPage() {
             {/* Pricing Table */}
             {plans && plans.length > 0 && (
               <div className="space-y-4">
-                <h2 className="text-lg font-semibold">Available Plans</h2>
+                <h2 className="text-lg font-semibold">{t("available_plans")}</h2>
                 <PricingTable
                   plans={plans.map((p) => ({
                     id: p.id,

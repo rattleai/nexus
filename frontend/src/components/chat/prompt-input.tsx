@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { ArrowUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -13,9 +14,11 @@ interface PromptInputProps {
 export function PromptInput({
   onSubmit,
   disabled = false,
-  placeholder = "Type a message...",
+  placeholder,
   className,
 }: PromptInputProps) {
+  const { t } = useTranslation("chat")
+  const { t: tc } = useTranslation()
   const [value, setValue] = React.useState("")
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
 
@@ -59,7 +62,7 @@ export function PromptInput({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder={placeholder}
+        placeholder={placeholder ?? t("prompt_placeholder")}
         disabled={disabled}
         rows={1}
         className="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
@@ -71,7 +74,7 @@ export function PromptInput({
         className="h-8 w-8 shrink-0"
       >
         <ArrowUp className="h-4 w-4" />
-        <span className="sr-only">Send message</span>
+        <span className="sr-only">{tc("aria.send_message")}</span>
       </Button>
     </div>
   )

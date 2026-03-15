@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { DollarSign, Hash, TrendingUp, Cpu } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatCurrency, formatCompactNumber } from "@/lib/format"
@@ -58,6 +59,7 @@ function aggregateByModel(data: CostData[]): ModelBreakdown[] {
 }
 
 export function CostDashboard({ data, budget, className }: CostDashboardProps) {
+  const { t } = useTranslation("ai")
   const totalSpend = React.useMemo(
     () => data.reduce((sum, d) => sum + d.cost, 0),
     [data],
@@ -75,17 +77,17 @@ export function CostDashboard({ data, budget, className }: CostDashboardProps) {
     <div className={cn("space-y-6", className)}>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Total Spend"
+          title={t("cost_dashboard.total_spend")}
           value={formatCurrency(totalSpend)}
           icon={DollarSign}
         />
         <StatCard
-          title="Total Requests"
+          title={t("cost_dashboard.total_requests")}
           value={formatCompactNumber(totalRequests)}
           icon={Hash}
         />
         <StatCard
-          title="Avg Cost / Request"
+          title={t("cost_dashboard.avg_cost_per_request")}
           value={
             avgCostPerRequest < 0.01
               ? `$${avgCostPerRequest.toFixed(4)}`
@@ -94,7 +96,7 @@ export function CostDashboard({ data, budget, className }: CostDashboardProps) {
           icon={TrendingUp}
         />
         <StatCard
-          title="Models Used"
+          title={t("cost_dashboard.models_used")}
           value={modelBreakdowns.length}
           icon={Cpu}
         />
@@ -103,7 +105,7 @@ export function CostDashboard({ data, budget, className }: CostDashboardProps) {
       {budgetUsage != null && budget != null && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Budget Usage</CardTitle>
+            <CardTitle className="text-sm font-medium">{t("cost_dashboard.budget_usage")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between text-sm">
@@ -132,7 +134,7 @@ export function CostDashboard({ data, budget, className }: CostDashboardProps) {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium">
-              Spend by Model
+              {t("cost_dashboard.spend_by_model")}
             </CardTitle>
           </CardHeader>
           <CardContent>

@@ -1,0 +1,42 @@
+{
+  "playground": {
+    "title": "KI-Spielwiese",
+    "prompt_placeholder": "Eingabeaufforderung eingeben...",
+    "response_placeholder": "Antwort wird hier angezeigt",
+    "comparing": "Vergleiche"
+  },
+  "cost_dashboard": {
+    "total_spend": "Gesamtausgaben",
+    "total_requests": "Anfragen gesamt",
+    "avg_cost_per_request": "Ø Kosten / Anfrage",
+    "models_used": "Verwendete Modelle",
+    "budget_usage": "Budgetnutzung",
+    "spend_by_model": "Ausgaben nach Modell"
+  },
+  "model_selector": {
+    "placeholder": "Modell auswählen...",
+    "search_placeholder": "Modelle suchen...",
+    "no_models": "Keine Modelle gefunden."
+  },
+  "editor": {
+    "link": {
+      "edit": "Link bearbeiten",
+      "insert": "Link einfügen",
+      "remove": "Link entfernen"
+    },
+    "insert_image": "Bild einfügen",
+    "placeholder": "Schreiben beginnen...",
+    "format": {
+      "bold": "Fett",
+      "italic": "Kursiv",
+      "strikethrough": "Durchgestrichen",
+      "inline_code": "Inline-Code",
+      "heading_1": "Überschrift 1",
+      "heading_2": "Überschrift 2",
+      "heading_3": "Überschrift 3",
+      "bullet_list": "Aufzählungsliste",
+      "ordered_list": "Nummerierte Liste",
+      "blockquote": "Zitat"
+    }
+  }
+}

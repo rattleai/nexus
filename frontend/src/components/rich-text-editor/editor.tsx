@@ -4,6 +4,7 @@ import StarterKit from "@tiptap/starter-kit"
 import Placeholder from "@tiptap/extension-placeholder"
 import Link from "@tiptap/extension-link"
 import Image from "@tiptap/extension-image"
+import { useTranslation } from "react-i18next"
 import { useCallback, useState } from "react"
 import {
   Bold,
@@ -38,6 +39,7 @@ export interface RichTextEditorProps {
 }
 
 function BubbleLinkEditor({ editor }: { editor: ReturnType<typeof useEditor> }) {
+  const { t } = useTranslation("ai")
   const [linkUrl, setLinkUrl] = useState("")
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false)
 
@@ -115,7 +117,7 @@ function BubbleLinkEditor({ editor }: { editor: ReturnType<typeof useEditor> }) 
         </PopoverTrigger>
         <PopoverContent className="w-72" align="start" side="top">
           <form onSubmit={handleSetLink} className="flex flex-col gap-2">
-            <p className="text-sm font-medium">Edit Link</p>
+            <p className="text-sm font-medium">{t("editor.link.edit")}</p>
             <div className="flex gap-2">
               <Input
                 placeholder="https://example.com"
@@ -137,7 +139,7 @@ function BubbleLinkEditor({ editor }: { editor: ReturnType<typeof useEditor> }) 
                 onClick={handleRemoveLink}
               >
                 <Unlink className="mr-2 h-4 w-4" />
-                Remove link
+                {t("editor.link.remove")}
               </Button>
             )}
           </form>
@@ -150,12 +152,14 @@ function BubbleLinkEditor({ editor }: { editor: ReturnType<typeof useEditor> }) 
 export function RichTextEditor({
   content = "",
   onChange,
-  placeholder = "Start writing...",
+  placeholder,
   editable = true,
   className,
   toolbar = true,
   mentions,
 }: RichTextEditorProps) {
+  const { t } = useTranslation("ai")
+  const resolvedPlaceholder = placeholder ?? t("editor.placeholder")
   const extensions = [
     StarterKit.configure({
       heading: {
@@ -163,7 +167,7 @@ export function RichTextEditor({
       },
     }),
     Placeholder.configure({
-      placeholder,
+      placeholder: resolvedPlaceholder,
       emptyEditorClass:
         "before:content-[attr(data-placeholder)] before:text-muted-foreground before:float-left before:h-0 before:pointer-events-none",
     }),

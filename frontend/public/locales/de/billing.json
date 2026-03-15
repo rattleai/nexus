@@ -1,0 +1,20 @@
+{
+  "title": "Abrechnung",
+  "description": "Verwalten Sie Ihr Abonnement und Ihre Nutzung.",
+  "current_plan": "Aktueller Tarif",
+  "usage": "Nutzung",
+  "usage_desc": "Aktuelle Ressourcennutzung für Ihren Arbeitsbereich.",
+  "available_plans": "Verfügbare Tarife",
+  "manage_billing": "Abrechnung verwalten",
+  "cancel_subscription": "Abonnement kündigen",
+  "cancel_confirm": "Möchten Sie Ihr Abonnement wirklich kündigen? Sie behalten den Zugriff bis zum Ende des aktuellen Abrechnungszeitraums.",
+  "cancel_success": "Abonnement gekündigt",
+  "cancels_at_period_end": "Wird zum Ende des Abrechnungszeitraums gekündigt",
+  "jobs_label": "Aufträge",
+  "api_keys_label": "API-Schlüssel",
+  "team_members_label": "Teammitglieder",
+  "storage_label": "Speicher",
+  "load_failed": "Abrechnungsdaten konnten nicht geladen werden.",
+  "most_popular": "Am beliebtesten",
+  "select_plan": "Tarif wählen"
+}

@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import {
   MoreHorizontal,
   Pin,
@@ -55,6 +56,7 @@ function ConversationItem({
   onPin?: (id: string) => void
   onRename?: (id: string, title: string) => void
 }) {
+  const { t } = useTranslation(["chat", "common"])
   const [isEditing, setIsEditing] = React.useState(false)
   const [editTitle, setEditTitle] = React.useState(conversation.title)
   const inputRef = React.useRef<HTMLInputElement>(null)
@@ -134,7 +136,7 @@ function ConversationItem({
               onClick={(e) => e.stopPropagation()}
             >
               <MoreHorizontal className="h-3.5 w-3.5" />
-              <span className="sr-only">Actions</span>
+              <span className="sr-only">{t("common:labels.actions")}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">
@@ -146,7 +148,7 @@ function ConversationItem({
                 }}
               >
                 <Pencil className="mr-2 h-3.5 w-3.5" />
-                Rename
+                {t("common:buttons.rename")}
               </DropdownMenuItem>
             )}
             {onPin && (
@@ -157,7 +159,7 @@ function ConversationItem({
                 }}
               >
                 <Pin className="mr-2 h-3.5 w-3.5" />
-                {conversation.pinned ? "Unpin" : "Pin"}
+                {conversation.pinned ? t("common:buttons.unpin") : t("common:buttons.pin")}
               </DropdownMenuItem>
             )}
             {onDelete && (
@@ -169,7 +171,7 @@ function ConversationItem({
                 className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="mr-2 h-3.5 w-3.5" />
-                Delete
+                {t("common:buttons.delete")}
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>
@@ -189,6 +191,7 @@ export function ConversationSidebar({
   onRename,
   className,
 }: ConversationSidebarProps) {
+  const { t } = useTranslation(["chat", "common"])
   const [search, setSearch] = React.useState("")
 
   const filtered = React.useMemo(() => {
@@ -220,14 +223,14 @@ export function ConversationSidebar({
       <div className="flex flex-col gap-2 p-3">
         <Button onClick={onCreate} className="w-full gap-2">
           <Plus className="h-4 w-4" />
-          New Chat
+          {t("common:buttons.new_chat")}
         </Button>
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search conversations..."
+            placeholder={t("chat:conversations.search_placeholder")}
             className="h-8 pl-8 text-sm"
           />
         </div>
@@ -238,7 +241,7 @@ export function ConversationSidebar({
           <div className="mb-2">
             <span className="flex items-center gap-1 px-3 pb-1 text-xs font-medium text-muted-foreground">
               <Pin className="h-3 w-3" />
-              Pinned
+              {t("common:labels.pinned")}
             </span>
             {pinned.map((conversation) => (
               <ConversationItem
@@ -258,7 +261,7 @@ export function ConversationSidebar({
           <div>
             {pinned.length > 0 && (
               <span className="px-3 pb-1 text-xs font-medium text-muted-foreground">
-                Recent
+                {t("common:labels.recent")}
               </span>
             )}
             {recent.map((conversation) => (
@@ -277,7 +280,7 @@ export function ConversationSidebar({
 
         {filtered.length === 0 && (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-            {search ? "No conversations found." : "No conversations yet."}
+            {search ? t("chat:conversations.no_conversations_found") : t("chat:conversations.no_conversations")}
           </div>
         )}
       </ScrollArea>

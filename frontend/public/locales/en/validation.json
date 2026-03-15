@@ -1,0 +1,20 @@
+{
+  "required": "This field is required",
+  "email_required": "Email is required",
+  "invalid_email": "Invalid email address",
+  "password_required": "Password is required",
+  "display_name_required": "Display name is required",
+  "org_slug_required": "Organization slug is required",
+  "org_slug_format": "Must be lowercase letters, numbers, and hyphens only (cannot start or end with a hyphen)",
+  "password_min_length": "Password must be at least {{count}} characters",
+  "password_lowercase": "Must contain a lowercase letter",
+  "password_uppercase": "Must contain an uppercase letter",
+  "password_digit": "Must contain a digit",
+  "confirm_password_required": "Please confirm your password",
+  "passwords_not_match": "Passwords do not match",
+  "current_password_required": "Current password is required",
+  "url_and_events_required": "URL and at least one event are required",
+  "key_name_required": "Key name is required",
+  "job_type_required": "Job type is required",
+  "invite_email_required": "Email address is required"
+}

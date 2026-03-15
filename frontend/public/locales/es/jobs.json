@@ -1,0 +1,24 @@
+{
+  "title": "Trabajos",
+  "description": "Administre trabajos de procesamiento asíncrono.",
+  "search_placeholder": "Buscar trabajos...",
+  "no_jobs": "Aún no hay trabajos",
+  "no_jobs_desc": "Cree un trabajo para iniciar el procesamiento.",
+  "create_job": "Crear trabajo",
+  "create_dialog_title": "Crear trabajo",
+  "create_dialog_desc": "Especifique el tipo de trabajo a crear.",
+  "job_type_label": "Tipo de trabajo",
+  "job_type_placeholder": "ej. exportación-datos, informe",
+  "table": {
+    "type": "Tipo",
+    "status": "Estado",
+    "created": "Creado",
+    "completed": "Completado",
+    "error": "Error"
+  },
+  "cancel_title": "Cancelar trabajo",
+  "cancel_desc": "¿Cancelar el trabajo \"{{jobType}}\"? Esta acción no se puede deshacer.",
+  "cancel_button": "Cancelar trabajo",
+  "cancel_success": "Trabajo cancelado",
+  "create_success": "Trabajo creado"
+}

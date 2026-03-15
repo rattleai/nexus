@@ -1,0 +1,20 @@
+{
+  "title": "账单",
+  "description": "管理您的订阅和使用情况。",
+  "current_plan": "当前方案",
+  "usage": "使用情况",
+  "usage_desc": "您的工作区当前资源使用情况。",
+  "available_plans": "可用方案",
+  "manage_billing": "管理账单",
+  "cancel_subscription": "取消订阅",
+  "cancel_confirm": "确定要取消订阅吗？您将保留访问权限直到当前计费周期结束。",
+  "cancel_success": "订阅已取消",
+  "cancels_at_period_end": "将在计费周期结束时取消",
+  "jobs_label": "任务",
+  "api_keys_label": "API 密钥",
+  "team_members_label": "团队成员",
+  "storage_label": "存储空间",
+  "load_failed": "加载账单数据失败。",
+  "most_popular": "最受欢迎",
+  "select_plan": "选择方案"
+}

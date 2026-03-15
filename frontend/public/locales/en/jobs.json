@@ -1,0 +1,24 @@
+{
+  "title": "Jobs",
+  "description": "Manage async processing jobs.",
+  "search_placeholder": "Search jobs...",
+  "no_jobs": "No jobs yet",
+  "no_jobs_desc": "Create a job to start processing.",
+  "create_job": "Create Job",
+  "create_dialog_title": "Create Job",
+  "create_dialog_desc": "Specify the job type to create.",
+  "job_type_label": "Job type",
+  "job_type_placeholder": "e.g. data-export, report",
+  "table": {
+    "type": "Type",
+    "status": "Status",
+    "created": "Created",
+    "completed": "Completed",
+    "error": "Error"
+  },
+  "cancel_title": "Cancel Job",
+  "cancel_desc": "Cancel job \"{{jobType}}\"? This cannot be undone.",
+  "cancel_button": "Cancel Job",
+  "cancel_success": "Job cancelled",
+  "create_success": "Job created"
+}

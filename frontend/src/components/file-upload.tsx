@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type DragEvent } from "react"
+import { useTranslation } from "react-i18next"
 import { Upload, X, FileIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -21,6 +22,7 @@ export function FileUpload({
   disabled = false,
   className,
 }: FileUploadProps) {
+  const { t } = useTranslation()
   const [dragActive, setDragActive] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
@@ -83,14 +85,14 @@ export function FileUpload({
         onClick={() => !disabled && inputRef.current?.click()}
         role="button"
         tabIndex={0}
-        aria-label="Upload files"
+        aria-label={t("aria.upload_files")}
         onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
       >
         <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
         <p className="text-sm text-muted-foreground">
-          Drag & drop files here, or click to browse
+          {t("file_upload.drag_drop")}
         </p>
-        <p className="text-xs text-muted-foreground mt-1">Max {formatBytes(maxSize)} per file</p>
+        <p className="text-xs text-muted-foreground mt-1">{t("file_upload.max_size", { size: formatBytes(maxSize) })}</p>
         <input
           ref={inputRef}
           type="file"
@@ -120,14 +122,14 @@ export function FileUpload({
                   e.stopPropagation()
                   removeFile(i)
                 }}
-                aria-label={`Remove ${file.name}`}
+                aria-label={t("aria.remove_item", { item: file.name })}
               >
                 <X className="h-4 w-4" />
               </Button>
             </div>
           ))}
           <Button onClick={handleUpload} disabled={uploading} className="w-full">
-            {uploading ? "Uploading..." : `Upload ${selectedFiles.length} file(s)`}
+            {uploading ? t("status.uploading") : t("file_upload.upload_count", { count: selectedFiles.length })}
           </Button>
         </div>
       )}

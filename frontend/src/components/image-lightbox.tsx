@@ -1,5 +1,6 @@
 import * as React from "react"
 import { createPortal } from "react-dom"
+import { useTranslation } from "react-i18next"
 import { ChevronLeft, ChevronRight, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -16,6 +17,7 @@ export function ImageLightbox({
   open,
   onOpenChange,
 }: ImageLightboxProps) {
+  const { t } = useTranslation()
   const [currentIndex, setCurrentIndex] = React.useState(initialIndex)
 
   React.useEffect(() => {
@@ -72,7 +74,7 @@ export function ImageLightbox({
       className="fixed inset-0 z-50 flex items-center justify-center"
       role="dialog"
       aria-modal="true"
-      aria-label="Image lightbox"
+      aria-label={t("aria.image_lightbox")}
     >
       {/* Backdrop */}
       <div
@@ -86,7 +88,7 @@ export function ImageLightbox({
         type="button"
         className="absolute right-4 top-4 z-10 rounded-sm p-2 text-white/70 transition-colors hover:text-white focus:outline-none focus:ring-2 focus:ring-white/50"
         onClick={close}
-        aria-label="Close lightbox"
+        aria-label={t("aria.close_lightbox")}
       >
         <X className="h-6 w-6" />
       </button>
@@ -104,7 +106,7 @@ export function ImageLightbox({
           type="button"
           className="absolute left-4 z-10 rounded-full bg-black/50 p-2 text-white/70 transition-colors hover:text-white focus:outline-none focus:ring-2 focus:ring-white/50"
           onClick={goPrev}
-          aria-label="Previous image"
+          aria-label={t("aria.previous_image")}
         >
           <ChevronLeft className="h-6 w-6" />
         </button>
@@ -125,7 +127,7 @@ export function ImageLightbox({
           type="button"
           className="absolute right-4 z-10 rounded-full bg-black/50 p-2 text-white/70 transition-colors hover:text-white focus:outline-none focus:ring-2 focus:ring-white/50"
           onClick={goNext}
-          aria-label="Next image"
+          aria-label={t("aria.next_image")}
         >
           <ChevronRight className="h-6 w-6" />
         </button>

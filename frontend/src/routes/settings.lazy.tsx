@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { toast } from "sonner"
+import { useTranslation } from "react-i18next"
 import { CheckCircle2, AlertCircle, Download, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -21,43 +22,32 @@ import { useAuth } from "@/hooks/use-auth"
 import { useHealth } from "@/hooks/use-health"
 import { useExportTenantData, useExportAccountData, useDeleteAccount } from "@/hooks/use-usage"
 import { api, parseApiError } from "@/lib/api-client"
+import { supportedLanguages } from "@/lib/i18n"
 
 export const Route = createLazyFileRoute("/settings")({
   component: SettingsPage,
 })
 
-const passwordSchema = z
-  .object({
-    current_password: z.string().min(1, "Current password is required"),
-    new_password: z
-      .string()
-      .min(8, "Password must be at least 8 characters")
-      .regex(/[a-z]/, "Must contain a lowercase letter")
-      .regex(/[A-Z]/, "Must contain an uppercase letter")
-      .regex(/[0-9]/, "Must contain a digit"),
-    confirm_password: z.string(),
-  })
-  .refine((data) => data.new_password === data.confirm_password, {
-    message: "Passwords do not match",
-    path: ["confirm_password"],
-  })
-
-type PasswordValues = z.infer<typeof passwordSchema>
-
 function SettingsPage() {
+  const { t } = useTranslation("settings")
+
   return (
     <AuthGuard>
       <div className="space-y-6">
-        <PageHeader title="Settings" description="Manage your account and preferences." />
+        <PageHeader title={t("title")} description={t("description")} />
         <Tabs defaultValue="profile">
           <TabsList>
-            <TabsTrigger value="profile">Profile</TabsTrigger>
-            <TabsTrigger value="security">Security</TabsTrigger>
-            <TabsTrigger value="data">Data</TabsTrigger>
-            <TabsTrigger value="danger">Danger Zone</TabsTrigger>
+            <TabsTrigger value="profile">{t("tabs.profile")}</TabsTrigger>
+            <TabsTrigger value="language">{t("tabs.language")}</TabsTrigger>
+            <TabsTrigger value="security">{t("tabs.security")}</TabsTrigger>
+            <TabsTrigger value="data">{t("tabs.data")}</TabsTrigger>
+            <TabsTrigger value="danger">{t("tabs.danger")}</TabsTrigger>
           </TabsList>
           <TabsContent value="profile" className="mt-6">
             <ProfileTab />
+          </TabsContent>
+          <TabsContent value="language" className="mt-6">
+            <LanguageTab />
           </TabsContent>
           <TabsContent value="security" className="mt-6">
             <SecurityTab />
@@ -80,12 +70,14 @@ function ProfileTab() {
   const { apiKey, clearApiKey } = useAuth()
   const [displayName, setDisplayName] = useState(user?.display_name ?? "")
   const [saving, setSaving] = useState(false)
+  const { t } = useTranslation("settings")
+  const { t: tc } = useTranslation("common")
 
   const handleSave = async () => {
     setSaving(true)
     try {
       await api.patch("auth/me", { json: { display_name: displayName } })
-      toast.success("Profile updated")
+      toast.success(t("profile.save_success"))
     } catch (err) {
       const e = await parseApiError(err)
       toast.error(e.detail)
@@ -97,7 +89,7 @@ function ProfileTab() {
   const handleResendVerification = async () => {
     try {
       await api.post("auth/resend-verification")
-      toast.success("Verification email sent")
+      toast.success(t("profile.verification_sent"))
     } catch (err) {
       const e = await parseApiError(err)
       toast.error(e.detail)
@@ -108,11 +100,11 @@ function ProfileTab() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Profile</CardTitle>
+          <CardTitle>{t("profile.title")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="display-name">Display Name</Label>
+            <Label htmlFor="display-name">{t("profile.display_name")}</Label>
             <Input
               id="display-name"
               value={displayName}
@@ -120,45 +112,45 @@ function ProfileTab() {
             />
           </div>
           <div className="space-y-2">
-            <Label>Email</Label>
+            <Label>{t("profile.email")}</Label>
             <div className="flex items-center gap-2">
               <Input value={user?.email ?? ""} disabled />
               {user?.email_verified ? (
                 <Badge variant="default" className="gap-1 shrink-0">
                   <CheckCircle2 className="h-3 w-3" />
-                  Verified
+                  {tc("status.verified")}
                 </Badge>
               ) : (
                 <Badge variant="secondary" className="gap-1 shrink-0">
                   <AlertCircle className="h-3 w-3" />
-                  Unverified
+                  {tc("status.unverified")}
                 </Badge>
               )}
             </div>
             {user && !user.email_verified && (
               <Button variant="link" size="sm" className="p-0 h-auto" onClick={handleResendVerification}>
-                Resend verification email
+                {t("profile.resend_verification")}
               </Button>
             )}
           </div>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving..." : "Save Changes"}
+            {saving ? tc("buttons.saving") : tc("buttons.save_changes")}
           </Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Platform Info</CardTitle>
+          <CardTitle>{t("platform_info.title")}</CardTitle>
         </CardHeader>
         <CardContent>
           <dl className="grid grid-cols-2 gap-4 text-sm">
             <div>
-              <dt className="text-muted-foreground">Version</dt>
+              <dt className="text-muted-foreground">{t("platform_info.version")}</dt>
               <dd className="font-medium">{health?.version ?? "\u2014"}</dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Status</dt>
+              <dt className="text-muted-foreground">{t("platform_info.status")}</dt>
               <dd className="font-medium capitalize">{health?.status ?? "\u2014"}</dd>
             </div>
           </dl>
@@ -168,17 +160,17 @@ function ProfileTab() {
       {apiKey && (
         <Card>
           <CardHeader>
-            <CardTitle>API Key Authentication</CardTitle>
+            <CardTitle>{t("api_key_auth.title")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
-              <p className="text-sm text-muted-foreground mb-1">Current API Key</p>
+              <p className="text-sm text-muted-foreground mb-1">{t("api_key_auth.current_key")}</p>
               <code className="text-sm font-mono">
                 {apiKey.slice(0, 8)}{"*".repeat(24)}
               </code>
             </div>
             <Button variant="outline" onClick={clearApiKey}>
-              Disconnect
+              {t("api_key_auth.disconnect")}
             </Button>
           </CardContent>
         </Card>
@@ -187,7 +179,87 @@ function ProfileTab() {
   )
 }
 
+function LanguageTab() {
+  const { i18n, t } = useTranslation("settings")
+  const { t: tc } = useTranslation("common")
+  const { isAuthenticated } = useAuthContext()
+  const [selectedLang, setSelectedLang] = useState(i18n.language)
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await i18n.changeLanguage(selectedLang)
+
+      if (isAuthenticated) {
+        await api.patch("auth/me", { json: { locale: selectedLang } })
+      }
+      toast.success(t("language.save_success"))
+    } catch (err) {
+      const e = await parseApiError(err)
+      toast.error(e.detail)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("language.title")}</CardTitle>
+        <CardDescription>{t("language.description")}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label>{t("language.select_label")}</Label>
+          <Select value={selectedLang} onValueChange={setSelectedLang}>
+            <SelectTrigger className="w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {supportedLanguages.map((lang) => (
+                <SelectItem key={lang.code} value={lang.code}>
+                  <span className="flex items-center gap-2">
+                    <span className="font-medium">{lang.nativeName}</span>
+                    {lang.nativeName !== lang.name && (
+                      <span className="text-muted-foreground text-xs">({lang.name})</span>
+                    )}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button onClick={handleSave} disabled={saving || selectedLang === i18n.language}>
+          {saving ? tc("buttons.saving") : tc("buttons.save_changes")}
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
 function SecurityTab() {
+  const { t } = useTranslation("settings")
+  const { t: tv } = useTranslation("validation")
+
+  const passwordSchema = z
+    .object({
+      current_password: z.string().min(1, tv("current_password_required")),
+      new_password: z
+        .string()
+        .min(8, tv("password_min_length", { count: 8 }))
+        .regex(/[a-z]/, tv("password_lowercase"))
+        .regex(/[A-Z]/, tv("password_uppercase"))
+        .regex(/[0-9]/, tv("password_digit")),
+      confirm_password: z.string(),
+    })
+    .refine((data) => data.new_password === data.confirm_password, {
+      message: tv("passwords_not_match"),
+      path: ["confirm_password"],
+    })
+
+  type PasswordValues = z.infer<typeof passwordSchema>
+
   const form = useForm<PasswordValues>({
     resolver: zodResolver(passwordSchema),
     defaultValues: { current_password: "", new_password: "", confirm_password: "" },
@@ -198,7 +270,7 @@ function SecurityTab() {
       await api.post("auth/change-password", {
         json: { current_password: data.current_password, new_password: data.new_password },
       })
-      toast.success("Password changed")
+      toast.success(t("security.success"))
       form.reset()
     } catch (err) {
       const e = await parseApiError(err)
@@ -209,34 +281,34 @@ function SecurityTab() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Change Password</CardTitle>
-        <CardDescription>Update your password to keep your account secure.</CardDescription>
+        <CardTitle>{t("security.title")}</CardTitle>
+        <CardDescription>{t("security.description")}</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 max-w-md">
           <div className="space-y-2">
-            <Label htmlFor="current_password">Current Password</Label>
+            <Label htmlFor="current_password">{t("security.current_password")}</Label>
             <Input id="current_password" type="password" {...form.register("current_password")} />
             {form.formState.errors.current_password && (
               <p className="text-xs text-destructive">{form.formState.errors.current_password.message}</p>
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="new_password">New Password</Label>
+            <Label htmlFor="new_password">{t("security.new_password")}</Label>
             <Input id="new_password" type="password" {...form.register("new_password")} />
             {form.formState.errors.new_password && (
               <p className="text-xs text-destructive">{form.formState.errors.new_password.message}</p>
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="confirm_password">Confirm New Password</Label>
+            <Label htmlFor="confirm_password">{t("security.confirm_password")}</Label>
             <Input id="confirm_password" type="password" {...form.register("confirm_password")} />
             {form.formState.errors.confirm_password && (
               <p className="text-xs text-destructive">{form.formState.errors.confirm_password.message}</p>
             )}
           </div>
           <Button type="submit" disabled={form.formState.isSubmitting}>
-            {form.formState.isSubmitting ? "Changing..." : "Change Password"}
+            {form.formState.isSubmitting ? t("security.submitting") : t("security.submit")}
           </Button>
         </form>
       </CardContent>
@@ -248,12 +320,13 @@ function DataTab() {
   const exportTenant = useExportTenantData()
   const exportAccount = useExportAccountData()
   const [format, setFormat] = useState<"json" | "csv">("json")
+  const { t } = useTranslation("settings")
 
   const handleExport = async (type: "tenant" | "account") => {
     try {
       const mutation = type === "tenant" ? exportTenant : exportAccount
       await mutation.mutateAsync({ format })
-      toast.success("Export started. You'll receive a notification when it's ready.")
+      toast.success(t("data.export_success"))
     } catch (err) {
       const e = await parseApiError(err)
       toast.error(e.detail)
@@ -263,12 +336,12 @@ function DataTab() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Data Export</CardTitle>
-        <CardDescription>Export your data in JSON or CSV format.</CardDescription>
+        <CardTitle>{t("data.title")}</CardTitle>
+        <CardDescription>{t("data.description")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label>Export Format</Label>
+          <Label>{t("data.format_label")}</Label>
           <Select value={format} onValueChange={(v) => setFormat(v as "json" | "csv")}>
             <SelectTrigger className="w-32">
               <SelectValue />
@@ -287,7 +360,7 @@ function DataTab() {
             disabled={exportTenant.isPending}
           >
             <Download className="mr-2 h-4 w-4" />
-            Export Workspace Data
+            {t("data.export_workspace")}
           </Button>
           <Button
             variant="outline"
@@ -295,7 +368,7 @@ function DataTab() {
             disabled={exportAccount.isPending}
           >
             <Download className="mr-2 h-4 w-4" />
-            Export Personal Data
+            {t("data.export_personal")}
           </Button>
         </div>
       </CardContent>
@@ -305,31 +378,31 @@ function DataTab() {
 
 function DangerTab() {
   const deleteAccount = useDeleteAccount()
+  const { t } = useTranslation("settings")
 
   return (
     <Card className="border-destructive/50">
       <CardHeader>
-        <CardTitle className="text-destructive">Danger Zone</CardTitle>
+        <CardTitle className="text-destructive">{t("danger.title")}</CardTitle>
         <CardDescription>
-          Irreversible actions. Please be certain before proceeding.
+          {t("danger.description")}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
           <p className="text-sm text-muted-foreground">
-            Deleting your account will remove all your data after a 30-day grace period.
-            During this time you can contact support to recover your account.
+            {t("danger.delete_info")}
           </p>
         </div>
         <ConfirmDialog
-          title="Delete Account"
-          description="This will permanently delete your account and all associated data after a 30-day grace period. This action cannot be undone."
+          title={t("danger.delete_title")}
+          description={t("danger.delete_description")}
           variant="destructive"
-          confirmLabel="Delete Account"
+          confirmLabel={t("danger.delete_confirm")}
           onConfirm={async () => {
             try {
               await deleteAccount.mutateAsync()
-              toast.success("Account deletion scheduled")
+              toast.success(t("danger.delete_success"))
             } catch (err) {
               const e = await parseApiError(err)
               toast.error(e.detail)
@@ -338,7 +411,7 @@ function DangerTab() {
         >
           <Button variant="destructive">
             <Trash2 className="mr-2 h-4 w-4" />
-            Delete Account
+            {t("danger.delete_confirm")}
           </Button>
         </ConfirmDialog>
       </CardContent>

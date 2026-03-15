@@ -1,15 +1,17 @@
+import { useTranslation } from "react-i18next"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 
 export function GettingStartedCard() {
+  const { t } = useTranslation()
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Getting Started</CardTitle>
+        <CardTitle>{t("getting_started.title")}</CardTitle>
       </CardHeader>
       <CardContent>
         <p className="text-gray-600 mt-2">
-          Welcome to your multi-tenant SaaS platform. Use the dashboard to monitor service health
-          and manage your application.
+          {t("getting_started.description")}
         </p>
       </CardContent>
     </Card>

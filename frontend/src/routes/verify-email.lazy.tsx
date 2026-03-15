@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { createLazyFileRoute, Link, useSearch } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api, parseApiError } from "@/lib/api-client"
@@ -9,6 +10,7 @@ export const Route = createLazyFileRoute("/verify-email")({
 })
 
 function VerifyEmailPage() {
+  const { t } = useTranslation("auth")
   const { token } = useSearch({ from: "/verify-email" })
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading")
   const [errorMessage, setErrorMessage] = useState("")
@@ -16,7 +18,7 @@ function VerifyEmailPage() {
   useEffect(() => {
     if (!token) {
       setStatus("error")
-      setErrorMessage("Invalid or missing verification token.")
+      setErrorMessage(t("verify_email.invalid_token"))
       return
     }
 
@@ -27,14 +29,14 @@ function VerifyEmailPage() {
         await api.post("auth/verify-email", { json: { token } })
         if (!cancelled) {
           setStatus("success")
-          toast.success("Email verified successfully!")
+          toast.success(t("verify_email.success_toast"))
         }
       } catch (err) {
         if (!cancelled) {
           const apiError = await parseApiError(err)
           setStatus("error")
           setErrorMessage(apiError.detail)
-          toast.error("Email verification failed")
+          toast.error(t("verify_email.failed"))
         }
       }
     }
@@ -43,13 +45,13 @@ function VerifyEmailPage() {
     return () => {
       cancelled = true
     }
-  }, [token])
+  }, [token, t])
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Verify Email</CardTitle>
+          <CardTitle>{t("verify_email.title")}</CardTitle>
         </CardHeader>
         <CardContent className="text-center space-y-4">
           {status === "loading" && (
@@ -57,18 +59,18 @@ function VerifyEmailPage() {
               <div
                 className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary"
                 role="status"
-                aria-label="Verifying email"
+                aria-label={t("verify_email.verifying")}
               />
-              <p className="text-sm text-muted-foreground">Verifying your email...</p>
+              <p className="text-sm text-muted-foreground">{t("verify_email.verifying")}</p>
             </div>
           )}
           {status === "success" && (
             <>
               <p className="text-sm text-muted-foreground">
-                Your email has been verified successfully.
+                {t("verify_email.success")}
               </p>
               <Link to="/" className="text-sm text-primary underline">
-                Go to Dashboard
+                {t("verify_email.go_to_dashboard")}
               </Link>
             </>
           )}
@@ -78,7 +80,7 @@ function VerifyEmailPage() {
                 {errorMessage}
               </p>
               <Link to="/login" className="text-sm text-primary underline">
-                Go to Sign In
+                {t("verify_email.go_to_sign_in")}
               </Link>
             </>
           )}

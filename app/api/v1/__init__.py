@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.admin import router as admin_router
+from app.api.v1.agent_info import router as agent_info_router
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.api_keys import router as api_keys_router
 from app.api.v1.batch import router as batch_router
@@ -25,7 +26,8 @@ v1_router.include_router(webhooks_router, tags=["webhooks"])
 v1_router.include_router(billing_router, tags=["billing"])
 v1_router.include_router(export_router, tags=["export"])
 
-# Mobile-first endpoints (always available)
+# Agent & mobile endpoints (always available)
+v1_router.include_router(agent_info_router, tags=["agent"])
 v1_router.include_router(batch_router, tags=["batch"])
 v1_router.include_router(analytics_router, tags=["analytics"])
 v1_router.include_router(ws_router, tags=["websocket"])

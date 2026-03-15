@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { Crop, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -36,6 +37,7 @@ export function ImageCropper({
   onCancel,
   className,
 }: ImageCropperProps) {
+  const { t } = useTranslation()
   const containerRef = React.useRef<HTMLDivElement>(null)
   const imageRef = React.useRef<HTMLImageElement>(null)
   const canvasRef = React.useRef<HTMLCanvasElement>(null)
@@ -376,11 +378,11 @@ export function ImageCropper({
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={onCancel}>
               <X className="mr-1.5 h-4 w-4" />
-              Cancel
+              {t("buttons.cancel")}
             </Button>
             <Button size="sm" onClick={handleCrop} disabled={isProcessing}>
               <Crop className="mr-1.5 h-4 w-4" />
-              {isProcessing ? "Cropping..." : "Crop"}
+              {isProcessing ? t("buttons.cropping") : t("buttons.crop")}
             </Button>
           </div>
         </div>

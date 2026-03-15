@@ -1,0 +1,42 @@
+{
+  "playground": {
+    "title": "Laboratorio de IA",
+    "prompt_placeholder": "Ingrese su indicación...",
+    "response_placeholder": "La respuesta aparecerá aquí",
+    "comparing": "Comparando"
+  },
+  "cost_dashboard": {
+    "total_spend": "Gasto total",
+    "total_requests": "Total de solicitudes",
+    "avg_cost_per_request": "Costo prom. / Solicitud",
+    "models_used": "Modelos usados",
+    "budget_usage": "Uso del presupuesto",
+    "spend_by_model": "Gasto por modelo"
+  },
+  "model_selector": {
+    "placeholder": "Seleccionar un modelo...",
+    "search_placeholder": "Buscar modelos...",
+    "no_models": "No se encontraron modelos."
+  },
+  "editor": {
+    "link": {
+      "edit": "Editar enlace",
+      "insert": "Insertar enlace",
+      "remove": "Eliminar enlace"
+    },
+    "insert_image": "Insertar imagen",
+    "placeholder": "Comience a escribir...",
+    "format": {
+      "bold": "Negrita",
+      "italic": "Cursiva",
+      "strikethrough": "Tachado",
+      "inline_code": "Código en línea",
+      "heading_1": "Encabezado 1",
+      "heading_2": "Encabezado 2",
+      "heading_3": "Encabezado 3",
+      "bullet_list": "Lista con viñetas",
+      "ordered_list": "Lista ordenada",
+      "blockquote": "Cita"
+    }
+  }
+}

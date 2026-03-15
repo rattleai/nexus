@@ -1,4 +1,5 @@
 import type { Editor } from "@tiptap/react"
+import { useTranslation } from "react-i18next"
 import { useCallback, useState } from "react"
 import {
   Bold,
@@ -62,6 +63,7 @@ function ToolbarToggle({
 }
 
 function LinkPopover({ editor }: { editor: Editor }) {
+  const { t } = useTranslation("ai")
   const [url, setUrl] = useState("")
   const [open, setOpen] = useState(false)
 
@@ -106,15 +108,15 @@ function LinkPopover({ editor }: { editor: Editor }) {
         <Toggle
           size="sm"
           pressed={editor.isActive("link")}
-          aria-label="Link"
-          title="Link"
+          aria-label={t("editor.link.insert")}
+          title={t("editor.link.insert")}
         >
           <Link className="h-4 w-4" />
         </Toggle>
       </PopoverTrigger>
       <PopoverContent className="w-80" align="start">
         <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-          <p className="text-sm font-medium">Insert Link</p>
+          <p className="text-sm font-medium">{t("editor.link.insert")}</p>
           <div className="flex gap-2">
             <Input
               placeholder="https://example.com"
@@ -136,7 +138,7 @@ function LinkPopover({ editor }: { editor: Editor }) {
               onClick={handleRemoveLink}
             >
               <Unlink className="mr-2 h-4 w-4" />
-              Remove link
+              {t("editor.link.remove")}
             </Button>
           )}
         </form>
@@ -146,6 +148,7 @@ function LinkPopover({ editor }: { editor: Editor }) {
 }
 
 function ImagePopover({ editor }: { editor: Editor }) {
+  const { t } = useTranslation("ai")
   const [url, setUrl] = useState("")
   const [open, setOpen] = useState(false)
 
@@ -164,13 +167,13 @@ function ImagePopover({ editor }: { editor: Editor }) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Toggle size="sm" pressed={false} aria-label="Image" title="Image">
+        <Toggle size="sm" pressed={false} aria-label={t("editor.insert_image")} title={t("editor.insert_image")}>
           <Image className="h-4 w-4" />
         </Toggle>
       </PopoverTrigger>
       <PopoverContent className="w-80" align="start">
         <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-          <p className="text-sm font-medium">Insert Image</p>
+          <p className="text-sm font-medium">{t("editor.insert_image")}</p>
           <div className="flex gap-2">
             <Input
               placeholder="https://example.com/image.png"
@@ -190,6 +193,9 @@ function ImagePopover({ editor }: { editor: Editor }) {
 }
 
 export function EditorToolbar({ editor, className }: EditorToolbarProps) {
+  const { t } = useTranslation("ai")
+  const { t: tc } = useTranslation()
+
   if (!editor) {
     return null
   }
@@ -206,7 +212,7 @@ export function EditorToolbar({ editor, className }: EditorToolbarProps) {
         pressed={editor.isActive("bold")}
         onPressedChange={() => editor.chain().focus().toggleBold().run()}
         disabled={!editor.can().chain().focus().toggleBold().run()}
-        title="Bold"
+        title={t("editor.format.bold")}
       >
         <Bold className="h-4 w-4" />
       </ToolbarToggle>
@@ -215,7 +221,7 @@ export function EditorToolbar({ editor, className }: EditorToolbarProps) {
         pressed={editor.isActive("italic")}
         onPressedChange={() => editor.chain().focus().toggleItalic().run()}
         disabled={!editor.can().chain().focus().toggleItalic().run()}
-        title="Italic"
+        title={t("editor.format.italic")}
       >
         <Italic className="h-4 w-4" />
       </ToolbarToggle>
@@ -224,7 +230,7 @@ export function EditorToolbar({ editor, className }: EditorToolbarProps) {
         pressed={editor.isActive("strike")}
         onPressedChange={() => editor.chain().focus().toggleStrike().run()}
         disabled={!editor.can().chain().focus().toggleStrike().run()}
-        title="Strikethrough"
+        title={t("editor.format.strikethrough")}
       >
         <Strikethrough className="h-4 w-4" />
       </ToolbarToggle>
@@ -233,7 +239,7 @@ export function EditorToolbar({ editor, className }: EditorToolbarProps) {
         pressed={editor.isActive("code")}
         onPressedChange={() => editor.chain().focus().toggleCode().run()}
         disabled={!editor.can().chain().focus().toggleCode().run()}
-        title="Inline code"
+        title={t("editor.format.inline_code")}
       >
         <Code className="h-4 w-4" />
       </ToolbarToggle>
@@ -246,7 +252,7 @@ export function EditorToolbar({ editor, className }: EditorToolbarProps) {
         onPressedChange={() =>
           editor.chain().focus().toggleHeading({ level: 1 }).run()
         }
-        title="Heading 1"
+        title={t("editor.format.heading_1")}
       >
         <Heading1 className="h-4 w-4" />
       </ToolbarToggle>
@@ -256,7 +262,7 @@ export function EditorToolbar({ editor, className }: EditorToolbarProps) {
         onPressedChange={() =>
           editor.chain().focus().toggleHeading({ level: 2 }).run()
         }
-        title="Heading 2"
+        title={t("editor.format.heading_2")}
       >
         <Heading2 className="h-4 w-4" />
       </ToolbarToggle>
@@ -266,7 +272,7 @@ export function EditorToolbar({ editor, className }: EditorToolbarProps) {
         onPressedChange={() =>
           editor.chain().focus().toggleHeading({ level: 3 }).run()
         }
-        title="Heading 3"
+        title={t("editor.format.heading_3")}
       >
         <Heading3 className="h-4 w-4" />
       </ToolbarToggle>
@@ -279,7 +285,7 @@ export function EditorToolbar({ editor, className }: EditorToolbarProps) {
         onPressedChange={() =>
           editor.chain().focus().toggleBulletList().run()
         }
-        title="Bullet list"
+        title={t("editor.format.bullet_list")}
       >
         <List className="h-4 w-4" />
       </ToolbarToggle>
@@ -289,7 +295,7 @@ export function EditorToolbar({ editor, className }: EditorToolbarProps) {
         onPressedChange={() =>
           editor.chain().focus().toggleOrderedList().run()
         }
-        title="Ordered list"
+        title={t("editor.format.ordered_list")}
       >
         <ListOrdered className="h-4 w-4" />
       </ToolbarToggle>
@@ -299,7 +305,7 @@ export function EditorToolbar({ editor, className }: EditorToolbarProps) {
         onPressedChange={() =>
           editor.chain().focus().toggleBlockquote().run()
         }
-        title="Blockquote"
+        title={t("editor.format.blockquote")}
       >
         <Quote className="h-4 w-4" />
       </ToolbarToggle>
@@ -317,7 +323,7 @@ export function EditorToolbar({ editor, className }: EditorToolbarProps) {
         pressed={false}
         onPressedChange={() => editor.chain().focus().undo().run()}
         disabled={!editor.can().chain().focus().undo().run()}
-        title="Undo"
+        title={tc("buttons.undo")}
       >
         <Undo className="h-4 w-4" />
       </ToolbarToggle>
@@ -326,7 +332,7 @@ export function EditorToolbar({ editor, className }: EditorToolbarProps) {
         pressed={false}
         onPressedChange={() => editor.chain().focus().redo().run()}
         disabled={!editor.can().chain().focus().redo().run()}
-        title="Redo"
+        title={tc("buttons.redo")}
       >
         <Redo className="h-4 w-4" />
       </ToolbarToggle>

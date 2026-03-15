@@ -1,0 +1,62 @@
+{
+  "title": "设置",
+  "description": "管理您的账户和偏好设置。",
+  "tabs": {
+    "profile": "个人资料",
+    "security": "安全",
+    "data": "数据",
+    "danger": "危险区域",
+    "language": "语言"
+  },
+  "profile": {
+    "title": "个人资料",
+    "display_name": "显示名称",
+    "email": "邮箱",
+    "resend_verification": "重新发送验证邮件",
+    "save_success": "个人资料已更新",
+    "verification_sent": "验证邮件已发送"
+  },
+  "platform_info": {
+    "title": "平台信息",
+    "version": "版本",
+    "status": "状态"
+  },
+  "api_key_auth": {
+    "title": "API 密钥认证",
+    "current_key": "当前 API 密钥",
+    "disconnect": "断开连接"
+  },
+  "security": {
+    "title": "修改密码",
+    "description": "更新密码以确保账户安全。",
+    "current_password": "当前密码",
+    "new_password": "新密码",
+    "confirm_password": "确认新密码",
+    "submit": "修改密码",
+    "submitting": "修改中...",
+    "success": "密码已修改"
+  },
+  "data": {
+    "title": "数据导出",
+    "description": "以 JSON 或 CSV 格式导出您的数据。",
+    "format_label": "导出格式",
+    "export_workspace": "导出工作区数据",
+    "export_personal": "导出个人数据",
+    "export_success": "导出已开始。准备就绪后您将收到通知。"
+  },
+  "danger": {
+    "title": "危险区域",
+    "description": "不可逆操作。请在继续之前确认。",
+    "delete_info": "删除您的账户将在 30 天宽限期后移除所有数据。在此期间，您可以联系支持团队恢复您的账户。",
+    "delete_title": "删除账户",
+    "delete_description": "这将在 30 天宽限期后永久删除您的账户及所有关联数据。此操作不可撤销。",
+    "delete_confirm": "删除账户",
+    "delete_success": "账户删除已安排"
+  },
+  "language": {
+    "title": "语言和地区",
+    "description": "选择界面的首选语言。",
+    "select_label": "显示语言",
+    "save_success": "语言偏好已保存"
+  }
+}

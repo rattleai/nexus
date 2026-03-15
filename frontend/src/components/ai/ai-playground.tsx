@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Play, RotateCcw, Split, Columns2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -41,6 +42,8 @@ export function AIPlayground({
   onSubmit,
   className,
 }: PlaygroundProps) {
+  const { t } = useTranslation("ai")
+  const { t: tc } = useTranslation()
   const [prompt, setPrompt] = useState("")
   const [comparisonMode, setComparisonMode] = useState(false)
   const [params, setParams] = useState(defaultParams)
@@ -103,7 +106,7 @@ export function AIPlayground({
           {panel.isLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              Generating...
+              {tc("status.generating")}
             </div>
           ) : panel.response ? (
             <div className="space-y-2">
@@ -123,7 +126,7 @@ export function AIPlayground({
               )}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">Response will appear here</p>
+            <p className="text-sm text-muted-foreground">{t("playground.response_placeholder")}</p>
           )}
         </div>
       </div>
@@ -133,7 +136,7 @@ export function AIPlayground({
   return (
     <div className={cn("flex flex-col gap-4", className)}>
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">AI Playground</h2>
+        <h2 className="text-lg font-semibold">{t("playground.title")}</h2>
         <div className="flex items-center gap-2">
           <Button
             variant={comparisonMode ? "default" : "outline"}
@@ -141,11 +144,11 @@ export function AIPlayground({
             onClick={() => setComparisonMode(!comparisonMode)}
           >
             {comparisonMode ? <Columns2 className="mr-1 h-4 w-4" /> : <Split className="mr-1 h-4 w-4" />}
-            {comparisonMode ? "Comparing" : "Compare"}
+            {comparisonMode ? t("playground.comparing") : tc("buttons.compare")}
           </Button>
           <Button variant="outline" size="sm" onClick={handleReset}>
             <RotateCcw className="mr-1 h-4 w-4" />
-            Reset
+            {tc("buttons.reset")}
           </Button>
         </div>
       </div>
@@ -154,7 +157,7 @@ export function AIPlayground({
 
       <div>
         <Textarea
-          placeholder="Enter your prompt..."
+          placeholder={t("playground.prompt_placeholder")}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           rows={4}
@@ -166,7 +169,7 @@ export function AIPlayground({
           disabled={!prompt.trim() || panels.some((p) => p.isLoading)}
         >
           <Play className="mr-1 h-4 w-4" />
-          Run
+          {tc("buttons.run")}
         </Button>
       </div>
 

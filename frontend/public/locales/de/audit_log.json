@@ -1,0 +1,29 @@
+{
+  "title": "Aktivitätsprotokoll",
+  "description": "Verfolgen Sie alle Aktivitäten in Ihrem Arbeitsbereich.",
+  "action_filter": "Aktion",
+  "resource_filter": "Ressource",
+  "no_entries": "Keine Protokolleinträge",
+  "no_entries_desc": "Aktivitäten werden hier angezeigt, sobald Aktionen durchgeführt werden.",
+  "actions": {
+    "all": "Alle Aktionen",
+    "create": "Erstellen",
+    "read": "Lesen",
+    "update": "Aktualisieren",
+    "delete": "Löschen",
+    "login": "Anmeldung",
+    "logout": "Abmeldung"
+  },
+  "resources": {
+    "all": "Alle Ressourcen",
+    "user": "Benutzer",
+    "tenant": "Mandant",
+    "api_key": "API-Schlüssel",
+    "job": "Auftrag",
+    "file": "Datei",
+    "webhook": "Webhook",
+    "subscription": "Abonnement"
+  },
+  "metadata": "Metadaten",
+  "load_failed": "Aktivitätsprotokolle konnten nicht geladen werden."
+}

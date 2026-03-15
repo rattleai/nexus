@@ -65,6 +65,7 @@ class UserResponse(BaseModel):
     is_active: bool
     tenant_id: uuid.UUID
     role: str | None = None
+    locale: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

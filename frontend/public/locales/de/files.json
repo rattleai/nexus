@@ -1,0 +1,18 @@
+{
+  "title": "Dateien",
+  "description": "Laden Sie Ihre Dateien hoch und verwalten Sie diese.",
+  "search_placeholder": "Dateien suchen...",
+  "no_files": "Noch keine Dateien",
+  "no_files_desc": "Laden Sie eine Datei hoch, um zu beginnen.",
+  "upload_title": "Dateien hochladen",
+  "table": {
+    "filename": "Dateiname",
+    "type": "Typ",
+    "size": "Größe",
+    "uploaded": "Hochgeladen"
+  },
+  "delete_title": "Datei löschen",
+  "delete_desc": "Möchten Sie \"{{filename}}\" wirklich löschen? Dies kann nicht rückgängig gemacht werden.",
+  "delete_success": "Datei gelöscht",
+  "upload_success": "{{count}} Datei(en) hochgeladen"
+}

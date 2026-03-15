@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { createLazyFileRoute, Link } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -14,15 +15,22 @@ export const Route = createLazyFileRoute("/forgot-password")({
   component: ForgotPasswordPage,
 })
 
-const forgotPasswordSchema = z.object({
-  email: z.string().min(1, "Email is required").email("Invalid email address"),
-})
+type ForgotPasswordFormValues = z.infer<ReturnType<typeof makeForgotPasswordSchema>>
 
-type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeForgotPasswordSchema(tv: any) {
+  return z.object({
+    email: z.string().min(1, tv("email_required")).email(tv("invalid_email")),
+  })
+}
 
 function ForgotPasswordPage() {
+  const { t } = useTranslation("auth")
+  const { t: tv } = useTranslation("validation")
   const [submitted, setSubmitted] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const forgotPasswordSchema = makeForgotPasswordSchema(tv)
 
   const {
     register,
@@ -39,7 +47,7 @@ function ForgotPasswordPage() {
     try {
       await api.post("auth/forgot-password", { json: { email: data.email } })
       setSubmitted(true)
-      toast.success("If an account exists, a reset link was sent.")
+      toast.success(t("forgot_password.success"))
     } catch (err) {
       const apiError = await parseApiError(err)
       setError("root", { message: apiError.detail })
@@ -52,16 +60,16 @@ function ForgotPasswordPage() {
     <div className="min-h-[60vh] flex items-center justify-center">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Forgot Password</CardTitle>
+          <CardTitle>{t("forgot_password.title")}</CardTitle>
         </CardHeader>
         <CardContent>
           {submitted ? (
             <div className="space-y-4 text-center">
               <p className="text-sm text-muted-foreground">
-                If an account exists, a reset link was sent. Please check your email.
+                {t("forgot_password.success")}
               </p>
               <Link to="/login" className="text-sm text-primary underline">
-                Back to Sign In
+                {t("forgot_password.back_to_sign_in")}
               </Link>
             </div>
           ) : (
@@ -72,11 +80,11 @@ function ForgotPasswordPage() {
                 </p>
               )}
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">{t("forgot_password.email_label")}</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="you@example.com"
+                  placeholder={t("forgot_password.email_placeholder")}
                   autoComplete="email"
                   autoFocus
                   disabled={isSubmitting}
@@ -91,11 +99,11 @@ function ForgotPasswordPage() {
                 )}
               </div>
               <Button type="submit" className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? "Sending..." : "Send Reset Link"}
+                {isSubmitting ? t("forgot_password.submitting") : t("forgot_password.submit")}
               </Button>
               <p className="text-sm text-center text-muted-foreground">
                 <Link to="/login" className="text-primary underline">
-                  Back to Sign In
+                  {t("forgot_password.back_to_sign_in")}
                 </Link>
               </p>
             </form>

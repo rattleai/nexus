@@ -136,7 +136,7 @@ class RateLimiter:
 
 
 # Known agent User-Agent prefixes
-_AGENT_UA_PREFIXES = (
+AGENT_UA_PREFIXES = (
     "mcp-client/",
     "claude-code/",
     "openai-agent/",
@@ -146,15 +146,33 @@ _AGENT_UA_PREFIXES = (
 )
 
 
-def _is_agent_request(request: Request) -> bool:
+def is_agent_request(request: Request) -> bool:
     """Detect if the request comes from an AI agent.
 
     Checks for X-Agent-Name header or known agent User-Agent patterns.
+    Result is cached on request.state.
+
+    Note: X-API-Key alone does NOT imply agent traffic — regular programmatic
+    consumers (mobile apps, integrations) also use API keys. API key auth is
+    already CSRF-safe by nature and handled separately in middleware.
     """
+    # Return cached result if already computed
+    cached = getattr(request.state, "is_agent", None)
+    if cached is not None:
+        return cached
+
     if request.headers.get("X-Agent-Name"):
-        return True
-    ua = request.headers.get("User-Agent", "").lower()
-    return any(ua.startswith(prefix) for prefix in _AGENT_UA_PREFIXES)
+        result = True
+    else:
+        ua = request.headers.get("User-Agent", "").lower()
+        result = any(ua.startswith(prefix) for prefix in AGENT_UA_PREFIXES)
+
+    request.state.is_agent = result
+    return result
+
+
+# Backward-compatible alias
+_is_agent_request = is_agent_request
 
 
 class AgentAwareRateLimiter:

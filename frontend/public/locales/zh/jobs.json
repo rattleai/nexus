@@ -1,0 +1,24 @@
+{
+  "title": "任务",
+  "description": "管理异步处理任务。",
+  "search_placeholder": "搜索任务...",
+  "no_jobs": "暂无任务",
+  "no_jobs_desc": "创建一个任务以开始处理。",
+  "create_job": "创建任务",
+  "create_dialog_title": "创建任务",
+  "create_dialog_desc": "指定要创建的任务类型。",
+  "job_type_label": "任务类型",
+  "job_type_placeholder": "例如 data-export、report",
+  "table": {
+    "type": "类型",
+    "status": "状态",
+    "created": "创建时间",
+    "completed": "完成时间",
+    "error": "错误"
+  },
+  "cancel_title": "取消任务",
+  "cancel_desc": "取消任务「{{jobType}}」？此操作不可撤销。",
+  "cancel_button": "取消任务",
+  "cancel_success": "任务已取消",
+  "create_success": "任务已创建"
+}

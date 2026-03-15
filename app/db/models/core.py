@@ -75,6 +75,7 @@ class User(SoftDeleteMixin, TimestampMixin, Base):
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    locale: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)
 
     tenant: Mapped["Tenant | None"] = relationship(back_populates="users")
     oauth_accounts: Mapped[list["OAuthAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")

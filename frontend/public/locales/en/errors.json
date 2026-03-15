@@ -1,0 +1,16 @@
+{
+  "boundary": {
+    "title": "Something went wrong",
+    "description": "An unexpected error occurred. Please try reloading the page.",
+    "reload": "Reload application"
+  },
+  "not_found": {
+    "code": "404",
+    "title": "Page not found",
+    "description": "The page you're looking for doesn't exist."
+  },
+  "root_error": {
+    "title": "Something went wrong",
+    "description": "An unexpected error occurred. Please try again."
+  }
+}

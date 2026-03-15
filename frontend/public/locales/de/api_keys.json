@@ -1,0 +1,27 @@
+{
+  "title": "API-Schlüssel",
+  "description": "Verwalten Sie API-Schlüssel für den programmatischen Zugriff.",
+  "search_placeholder": "Schlüssel suchen...",
+  "no_keys": "Noch keine API-Schlüssel",
+  "no_keys_desc": "Erstellen Sie einen API-Schlüssel, um mit dem programmatischen Zugriff zu beginnen.",
+  "create_key": "Schlüssel erstellen",
+  "create_dialog_title": "API-Schlüssel erstellen",
+  "create_dialog_desc": "Geben Sie Ihrem Schlüssel einen aussagekräftigen Namen.",
+  "key_name_label": "Schlüsselname",
+  "key_name_placeholder": "z. B. Produktion, Staging",
+  "key_created_title": "Schlüssel erstellt",
+  "key_created_desc": "Kopieren Sie diesen Schlüssel jetzt. Sie können ihn danach nicht mehr einsehen.",
+  "table": {
+    "name": "Name",
+    "status": "Status",
+    "scopes": "Berechtigungen",
+    "rate_limit": "Ratenlimit",
+    "created": "Erstellt"
+  },
+  "revoke_title": "API-Schlüssel widerrufen",
+  "revoke_desc": "Möchten Sie \"{{keyName}}\" wirklich widerrufen? Dies kann nicht rückgängig gemacht werden.",
+  "revoke_success": "API-Schlüssel widerrufen",
+  "create_success": "API-Schlüssel erstellt",
+  "all_scopes": "Alle",
+  "rate_limit_per_min": "{{limit}}/Min."
+}

@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { toast } from "sonner"
+import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,16 +15,18 @@ export const Route = createLazyFileRoute("/login")({
   component: LoginPage,
 })
 
-const loginSchema = z.object({
-  email: z.string().min(1, "Email is required").email("Invalid email address"),
-  password: z.string().min(1, "Password is required"),
-})
-
-type LoginFormValues = z.infer<typeof loginSchema>
-
 function LoginPage() {
   const { login, isLoading } = useAuthContext()
   const navigate = useNavigate()
+  const { t } = useTranslation("auth")
+  const { t: tv } = useTranslation("validation")
+
+  const loginSchema = z.object({
+    email: z.string().min(1, tv("email_required")).email(tv("invalid_email")),
+    password: z.string().min(1, tv("password_required")),
+  })
+
+  type LoginFormValues = z.infer<typeof loginSchema>
 
   const {
     register,
@@ -38,7 +41,7 @@ function LoginPage() {
   const onSubmit = async (data: LoginFormValues) => {
     try {
       await login(data.email, data.password)
-      toast.success("Signed in successfully")
+      toast.success(t("sign_in.success"))
       navigate({ to: "/" })
     } catch (err) {
       const apiError = await parseApiError(err)
@@ -50,7 +53,7 @@ function LoginPage() {
     <div className="min-h-[60vh] flex items-center justify-center">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Sign In</CardTitle>
+          <CardTitle>{t("sign_in.title")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
@@ -60,11 +63,11 @@ function LoginPage() {
               </p>
             )}
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t("sign_in.email_label")}</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="you@example.com"
+                placeholder={t("sign_in.email_placeholder")}
                 autoComplete="email"
                 autoFocus
                 disabled={isLoading}
@@ -79,7 +82,7 @@ function LoginPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t("sign_in.password_label")}</Label>
               <Input
                 id="password"
                 type="password"
@@ -96,18 +99,18 @@ function LoginPage() {
               )}
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Signing in..." : "Sign In"}
+              {isLoading ? t("sign_in.submitting") : t("sign_in.submit")}
             </Button>
             <div className="text-sm text-center text-muted-foreground space-y-1">
               <p>
-                Don't have an account?{" "}
+                {t("sign_in.no_account")}{" "}
                 <Link to="/register" className="text-primary underline">
-                  Register
+                  {t("sign_in.register_link")}
                 </Link>
               </p>
               <p>
                 <Link to="/forgot-password" className="text-primary underline">
-                  Forgot password?
+                  {t("sign_in.forgot_password")}
                 </Link>
               </p>
             </div>

@@ -1,0 +1,27 @@
+{
+  "title": "API Keys",
+  "description": "Manage API keys for programmatic access.",
+  "search_placeholder": "Search keys...",
+  "no_keys": "No API keys yet",
+  "no_keys_desc": "Create an API key to get started with programmatic access.",
+  "create_key": "Create Key",
+  "create_dialog_title": "Create API Key",
+  "create_dialog_desc": "Give your key a descriptive name.",
+  "key_name_label": "Key name",
+  "key_name_placeholder": "e.g. production, staging",
+  "key_created_title": "Key Created",
+  "key_created_desc": "Copy this key now. You won't be able to see it again.",
+  "table": {
+    "name": "Name",
+    "status": "Status",
+    "scopes": "Scopes",
+    "rate_limit": "Rate Limit",
+    "created": "Created"
+  },
+  "revoke_title": "Revoke API Key",
+  "revoke_desc": "Are you sure you want to revoke \"{{keyName}}\"? This cannot be undone.",
+  "revoke_success": "API key revoked",
+  "create_success": "API key created",
+  "all_scopes": "All",
+  "rate_limit_per_min": "{{limit}}/min"
+}
