@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { createLazyFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,20 +15,21 @@ function AcceptInvitationPage() {
   const navigate = useNavigate()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
+  const { t } = useTranslation("team")
 
   if (!token) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle>Accept Invitation</CardTitle>
+            <CardTitle>{t("accept_invitation.title")}</CardTitle>
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <p className="text-sm text-destructive" role="alert">
-              Invalid or missing invitation token.
+              {t("accept_invitation.invalid_token")}
             </p>
             <Link to="/login" className="text-sm text-primary underline">
-              Go to Sign In
+              {t("accept_invitation.go_to_sign_in")}
             </Link>
           </CardContent>
         </Card>
@@ -40,12 +42,12 @@ function AcceptInvitationPage() {
     setError("")
     try {
       await api.post("auth/accept-invitation", { json: { token } })
-      toast.success("Invitation accepted!")
+      toast.success(t("accept_invitation.success"))
       navigate({ to: "/" })
     } catch (err) {
       const apiError = await parseApiError(err)
       setError(apiError.detail)
-      toast.error("Failed to accept invitation")
+      toast.error(t("accept_invitation.error"))
     } finally {
       setIsSubmitting(false)
     }
@@ -55,7 +57,7 @@ function AcceptInvitationPage() {
     <div className="min-h-[60vh] flex items-center justify-center">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Accept Invitation</CardTitle>
+          <CardTitle>{t("accept_invitation.title")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
@@ -64,7 +66,7 @@ function AcceptInvitationPage() {
             </p>
           )}
           <p className="text-sm text-muted-foreground">
-            You have been invited to join an organization. Click the button below to accept.
+            {t("accept_invitation.description")}
           </p>
           <Button
             className="w-full"
@@ -72,11 +74,11 @@ function AcceptInvitationPage() {
             disabled={isSubmitting}
             aria-busy={isSubmitting}
           >
-            {isSubmitting ? "Accepting..." : "Accept Invitation"}
+            {isSubmitting ? t("accept_invitation.accepting") : t("accept_invitation.accept")}
           </Button>
           <p className="text-sm text-center text-muted-foreground">
             <Link to="/login" className="text-primary underline">
-              Back to Sign In
+              {t("accept_invitation.back_to_sign_in")}
             </Link>
           </p>
         </CardContent>

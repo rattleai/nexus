@@ -1,5 +1,7 @@
+import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Globe, Check } from "lucide-react"
+import { Globe, Check, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,19 +15,28 @@ import { api } from "@/lib/api-client"
 export function LanguageSwitcher() {
   const { i18n, t } = useTranslation()
   const { isAuthenticated } = useAuthContext()
+  const [isChanging, setIsChanging] = useState(false)
 
   const currentLang = supportedLanguages.find((l) => l.code === i18n.language)
 
   const changeLanguage = async (lng: string) => {
-    await i18n.changeLanguage(lng)
+    if (lng === i18n.language) return
+    setIsChanging(true)
+    try {
+      await i18n.changeLanguage(lng)
 
-    // Persist to user profile if authenticated
-    if (isAuthenticated) {
-      try {
-        await api.patch("auth/me", { json: { locale: lng } })
-      } catch {
-        // Silently fail — language still changes locally
+      // Persist to user profile if authenticated
+      if (isAuthenticated) {
+        try {
+          await api.patch("auth/me", { json: { locale: lng } })
+        } catch {
+          toast.warning(t("aria.change_language"), {
+            description: t("labels.loading"),
+          })
+        }
       }
+    } finally {
+      setIsChanging(false)
     }
   }
 
@@ -36,8 +47,13 @@ export function LanguageSwitcher() {
           type="button"
           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
           aria-label={t("aria.change_language")}
+          disabled={isChanging}
         >
-          <Globe className="h-4 w-4 shrink-0" />
+          {isChanging ? (
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+          ) : (
+            <Globe className="h-4 w-4 shrink-0" />
+          )}
           <span className="truncate">{currentLang?.nativeName ?? i18n.language}</span>
         </button>
       </DropdownMenuTrigger>
@@ -47,6 +63,7 @@ export function LanguageSwitcher() {
             key={lang.code}
             onClick={() => changeLanguage(lang.code)}
             className="flex items-center justify-between gap-3"
+            disabled={isChanging}
           >
             <span className="flex items-center gap-2">
               <span className="font-medium">{lang.nativeName}</span>

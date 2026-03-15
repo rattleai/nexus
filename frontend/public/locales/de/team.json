@@ -33,5 +33,16 @@
   "revoke_invitation_title": "Einladung widerrufen",
   "revoke_invitation_desc": "Die an {{email}} gesendete Einladung widerrufen?",
   "revoke_success": "Einladung widerrufen",
-  "expires": "Läuft ab"
+  "expires": "Läuft ab",
+  "accept_invitation": {
+    "title": "Einladung annehmen",
+    "description": "Sie wurden eingeladen, einer Organisation beizutreten. Klicken Sie auf die Schaltfläche unten, um die Einladung anzunehmen.",
+    "accept": "Einladung annehmen",
+    "accepting": "Wird angenommen...",
+    "success": "Einladung angenommen!",
+    "error": "Einladung konnte nicht angenommen werden",
+    "invalid_token": "Ungültiger oder fehlender Einladungstoken.",
+    "go_to_sign_in": "Zur Anmeldung",
+    "back_to_sign_in": "Zurück zur Anmeldung"
+  }
 }

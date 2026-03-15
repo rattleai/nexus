@@ -33,5 +33,16 @@
   "revoke_invitation_title": "Revocar invitación",
   "revoke_invitation_desc": "¿Revocar la invitación enviada a {{email}}?",
   "revoke_success": "Invitación revocada",
-  "expires": "Expira"
+  "expires": "Expira",
+  "accept_invitation": {
+    "title": "Aceptar invitación",
+    "description": "Ha sido invitado a unirse a una organización. Haga clic en el botón de abajo para aceptar.",
+    "accept": "Aceptar invitación",
+    "accepting": "Aceptando...",
+    "success": "¡Invitación aceptada!",
+    "error": "No se pudo aceptar la invitación",
+    "invalid_token": "Token de invitación inválido o faltante.",
+    "go_to_sign_in": "Ir a iniciar sesión",
+    "back_to_sign_in": "Volver a iniciar sesión"
+  }
 }
