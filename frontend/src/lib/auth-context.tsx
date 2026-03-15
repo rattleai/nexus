@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
 import i18n from "i18next"
+import { HTTPError } from "ky"
 import { api, setAccessToken as setApiClientToken } from "./api-client"
 
 interface AuthUser {
@@ -45,36 +46,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setApiClientToken(accessToken)
   }, [accessToken])
 
-  // Attempt session restoration on mount via refresh token cookie
+  // Attempt session restoration on mount via refresh token cookie.
+  // Distinguishes genuine "no session" (401) from transient errors and retries.
   useEffect(() => {
     let cancelled = false
-    ;(async () => {
+
+    async function restoreSession(attempt = 0) {
       try {
         const res = await api
-          .post("auth/refresh", { credentials: "include", timeout: 10_000 })
+          .post("auth/refresh", { credentials: "include", timeout: 15_000 })
           .json<{ access_token: string }>()
-        if (!cancelled) {
-          syncToken(res.access_token, _setAccessToken)
-          // Fetch user profile with the new token
-          try {
-            setApiClientToken(res.access_token)
-            const profile = await api.get("auth/me").json<AuthUser>()
-            if (!cancelled) {
-              setUser(profile)
-              if (profile.locale) {
-                i18n.changeLanguage(profile.locale)
-              }
+        if (cancelled) return
+        syncToken(res.access_token, _setAccessToken)
+        // Fetch user profile with the new token
+        try {
+          setApiClientToken(res.access_token)
+          const profile = await api.get("auth/me").json<AuthUser>()
+          if (!cancelled) {
+            setUser(profile)
+            if (profile.locale) {
+              i18n.changeLanguage(profile.locale)
             }
-          } catch {
-            // Token works but profile fetch failed — still authenticated
           }
+        } catch (err) {
+          console.warn("Failed to fetch user profile after token refresh:", err)
+          // Token works but profile fetch failed — still authenticated
         }
-      } catch {
-        // No valid refresh token — user is not authenticated
-      } finally {
         if (!cancelled) setIsLoading(false)
+      } catch (err) {
+        if (cancelled) return
+
+        // 401/403 = genuinely no session (expired/missing refresh token).
+        // Anything else (network error, 5xx, timeout) = transient — retry.
+        const isAuthError =
+          err instanceof HTTPError && (err.response.status === 401 || err.response.status === 403)
+
+        if (!isAuthError && attempt < 2) {
+          const delay = 1000 * (attempt + 1)
+          console.debug(`Session restoration attempt ${attempt + 1} failed (transient), retrying in ${delay}ms`)
+          setTimeout(() => {
+            if (!cancelled) restoreSession(attempt + 1)
+          }, delay)
+          return
+        }
+
+        // Either auth error or exhausted retries
+        syncToken(null, _setAccessToken)
+        setUser(null)
+        if (!cancelled) setIsLoading(false)
+        console.debug("Session restoration failed - user not authenticated")
       }
-    })()
+    }
+
+    restoreSession()
     return () => {
       cancelled = true
     }
@@ -107,10 +131,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             json: { email, password, display_name: displayName, tenant_slug: tenantSlug },
             credentials: "include",
           })
-          .json<{ access_token: string; user: AuthUser }>()
-        syncToken(res.access_token, _setAccessToken)
-        setUser(res.user)
-        window.dispatchEvent(new Event("auth-change"))
+          .json<{ access_token?: string; user?: AuthUser; message?: string }>()
+        // Backend may not issue tokens (email verification required).
+        // Only set auth state if an access_token was actually returned.
+        if (res.access_token) {
+          syncToken(res.access_token, _setAccessToken)
+          if (res.user) setUser(res.user)
+          window.dispatchEvent(new Event("auth-change"))
+        }
       } finally {
         setIsLoading(false)
       }

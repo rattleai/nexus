@@ -28,6 +28,27 @@ class WebSocketClient {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
     const host = baseUrl ?? `${protocol}//${window.location.host}`
     this.url = `${host}/api/v1/ws`
+
+    // Reconnect with a fresh token whenever auth state changes.
+    // This ensures the WS connection uses the latest JWT after a refresh,
+    // and disconnects cleanly when the user logs out.
+    window.addEventListener("auth-change", () => {
+      const token = getAccessToken()
+      if (token && this.ws?.readyState !== WebSocket.OPEN) {
+        // Auth restored or token refreshed — reconnect with the new token
+        this.disconnect()
+        this.reconnectAttempts = 0
+        this.connect()
+      } else if (token && this.ws?.readyState === WebSocket.OPEN) {
+        // Token refreshed while connected — reconnect to use new token
+        this.disconnect()
+        this.reconnectAttempts = 0
+        this.connect()
+      } else if (!token && this.ws) {
+        // Auth lost — disconnect
+        this.disconnect()
+      }
+    })
   }
 
   get isConnected(): boolean {
