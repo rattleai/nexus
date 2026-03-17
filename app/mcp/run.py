@@ -5,10 +5,10 @@ Or: python -m app.mcp.run
 
 Supports two transports:
 - stdio (default for local agent connections)
-- streamable-http (for remote agent connections)
+- http (for remote agent connections)
 
 Configure via environment variables:
-- MCP_TRANSPORT: "stdio" or "streamable-http" (default: from settings)
+- MCP_TRANSPORT: "stdio" or "http" (default: from settings)
 - MCP_HTTP_PORT: Port for HTTP transport (default: 8001)
 - CADPRICE_API_KEY: API key for authenticating the MCP session
 """
@@ -35,12 +35,15 @@ def main() -> None:
     mcp = create_mcp_server()
 
     transport = os.environ.get("MCP_TRANSPORT", settings.MCP_TRANSPORT)
+    # Backward compat: accept legacy transport name
+    if transport == "streamable-http":
+        transport = "http"
     port = int(os.environ.get("MCP_HTTP_PORT", str(settings.MCP_HTTP_PORT)))
 
     if transport == "stdio":
         mcp.run(transport="stdio")
     else:
-        mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
+        mcp.run(transport="http", host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":

@@ -4,8 +4,8 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from mcp.shared.exceptions import McpError
 
+from app.mcp.errors import McpError
 from app.mcp.tools.team import team_invite, team_list_members
 
 

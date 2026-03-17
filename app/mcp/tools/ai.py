@@ -132,7 +132,7 @@ async def ai_complete(
         completion_tokens=result.completion_tokens,
         total_tokens=result.total_tokens,
         cost_usd=result.cost_usd,
-        billed_tokens=result.billed_tokens,
+        billed_amount_usd=result.cost_usd,
         latency_ms=result.latency_ms,
         status="success",
         key_source=result.key_source,

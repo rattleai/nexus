@@ -1,8 +1,6 @@
 """Tests for MCP error mapping."""
 
-from mcp.shared.exceptions import McpError
-
-from app.mcp.errors import auth_error, insufficient_balance_error, not_found_error, tool_error
+from app.mcp.errors import McpError, auth_error, insufficient_balance_error, not_found_error, tool_error
 
 
 def test_tool_error_basic():

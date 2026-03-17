@@ -5,8 +5,8 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from mcp.shared.exceptions import McpError
 
+from app.mcp.errors import McpError
 from app.mcp.tools.files import file_download, file_list, file_upload
 
 
@@ -27,7 +27,7 @@ async def test_file_upload_success():
 
     with (
         patch("app.mcp.tools.files._get_storage", return_value=mock_storage),
-        patch("app.mcp.tools.files.settings", MagicMock(MAX_UPLOAD_SIZE_BYTES=10_485_760)),
+        patch("app.config.settings", MagicMock(MAX_UPLOAD_SIZE_BYTES=10_485_760)),
     ):
         result = await file_upload(
             filename="test.txt",
@@ -68,7 +68,7 @@ async def test_file_upload_too_large():
     content_b64 = base64.b64encode(content).decode()
 
     with (
-        patch("app.mcp.tools.files.settings", MagicMock(MAX_UPLOAD_SIZE_BYTES=50)),
+        patch("app.config.settings", MagicMock(MAX_UPLOAD_SIZE_BYTES=50)),
         pytest.raises(McpError, match="exceeds maximum"),
     ):
         await file_upload(
@@ -90,7 +90,7 @@ async def test_file_upload_sanitizes_filename():
 
     with (
         patch("app.mcp.tools.files._get_storage", return_value=mock_storage),
-        patch("app.mcp.tools.files.settings", MagicMock(MAX_UPLOAD_SIZE_BYTES=10_485_760)),
+        patch("app.config.settings", MagicMock(MAX_UPLOAD_SIZE_BYTES=10_485_760)),
     ):
         result = await file_upload(
             filename="../../.env",

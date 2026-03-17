@@ -95,9 +95,9 @@ async def team_invite(
     db.add(invitation)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
-        raise tool_error(f"A pending invitation already exists for {email}")
+        raise tool_error(f"A pending invitation already exists for {email}") from exc
     await db.refresh(invitation)
 
     logger.info("mcp_team_invite_created", email=email, tenant_id=str(tenant.id))

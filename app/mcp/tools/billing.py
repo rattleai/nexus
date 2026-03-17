@@ -39,7 +39,7 @@ async def billing_list_plans(*, db: AsyncSession) -> list[dict]:
     Returns plan names, tiers, prices, limits, and features.
     """
     result = await db.execute(
-        select(Plan).where(Plan.active.is_(True)).order_by(Plan.price_cents.asc())
+        select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.price_cents.asc())
     )
     plans = result.scalars().all()
 

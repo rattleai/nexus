@@ -45,8 +45,8 @@ dependencies = [
     "pywebpush>=2.0,<3",
     "py-vapid>=1.9,<2",
     "webauthn>=2.0,<3",
-    "websockets>=14.0,<15",
-    "mcp[cli]>=1.0,<2",
+    "websockets>=15.0,<16",
+    "fastmcp>=3.1,<4",
 ]
 
 [project.optional-dependencies]

@@ -1,11 +1,11 @@
 """Tests for MCP webhook tools."""
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from mcp.shared.exceptions import McpError
 
+from app.mcp.errors import McpError
 from app.mcp.tools.webhooks import webhook_create, webhook_delete, webhook_list
 
 
@@ -46,13 +46,17 @@ async def test_webhook_create_success():
     mock_db = AsyncMock()
     mock_db.refresh = AsyncMock()
 
-    result = await webhook_create(
-        url="https://example.com/hook",
-        events=["job.completed"],
-        description="Test",
-        tenant=tenant,
-        db=mock_db,
-    )
+    with (
+        patch("app.core.url_validation.validate_webhook_url_async", new_callable=AsyncMock, return_value=None),
+        patch("app.core.encryption.encrypt", return_value="encrypted_secret"),
+    ):
+        result = await webhook_create(
+            url="https://example.com/hook",
+            events=["job.completed"],
+            description="Test",
+            tenant=tenant,
+            db=mock_db,
+        )
 
     assert result["url"] == "https://example.com/hook"
     assert result["events"] == ["job.completed"]
@@ -83,7 +87,10 @@ async def test_webhook_create_invalid_event():
     tenant = _make_tenant()
     mock_db = AsyncMock()
 
-    with pytest.raises(McpError, match="Invalid events"):
+    with (
+        patch("app.core.url_validation.validate_webhook_url_async", new_callable=AsyncMock, return_value=None),
+        pytest.raises(McpError, match="Invalid events"),
+    ):
         await webhook_create(
             url="https://example.com/hook",
             events=["nonexistent.event"],
@@ -98,7 +105,10 @@ async def test_webhook_create_empty_events():
     tenant = _make_tenant()
     mock_db = AsyncMock()
 
-    with pytest.raises(McpError, match="At least one event"):
+    with (
+        patch("app.core.url_validation.validate_webhook_url_async", new_callable=AsyncMock, return_value=None),
+        pytest.raises(McpError, match="At least one event"),
+    ):
         await webhook_create(
             url="https://example.com/hook",
             events=[],
