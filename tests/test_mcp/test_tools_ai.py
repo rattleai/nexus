@@ -38,7 +38,7 @@ async def test_ai_list_models():
 
     with (
         patch("app.mcp.tools.ai.MODEL_CATALOG", mock_catalog),
-        patch("app.mcp.tools.ai.check_key_availability", new_callable=AsyncMock, return_value=(True, "platform")),
+        patch("app.ai.key_resolver.check_key_availability", new_callable=AsyncMock, return_value=(True, "platform")),
     ):
         result = await ai_list_models(tenant=tenant, db=mock_db)
 

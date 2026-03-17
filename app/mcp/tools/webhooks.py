@@ -86,9 +86,9 @@ async def webhook_create(
         url=url,
         events=events,
         description=description,
-        signing_secret=signing_secret,
         active=True,
     )
+    endpoint.set_secret(signing_secret)
     db.add(endpoint)
     await db.commit()
     await db.refresh(endpoint)

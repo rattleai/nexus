@@ -67,15 +67,14 @@ async def test_billing_list_plans():
     """Test listing available plans."""
     mock_db = AsyncMock()
 
-    mock_plan = MagicMock(
-        id=uuid.uuid4(),
-        name="Pro",
-        tier=MagicMock(value="pro"),
-        price_cents=4999,
-        billing_period="monthly",
-        limits={"max_tokens": 1_000_000},
-        features=["priority_support"],
-    )
+    mock_plan = MagicMock()
+    mock_plan.id = uuid.uuid4()
+    mock_plan.name = "Pro"
+    mock_plan.tier = MagicMock(value="pro")
+    mock_plan.price_cents = 4999
+    mock_plan.billing_period = "monthly"
+    mock_plan.limits = {"max_tokens": 1_000_000}
+    mock_plan.features = ["priority_support"]
 
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [mock_plan]
@@ -110,18 +109,17 @@ async def test_billing_get_subscription_active():
     tenant = _make_tenant()
     mock_db = AsyncMock()
 
-    mock_plan = MagicMock(
-        id=uuid.uuid4(),
-        name="Pro",
-        tier=MagicMock(value="pro"),
-    )
-    mock_sub = MagicMock(
-        id=uuid.uuid4(),
-        status=MagicMock(value="active"),
-        plan=mock_plan,
-        current_period_start=MagicMock(isoformat=lambda: "2026-01-01T00:00:00"),
-        current_period_end=MagicMock(isoformat=lambda: "2026-02-01T00:00:00"),
-    )
+    mock_plan = MagicMock()
+    mock_plan.id = uuid.uuid4()
+    mock_plan.name = "Pro"
+    mock_plan.tier = MagicMock(value="pro")
+
+    mock_sub = MagicMock()
+    mock_sub.id = uuid.uuid4()
+    mock_sub.status = MagicMock(value="active")
+    mock_sub.plan = mock_plan
+    mock_sub.current_period_start = MagicMock(isoformat=lambda: "2026-01-01T00:00:00")
+    mock_sub.current_period_end = MagicMock(isoformat=lambda: "2026-02-01T00:00:00")
 
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = mock_sub

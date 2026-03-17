@@ -246,7 +246,7 @@ def create_mcp_server() -> FastMCP:
         """List all available subscription plans with pricing and limits."""
         from app.mcp.tools.billing import billing_list_plans as _list_plans
 
-        api_key, _tenant, db = await _get_context()
+        api_key, tenant, db = await _get_context()
         try:
             check_scopes(api_key, "billing:read")
             result = await _list_plans(db=db)
