@@ -5,9 +5,9 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from mcp.shared.exceptions import McpError
 
 from app.db.models import JobStatus
+from app.mcp.errors import McpError
 from app.mcp.tools.jobs import job_cancel, job_create, job_get, job_list
 
 

@@ -1,6 +1,6 @@
 """Core MCP server setup.
 
-Registers all tools, resources, and prompts using the MCP SDK's FastMCP class.
+Registers all tools, resources, and prompts using the FastMCP framework.
 Authenticates via API key from environment or initialization parameter.
 """
 
@@ -11,7 +11,7 @@ import os
 from typing import Any
 
 import structlog
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 from app.config import settings
 from app.mcp.auth import MCPAuthError, authenticate_api_key, check_scopes
@@ -79,7 +79,7 @@ def create_mcp_server() -> FastMCP:
 
     # ── AI Tools ─────────────────────────────────────────────
 
-    @mcp.tool()
+    @mcp.tool(tags={"ai"})
     async def ai_complete(
         model: str,
         messages: list[dict[str, str]],
@@ -113,7 +113,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.tool()
+    @mcp.tool(tags={"ai"})
     async def ai_list_models() -> str:
         """List all available AI models with capabilities and availability.
 
@@ -131,7 +131,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.tool()
+    @mcp.tool(tags={"ai"})
     async def ai_get_usage(days: int = 30) -> str:
         """Get AI usage statistics for the last N days.
 
@@ -151,7 +151,7 @@ def create_mcp_server() -> FastMCP:
 
     # ── Job Tools ────────────────────────────────────────────
 
-    @mcp.tool()
+    @mcp.tool(tags={"jobs"})
     async def job_create(job_type: str, payload: dict | None = None) -> str:
         """Create a new background job.
 
@@ -169,7 +169,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.tool()
+    @mcp.tool(tags={"jobs"})
     async def job_list(status: str | None = None, limit: int = 50) -> str:
         """List jobs, optionally filtered by status.
 
@@ -187,7 +187,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.tool()
+    @mcp.tool(tags={"jobs"})
     async def job_get(job_id: str) -> str:
         """Get full details of a job by its ID.
 
@@ -204,7 +204,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.tool()
+    @mcp.tool(tags={"jobs"})
     async def job_cancel(job_id: str) -> str:
         """Cancel a pending or processing job.
 
@@ -223,7 +223,7 @@ def create_mcp_server() -> FastMCP:
 
     # ── Billing Tools ────────────────────────────────────────
 
-    @mcp.tool()
+    @mcp.tool(tags={"billing"})
     async def billing_get_wallet_balance() -> str:
         """Get the current token wallet balance.
 
@@ -241,7 +241,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.tool()
+    @mcp.tool(tags={"billing"})
     async def billing_list_plans() -> str:
         """List all available subscription plans with pricing and limits."""
         from app.mcp.tools.billing import billing_list_plans as _list_plans
@@ -255,7 +255,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.tool()
+    @mcp.tool(tags={"billing"})
     async def billing_get_subscription() -> str:
         """Get the current subscription details including plan and status."""
         from app.mcp.tools.billing import billing_get_subscription as _get_sub
@@ -271,7 +271,7 @@ def create_mcp_server() -> FastMCP:
 
     # ── File Tools ───────────────────────────────────────────
 
-    @mcp.tool()
+    @mcp.tool(tags={"files"})
     async def file_upload(
         filename: str,
         content_base64: str,
@@ -300,7 +300,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.tool()
+    @mcp.tool(tags={"files"})
     async def file_download(file_key: str) -> str:
         """Download a file by its key. Returns base64-encoded content."""
         from app.mcp.tools.files import file_download as _file_download
@@ -314,7 +314,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.tool()
+    @mcp.tool(tags={"files"})
     async def file_list(prefix: str | None = None) -> str:
         """List uploaded files, optionally filtered by prefix."""
         from app.mcp.tools.files import file_list as _file_list
@@ -330,7 +330,7 @@ def create_mcp_server() -> FastMCP:
 
     # ── Team Tools ───────────────────────────────────────────
 
-    @mcp.tool()
+    @mcp.tool(tags={"team"})
     async def team_list_members() -> str:
         """List all members of the current team with roles and emails."""
         from app.mcp.tools.team import team_list_members as _list_members
@@ -344,7 +344,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.tool()
+    @mcp.tool(tags={"team"})
     async def team_invite(email: str, role: str = "member") -> str:
         """Invite a user to the team by email.
 
@@ -363,7 +363,7 @@ def create_mcp_server() -> FastMCP:
 
     # ── Webhook Tools ───────────────────────────────────────
 
-    @mcp.tool()
+    @mcp.tool(tags={"webhooks"})
     async def webhook_list() -> str:
         """List all configured webhook endpoints for the tenant."""
         from app.mcp.tools.webhooks import webhook_list as _webhook_list
@@ -377,7 +377,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.tool()
+    @mcp.tool(tags={"webhooks"})
     async def webhook_create(url: str, events: list[str], description: str | None = None) -> str:
         """Create a webhook endpoint to receive event notifications.
 
@@ -399,7 +399,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.tool()
+    @mcp.tool(tags={"webhooks"})
     async def webhook_delete(webhook_id: str) -> str:
         """Delete a webhook endpoint by ID."""
         from app.mcp.tools.webhooks import webhook_delete as _webhook_delete

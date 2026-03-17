@@ -74,7 +74,7 @@ services:
     environment:
       - PYTHONPATH=/app
       - MCP_ENABLED=true
-      - MCP_TRANSPORT=streamable-http
+      - MCP_TRANSPORT=http
     volumes:
       - .:/app
     depends_on:

@@ -4,8 +4,8 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from mcp.shared.exceptions import McpError
 
+from app.mcp.errors import McpError
 from app.mcp.tools.webhooks import webhook_create, webhook_delete, webhook_list
 
 

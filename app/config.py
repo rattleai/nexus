@@ -139,7 +139,7 @@ class Settings(BaseSettings):
     # ── MCP Server ───────────────────────────────────────────
     MCP_ENABLED: bool = False
     MCP_SERVER_NAME: str = "cadprice"
-    MCP_TRANSPORT: str = "streamable-http"  # "stdio" or "streamable-http"
+    MCP_TRANSPORT: str = "http"  # "stdio" or "http"
     MCP_HTTP_PORT: int = 8001
     MCP_LOG_TOOL_CALLS: bool = True
     MCP_RATE_LIMIT_REQUESTS: int = 300  # Max MCP requests per tenant per minute

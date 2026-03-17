@@ -66,7 +66,7 @@ async def test_ai_list_models_skips_deprecated():
 @pytest.mark.asyncio
 async def test_ai_complete_unknown_model():
     """Test that unknown models raise an error."""
-    from mcp.shared.exceptions import McpError
+    from app.mcp.errors import McpError
 
     tenant = _make_tenant()
     mock_db = AsyncMock()

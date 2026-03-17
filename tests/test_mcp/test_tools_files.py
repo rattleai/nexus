@@ -5,8 +5,8 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from mcp.shared.exceptions import McpError
 
+from app.mcp.errors import McpError
 from app.mcp.tools.files import file_download, file_list, file_upload
 
 

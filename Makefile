@@ -59,7 +59,7 @@ mcp:  ## Start MCP server (stdio transport)
 	MCP_ENABLED=true MCP_TRANSPORT=stdio cadprice-mcp
 
 mcp-http:  ## Start MCP server (HTTP transport on port 8001)
-	MCP_ENABLED=true MCP_TRANSPORT=streamable-http cadprice-mcp
+	MCP_ENABLED=true MCP_TRANSPORT=http cadprice-mcp
 
 # ── Seed ────────────────────────────────────────────────────
 seed:  ## Seed dev database with test user (run locally)

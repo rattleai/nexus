@@ -1,6 +1,6 @@
 """Tests for MCP server initialization and tool registration."""
 
-
+import pytest
 
 
 def test_create_mcp_server():
@@ -14,7 +14,8 @@ def test_create_mcp_server():
     assert mcp.name == "cadprice"
 
 
-def test_mcp_server_has_tools():
+@pytest.mark.asyncio
+async def test_mcp_server_has_tools():
     """Test that the MCP server registers the expected tools."""
     from app.mcp.server import create_mcp_server
 
@@ -40,14 +41,9 @@ def test_mcp_server_has_tools():
         "team_invite",
     ]
 
-    # Access registered tools from the FastMCP instance
-    tool_manager = mcp._tool_manager
-    if hasattr(tool_manager, 'tools'):
-        registered_names = set(tool_manager.tools.keys())
-    elif hasattr(tool_manager, '_tools'):
-        registered_names = set(tool_manager._tools.keys())
-    else:
-        registered_names = set()
+    # Use the public FastMCP API to list registered tools
+    registered_tools = await mcp.list_tools()
+    registered_names = {t.name for t in registered_tools}
 
     for name in expected_tools:
         assert name in registered_names, f"Tool '{name}' not registered"
