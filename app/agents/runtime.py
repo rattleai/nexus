@@ -136,12 +136,14 @@ class AgentRuntime:
         from app.ai.gateway import ai_gateway
 
         with _otel_span(
-            "agent.run",
+            "gen_ai.agent.run",
             **{
-                "agent.definition_id": str(self.definition.id),
-                "agent.instance_id": str(instance_id),
-                "agent.tenant_id": str(self.tenant_id),
-                "agent.model": self.definition.model,
+                "gen_ai.system": "cadprice",
+                "gen_ai.agent.id": str(self.definition.id),
+                "gen_ai.agent.name": self.definition.name,
+                "gen_ai.request.model": self.definition.model,
+                "gen_ai.agent.instance_id": str(instance_id),
+                "gen_ai.tenant_id": str(self.tenant_id),
             },
         ) as run_span:
             result = RunResult()
@@ -183,11 +185,11 @@ class AgentRuntime:
                 step_start = time.monotonic()
 
                 with _otel_span(
-                    "agent.step",
+                    "gen_ai.agent.step",
                     **{
-                        "agent.step_number": step_num,
-                        "agent.model": self.definition.model,
-                        "agent.instance_id": str(instance_id),
+                        "gen_ai.agent.step_number": step_num,
+                        "gen_ai.request.model": self.definition.model,
+                        "gen_ai.agent.instance_id": str(instance_id),
                     },
                 ) as step_span:
                     try:
@@ -254,11 +256,11 @@ class AgentRuntime:
             # Record final metrics on the run span
             if run_span:
                 with contextlib.suppress(Exception):
-                    run_span.set_attribute("agent.total_tokens", result.total_tokens)
-                    run_span.set_attribute("agent.total_cost_usd", result.total_cost_usd)
-                    run_span.set_attribute("agent.total_steps", len(result.steps))
-                    run_span.set_attribute("agent.finish_reason", result.finish_reason)
-                    run_span.set_attribute("agent.duration_ms", result.total_duration_ms)
+                    run_span.set_attribute("gen_ai.usage.total_tokens", result.total_tokens)
+                    run_span.set_attribute("gen_ai.usage.cost_usd", result.total_cost_usd)
+                    run_span.set_attribute("gen_ai.agent.total_steps", len(result.steps))
+                    run_span.set_attribute("gen_ai.response.finish_reason", result.finish_reason)
+                    run_span.set_attribute("gen_ai.agent.duration_ms", result.total_duration_ms)
 
             # Store significant output in long-term memory for future retrieval
             if db is not None and result.output and result.finish_reason == "completed":
@@ -307,8 +309,8 @@ class AgentRuntime:
 
         # Record metrics on OTel span
         if step_span:
-            step_span.set_attribute("agent.step_tokens", step_tokens)
-            step_span.set_attribute("agent.step_cost_usd", step_cost)
+            step_span.set_attribute("gen_ai.usage.total_tokens", step_tokens)
+            step_span.set_attribute("gen_ai.usage.cost_usd", step_cost)
 
         # Track spending (best-effort)
         with contextlib.suppress(Exception):
@@ -357,7 +359,7 @@ class AgentRuntime:
                         },
                     )
 
-                with _otel_span("agent.tool_call", **{"agent.tool_name": tc.name}):
+                with _otel_span("gen_ai.agent.tool_call", **{"gen_ai.tool.name": tc.name}):
                     try:
                         tool_result = await asyncio.wait_for(
                             tool_executor(tc.name, tc.arguments),

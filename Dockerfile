@@ -23,6 +23,10 @@ RUN pip install --no-cache-dir .
 
 FROM deps AS runtime
 
+# Generate SBOM (Software Bill of Materials) for supply chain transparency
+RUN pip install --no-cache-dir cyclonedx-bom 2>/dev/null && \
+    cyclonedx-py environment -o /app/sbom.json --format json 2>/dev/null || true
+
 # Run as non-root user for security
 RUN addgroup --system --gid 1001 appgroup && \
     adduser --system --uid 1001 --ingroup appgroup appuser

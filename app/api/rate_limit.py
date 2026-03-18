@@ -128,9 +128,8 @@ class RateLimiter:
                 detail="Too many requests",
                 headers={
                     "Retry-After": str(self.window),
-                    "X-RateLimit-Limit": str(self.max_requests),
-                    "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Reset": str(int(time.time()) + self.window),
+                    "RateLimit-Policy": f"{self.max_requests};w={self.window}",
+                    "RateLimit": f"limit={self.max_requests}, remaining=0, reset={self.window}",
                 },
             )
 
@@ -225,9 +224,8 @@ class AgentAwareRateLimiter:
                 detail="Too many requests",
                 headers={
                     "Retry-After": str(effective_window),
-                    "X-RateLimit-Limit": str(effective_limit),
-                    "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Reset": str(int(time.time()) + effective_window),
+                    "RateLimit-Policy": f"{effective_limit};w={effective_window}",
+                    "RateLimit": f"limit={effective_limit}, remaining=0, reset={effective_window}",
                 },
             )
 
@@ -264,7 +262,7 @@ class ApiKeyRateLimiter:
                 detail="API key rate limit exceeded",
                 headers={
                     "Retry-After": str(window),
-                    "X-RateLimit-Limit": str(max_requests),
-                    "X-RateLimit-Remaining": "0",
+                    "RateLimit-Policy": f"{max_requests};w={window}",
+                    "RateLimit": f"limit={max_requests}, remaining=0, reset={window}",
                 },
             )

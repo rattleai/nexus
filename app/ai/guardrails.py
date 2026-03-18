@@ -153,6 +153,82 @@ def filter_output(
     return filtered
 
 
+# ── OWASP LLM Top 10 2025 Guardrails ─────────────────────
+
+_SYSTEM_PROMPT_LEAK_PATTERNS: dict[str, re.Pattern] = {
+    "reveal_instructions": re.compile(r"(?i)(reveal|show|repeat|output|print)\s+(your|the|system)\s+(instructions|prompt|rules)"),
+    "what_is_prompt": re.compile(r"(?i)what\s+(is|are)\s+your\s+(system\s+)?(prompt|instructions|rules)"),
+    "beginning_text": re.compile(r"(?i)(start|begin)\s+(with|from|of)\s+(your|the)\s+(first|initial|original)\s+(message|instruction|text)"),
+}
+
+_RAG_POISONING_PATTERNS: dict[str, re.Pattern] = {
+    "inject_context": re.compile(r"(?i)when\s+someone\s+asks\s+about.*(?:respond|say|tell|answer)\s+(?:with|that)"),
+    "override_knowledge": re.compile(r"(?i)(?:override|replace|ignore)\s+(?:all|any|the)\s+(?:context|knowledge|documents|information)"),
+    "fake_document": re.compile(r"(?i)(?:according\s+to|per|as\s+stated\s+in)\s+(?:the\s+)?document.*(?:the\s+answer\s+is|you\s+should|always)"),
+}
+
+_EXCESSIVE_AGENCY_PATTERNS: dict[str, re.Pattern] = {
+    "run_arbitrary": re.compile(r"(?i)(?:execute|run|invoke)\s+(?:any|all|every)\s+(?:tool|function|command|action)"),
+    "autonomous_mode": re.compile(r"(?i)(?:enter|switch\s+to|enable)\s+(?:autonomous|unrestricted|unlimited)\s+mode"),
+    "bypass_approval": re.compile(r"(?i)(?:skip|bypass|ignore)\s+(?:approval|confirmation|verification|review)"),
+}
+
+
+def validate_owasp_llm_top10(
+    messages: list[dict],
+    *,
+    tenant_settings: dict | None = None,
+) -> list[GuardrailViolation]:
+    """Check input against OWASP LLM Top 10 2025 categories.
+
+    Covers:
+    - LLM01: Prompt Injection (handled by validate_input)
+    - LLM06: Excessive Agency
+    - LLM07: System Prompt Leakage
+    - LLM08: Vector/Embedding Weaknesses (RAG poisoning)
+    - LLM10: Unbounded Consumption (handled by rate limits + governance)
+    """
+    violations: list[GuardrailViolation] = []
+
+    for msg in messages:
+        content = msg.get("content", "")
+        if not content:
+            continue
+
+        # LLM07: System Prompt Leakage attempts
+        for name, pattern in _SYSTEM_PROMPT_LEAK_PATTERNS.items():
+            if pattern.search(content):
+                violations.append(
+                    GuardrailViolation("owasp_llm07_system_prompt_leak", f"System prompt extraction attempt: {name}")
+                )
+                break
+
+        # LLM08: RAG Poisoning / Vector injection
+        for name, pattern in _RAG_POISONING_PATTERNS.items():
+            if pattern.search(content):
+                violations.append(
+                    GuardrailViolation("owasp_llm08_rag_poisoning", f"RAG poisoning attempt: {name}")
+                )
+                break
+
+        # LLM06: Excessive Agency attempts
+        for name, pattern in _EXCESSIVE_AGENCY_PATTERNS.items():
+            if pattern.search(content):
+                violations.append(
+                    GuardrailViolation("owasp_llm06_excessive_agency", f"Excessive agency attempt: {name}")
+                )
+                break
+
+    if violations:
+        logger.warning(
+            "owasp_llm_top10_violations",
+            violation_count=len(violations),
+            rules=[v.rule for v in violations],
+        )
+
+    return violations
+
+
 def _safe_get_ai_config(tenant_settings: dict | None) -> dict:
     """Safely extract ai_guardrails config, defaulting to empty dict on bad data."""
     if not isinstance(tenant_settings, dict):

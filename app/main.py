@@ -156,6 +156,38 @@ def create_app() -> FastAPI:
 
         setup_telemetry(settings.OTEL_SERVICE_NAME)
 
+    # MCP .well-known discovery endpoint (Nov 2025 spec)
+    @app.get("/.well-known/mcp")
+    async def mcp_discovery():
+        """MCP server capability discovery per the November 2025 spec."""
+        return {
+            "name": settings.MCP_SERVER_NAME,
+            "version": __version__,
+            "description": "CADPrice multi-tenant SaaS platform MCP server",
+            "transport": settings.MCP_TRANSPORT,
+            "url": f"http://localhost:{settings.MCP_HTTP_PORT}" if settings.MCP_TRANSPORT == "http" else None,
+            "authentication": {"type": "api_key", "header": "X-API-Key"},
+            "capabilities": {
+                "tools": True,
+                "resources": True,
+                "prompts": True,
+                "streaming": True,
+            },
+            "tool_annotations": {
+                "ai_complete": {"readOnly": False, "costImplication": "high"},
+                "ai_list_models": {"readOnly": True, "costImplication": "none"},
+                "file_upload": {"readOnly": False, "costImplication": "low"},
+                "file_list": {"readOnly": True, "costImplication": "none"},
+                "job_create": {"readOnly": False, "costImplication": "medium"},
+                "job_list": {"readOnly": True, "costImplication": "none"},
+                "webhook_create": {"readOnly": False, "costImplication": "none"},
+                "code_execute": {"readOnly": False, "costImplication": "low"},
+                "agent_list": {"readOnly": True, "costImplication": "none"},
+                "agent_run": {"readOnly": False, "costImplication": "high"},
+                "agent_approve": {"readOnly": False, "costImplication": "none"},
+            },
+        }
+
     # API routes (must be before SPA catch-all)
     app.include_router(v1_router, prefix=settings.API_V1_PREFIX)
 
