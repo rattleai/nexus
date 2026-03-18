@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.email import EmailTemplate, send_email
 from app.core.redis import redis_pool
-from app.db.models import CreditPack, Plan, Subscription, SubscriptionStatus, Tenant, User
+from app.db.models import CreditPack, Plan, Subscription, SubscriptionStatus, Tenant, UsageRecord, User
 
 logger = structlog.stdlib.get_logger()
 
@@ -740,13 +740,17 @@ async def get_usage_summary(
 
     Aggregates UsageRecord entries by metric type.
     """
-    cutoff = datetime.now(UTC) - __import__("datetime").timedelta(days=days)
+    from datetime import timedelta
+
+    from sqlalchemy import func
+
+    cutoff = datetime.now(UTC) - timedelta(days=days)
 
     result = await db.execute(
         select(
             UsageRecord.metric,
-            __import__("sqlalchemy").func.sum(UsageRecord.quantity).label("total"),
-            __import__("sqlalchemy").func.count(UsageRecord.id).label("count"),
+            func.sum(UsageRecord.quantity).label("total"),
+            func.count(UsageRecord.id).label("count"),
         )
         .where(
             UsageRecord.tenant_id == tenant_id,
