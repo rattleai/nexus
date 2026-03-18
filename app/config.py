@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "RS256"
     JWT_PRIVATE_KEY: str = ""  # PEM-encoded RSA private key for RS256 JWT signing
     JWT_PUBLIC_KEY: str = ""   # PEM-encoded RSA public key for RS256 JWT verification
+    JWT_PUBLIC_KEY_PREVIOUS: str = ""  # Previous public key for seamless key rotation (multi-key JWKS)
     OAUTH_GOOGLE_CLIENT_ID: str = ""
     OAUTH_GOOGLE_CLIENT_SECRET: str = ""
     OAUTH_GITHUB_CLIENT_ID: str = ""

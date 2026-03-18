@@ -1,16 +1,20 @@
-"""Application-level encryption for sensitive data at rest.
+"""Versioned envelope encryption for sensitive data at rest.
 
-Uses Fernet (AES-128-CBC + HMAC-SHA256) with a key derived from SECRET_KEY
-via HKDF (HMAC-based Key Derivation Function, RFC 5869). HKDF is the
-gold-standard approach for deriving cryptographic keys from a master secret —
-it provides proper domain separation and is resistant to related-key attacks,
-unlike plain SHA-256 hashing.
+Uses Fernet (AES-128-CBC + HMAC-SHA256) with keys derived from source secrets
+via HKDF (HMAC-based Key Derivation Function, RFC 5869). Supports key
+versioning for seamless rotation — new data is always encrypted with the
+latest key, but old data can still be decrypted with previous versions.
+
+Envelope encryption pattern:
+    - Each key version derives a unique Fernet key via HKDF
+    - Ciphertext is prefixed with version tag: "v{N}:{ciphertext}"
+    - Decryption tries the tagged version first, then falls back to all known versions
 
 Usage:
     from app.core.encryption import encrypt, decrypt
 
-    encrypted = encrypt("my-secret-token")
-    plaintext = decrypt(encrypted)
+    encrypted = encrypt("my-secret-token")     # Uses latest key version
+    plaintext = decrypt(encrypted)             # Auto-detects version
 """
 
 import base64
@@ -22,44 +26,104 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from app.config import settings
 
+# Current key version — bump when rotating ENCRYPTION_KEY
+_CURRENT_KEY_VERSION = 1
 
-@functools.lru_cache(maxsize=1)
-def _derive_key() -> bytes:
-    """Derive a Fernet-compatible key using HKDF.
+# Version tag prefix
+_VERSION_PREFIX = "v"
 
-    Uses ENCRYPTION_KEY if set (recommended), falling back to SECRET_KEY for
-    backward compatibility. A dedicated ENCRYPTION_KEY allows rotating JWT
-    signing keys (SECRET_KEY) without breaking encrypted data at rest.
 
-    HKDF (RFC 5869) is the recommended approach for extracting a
-    cryptographic key from a shared secret. The `info` parameter provides
-    domain separation so the same source key can safely derive independent
-    keys for different purposes.
+def _derive_key_from_source(source_key: str, version: int = 1) -> bytes:
+    """Derive a Fernet-compatible key using HKDF with version-specific info.
+
+    Each version uses a different `info` parameter for domain separation,
+    ensuring key independence between versions.
     """
-    source_key = settings.ENCRYPTION_KEY or settings.SECRET_KEY
     hkdf = HKDF(
         algorithm=SHA256(),
         length=32,
         salt=None,  # acceptable when source key has high entropy
-        info=b"saas-platform-encryption-v1",
+        info=f"saas-platform-encryption-v{version}".encode(),
     )
     derived = hkdf.derive(source_key.encode())
     return base64.urlsafe_b64encode(derived)
 
 
+@functools.lru_cache(maxsize=8)
+def _get_key(version: int) -> bytes:
+    """Get the encryption key for a specific version.
+
+    Version 1 uses the primary ENCRYPTION_KEY (or SECRET_KEY fallback).
+    Additional versions can be configured via ENCRYPTION_KEY_V{N} settings.
+    """
+    if version == 1:
+        source_key = settings.ENCRYPTION_KEY or settings.SECRET_KEY
+    else:
+        # Support additional key versions via environment variables
+        attr = f"ENCRYPTION_KEY_V{version}"
+        source_key = getattr(settings, attr, "") or settings.ENCRYPTION_KEY or settings.SECRET_KEY
+    return _derive_key_from_source(source_key, version)
+
+
+def _get_all_key_versions() -> list[int]:
+    """Return all known key versions (current + previous)."""
+    versions = [_CURRENT_KEY_VERSION]
+    # Check for legacy v1 if current is higher
+    for v in range(1, _CURRENT_KEY_VERSION):
+        versions.append(v)
+    return versions
+
+
+def _parse_version_tag(ciphertext: str) -> tuple[int | None, str]:
+    """Parse version tag from ciphertext.
+
+    Returns (version, raw_ciphertext). If no tag, returns (None, ciphertext).
+    """
+    if ciphertext.startswith(_VERSION_PREFIX) and ":" in ciphertext[:10]:
+        tag, _, raw = ciphertext.partition(":")
+        try:
+            version = int(tag[len(_VERSION_PREFIX):])
+            return version, raw
+        except ValueError:
+            pass
+    return None, ciphertext
+
+
 def encrypt(plaintext: str) -> str:
-    """Encrypt a string and return base64-encoded ciphertext."""
-    f = Fernet(_derive_key())
-    return f.encrypt(plaintext.encode()).decode()
+    """Encrypt a string with the current key version.
+
+    Returns versioned ciphertext: "v{N}:{base64_ciphertext}"
+    """
+    key = _get_key(_CURRENT_KEY_VERSION)
+    f = Fernet(key)
+    raw = f.encrypt(plaintext.encode()).decode()
+    return f"{_VERSION_PREFIX}{_CURRENT_KEY_VERSION}:{raw}"
 
 
 def decrypt(ciphertext: str) -> str:
-    """Decrypt a base64-encoded ciphertext string.
+    """Decrypt a versioned ciphertext string.
 
-    Raises ValueError if the ciphertext is invalid or was tampered with.
+    Tries the tagged version first, then falls back to all known versions
+    for backward compatibility with pre-versioning data.
+
+    Raises ValueError if the ciphertext is invalid or no key can decrypt it.
     """
-    f = Fernet(_derive_key())
-    try:
-        return f.decrypt(ciphertext.encode()).decode()
-    except InvalidToken as exc:
-        raise ValueError("Failed to decrypt: invalid or corrupted ciphertext") from exc
+    version, raw = _parse_version_tag(ciphertext)
+
+    # Try the tagged version first
+    if version is not None:
+        try:
+            f = Fernet(_get_key(version))
+            return f.decrypt(raw.encode()).decode()
+        except (InvalidToken, Exception):
+            pass
+
+    # Fallback: try all known versions (for untagged legacy data)
+    for v in _get_all_key_versions():
+        try:
+            f = Fernet(_get_key(v))
+            return f.decrypt(raw.encode()).decode()
+        except (InvalidToken, Exception):
+            continue
+
+    raise ValueError("Failed to decrypt: invalid ciphertext or no matching key version")

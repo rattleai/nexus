@@ -345,11 +345,74 @@ return 1
     ) -> list[dict[str, Any]]:
         """Search long-term memory by vector similarity.
 
-        Uses cosine similarity on JSONB-stored embeddings.
-        For production, use pgvector extension for native vector ops.
-        This implementation provides a compatible interface that works
-        without pgvector installed.
+        Uses pgvector's native cosine distance operator when available
+        (embedding_vec column with HNSW index). Falls back to Python-side
+        cosine similarity on JSONB embeddings for non-pgvector setups.
         """
+        from app.config import settings
+
+        if settings.AGENT_MEMORY_VECTOR_ENABLED:
+            return await self._search_pgvector(
+                instance_id, tenant_id, query_embedding, namespace, limit,
+            )
+
+        return await self._search_python_fallback(
+            instance_id, tenant_id, query_embedding, namespace, limit,
+        )
+
+    async def _search_pgvector(
+        self,
+        instance_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        query_embedding: list[float],
+        namespace: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Search using pgvector's native cosine distance (fast, indexed)."""
+        from sqlalchemy import text
+
+        # pgvector cosine distance: 1 - (a <=> b) gives cosine similarity
+        vector_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+        stmt = text("""
+            SELECT key, value, namespace,
+                   1 - (embedding_vec <=> :query_vec::vector) AS score
+            FROM agent_memory_entries
+            WHERE instance_id = :instance_id
+              AND tenant_id = :tenant_id
+              AND namespace = :namespace
+              AND embedding_vec IS NOT NULL
+              AND (expires_at IS NULL OR expires_at > now())
+            ORDER BY embedding_vec <=> :query_vec::vector
+            LIMIT :limit
+        """)
+
+        result = await self.db.execute(stmt, {
+            "instance_id": instance_id,
+            "tenant_id": tenant_id,
+            "namespace": namespace,
+            "query_vec": vector_str,
+            "limit": limit,
+        })
+
+        return [
+            {
+                "key": row[0],
+                "value": row[1],
+                "namespace": row[2],
+                "score": float(row[3]),
+            }
+            for row in result.fetchall()
+        ]
+
+    async def _search_python_fallback(
+        self,
+        instance_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        query_embedding: list[float],
+        namespace: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Fallback: compute cosine similarity in Python over JSONB embeddings."""
         stmt = (
             select(AgentMemoryEntry)
             .where(
@@ -364,7 +427,6 @@ return 1
         result = await self.db.execute(stmt)
         entries = list(result.scalars().all())
 
-        # Compute cosine similarity in Python (fallback for non-pgvector setups)
         scored = []
         for entry in entries:
             emb = entry.embedding

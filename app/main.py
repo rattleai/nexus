@@ -113,8 +113,8 @@ def create_app() -> FastAPI:
         version=__version__,
         description="Multi-tenant SaaS platform",
         lifespan=lifespan,
-        docs_url="/api/docs" if settings.DEBUG else None,
-        redoc_url="/api/redoc" if settings.DEBUG else None,
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
         openapi_url="/api/v1/openapi.json",
     )
 

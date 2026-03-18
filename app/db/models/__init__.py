@@ -59,6 +59,12 @@ from app.db.models.oauth_client import (
 )
 from app.db.models.operations import (
     AuditLog,
+    Consent,
+    ConsentType,
+    DSARStatus,
+    DSARType,
+    DataRetentionPolicy,
+    DataSubjectRequest,
     Job,
     JobStatus,
 )
@@ -78,6 +84,13 @@ __all__ = [
     "Job",
     "JobStatus",
     "AuditLog",
+    # GDPR
+    "Consent",
+    "ConsentType",
+    "DataSubjectRequest",
+    "DSARType",
+    "DSARStatus",
+    "DataRetentionPolicy",
     # Features
     "FeatureFlag",
     "TenantFeatureOverride",

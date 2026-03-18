@@ -235,13 +235,44 @@ async def is_user_token_revoked(user_id: str, issued_at: int) -> bool:
 
 
 def get_jwks_public_key() -> dict | None:
-    """Return the public key in JWK format for the /.well-known/jwks.json endpoint."""
-    if _get_effective_algorithm() not in ("RS256", "ES256") or not settings.JWT_PUBLIC_KEY:
-        return None
+    """Return the primary public key in JWK format for the /.well-known/jwks.json endpoint."""
+    keys = get_jwks_key_set()
+    return keys[0] if keys else None
 
+
+def get_jwks_key_set() -> list[dict]:
+    """Return all public keys in JWK format for the /.well-known/jwks.json endpoint.
+
+    Supports multi-key JWKS for seamless key rotation. Returns both the
+    current key and any previous key (JWT_PUBLIC_KEY_PREVIOUS) so that
+    tokens signed with the old key remain valid during rotation.
+    """
+    if _get_effective_algorithm() not in ("RS256", "ES256"):
+        return []
+
+    keys = []
+
+    # Current key
+    if settings.JWT_PUBLIC_KEY:
+        key = _export_jwk(settings.JWT_PUBLIC_KEY, kid_suffix="current")
+        if key:
+            keys.append(key)
+
+    # Previous key (for rotation)
+    prev_key_pem = getattr(settings, "JWT_PUBLIC_KEY_PREVIOUS", "")
+    if prev_key_pem:
+        key = _export_jwk(prev_key_pem, kid_suffix="previous")
+        if key:
+            keys.append(key)
+
+    return keys
+
+
+def _export_jwk(pem_key: str, kid_suffix: str = "") -> dict | None:
+    """Export a PEM public key as JWK dict."""
     try:
         from jwt import PyJWK
-        pem = settings.JWT_PUBLIC_KEY.replace("\\n", "\n")
+        pem = pem_key.replace("\\n", "\n")
         jwk = PyJWK.from_pem(pem.encode())
         key_dict = jwk.key.export(as_dict=True)
         key_dict["use"] = "sig"
@@ -249,7 +280,7 @@ def get_jwks_public_key() -> dict | None:
         key_dict["kid"] = hashlib.sha256(pem.encode()).hexdigest()[:16]
         return key_dict
     except Exception:
-        logger.warning("jwks_export_failed")
+        logger.warning("jwks_export_failed", kid_suffix=kid_suffix)
         return None
 
 

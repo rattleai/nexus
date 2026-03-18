@@ -87,6 +87,25 @@ _BUILTIN_TOOLS: dict[str, dict[str, Any]] = {
             "required": ["url", "events"],
         },
     },
+    "code_execute": {
+        "description": "Execute Python code in a secure sandbox with resource limits. "
+                       "Use this to perform calculations, data processing, or run algorithms. "
+                       "The sandbox blocks network access, filesystem writes, and dangerous imports.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "Python code to execute. Set a 'result' variable for structured output.",
+                },
+                "input_data": {
+                    "type": "object",
+                    "description": "JSON data accessible as 'input_data' variable in the code.",
+                },
+            },
+            "required": ["code"],
+        },
+    },
 }
 
 
@@ -248,6 +267,8 @@ class ToolRegistry:
                     tenant=tenant,
                     db=db,
                 )
+            elif tool_name == "code_execute":
+                return await self._invoke_sandbox(arguments)
             else:
                 return {"error": f"Built-in tool '{tool_name}' has no handler"}
         except Exception as exc:
@@ -257,6 +278,44 @@ class ToolRegistry:
                 error=str(exc),
             )
             return {"error": f"Built-in tool '{tool_name}' failed: {exc}"}
+
+    async def _invoke_sandbox(self, arguments: dict[str, Any]) -> Any:
+        """Invoke the code execution sandbox.
+
+        Only available when AGENT_SANDBOX_ENABLED is True.
+        """
+        from app.config import settings
+
+        if not settings.AGENT_SANDBOX_ENABLED:
+            return {"error": "Code execution sandbox is not enabled"}
+
+        code = arguments.get("code", "")
+        if not code:
+            return {"error": "No code provided"}
+
+        from app.agents.sandbox import ExecutionSandbox, SandboxConfig
+
+        config = SandboxConfig(
+            memory_mb=settings.AGENT_SANDBOX_MEMORY_MB,
+            cpu_seconds=settings.AGENT_SANDBOX_CPU_SECONDS,
+            timeout_seconds=settings.AGENT_SANDBOX_TIMEOUT_SECONDS,
+            network_enabled=settings.AGENT_SANDBOX_NETWORK_ENABLED,
+        )
+
+        sandbox = ExecutionSandbox(config)
+        result = await sandbox.execute_python(
+            code,
+            input_data=arguments.get("input_data"),
+        )
+
+        return {
+            "success": result.success,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "return_value": result.return_value,
+            "duration_ms": result.duration_ms,
+            "error": result.error,
+        }
 
     async def _invoke_external(
         self,

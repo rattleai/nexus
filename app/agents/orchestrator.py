@@ -282,27 +282,55 @@ class AgentOrchestrator:
     ) -> dict[str, Any]:
         """Execute a single workflow step using the specified pattern.
 
-        Enforces per-step timeout from step definition.
+        Enforces per-step timeout and retry logic from step definition.
         """
-        if pattern == "parallel":
-            coro = self._execute_parallel(
-                step_def, step_input, tenant_id, api_key, key_source, workflow_run,
-            )
-        else:
-            # "single" or "supervisor" — both use single agent execution
-            coro = self._execute_single(
-                step_def, step_input, tenant_id, api_key, key_source, workflow_run,
-            )
-
+        max_retries = step_def.get("max_retries", 0)
+        retry_delay = step_def.get("retry_delay_seconds", 5)
         timeout = step_def.get("timeout_seconds")
-        if timeout:
+
+        last_error = None
+        for attempt in range(max_retries + 1):
             try:
-                return await asyncio.wait_for(coro, timeout=timeout)
-            except TimeoutError as exc:
-                raise OrchestrationError(
-                    f"Step '{step_def.get('name', '?')}' timed out after {timeout}s"
-                ) from exc
-        return await coro
+                if pattern == "parallel":
+                    coro = self._execute_parallel(
+                        step_def, step_input, tenant_id, api_key, key_source, workflow_run,
+                    )
+                else:
+                    coro = self._execute_single(
+                        step_def, step_input, tenant_id, api_key, key_source, workflow_run,
+                    )
+
+                if timeout:
+                    result = await asyncio.wait_for(coro, timeout=timeout)
+                else:
+                    result = await coro
+
+                return result
+
+            except (TimeoutError, OrchestrationError, Exception) as exc:
+                last_error = exc
+                step_name = step_def.get("name", "?")
+
+                if attempt < max_retries:
+                    logger.warning(
+                        "workflow_step_retry",
+                        step_name=step_name,
+                        attempt=attempt + 1,
+                        max_retries=max_retries,
+                        error=str(exc)[:200],
+                    )
+                    await asyncio.sleep(retry_delay)
+                else:
+                    if isinstance(exc, TimeoutError):
+                        raise OrchestrationError(
+                            f"Step '{step_name}' timed out after {timeout}s "
+                            f"(attempted {max_retries + 1} times)"
+                        ) from exc
+                    raise
+
+        raise OrchestrationError(
+            f"Step '{step_def.get('name', '?')}' failed after {max_retries + 1} attempts: {last_error}"
+        )
 
     async def _execute_single(
         self,
@@ -460,20 +488,110 @@ class AgentOrchestrator:
         transitions: list[dict[str, str]],
         step_result: dict[str, Any],
     ) -> str | None:
-        """Find the next step based on transition conditions."""
+        """Find the next step based on transition conditions.
+
+        Supports:
+        - "always": Always transition
+        - "on_success": Transition if no error in step result
+        - "on_failure": Transition if error in step result
+        - JSONPath expression: Evaluate against step_result (e.g., "$.sentiment == 'negative'")
+        - Comparison expressions: "$.field > 100", "$.status == 'active'"
+        """
         for t in transitions:
             if t.get("from") != current_step:
                 continue
 
             condition = t.get("condition", "always")
-            if (
-                condition == "always"
-                or (condition == "on_success" and not step_result.get("error"))
-                or (condition == "on_failure" and step_result.get("error"))
-            ):
+            if condition == "always":
+                return t.get("to")
+            if condition == "on_success" and not step_result.get("error"):
+                return t.get("to")
+            if condition == "on_failure" and step_result.get("error"):
                 return t.get("to")
 
+            # Data-dependent routing: evaluate expression against step_result
+            if condition.startswith("$."):
+                if self._evaluate_condition(condition, step_result):
+                    return t.get("to")
+
         return None  # No more steps — workflow complete
+
+    # Supported comparison operators for condition expressions
+    _CONDITION_OPS = {
+        "==": lambda a, b: str(a) == str(b),
+        "!=": lambda a, b: str(a) != str(b),
+        ">": lambda a, b: float(a) > float(b),
+        "<": lambda a, b: float(a) < float(b),
+        ">=": lambda a, b: float(a) >= float(b),
+        "<=": lambda a, b: float(a) <= float(b),
+        "in": lambda a, b: str(a) in str(b),
+        "contains": lambda a, b: str(b) in str(a),
+    }
+
+    def _evaluate_condition(
+        self,
+        expression: str,
+        step_result: dict[str, Any],
+    ) -> bool:
+        """Evaluate a JSONPath-like condition expression against step result.
+
+        Supports: "$.field.subfield == 'value'", "$.count > 10", "$.tags contains 'urgent'"
+        """
+        # Find the operator
+        op_name = None
+        op_func = None
+        for op in sorted(self._CONDITION_OPS.keys(), key=len, reverse=True):
+            # Look for operator surrounded by spaces
+            if f" {op} " in expression:
+                op_name = op
+                op_func = self._CONDITION_OPS[op]
+                break
+
+        if op_func is None:
+            # No operator — just check if the path exists and is truthy
+            value = self._resolve_jsonpath(expression, step_result)
+            return bool(value)
+
+        # Split on operator
+        parts = expression.split(f" {op_name} ", 1)
+        if len(parts) != 2:
+            return False
+
+        path_expr, expected = parts[0].strip(), parts[1].strip()
+
+        # Remove quotes from expected value
+        if (expected.startswith("'") and expected.endswith("'")) or \
+           (expected.startswith('"') and expected.endswith('"')):
+            expected = expected[1:-1]
+
+        value = self._resolve_jsonpath(path_expr, step_result)
+        if value is None:
+            return False
+
+        try:
+            return op_func(value, expected)
+        except (ValueError, TypeError):
+            return False
+
+    def _resolve_jsonpath(self, path: str, data: dict[str, Any]) -> Any:
+        """Resolve a simple JSONPath expression ($.field.subfield) against data."""
+        if not path.startswith("$."):
+            return None
+
+        parts = path[2:].split(".")
+
+        # Validate path components
+        for part in parts:
+            if not self._SAFE_PATH_RE.match(part):
+                return None
+
+        current: Any = data
+        for part in parts:
+            if isinstance(current, dict):
+                current = current.get(part)
+            else:
+                return None
+        return current
 
     async def _load_workflow(
         self, workflow_id: uuid.UUID, tenant_id: uuid.UUID | None = None,

@@ -125,6 +125,7 @@ async def create_checkout_session(
         success_url=f"{return_url}?session_id={{CHECKOUT_SESSION_ID}}&status=success",
         cancel_url=f"{return_url}?status=canceled",
         metadata={"tenant_id": str(tenant_id), "plan_id": str(plan_id)},
+        automatic_tax={"enabled": True},
     )
 
     logger.info("checkout_session_created", tenant_id=str(tenant_id), plan_id=str(plan_id))
@@ -269,6 +270,7 @@ async def create_credit_pack_checkout(
             "pack_id": str(pack_id),
             "amount_usd": str(pack.amount_usd),
         },
+        automatic_tax={"enabled": True},
     )
 
     logger.info("credit_pack_checkout_created", tenant_id=str(tenant_id), pack_id=str(pack_id))
@@ -676,6 +678,95 @@ async def _notify_tenant_owner(
             await send_email(to=owner.email, template=template, context=ctx)
     except Exception:
         logger.error("notify_tenant_owner_failed", tenant_id=str(tenant_id), exc_info=True)
+
+
+async def report_usage_to_stripe(
+    tenant_id: uuid.UUID,
+    metric_name: str,
+    quantity: int,
+    db: AsyncSession,
+) -> bool:
+    """Report usage to Stripe's metered billing API.
+
+    Sends a MeterEvent for the given metric. Requires a Stripe Meter
+    to be configured in the Stripe dashboard for the metric_name.
+
+    Returns True if the event was sent successfully.
+    """
+    stripe = _get_stripe()
+
+    # Get customer ID
+    result = await db.execute(
+        select(Subscription).where(Subscription.tenant_id == tenant_id)
+    )
+    subscription = result.scalar_one_or_none()
+    if not subscription or not subscription.stripe_customer_id:
+        logger.warning("usage_report_no_customer", tenant_id=str(tenant_id))
+        return False
+
+    try:
+        stripe.billing.MeterEvent.create(
+            event_name=metric_name,
+            payload={
+                "value": str(quantity),
+                "stripe_customer_id": subscription.stripe_customer_id,
+            },
+            timestamp=int(datetime.now(UTC).timestamp()),
+        )
+        logger.info(
+            "usage_reported_to_stripe",
+            tenant_id=str(tenant_id),
+            metric=metric_name,
+            quantity=quantity,
+        )
+        return True
+    except Exception as exc:
+        logger.error(
+            "usage_report_failed",
+            tenant_id=str(tenant_id),
+            metric=metric_name,
+            error=str(exc),
+        )
+        return False
+
+
+async def get_usage_summary(
+    tenant_id: uuid.UUID,
+    db: AsyncSession,
+    *,
+    days: int = 30,
+) -> dict:
+    """Get usage summary for a tenant over the specified period.
+
+    Aggregates UsageRecord entries by metric type.
+    """
+    cutoff = datetime.now(UTC) - __import__("datetime").timedelta(days=days)
+
+    result = await db.execute(
+        select(
+            UsageRecord.metric,
+            __import__("sqlalchemy").func.sum(UsageRecord.quantity).label("total"),
+            __import__("sqlalchemy").func.count(UsageRecord.id).label("count"),
+        )
+        .where(
+            UsageRecord.tenant_id == tenant_id,
+            UsageRecord.created_at >= cutoff,
+        )
+        .group_by(UsageRecord.metric)
+    )
+
+    metrics = {}
+    for row in result.all():
+        metrics[row[0]] = {
+            "total": float(row[1] or 0),
+            "count": row[2] or 0,
+        }
+
+    return {
+        "tenant_id": str(tenant_id),
+        "period_days": days,
+        "metrics": metrics,
+    }
 
 
 async def _handle_payment_intent_succeeded(data: dict, db: AsyncSession) -> None:

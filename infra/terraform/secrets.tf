@@ -44,3 +44,105 @@ resource "aws_secretsmanager_secret_version" "app_config" {
     ignore_changes = [secret_string]
   }
 }
+
+# ──────────────────────────────────────────────────────────────
+# Secrets Rotation — Automated rotation for DB passwords
+# ──────────────────────────────────────────────────────────────
+
+resource "aws_secretsmanager_secret_rotation" "db_master_password" {
+  secret_id           = aws_secretsmanager_secret.db_master_password.id
+  rotation_lambda_arn = aws_lambda_function.secret_rotation.arn
+
+  rotation_rules {
+    automatically_after_days = 30
+    schedule_expression      = "rate(30 days)"
+  }
+}
+
+# IAM role for the rotation Lambda
+resource "aws_iam_role" "secret_rotation_lambda" {
+  name = "${local.name_prefix}-secret-rotation-lambda"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "secret_rotation_lambda" {
+  name = "${local.name_prefix}-secret-rotation-policy"
+  role = aws_iam_role.secret_rotation_lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:PutSecretValue",
+          "secretsmanager:UpdateSecretVersionStage",
+        ]
+        Resource = [
+          aws_secretsmanager_secret.db_master_password.arn,
+          aws_secretsmanager_secret.app_config.arn,
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface", "ec2:DescribeNetworkInterfaces"]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+resource "aws_lambda_function" "secret_rotation" {
+  function_name = "${local.name_prefix}-secret-rotation"
+  description   = "Rotates RDS master password in Secrets Manager"
+  role          = aws_iam_role.secret_rotation_lambda.arn
+  handler       = "index.handler"
+  runtime       = "python3.12"
+  timeout       = 60
+  memory_size   = 128
+
+  # The rotation Lambda code is packaged separately
+  filename         = "${path.module}/lambda/secret_rotation.zip"
+  source_code_hash = filebase64sha256("${path.module}/lambda/secret_rotation.zip")
+
+  vpc_config {
+    subnet_ids         = aws_subnet.private[*].id
+    security_group_ids = [aws_security_group.rds.id]
+  }
+
+  environment {
+    variables = {
+      RDS_ENDPOINT = aws_db_instance.main.endpoint
+      DB_NAME      = var.db_name
+    }
+  }
+
+  tags = { Name = "${local.name_prefix}-secret-rotation" }
+}
+
+resource "aws_lambda_permission" "secret_rotation" {
+  statement_id  = "AllowSecretsManagerInvocation"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.secret_rotation.function_name
+  principal     = "secretsmanager.amazonaws.com"
+  source_arn    = aws_secretsmanager_secret.db_master_password.arn
+}

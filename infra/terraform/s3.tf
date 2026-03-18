@@ -85,6 +85,68 @@ resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
   }
 }
 
+# ── Cross-Region Replication (DR) ────────────────────────
+
+resource "aws_s3_bucket_replication_configuration" "uploads_dr" {
+  count = var.dr_region != "" ? 1 : 0
+
+  role   = aws_iam_role.s3_replication[0].arn
+  bucket = aws_s3_bucket.uploads.id
+
+  rule {
+    id     = "replicate-all"
+    status = "Enabled"
+
+    destination {
+      bucket        = var.dr_s3_bucket_arn
+      storage_class = "STANDARD_IA"
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.uploads]
+}
+
+resource "aws_iam_role" "s3_replication" {
+  count = var.dr_region != "" ? 1 : 0
+  name  = "${local.name_prefix}-s3-replication"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = { Service = "s3.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "s3_replication" {
+  count = var.dr_region != "" ? 1 : 0
+  name  = "${local.name_prefix}-s3-replication"
+  role  = aws_iam_role.s3_replication[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetReplicationConfiguration", "s3:ListBucket"]
+        Resource = [aws_s3_bucket.uploads.arn]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObjectVersionForReplication", "s3:GetObjectVersionAcl", "s3:GetObjectVersionTagging"]
+        Resource = ["${aws_s3_bucket.uploads.arn}/*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ReplicateObject", "s3:ReplicateDelete", "s3:ReplicateTags"]
+        Resource = ["${var.dr_s3_bucket_arn}/*"]
+      },
+    ]
+  })
+}
+
 # ── CORS (for direct browser uploads if needed) ─────────────
 
 resource "aws_s3_bucket_cors_configuration" "uploads" {

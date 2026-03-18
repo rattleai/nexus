@@ -425,6 +425,26 @@ async def create_setup_intent(
     return SetupIntentResponse(client_secret=client_secret)
 
 
+# ── Usage ────────────────────────────────────────────────
+
+
+@router.get(
+    "/usage",
+    dependencies=[Depends(RequireScopes("billing:read"))],
+)
+async def get_usage(
+    days: int = 30,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get usage summary for the current tenant over the specified period."""
+    if days < 1 or days > 365:
+        raise HTTPException(400, "days must be between 1 and 365")
+
+    from app.billing.stripe_service import get_usage_summary
+    return await get_usage_summary(tenant.id, db, days=days)
+
+
 # ── Stripe Webhook ───────────────────────────────────────
 
 

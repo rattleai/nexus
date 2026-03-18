@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
+import json
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -32,8 +34,22 @@ from app.core.events import emit
 
 logger = structlog.stdlib.get_logger()
 
+# OpenTelemetry tracing — returns a no-op context manager when OTEL is not available
+try:
+    from opentelemetry import trace
+    _tracer = trace.get_tracer("app.agents.runtime")
+except ImportError:
+    _tracer = None
+
 # Maximum characters for tool output before truncation.
 _MAX_TOOL_OUTPUT = 20_000
+
+
+def _otel_span(name: str, **attributes: Any) -> contextlib.AbstractContextManager:
+    """Create an OTel span as a context manager, or a no-op if tracing is disabled."""
+    if _tracer:
+        return _tracer.start_as_current_span(name, attributes=attributes)
+    return contextlib.nullcontext()
 
 
 @dataclass
@@ -92,6 +108,7 @@ class AgentRuntime:
         self.api_key = api_key
         self.key_source = key_source
         self._cancelled = False
+        self._tenant_tool_schemas: dict[str, dict[str, Any]] = {}
 
     def cancel(self) -> None:
         """Signal the runtime to stop after the current step."""
@@ -118,246 +135,356 @@ class AgentRuntime:
         from app.agents.governance import GovernanceEngine
         from app.ai.gateway import ai_gateway
 
-        result = RunResult()
-        start_time = time.monotonic()
+        with _otel_span(
+            "agent.run",
+            **{
+                "agent.definition_id": str(self.definition.id),
+                "agent.instance_id": str(instance_id),
+                "agent.tenant_id": str(self.tenant_id),
+                "agent.model": self.definition.model,
+            },
+        ) as run_span:
+            result = RunResult()
+            start_time = time.monotonic()
 
-        # Build system message from definition
-        system_messages = []
+            # Preload tenant tool schemas so the LLM gets accurate function signatures
+            if db is not None:
+                await self._load_tenant_tool_schemas(db)
+
+            # Build conversation with system messages + memory context
+            conversation = self._build_conversation(messages)
+            if db is not None:
+                memory_context = await self._retrieve_memory_context(messages, instance_id, db)
+                if memory_context:
+                    conversation.insert(
+                        1 if conversation and conversation[0].get("role") == "system" else 0,
+                        {"role": "system", "content": memory_context},
+                    )
+
+            self._enforce_message_limits(conversation)
+
+            max_steps = self.definition.max_steps_per_run
+            max_tokens = self.definition.max_tokens_per_run
+            tools_schema = self._build_tools_schema()
+
+            for step_num in range(1, max_steps + 1):
+                if self._cancelled:
+                    result.finish_reason = "cancelled"
+                    break
+
+                if result.total_tokens >= max_tokens:
+                    result.finish_reason = "max_tokens"
+                    break
+
+                if (time.monotonic() - start_time) > self.definition.max_duration_seconds:
+                    result.finish_reason = "max_duration"
+                    break
+
+                step_start = time.monotonic()
+
+                with _otel_span(
+                    "agent.step",
+                    **{
+                        "agent.step_number": step_num,
+                        "agent.model": self.definition.model,
+                        "agent.instance_id": str(instance_id),
+                    },
+                ) as step_span:
+                    try:
+                        step_result = await self._execute_step(
+                            step_num=step_num,
+                            conversation=conversation,
+                            tools_schema=tools_schema,
+                            tool_executor=tool_executor,
+                            governance_checker=governance_checker,
+                            instance_id=instance_id,
+                            result=result,
+                            ai_gateway=ai_gateway,
+                            GovernanceEngine=GovernanceEngine,
+                            db=db,
+                            step_span=step_span,
+                        )
+
+                        step_duration = int((time.monotonic() - step_start) * 1000)
+
+                        if step_result == "break":
+                            break
+                        if step_result == "done":
+                            break
+
+                    except TimeoutError:
+                        logger.warning(
+                            "agent_llm_timeout",
+                            instance_id=str(instance_id),
+                            step=step_num,
+                        )
+                        result.finish_reason = "error"
+                        result.steps.append(StepResult(
+                            step_number=step_num,
+                            action="error",
+                            content=f"LLM call timed out after {settings.AI_REQUEST_TIMEOUT_SECONDS}s",
+                            duration_ms=int((time.monotonic() - step_start) * 1000),
+                        ))
+                        break
+
+                    except Exception as exc:
+                        logger.error(
+                            "agent_step_failed",
+                            instance_id=str(instance_id),
+                            step=step_num,
+                            error=str(exc),
+                            exc_info=True,
+                        )
+                        result.finish_reason = "error"
+                        result.steps.append(StepResult(
+                            step_number=step_num,
+                            action="error",
+                            content=str(exc)[:500],
+                            duration_ms=int((time.monotonic() - step_start) * 1000),
+                        ))
+                        if step_span:
+                            step_span.set_attribute("error", True)
+                            step_span.set_attribute("agent.error", str(exc)[:200])
+                        break
+            else:
+                result.finish_reason = "max_steps"
+
+            result.total_duration_ms = int((time.monotonic() - start_time) * 1000)
+
+            # Record final metrics on the run span
+            if run_span:
+                with contextlib.suppress(Exception):
+                    run_span.set_attribute("agent.total_tokens", result.total_tokens)
+                    run_span.set_attribute("agent.total_cost_usd", result.total_cost_usd)
+                    run_span.set_attribute("agent.total_steps", len(result.steps))
+                    run_span.set_attribute("agent.finish_reason", result.finish_reason)
+                    run_span.set_attribute("agent.duration_ms", result.total_duration_ms)
+
+            # Store significant output in long-term memory for future retrieval
+            if db is not None and result.output and result.finish_reason == "completed":
+                with contextlib.suppress(Exception):
+                    await self._store_output_to_memory(result, instance_id, db)
+
+            return result
+
+    async def _execute_step(
+        self,
+        *,
+        step_num: int,
+        conversation: list[dict[str, Any]],
+        tools_schema: list[dict] | None,
+        tool_executor: Any | None,
+        governance_checker: Any | None,
+        instance_id: uuid.UUID,
+        result: RunResult,
+        ai_gateway: Any,
+        GovernanceEngine: Any,
+        db: Any | None,
+        step_span: Any,
+    ) -> str:
+        """Execute one ReAct step. Returns "done", "break", or "continue"."""
+        llm_timeout = settings.AI_REQUEST_TIMEOUT_SECONDS
+
+        completion = await asyncio.wait_for(
+            ai_gateway.completion(
+                tenant_id=self.tenant_id,
+                model=self.definition.model,
+                messages=conversation,
+                api_key=self.api_key,
+                key_source=self.key_source,
+                max_tokens=self.definition.max_tokens,
+                temperature=self.definition.temperature,
+                db=db,
+                tools=tools_schema,
+            ),
+            timeout=llm_timeout,
+        )
+
+        step_tokens = completion.total_tokens
+        step_cost = completion.cost_usd
+        result.total_tokens += step_tokens
+        result.total_cost_usd += step_cost
+
+        # Record metrics on OTel span
+        if step_span:
+            step_span.set_attribute("agent.step_tokens", step_tokens)
+            step_span.set_attribute("agent.step_cost_usd", step_cost)
+
+        # Track spending (best-effort)
+        with contextlib.suppress(Exception):
+            await GovernanceEngine.track_spending(
+                tenant_id=self.tenant_id,
+                agent_id=str(self.definition.id),
+                instance_id=str(instance_id),
+                cost_usd=step_cost,
+            )
+
+        # Check if the LLM wants to call a tool
+        tool_calls = self._extract_tool_calls(completion)
+
+        if tool_calls and tool_executor:
+            # Append assistant message with tool_calls for proper API format
+            assistant_msg: dict[str, Any] = {"role": "assistant"}
+            if completion.content:
+                assistant_msg["content"] = completion.content
+            if completion.tool_calls:
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc_raw["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc_raw["name"],
+                            "arguments": (
+                                tc_raw["arguments"] if isinstance(tc_raw["arguments"], str)
+                                else json.dumps(tc_raw["arguments"])
+                            ),
+                        },
+                    }
+                    for tc_raw in completion.tool_calls
+                ]
+            conversation.append(assistant_msg)
+
+            # Execute all tool calls from this LLM response
+            for tc in tool_calls:
+                if governance_checker:
+                    await governance_checker(
+                        action="tool_call",
+                        context={
+                            "tool_name": tc.name,
+                            "instance_id": str(instance_id),
+                            "step_number": step_num,
+                            "current_cost": result.total_cost_usd,
+                        },
+                    )
+
+                with _otel_span("agent.tool_call", **{"agent.tool_name": tc.name}):
+                    try:
+                        tool_result = await asyncio.wait_for(
+                            tool_executor(tc.name, tc.arguments),
+                            timeout=settings.AGENT_TOOL_EXECUTION_TIMEOUT,
+                        )
+                    except TimeoutError:
+                        tool_result = {
+                            "error": f"Tool '{tc.name}' timed out after "
+                            f"{settings.AGENT_TOOL_EXECUTION_TIMEOUT}s",
+                        }
+
+                # Truncate oversized tool output
+                tool_result_str = str(tool_result)
+                if len(tool_result_str) > _MAX_TOOL_OUTPUT:
+                    tool_result_str = tool_result_str[:_MAX_TOOL_OUTPUT] + "... [truncated]"
+
+                step_duration = int((time.monotonic() - time.monotonic()) * 1000)
+                result.steps.append(StepResult(
+                    step_number=step_num,
+                    action="tool_call",
+                    tool_name=tc.name,
+                    tool_result=tool_result,
+                    tokens_used=step_tokens,
+                    cost_usd=step_cost,
+                    duration_ms=step_duration,
+                ))
+
+                conversation.append({
+                    "role": "tool",
+                    "tool_call_id": tc.call_id,
+                    "content": tool_result_str,
+                })
+
+                # Emit step event (best-effort)
+                with contextlib.suppress(Exception):
+                    await emit(
+                        AgentStepCompleted(
+                            tenant_id=str(self.tenant_id),
+                            instance_id=str(instance_id),
+                            step_number=step_num,
+                            action="tool_call",
+                            tool_name=tc.name,
+                            tokens_used=step_tokens,
+                            cost_usd=step_cost,
+                        ),
+                        durable=True,
+                    )
+
+            if step_span:
+                step_span.set_attribute("agent.action", "tool_call")
+            return "continue"
+
+        else:
+            # LLM responded directly — agent run is complete
+            output_content = completion.content
+
+            # Validate output against schema and content policy
+            from app.agents.validation import validate_agent_output
+            is_valid, validation_errors, sanitized = validate_agent_output(
+                output_content,
+                governance_policy=self.definition.governance_policy,
+                output_schema=self.definition.output_schema or None,
+            )
+
+            if not is_valid:
+                logger.warning(
+                    "agent_output_validation_failed",
+                    errors=validation_errors,
+                    instance_id=str(instance_id),
+                )
+                if step_span:
+                    step_span.set_attribute("agent.validation_errors", len(validation_errors))
+
+            # Use sanitized output (PII redacted if configured)
+            output_content = sanitized
+
+            result.steps.append(StepResult(
+                step_number=step_num,
+                action="response",
+                content=output_content,
+                tokens_used=step_tokens,
+                cost_usd=step_cost,
+            ))
+            result.output = output_content
+            result.finish_reason = "completed"
+            if step_span:
+                step_span.set_attribute("agent.action", "response")
+            return "done"
+
+    # ── Conversation building ────────────────────────────────────────────
+
+    def _build_conversation(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Build initial conversation with system prompt."""
+        system_messages: list[dict[str, Any]] = []
         if self.definition.system_prompt:
             system_messages.append({"role": "system", "content": self.definition.system_prompt})
+        return system_messages + list(messages)
 
-        conversation = system_messages + list(messages)
-
-        # Enforce per-message length limits to prevent governance bypass
+    def _enforce_message_limits(self, conversation: list[dict[str, Any]]) -> None:
+        """Truncate oversized messages and cap conversation length."""
         max_msg_len = settings.AI_MAX_MESSAGE_LENGTH
         for msg in conversation:
             content = msg.get("content", "")
             if isinstance(content, str) and len(content) > max_msg_len:
                 msg["content"] = content[:max_msg_len] + "... [truncated]"
 
-        # Guard against unbounded conversation growth
         _max_conv = settings.AGENT_MAX_CONVERSATION_MESSAGES
         if len(conversation) > _max_conv:
             sys_msgs = [m for m in conversation if m.get("role") == "system"]
             non_sys = [m for m in conversation if m.get("role") != "system"]
             budget = max(1, _max_conv - len(sys_msgs))
-            conversation = sys_msgs + non_sys[-budget:]
+            conversation[:] = sys_msgs + non_sys[-budget:]
 
-        max_steps = self.definition.max_steps_per_run
-        max_tokens = self.definition.max_tokens_per_run
+    # ── Tool calls ───────────────────────────────────────────────────────
 
-        # Build tools schema for LLM function calling
-        tools_schema = self._build_tools_schema()
-
-        for step_num in range(1, max_steps + 1):
-            if self._cancelled:
-                result.finish_reason = "cancelled"
-                break
-
-            if result.total_tokens >= max_tokens:
-                result.finish_reason = "max_tokens"
-                break
-
-            elapsed = time.monotonic() - start_time
-            if elapsed > self.definition.max_duration_seconds:
-                result.finish_reason = "max_duration"
-                break
-
-            step_start = time.monotonic()
-
-            try:
-                # Call LLM with timeout to prevent indefinite hangs
-                llm_timeout = settings.AI_REQUEST_TIMEOUT_SECONDS
-                try:
-                    completion = await asyncio.wait_for(
-                        ai_gateway.completion(
-                            tenant_id=self.tenant_id,
-                            model=self.definition.model,
-                            messages=conversation,
-                            api_key=self.api_key,
-                            key_source=self.key_source,
-                            max_tokens=self.definition.max_tokens,
-                            temperature=self.definition.temperature,
-                            db=db,
-                            tools=tools_schema,
-                        ),
-                        timeout=llm_timeout,
-                    )
-                except TimeoutError:
-                    logger.warning(
-                        "agent_llm_timeout",
-                        instance_id=str(instance_id),
-                        step=step_num,
-                        timeout=llm_timeout,
-                    )
-                    result.finish_reason = "error"
-                    result.steps.append(StepResult(
-                        step_number=step_num,
-                        action="error",
-                        content=f"LLM call timed out after {llm_timeout}s",
-                        duration_ms=int((time.monotonic() - step_start) * 1000),
-                    ))
-                    break
-
-                step_tokens = completion.total_tokens
-                step_cost = completion.cost_usd
-                result.total_tokens += step_tokens
-                result.total_cost_usd += step_cost
-
-                # Track spending after each LLM call (best-effort)
-                with contextlib.suppress(Exception):
-                    await GovernanceEngine.track_spending(
-                        tenant_id=self.tenant_id,
-                        agent_id=str(self.definition.id),
-                        instance_id=str(instance_id),
-                        cost_usd=step_cost,
-                    )
-
-                # Check if the LLM wants to call a tool
-                tool_calls = self._extract_tool_calls(completion)
-
-                if tool_calls and tool_executor:
-                    # Append assistant message with tool_calls for proper API format
-                    assistant_msg: dict[str, Any] = {"role": "assistant"}
-                    if completion.content:
-                        assistant_msg["content"] = completion.content
-                    # Include tool_calls in assistant message for LLM context
-                    if completion.tool_calls:
-                        assistant_msg["tool_calls"] = [
-                            {
-                                "id": tc_raw["id"],
-                                "type": "function",
-                                "function": {
-                                    "name": tc_raw["name"],
-                                    "arguments": (
-                                        tc_raw["arguments"] if isinstance(tc_raw["arguments"], str)
-                                        else __import__("json").dumps(tc_raw["arguments"])
-                                    ),
-                                },
-                            }
-                            for tc_raw in completion.tool_calls
-                        ]
-                    conversation.append(assistant_msg)
-
-                    # Execute all tool calls from this LLM response
-                    for tc in tool_calls:
-                        # Governance check before tool execution
-                        if governance_checker:
-                            await governance_checker(
-                                action="tool_call",
-                                context={
-                                    "tool_name": tc.name,
-                                    "instance_id": str(instance_id),
-                                    "step_number": step_num,
-                                    "current_cost": result.total_cost_usd,
-                                },
-                            )
-
-                        try:
-                            tool_result = await asyncio.wait_for(
-                                tool_executor(tc.name, tc.arguments),
-                                timeout=settings.AGENT_TOOL_EXECUTION_TIMEOUT,
-                            )
-                        except TimeoutError:
-                            tool_result = {
-                                "error": f"Tool '{tc.name}' timed out after "
-                                f"{settings.AGENT_TOOL_EXECUTION_TIMEOUT}s",
-                            }
-
-                        # Truncate oversized tool output to prevent token/memory exhaustion.
-                        tool_result_str = str(tool_result)
-                        if len(tool_result_str) > _MAX_TOOL_OUTPUT:
-                            tool_result_str = tool_result_str[:_MAX_TOOL_OUTPUT] + "... [truncated]"
-
-                        step_duration = int((time.monotonic() - step_start) * 1000)
-                        step = StepResult(
-                            step_number=step_num,
-                            action="tool_call",
-                            tool_name=tc.name,
-                            tool_result=tool_result,
-                            tokens_used=step_tokens,
-                            cost_usd=step_cost,
-                            duration_ms=step_duration,
-                        )
-                        result.steps.append(step)
-
-                        # Append tool result using proper "tool" role for LLM API compatibility
-                        conversation.append({
-                            "role": "tool",
-                            "tool_call_id": tc.call_id,
-                            "content": tool_result_str,
-                        })
-
-                        # Emit step event (best-effort)
-                        with contextlib.suppress(Exception):
-                            await emit(
-                                AgentStepCompleted(
-                                    tenant_id=str(self.tenant_id),
-                                    instance_id=str(instance_id),
-                                    step_number=step_num,
-                                    action="tool_call",
-                                    tool_name=tc.name,
-                                    tokens_used=step_tokens,
-                                    cost_usd=step_cost,
-                                ),
-                                durable=True,
-                            )
-                else:
-                    # LLM responded directly — agent run is complete
-                    step_duration = int((time.monotonic() - step_start) * 1000)
-                    step = StepResult(
-                        step_number=step_num,
-                        action="response",
-                        content=completion.content,
-                        tokens_used=step_tokens,
-                        cost_usd=step_cost,
-                        duration_ms=step_duration,
-                    )
-                    result.steps.append(step)
-                    result.output = completion.content
-                    result.finish_reason = "completed"
-                    break
-
-            except Exception as exc:
-                logger.error(
-                    "agent_step_failed",
-                    instance_id=str(instance_id),
-                    step=step_num,
-                    error=str(exc),
-                    exc_info=True,
-                )
-                result.finish_reason = "error"
-                # Include error context in the result for debugging
-                result.steps.append(StepResult(
-                    step_number=step_num,
-                    action="error",
-                    content=str(exc)[:500],
-                    duration_ms=int((time.monotonic() - step_start) * 1000),
-                ))
-                break
-        else:
-            result.finish_reason = "max_steps"
-
-        result.total_duration_ms = int((time.monotonic() - start_time) * 1000)
-        return result
-
-    def _extract_tool_calls(self, completion) -> list[ToolCall]:
-        """Extract tool calls from the AI gateway completion result.
-
-        Reads from the structured tool_calls field populated by the AI gateway
-        from LiteLLM's response.choices[0].message.tool_calls.
-        """
+    def _extract_tool_calls(self, completion: Any) -> list[ToolCall]:
+        """Extract tool calls from the AI gateway completion result."""
         if not completion.tool_calls:
             return []
-
-        calls = []
-        for tc in completion.tool_calls:
-            calls.append(ToolCall(
+        return [
+            ToolCall(
                 name=tc["name"],
                 arguments=tc.get("arguments", {}),
                 call_id=tc.get("id", ""),
-            ))
-        return calls
+            )
+            for tc in completion.tool_calls
+        ]
 
     def _build_tools_schema(self) -> list[dict] | None:
         """Build OpenAI-compatible tools schema from allowed_tools."""
@@ -380,9 +507,17 @@ class AgentRuntime:
                         "parameters": info.get("input_schema", {"type": "object", "properties": {}}),
                     },
                 })
+            elif tool_name in self._tenant_tool_schemas:
+                info = self._tenant_tool_schemas[tool_name]
+                tools.append({
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "description": info.get("description", f"Custom tool: {tool_name}"),
+                        "parameters": info.get("input_schema", {"type": "object", "properties": {}}),
+                    },
+                })
             else:
-                # Tenant tools will be resolved at invocation time; provide
-                # a generic schema so the LLM knows the tool exists.
                 tools.append({
                     "type": "function",
                     "function": {
@@ -392,3 +527,100 @@ class AgentRuntime:
                     },
                 })
         return tools if tools else None
+
+    async def _load_tenant_tool_schemas(self, db: Any) -> None:
+        """Preload tenant tool schemas from DB so _build_tools_schema uses real schemas."""
+        from app.agents.tool_registry import tool_registry
+
+        allowed = self.definition.allowed_tools or []
+        builtin_names = set(tool_registry.list_builtin_tools().keys())
+        tenant_tool_names = [n for n in allowed if n not in builtin_names]
+
+        if not tenant_tool_names:
+            return
+
+        try:
+            from sqlalchemy import select
+            from app.agents.models import TenantTool
+
+            stmt = select(TenantTool).where(
+                TenantTool.tenant_id == self.tenant_id,
+                TenantTool.tool_name.in_(tenant_tool_names),
+                TenantTool.is_active.is_(True),
+                TenantTool.deleted_at.is_(None),
+            )
+            result = await db.execute(stmt)
+            for tool in result.scalars().all():
+                self._tenant_tool_schemas[tool.tool_name] = {
+                    "description": tool.description,
+                    "input_schema": tool.input_schema or {"type": "object", "properties": {}},
+                }
+        except Exception:
+            logger.warning("tenant_tool_schema_load_failed", tenant_id=str(self.tenant_id), exc_info=True)
+
+    # ── Memory integration ───────────────────────────────────────────────
+
+    async def _retrieve_memory_context(
+        self,
+        messages: list[dict[str, Any]],
+        instance_id: uuid.UUID,
+        db: Any,
+    ) -> str:
+        """Retrieve relevant long-term memory context for the current conversation."""
+        memory_config = self.definition.memory_config or {}
+        if not memory_config.get("enabled", False):
+            return ""
+
+        user_messages = [m for m in messages if m.get("role") == "user"]
+        if not user_messages:
+            return ""
+
+        query = user_messages[-1].get("content", "")
+        if not query or not isinstance(query, str):
+            return ""
+
+        try:
+            from app.agents.embeddings import rag_pipeline
+
+            results = await rag_pipeline.retrieve(
+                query=query[:2000],
+                instance_id=instance_id,
+                tenant_id=self.tenant_id,
+                namespace=memory_config.get("namespace", "rag"),
+                limit=memory_config.get("rag_limit", 5),
+                db=db,
+            )
+            return rag_pipeline.format_context(results)
+        except Exception:
+            logger.debug("memory_context_retrieval_failed", exc_info=True)
+            return ""
+
+    async def _store_output_to_memory(
+        self,
+        result: RunResult,
+        instance_id: uuid.UUID,
+        db: Any,
+    ) -> None:
+        """Store significant run output in long-term memory."""
+        memory_config = self.definition.memory_config or {}
+        if not memory_config.get("store_outputs", False):
+            return
+
+        from app.agents.memory import AgentMemoryManager
+
+        memory = AgentMemoryManager(db)
+        output_hash = hashlib.sha256(result.output[:1000].encode()).hexdigest()[:12]
+
+        await memory.set_long_term(
+            instance_id=instance_id,
+            tenant_id=self.tenant_id,
+            key=f"output:{output_hash}",
+            value={
+                "output": result.output[:5000],
+                "steps": len(result.steps),
+                "cost_usd": result.total_cost_usd,
+                "finish_reason": result.finish_reason,
+            },
+            namespace=memory_config.get("namespace", "outputs"),
+        )
+        await db.flush()

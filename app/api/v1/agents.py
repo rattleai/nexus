@@ -425,6 +425,122 @@ async def stop_agent_instance(
     return instance
 
 
+# ── Agent Instance Streaming (SSE) ──────────────────────────────────────
+
+
+@router.get(
+    "/instances/{instance_id}/stream",
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
+async def stream_agent_instance(
+    instance_id: uuid.UUID,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stream agent execution events via Server-Sent Events (SSE).
+
+    Tails the Redis Streams event bus for events matching this instance,
+    delivering step-by-step progress in real time.
+    """
+    import asyncio
+    import json
+
+    from starlette.responses import StreamingResponse
+
+    from app.config import settings
+    from app.core.redis import redis_pool
+
+    await set_tenant_context(db, str(tenant.id))
+
+    # Verify instance belongs to tenant
+    instance = await db.get(AgentInstance, instance_id)
+    if not instance or instance.tenant_id != tenant.id:
+        raise HTTPException(404, "Instance not found")
+
+    async def event_generator():
+        """Generate SSE events from Redis Streams."""
+        stream_key = f"{settings.EVENT_BUS_STREAM_PREFIX}:agent"
+        last_id = "$"  # Start from now
+        instance_str = str(instance_id)
+
+        # Send initial status
+        yield f"data: {json.dumps({'type': 'status', 'status': instance.status.value, 'instance_id': instance_str})}\n\n"
+
+        # If already completed/failed, send final status and close
+        if instance.status in (InstanceStatus.COMPLETED, InstanceStatus.FAILED, InstanceStatus.CANCELLED):
+            yield f"data: {json.dumps({'type': 'done', 'status': instance.status.value, 'output': instance.output_data})}\n\n"
+            return
+
+        max_duration = settings.AGENT_MAX_DURATION_SECONDS + 60  # Extra buffer
+        elapsed = 0.0
+
+        while elapsed < max_duration:
+            try:
+                # Read from Redis Streams with blocking
+                messages = await redis_pool.xread(
+                    {stream_key: last_id},
+                    count=10,
+                    block=2000,  # 2 second blocking read
+                )
+            except Exception:
+                # Redis unavailable - wait and retry
+                await asyncio.sleep(2)
+                elapsed += 2
+                continue
+
+            if messages:
+                for stream_name, entries in messages:
+                    for entry_id, fields in entries:
+                        last_id = entry_id if isinstance(entry_id, str) else entry_id.decode()
+
+                        # Parse event data
+                        event_data = {}
+                        for k, v in fields.items():
+                            key = k if isinstance(k, str) else k.decode()
+                            val = v if isinstance(v, str) else v.decode()
+                            event_data[key] = val
+
+                        # Filter for this instance's events
+                        if event_data.get("instance_id") != instance_str:
+                            continue
+
+                        event_type = event_data.get("event_type", "unknown")
+
+                        yield f"event: {event_type}\ndata: {json.dumps(event_data)}\n\n"
+
+                        # Check for terminal events
+                        if event_type in (
+                            "AgentInstanceCompleted",
+                            "AgentInstanceFailed",
+                            "AgentInstanceStopped",
+                        ):
+                            yield f"data: {json.dumps({'type': 'done', 'event_type': event_type})}\n\n"
+                            return
+            else:
+                elapsed += 2
+                # Send keepalive
+                yield ": keepalive\n\n"
+
+                # Check DB for status change (in case we missed the event)
+                await db.expire(instance)
+                await db.refresh(instance)
+                if instance.status in (InstanceStatus.COMPLETED, InstanceStatus.FAILED, InstanceStatus.CANCELLED):
+                    yield f"data: {json.dumps({'type': 'done', 'status': instance.status.value, 'output': instance.output_data})}\n\n"
+                    return
+
+        yield f"data: {json.dumps({'type': 'timeout'})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 # ── Agent Sessions ─────────────────────────────────────────────────────
 
 
@@ -833,6 +949,58 @@ async def remove_tenant_tool(
     await db.commit()
 
 
+# ── Agent Approvals (HITL) ─────────────────────────────────────────────
+
+
+@router.get(
+    "/approvals",
+    dependencies=[Depends(RequireScopes("agents:admin"))],
+)
+async def list_pending_approvals(
+    tenant: Tenant = Depends(get_current_tenant),
+):
+    """List pending agent approval requests for the current tenant."""
+    from app.agents.governance import GovernanceEngine
+    approvals = await GovernanceEngine.list_pending_approvals(tenant.id)
+    return {"approvals": approvals, "count": len(approvals)}
+
+
+@router.post(
+    "/approvals/{approval_id}/resolve",
+    dependencies=[Depends(RequireScopes("agents:admin"))],
+)
+async def resolve_approval(
+    approval_id: str,
+    body: dict,
+    tenant: Tenant = Depends(get_current_tenant),
+    api_key: ApiKey = Depends(get_current_api_key),
+):
+    """Resolve a pending agent approval request.
+
+    Body: {"decision": "approved" | "denied"}
+    """
+    from app.agents.governance import GovernanceEngine
+
+    decision = body.get("decision")
+    if decision not in ("approved", "denied"):
+        raise HTTPException(400, "decision must be 'approved' or 'denied'")
+
+    result = await GovernanceEngine.resolve_approval(
+        approval_id=approval_id,
+        decision=decision,
+        resolved_by=str(api_key.id),
+    )
+
+    if result is None:
+        raise HTTPException(404, "Approval request not found or expired")
+
+    # Verify tenant ownership
+    if result.get("tenant_id") != str(tenant.id):
+        raise HTTPException(404, "Approval request not found")
+
+    return result
+
+
 # ── Agent Policies ─────────────────────────────────────────────────────
 
 
@@ -911,6 +1079,99 @@ async def list_agent_policies(
         page_size=page_size,
         pages=(total + page_size - 1) // page_size,
     )
+
+
+# ── Agent Analytics ─────────────────────────────────────────────────────
+
+
+@router.get(
+    "/analytics",
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
+async def get_agent_analytics(
+    days: int = Query(30, ge=1, le=365),
+    agent_id: uuid.UUID | None = None,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get aggregate agent analytics (spending, tokens, runs by time period).
+
+    Optionally filter by a specific agent definition.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    await set_tenant_context(db, str(tenant.id))
+
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+
+    conditions = [
+        AgentInstance.tenant_id == tenant.id,
+        AgentInstance.created_at >= cutoff,
+    ]
+    if agent_id:
+        conditions.append(AgentInstance.definition_id == agent_id)
+
+    # Aggregate metrics
+    result = await db.execute(
+        select(
+            func.count(AgentInstance.id).label("total_runs"),
+            func.sum(AgentInstance.tokens_used).label("total_tokens"),
+            func.sum(AgentInstance.cost_usd).label("total_cost_usd"),
+            func.avg(AgentInstance.cost_usd).label("avg_cost_per_run"),
+            func.avg(AgentInstance.steps_executed).label("avg_steps_per_run"),
+        ).where(*conditions)
+    )
+    row = result.one()
+
+    # Breakdown by status
+    status_result = await db.execute(
+        select(
+            AgentInstance.status,
+            func.count(AgentInstance.id).label("count"),
+        )
+        .where(*conditions)
+        .group_by(AgentInstance.status)
+    )
+    status_breakdown = {
+        r[0].value: r[1] for r in status_result.all()
+    }
+
+    # Top agents by cost
+    top_agents_result = await db.execute(
+        select(
+            AgentInstance.definition_id,
+            AgentDefinition.name,
+            func.count(AgentInstance.id).label("runs"),
+            func.sum(AgentInstance.cost_usd).label("total_cost"),
+            func.sum(AgentInstance.tokens_used).label("total_tokens"),
+        )
+        .join(AgentDefinition, AgentInstance.definition_id == AgentDefinition.id)
+        .where(*conditions)
+        .group_by(AgentInstance.definition_id, AgentDefinition.name)
+        .order_by(func.sum(AgentInstance.cost_usd).desc())
+        .limit(10)
+    )
+    top_agents = [
+        {
+            "agent_id": str(r[0]),
+            "name": r[1],
+            "runs": r[2],
+            "total_cost_usd": float(r[3] or 0),
+            "total_tokens": r[4] or 0,
+        }
+        for r in top_agents_result.all()
+    ]
+
+    return {
+        "period_days": days,
+        "total_runs": row[0] or 0,
+        "total_tokens": row[1] or 0,
+        "total_cost_usd": float(row[2] or 0),
+        "avg_cost_per_run": float(row[3] or 0),
+        "avg_steps_per_run": float(row[4] or 0),
+        "status_breakdown": status_breakdown,
+        "top_agents": top_agents,
+    }
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
