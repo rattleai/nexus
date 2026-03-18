@@ -1,0 +1,98 @@
+{
+  "name": "cadprice",
+  "description": "CADPrice SaaS platform tools for AI completion, agent management, and job operations",
+  "skills": [
+    {
+      "name": "ai-complete",
+      "verb": "POST",
+      "path": "/api/v1/ai/completions",
+      "description": "Run an AI completion using CADPrice's multi-provider gateway",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model name (e.g. gpt-4o, claude-sonnet-4-5)"
+          },
+          "messages": {
+            "type": "array",
+            "description": "Conversation messages",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": { "type": "string" },
+                "content": { "type": "string" }
+              }
+            }
+          }
+        },
+        "required": ["messages"]
+      }
+    },
+    {
+      "name": "list-agents",
+      "verb": "GET",
+      "path": "/api/v1/agents/definitions",
+      "description": "List available AI agent definitions",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Filter by status (active, draft, disabled)"
+          }
+        }
+      }
+    },
+    {
+      "name": "run-agent",
+      "verb": "POST",
+      "path": "/api/v1/agents/definitions/{agent_id}/instances",
+      "description": "Execute an AI agent with the given input",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "UUID of the agent definition to run"
+          },
+          "input_data": {
+            "type": "object",
+            "description": "Input data for the agent"
+          }
+        },
+        "required": ["agent_id", "input_data"]
+      }
+    },
+    {
+      "name": "list-jobs",
+      "verb": "GET",
+      "path": "/api/v1/jobs",
+      "description": "List background jobs with optional status filter",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Filter by status (pending, processing, completed, failed)"
+          }
+        }
+      }
+    },
+    {
+      "name": "get-usage",
+      "verb": "GET",
+      "path": "/api/v1/billing/usage",
+      "description": "Get usage metrics and spending summary",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "integer",
+            "description": "Number of days to look back (default: 30)"
+          }
+        }
+      }
+    }
+  ]
+}

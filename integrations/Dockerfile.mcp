@@ -1,0 +1,34 @@
+# MCP Server Docker image for plugin distribution.
+#
+# Consumed by: Claude Desktop, Cursor, Gemini CLI, and any MCP client
+# that supports Docker-based servers.
+#
+# Usage:
+#   docker build -f integrations/Dockerfile.mcp -t cadprice-mcp .
+#   docker run -i --rm -e CADPRICE_API_KEY=your-key cadprice-mcp
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml README.md ./
+COPY app/__init__.py app/
+RUN pip install --no-cache-dir .
+
+COPY app/ app/
+
+# Run as non-root
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup appuser
+USER appuser
+
+# Default to stdio transport for local MCP clients (Claude Desktop, Cursor)
+ENV MCP_ENABLED=true \
+    MCP_TRANSPORT=stdio
+
+ENTRYPOINT ["python", "-m", "app.mcp.cli"]
