@@ -204,10 +204,20 @@ async def update_agent_definition(
     if body.expected_version is not None and agent.version != body.expected_version:
         raise HTTPException(409, "Agent was modified concurrently. Refresh and retry.")
 
+    # Allowlist of mutable fields to prevent mass-assignment of sensitive columns
+    _MUTABLE_FIELDS = {
+        "name", "slug", "description", "status", "system_prompt", "model",
+        "temperature", "max_tokens", "allowed_tools", "tool_versions",
+        "max_steps_per_run", "max_duration_seconds", "max_tokens_per_run",
+        "sandbox_enabled", "memory_config", "output_schema",
+        "governance_policy", "metadata",
+    }
     changes = {}
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         if field == "expected_version":
+            continue
+        if field not in _MUTABLE_FIELDS:
             continue
         if field == "metadata":
             agent.metadata_ = value  # type: ignore[assignment]
@@ -276,6 +286,7 @@ async def create_agent_instance(
         raise HTTPException(400, f"Agent '{agent.name}' is not active")
 
     # Check idempotency key for deduplication
+    existing_stmt = None  # Initialize to prevent NameError in except block
     if body.idempotency_key:
         existing_stmt = select(AgentInstance).where(
             AgentInstance.tenant_id == tenant.id,
@@ -307,10 +318,11 @@ async def create_agent_instance(
     except IntegrityError as exc:
         await db.rollback()
         # Race: another request with the same key was inserted concurrently
-        existing_result = await db.execute(existing_stmt)
-        existing_instance = existing_result.scalar_one_or_none()
-        if existing_instance:
-            return existing_instance
+        if existing_stmt is not None:
+            existing_result = await db.execute(existing_stmt)
+            existing_instance = existing_result.scalar_one_or_none()
+            if existing_instance:
+                return existing_instance
         raise HTTPException(409, "Duplicate idempotency key") from exc
     await db.refresh(instance)
 
@@ -636,11 +648,14 @@ async def write_agent_memory(
     await _verify_instance_ownership(db, instance_id, tenant.id)
 
     # Per-instance write rate limit (60 writes/minute)
+    # Use pipeline to make INCR+EXPIRE atomic (prevents permanent keys).
     rate_key = f"agent:memory:rate:{instance_id}"
     try:
-        current = await redis_pool.incr(rate_key)
-        if current == 1:
-            await redis_pool.expire(rate_key, 60)
+        pipe = redis_pool.pipeline()
+        pipe.incr(rate_key)
+        pipe.expire(rate_key, 60)  # Always refresh TTL
+        results = await pipe.execute()
+        current = results[0]
         if current > 60:
             raise HTTPException(429, "Memory write rate limit exceeded (60/minute)")
     except HTTPException:
@@ -985,6 +1000,19 @@ async def resolve_approval(
     if decision not in ("approved", "denied"):
         raise HTTPException(400, "decision must be 'approved' or 'denied'")
 
+    # Verify tenant ownership BEFORE resolving to prevent TOCTOU where
+    # state is mutated before the ownership check rejects the caller.
+    import json as _json
+    from app.core.redis import redis_pool as _redis
+
+    _approval_key = f"agent:gov:approval:{approval_id}"
+    _raw = await _redis.get(_approval_key)
+    if not _raw:
+        raise HTTPException(404, "Approval request not found or expired")
+    _approval_data = _json.loads(_raw)
+    if _approval_data.get("tenant_id") != str(tenant.id):
+        raise HTTPException(404, "Approval request not found")
+
     result = await GovernanceEngine.resolve_approval(
         approval_id=approval_id,
         decision=decision,
@@ -993,10 +1021,6 @@ async def resolve_approval(
 
     if result is None:
         raise HTTPException(404, "Approval request not found or expired")
-
-    # Verify tenant ownership
-    if result.get("tenant_id") != str(tenant.id):
-        raise HTTPException(404, "Approval request not found")
 
     return result
 

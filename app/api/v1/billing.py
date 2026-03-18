@@ -56,7 +56,8 @@ def _validate_return_url(v: str) -> str:
 
     parsed = urlparse(v)
     expected = urlparse(settings.APP_BASE_URL)
-    if parsed.scheme != expected.scheme or parsed.hostname != expected.hostname:
+    # Compare netloc (includes port) to prevent bypass via non-standard ports
+    if parsed.scheme != expected.scheme or parsed.netloc != expected.netloc:
         raise ValueError("return_url must be on the application domain")
     return v
 

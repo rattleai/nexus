@@ -85,6 +85,7 @@ async def agent_get(
 async def agent_run(
     *, tenant: Any, db: AsyncSession,
     agent_id: str, input_messages: list[dict] | None = None,
+    api_key: str = "", key_source: str = "mcp",
 ) -> dict:
     """Execute an agent and return the result."""
     import uuid
@@ -93,14 +94,30 @@ async def agent_run(
 
     await set_tenant_context(db, str(tenant.id))
 
+    # Validate input_messages size to prevent abuse via massive LLM calls
+    messages = input_messages or []
+    _MAX_MESSAGES = 50
+    _MAX_CONTENT_LEN = 32_768
+    if len(messages) > _MAX_MESSAGES:
+        return {"error": f"Too many messages (max {_MAX_MESSAGES})"}
+    for msg in messages:
+        content = msg.get("content", "")
+        if isinstance(content, str) and len(content) > _MAX_CONTENT_LEN:
+            return {"error": f"Message content too long (max {_MAX_CONTENT_LEN} chars)"}
+
+    # Use the caller's actual API key (not hardcoded "platform") so that
+    # billing, audit trails, and scope enforcement apply correctly.
+    effective_key = api_key or "platform"
+    effective_source = key_source or "mcp"
+
     executor = AgentExecutor(db)
     try:
         instance = await executor.run(
             definition_id=uuid.UUID(agent_id),
             tenant_id=tenant.id,
-            input_data={"messages": input_messages or []},
-            api_key="platform",
-            key_source="platform",
+            input_data={"messages": messages},
+            api_key=effective_key,
+            key_source=effective_source,
         )
         return {
             "instance_id": str(instance.id),
@@ -164,10 +181,22 @@ async def agent_approve(
     approval_id: str, decision: str,
 ) -> dict:
     """Resolve an approval request (approve or deny)."""
+    import json
     from app.agents.governance import GovernanceEngine
+    from app.core.redis import redis_pool
 
     if decision not in ("approved", "denied"):
         return {"error": "decision must be 'approved' or 'denied'"}
+
+    # Verify tenant ownership BEFORE resolving to prevent cross-tenant
+    # approval resolution.
+    approval_key = f"agent:gov:approval:{approval_id}"
+    raw = await redis_pool.get(approval_key)
+    if not raw:
+        return {"error": "Approval not found or expired"}
+    approval_data = json.loads(raw)
+    if approval_data.get("tenant_id") != str(tenant.id):
+        return {"error": "Approval not found or expired"}
 
     result = await GovernanceEngine.resolve_approval(
         approval_id=approval_id,

@@ -182,6 +182,9 @@ async def revoke_access_token(jti: str, ttl_seconds: int | None = None) -> None:
 
     The blacklist entry expires when the token would naturally expire,
     preventing unbounded Redis memory growth.
+
+    Raises RuntimeError on Redis failure so the caller can surface the
+    error (e.g., return 503 on security-critical paths like password reset).
     """
     if not jti:
         return
@@ -189,21 +192,25 @@ async def revoke_access_token(jti: str, ttl_seconds: int | None = None) -> None:
         from app.core.redis import redis_pool
         ttl = ttl_seconds or (settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60)
         await redis_pool.setex(f"jwt:revoked:{jti}", ttl, "1")
-    except Exception:
-        logger.warning("token_revocation_failed", jti=jti)
+    except Exception as exc:
+        logger.error("token_revocation_failed", jti=jti, exc_info=True)
+        raise RuntimeError("Token revocation failed — Redis unavailable") from exc
 
 
 async def revoke_all_user_tokens(user_id: str) -> None:
     """Mark all access tokens for a user as revoked by setting a 'revoked since' timestamp.
 
     Any token issued before this timestamp will be rejected.
+
+    Raises RuntimeError on Redis failure so the caller can surface the error.
     """
     try:
         from app.core.redis import redis_pool
         ttl = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
         await redis_pool.setex(f"jwt:user_revoked:{user_id}", ttl, str(int(datetime.now(UTC).timestamp())))
-    except Exception:
-        logger.warning("user_token_revocation_failed", user_id=user_id)
+    except Exception as exc:
+        logger.error("user_token_revocation_failed", user_id=user_id, exc_info=True)
+        raise RuntimeError("User token revocation failed — Redis unavailable") from exc
 
 
 async def is_user_token_revoked(user_id: str, issued_at: int) -> bool:

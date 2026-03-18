@@ -47,6 +47,14 @@ class OutputValidator:
 
     def __init__(self, policy: dict[str, Any] | None = None):
         self.policy = policy or {}
+        # Pre-compile prohibited patterns once to avoid ReDoS on every call
+        self._compiled_prohibited: list[tuple[str, re.Pattern | None]] = []
+        for pattern_str in self.policy.get("prohibited_patterns", []):
+            try:
+                self._compiled_prohibited.append((pattern_str, re.compile(pattern_str, re.IGNORECASE)))
+            except re.error:
+                logger.warning("invalid_prohibited_pattern", pattern=pattern_str[:50])
+                self._compiled_prohibited.append((pattern_str, None))
 
     def validate(self, output: str, *, output_schema: dict | None = None) -> list[ValidationError]:
         """Run all validation checks on agent output.
@@ -73,18 +81,13 @@ class OutputValidator:
             pii_errors = self._detect_pii(output)
             errors.extend(pii_errors)
 
-        # 4. Prohibited patterns
-        prohibited = self.policy.get("prohibited_patterns", [])
-        for pattern_str in prohibited:
-            try:
-                pattern = re.compile(pattern_str, re.IGNORECASE)
-                if pattern.search(output):
-                    errors.append(ValidationError(
-                        "prohibited_content",
-                        f"Output contains prohibited pattern: {pattern_str[:50]}",
-                    ))
-            except re.error:
-                logger.warning("invalid_prohibited_pattern", pattern=pattern_str[:50])
+        # 4. Prohibited patterns (pre-compiled in __init__)
+        for pattern_str, pattern in self._compiled_prohibited:
+            if pattern is not None and pattern.search(output):
+                errors.append(ValidationError(
+                    "prohibited_content",
+                    f"Output contains prohibited pattern: {pattern_str[:50]}",
+                ))
 
         # 5. Required keywords (must contain certain phrases)
         required = self.policy.get("required_keywords", [])

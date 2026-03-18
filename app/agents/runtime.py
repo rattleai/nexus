@@ -376,7 +376,7 @@ class AgentRuntime:
                 if len(tool_result_str) > _MAX_TOOL_OUTPUT:
                     tool_result_str = tool_result_str[:_MAX_TOOL_OUTPUT] + "... [truncated]"
 
-                step_duration = int((time.monotonic() - time.monotonic()) * 1000)
+                step_duration = int((time.monotonic() - step_start) * 1000)
                 result.steps.append(StepResult(
                     step_number=step_num,
                     action="tool_call",

@@ -270,9 +270,13 @@ class GovernanceEngine:
 
         rate_key = _RATE_KEY.format(tenant_id=tenant_id, instance_id=instance_id)
         try:
-            current = await redis_pool.incr(rate_key)
-            if current == 1:
-                await redis_pool.expire(rate_key, 60)
+            # Use a pipeline to make INCR + EXPIRE atomic (avoids permanent
+            # keys if the process crashes between the two calls).
+            pipe = redis_pool.pipeline()
+            pipe.incr(rate_key)
+            pipe.expire(rate_key, 60)  # Always refresh TTL
+            results = await pipe.execute()
+            current = results[0]
         except Exception as exc:
             # Fail-closed: if Redis is unavailable, block the action
             logger.error("governance_redis_unavailable", check="rate_limit", exc_info=True)
@@ -500,24 +504,24 @@ class GovernanceEngine:
         try:
             now = datetime.now(UTC)
 
-            # Per-run spending
+            # Use a pipeline to batch all writes atomically, preventing
+            # partial updates if the process dies mid-sequence.
             run_key = _SPEND_RUN_KEY.format(instance_id=instance_id)
-            await redis_pool.incrbyfloat(run_key, cost_usd)
-            await redis_pool.expire(run_key, 3600)  # 1 hour TTL
-
-            # Per-day spending
             day_key = _SPEND_DAY_KEY.format(
                 tenant_id=tenant_id, agent_id=agent_id, date=now.strftime("%Y-%m-%d"),
             )
-            await redis_pool.incrbyfloat(day_key, cost_usd)
-            await redis_pool.expire(day_key, 86400 * 2)  # 2 days TTL
-
-            # Per-month spending
             month_key = _SPEND_MONTH_KEY.format(
                 tenant_id=tenant_id, agent_id=agent_id, month=now.strftime("%Y-%m"),
             )
-            await redis_pool.incrbyfloat(month_key, cost_usd)
-            await redis_pool.expire(month_key, 86400 * 35)  # ~35 days TTL
+
+            pipe = redis_pool.pipeline()
+            pipe.incrbyfloat(run_key, cost_usd)
+            pipe.expire(run_key, 3600)  # 1 hour TTL
+            pipe.incrbyfloat(day_key, cost_usd)
+            pipe.expire(day_key, 86400 * 2)  # 2 days TTL
+            pipe.incrbyfloat(month_key, cost_usd)
+            pipe.expire(month_key, 86400 * 35)  # ~35 days TTL
+            await pipe.execute()
         except Exception:
             logger.error(
                 "track_spending_failed",
@@ -548,25 +552,44 @@ class GovernanceEngine:
         import json
 
         approval_key = _APPROVAL_KEY.format(approval_id=approval_id)
-        raw = await redis_pool.get(approval_key)
-        if not raw:
-            return None
 
-        data = json.loads(raw)
-        if data.get("status") != "pending":
-            return data  # Already resolved
-
-        data["status"] = decision
-        data["resolved_by"] = resolved_by
+        # Use WATCH/MULTI/EXEC for optimistic locking to prevent TOCTOU
+        # races where two concurrent approvers both read "pending" and
+        # both write their decisions.
         from datetime import UTC, datetime
-        data["resolved_at"] = datetime.now(UTC).isoformat()
 
-        # Update in Redis (keep TTL)
-        ttl = await redis_pool.ttl(approval_key)
-        if ttl > 0:
-            await redis_pool.setex(approval_key, ttl, json.dumps(data))
-        else:
-            await redis_pool.set(approval_key, json.dumps(data))
+        max_retries = 3
+        for _attempt in range(max_retries):
+            try:
+                async with redis_pool.pipeline(transaction=True) as pipe:
+                    await pipe.watch(approval_key)
+                    raw = await pipe.get(approval_key)
+                    if not raw:
+                        await pipe.unwatch()
+                        return None
+
+                    data = json.loads(raw)
+                    if data.get("status") != "pending":
+                        await pipe.unwatch()
+                        return data  # Already resolved
+
+                    data["status"] = decision
+                    data["resolved_by"] = resolved_by
+                    data["resolved_at"] = datetime.now(UTC).isoformat()
+
+                    ttl = await pipe.ttl(approval_key)
+
+                    pipe.multi()
+                    if ttl > 0:
+                        pipe.setex(approval_key, ttl, json.dumps(data))
+                    else:
+                        pipe.set(approval_key, json.dumps(data))
+                    await pipe.execute()
+                    break  # Success
+            except Exception:
+                # WatchError or connection error — retry
+                if _attempt == max_retries - 1:
+                    raise
 
         # Notify waiting agent via pub/sub (near-instant unblock)
         channel_name = f"agent:approval:resolved:{approval_id}"

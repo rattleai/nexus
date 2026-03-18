@@ -129,6 +129,10 @@ def chunk_text(
     if not text or not text.strip():
         return []
 
+    # Guard against infinite loop when overlap >= size
+    if chunk_overlap >= chunk_size:
+        chunk_overlap = chunk_size // 2
+
     chunks = []
     start = 0
     chunk_index = 0
@@ -274,7 +278,14 @@ class RAGPipeline:
 
         lines = ["## Relevant Context (from memory)"]
         for i, r in enumerate(results, 1):
-            source = f" (source: {r['source']})" if r.get("source") else ""
+            # Sanitize source to prevent prompt injection via RAG context
+            raw_source = r.get("source", "")
+            if raw_source:
+                # Strip control characters and limit length
+                sanitized_source = raw_source.replace("\n", " ").replace("\r", "")[:100]
+                source = f" (source: {sanitized_source})"
+            else:
+                source = ""
             lines.append(f"{i}. {r['text']}{source}")
 
         return "\n".join(lines)

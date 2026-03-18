@@ -349,7 +349,17 @@ return 1
         (embedding_vec column with HNSW index). Falls back to Python-side
         cosine similarity on JSONB embeddings for non-pgvector setups.
         """
+        import math
         from app.config import settings
+
+        # Validate query_embedding before use (same checks as set_long_term)
+        expected_dims = settings.AGENT_MEMORY_VECTOR_DIMENSIONS
+        if not isinstance(query_embedding, list) or len(query_embedding) != expected_dims:
+            raise ValueError(f"query_embedding must be a list of {expected_dims} floats")
+        if not all(isinstance(v, (int, float)) for v in query_embedding):
+            raise ValueError("All embedding values must be numeric")
+        if any(math.isnan(v) or math.isinf(v) for v in query_embedding):
+            raise ValueError("Embedding contains NaN or Inf values")
 
         if settings.AGENT_MEMORY_VECTOR_ENABLED:
             return await self._search_pgvector(
@@ -476,8 +486,12 @@ return 1
         """Write a value to shared (workflow-level) memory."""
         redis_key = _SHARED_KEY.format(tenant_id=tenant_id, workflow_id=workflow_id)
         serialized = json.dumps(value, default=str)
-        await redis_pool.hset(redis_key, key, serialized)
-        await redis_pool.expire(redis_key, ttl_seconds)
+        # Use pipeline to make HSET + EXPIRE atomic (prevents orphaned
+        # keys without TTL if the process crashes between the two calls).
+        pipe = redis_pool.pipeline()
+        pipe.hset(redis_key, key, serialized)
+        pipe.expire(redis_key, ttl_seconds)
+        await pipe.execute()
 
     async def clear_shared(
         self,

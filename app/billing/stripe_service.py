@@ -325,6 +325,22 @@ async def configure_auto_refill(
 
         wallet = await wallet_service._get_or_create_wallet(tenant_id, db)
 
+    # Verify the payment method belongs to this tenant's Stripe customer
+    sub_result = await db.execute(
+        select(Subscription).where(Subscription.tenant_id == tenant_id)
+    )
+    subscription = sub_result.scalar_one_or_none()
+    if not subscription or not subscription.stripe_customer_id:
+        raise ValueError("No billing account found. Please set up billing first.")
+
+    stripe = _get_stripe()
+    try:
+        pm = stripe.PaymentMethod.retrieve(payment_method_id)
+        if pm.customer != subscription.stripe_customer_id:
+            raise ValueError("Payment method does not belong to this billing account")
+    except stripe.error.StripeError as exc:
+        raise ValueError(f"Invalid payment method: {exc}") from exc
+
     wallet.auto_refill_enabled = True
     wallet.auto_refill_threshold_usd = threshold_usd
     wallet.auto_refill_amount_usd = refill_amount_usd
@@ -566,6 +582,21 @@ async def _handle_credit_pack_checkout(
         logger.error("credit_pack_checkout_invalid_metadata", session_id=session["id"])
         return
 
+    # Cross-check metadata amount against the verified payment amount from Stripe.
+    # session["amount_total"] is in cents and comes from Stripe's verified payment,
+    # not from mutable metadata.
+    verified_amount_cents = session.get("amount_total") or 0
+    verified_usd = Decimal(verified_amount_cents) / 100
+    if verified_usd > 0 and abs(amount_usd - verified_usd) > Decimal("0.01"):
+        logger.error(
+            "credit_pack_amount_mismatch",
+            metadata_amount=str(amount_usd),
+            verified_amount=str(verified_usd),
+            session_id=session["id"],
+        )
+        # Use the verified amount from Stripe, not the metadata
+        amount_usd = verified_usd
+
     payment_intent_id = session.get("payment_intent")
     reference_id = f"credit_pack:{session['id']}"
 
@@ -613,13 +644,27 @@ async def _handle_subscription_checkout(
     )
     subscription = existing.scalar_one_or_none()
 
-    # Load Stripe subscription for period info
+    # Load Stripe subscription for period info and verify price matches plan
     stripe = _get_stripe()
     try:
         stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
     except Exception as exc:
         logger.error("checkout_stripe_retrieve_failed", stripe_sub_id=stripe_sub_id, error=str(exc))
         raise
+
+    # Verify the Stripe subscription price matches the expected plan price
+    plan_result_check = await db.execute(select(Plan).where(Plan.id == plan_id))
+    plan_check = plan_result_check.scalar_one_or_none()
+    if plan_check and plan_check.stripe_price_id:
+        stripe_price_id = stripe_sub.get("items", {}).get("data", [{}])[0].get("price", {}).get("id")
+        if stripe_price_id and stripe_price_id != plan_check.stripe_price_id:
+            logger.error(
+                "checkout_price_mismatch",
+                expected_price=plan_check.stripe_price_id,
+                actual_price=stripe_price_id,
+                session_id=session["id"],
+            )
+            return
 
     if subscription:
         # Update existing
@@ -803,6 +848,30 @@ async def _handle_payment_intent_succeeded(data: dict, db: AsyncSession) -> None
             payment_intent_id=payment_intent["id"],
         )
         return
+
+    # Enforce a ceiling on auto-refill amount to prevent abuse from
+    # tampered PaymentIntent metadata.
+    max_refill = Decimal(str(settings.AI_AUTO_REFILL_MAX_AMOUNT))
+    if refill_amount > max_refill:
+        logger.error(
+            "auto_refill_amount_exceeds_max",
+            refill_amount=str(refill_amount),
+            max_allowed=str(max_refill),
+            payment_intent_id=payment_intent["id"],
+        )
+        return
+
+    # Cross-check against the verified PaymentIntent amount
+    verified_cents = payment_intent.get("amount") or 0
+    verified_usd = Decimal(verified_cents) / 100
+    if verified_usd > 0 and abs(refill_amount - verified_usd) > Decimal("0.01"):
+        logger.error(
+            "auto_refill_amount_mismatch",
+            metadata_amount=str(refill_amount),
+            verified_amount=str(verified_usd),
+            payment_intent_id=payment_intent["id"],
+        )
+        refill_amount = verified_usd
 
     await wallet_service.topup(
         tenant_id,

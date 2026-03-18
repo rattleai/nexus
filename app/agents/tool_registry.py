@@ -370,6 +370,17 @@ class ToolRegistry:
                         key = decrypt(key)
                     except (ValueError, Exception):
                         pass  # Use as-is if not encrypted (legacy data)
+                # Validate header name to prevent HTTP header injection
+                import re
+                _SAFE_HEADER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9\-]*$")
+                _DENIED_HEADERS = {"host", "content-length", "transfer-encoding", "connection", "authorization"}
+                if not _SAFE_HEADER_RE.match(header_name) or header_name.lower() in _DENIED_HEADERS:
+                    logger.warning(
+                        "tool_auth_invalid_header",
+                        tool_name=tool.tool_name,
+                        header=header_name,
+                    )
+                    return {"error": f"Tool '{tool.tool_name}' has an invalid auth header name"}
                 headers[header_name] = key
 
             async with httpx.AsyncClient(
@@ -415,6 +426,19 @@ class ToolRegistry:
         """Check the health of an external tool."""
         if not tool.health_check_url:
             return {"status": "unknown", "reason": "no health check URL configured"}
+
+        # Validate URL to prevent SSRF (same as _invoke_external)
+        from app.core.url_validation import validate_url
+        try:
+            validate_url(tool.health_check_url)
+        except ValueError as exc:
+            logger.warning(
+                "tool_health_check_ssrf_blocked",
+                tool_name=tool.tool_name,
+                url=tool.health_check_url,
+                error=str(exc),
+            )
+            return {"status": "error", "reason": "Invalid health check URL"}
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:

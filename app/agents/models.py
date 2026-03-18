@@ -129,7 +129,7 @@ class AgentDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Version
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, server_default="{}")
 
     # Relationships
-    instances: Mapped[list[AgentInstance]] = relationship(back_populates="definition", lazy="selectin")
+    instances: Mapped[list[AgentInstance]] = relationship(back_populates="definition", lazy="raise")
 
 
 # ── Agent Instance ─────────────────────────────────────────────────────
@@ -179,7 +179,7 @@ class AgentInstance(Base, TimestampMixin):
 
     # Relationships
     definition: Mapped[AgentDefinition] = relationship(back_populates="instances")
-    sessions: Mapped[list[AgentSession]] = relationship(back_populates="instance", lazy="selectin")
+    sessions: Mapped[list[AgentSession]] = relationship(back_populates="instance", lazy="raise")
 
 
 # ── Agent Session ──────────────────────────────────────────────────────
@@ -243,7 +243,7 @@ class AgentMemoryEntry(Base, TimestampMixin):
 
     # Optional vector embedding for semantic search (pgvector)
     # Stored as JSONB array; use pgvector extension for actual vector ops
-    embedding: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    embedding: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # TTL support

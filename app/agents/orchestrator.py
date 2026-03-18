@@ -524,7 +524,7 @@ class AgentOrchestrator:
         "<": lambda a, b: float(a) < float(b),
         ">=": lambda a, b: float(a) >= float(b),
         "<=": lambda a, b: float(a) <= float(b),
-        "in": lambda a, b: str(a) in str(b),
+        "in": lambda a, b: str(a) in [s.strip().strip("'\"") for s in str(b).strip("[]").split(",")] if str(b).startswith("[") else str(a) == str(b),
         "contains": lambda a, b: str(b) in str(a),
     }
 

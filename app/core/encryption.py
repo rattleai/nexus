@@ -66,12 +66,8 @@ def _get_key(version: int) -> bytes:
 
 
 def _get_all_key_versions() -> list[int]:
-    """Return all known key versions (current + previous)."""
-    versions = [_CURRENT_KEY_VERSION]
-    # Check for legacy v1 if current is higher
-    for v in range(1, _CURRENT_KEY_VERSION):
-        versions.append(v)
-    return versions
+    """Return all known key versions in descending order (current first)."""
+    return list(range(_CURRENT_KEY_VERSION, 0, -1))
 
 
 def _parse_version_tag(ciphertext: str) -> tuple[int | None, str]:
@@ -115,15 +111,17 @@ def decrypt(ciphertext: str) -> str:
         try:
             f = Fernet(_get_key(version))
             return f.decrypt(raw.encode()).decode()
-        except (InvalidToken, Exception):
+        except InvalidToken:
             pass
 
     # Fallback: try all known versions (for untagged legacy data)
     for v in _get_all_key_versions():
+        if v == version:
+            continue  # Already tried above
         try:
             f = Fernet(_get_key(v))
             return f.decrypt(raw.encode()).decode()
-        except (InvalidToken, Exception):
+        except InvalidToken:
             continue
 
     raise ValueError("Failed to decrypt: invalid ciphertext or no matching key version")

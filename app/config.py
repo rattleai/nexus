@@ -294,12 +294,11 @@ def validate_settings() -> None:
                     "openssl rsa -in private.pem -pubout -out public.pem"
                 )
 
-    # Database SSL in production
+    # Database SSL in production — enforce like other critical settings
     if not settings.DEBUG and not settings.DATABASE_SSL_MODE:
-        warnings.warn(
+        raise RuntimeError(
             "DATABASE_SSL_MODE is not set. Set to 'verify-full' (recommended) or 'require' "
-            "in production for encrypted DB connections.",
-            stacklevel=2,
+            "in production for encrypted DB connections."
         )
     elif not settings.DEBUG and settings.DATABASE_SSL_MODE == "require":
         warnings.warn(

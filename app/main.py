@@ -207,7 +207,7 @@ def create_app() -> FastAPI:
             "version": __version__,
             "description": "CADPrice multi-tenant SaaS platform MCP server",
             "transport": settings.MCP_TRANSPORT,
-            "url": f"http://localhost:{settings.MCP_HTTP_PORT}" if settings.MCP_TRANSPORT == "http" else None,
+            "url": f"{settings.APP_BASE_URL}/mcp" if settings.MCP_TRANSPORT == "http" else None,
             "authentication": {"type": "api_key", "header": "X-API-Key"},
             "capabilities": {
                 "tools": True,

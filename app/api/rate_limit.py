@@ -79,7 +79,8 @@ async def _check_rate(key: str, max_requests: int, window: int) -> int:
     try:
         pipe = redis_pool.pipeline()
         pipe.zremrangebyscore(key, 0, window_start)
-        pipe.zadd(key, {str(now): now})
+        import secrets as _secrets
+        pipe.zadd(key, {f"{now}:{_secrets.token_hex(4)}": now})
         pipe.zcard(key)
         pipe.expire(key, window)
         results = await pipe.execute()
@@ -115,7 +116,7 @@ class RateLimiter:
         request.state.rate_limit_remaining = remaining
         request.state.rate_limit_reset = int(time.time()) + self.window
 
-        if request_count > self.max_requests:
+        if request_count >= self.max_requests:
             logger.warning(
                 "rate_limit_exceeded",
                 client_ip=client_ip,
@@ -160,7 +161,10 @@ def is_agent_request(request: Request) -> bool:
     if cached is not None:
         return cached
 
-    if request.headers.get("X-Agent-Name"):
+    # Only trust X-Agent-Name from authenticated requests (API key resolved).
+    # Self-reported headers from unauthenticated requests are not trusted.
+    api_key = getattr(request.state, "api_key", None)
+    if api_key and request.headers.get("X-Agent-Name"):
         result = True
     else:
         ua = request.headers.get("User-Agent", "").lower()
@@ -210,7 +214,7 @@ class AgentAwareRateLimiter:
         request.state.rate_limit_remaining = remaining
         request.state.rate_limit_reset = int(time.time()) + effective_window
 
-        if request_count > effective_limit:
+        if request_count >= effective_limit:
             logger.warning(
                 "rate_limit_exceeded",
                 client_ip=client_ip,
@@ -250,7 +254,7 @@ class ApiKeyRateLimiter:
 
         request_count = await _check_rate(key, max_requests, window)
 
-        if request_count > max_requests:
+        if request_count >= max_requests:
             logger.warning(
                 "api_key_rate_limit_exceeded",
                 key_id=str(api_key.id),
