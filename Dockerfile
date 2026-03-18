@@ -45,7 +45,9 @@ ENV WEB_CONCURRENCY=1
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD ["curl", "-sf", "http://localhost:8000/api/v1/health/live"]
 
-# --proxy-headers: trust X-Forwarded-For/Proto from reverse proxy (nginx)
-# --forwarded-allow-ips=*: accept proxy headers from any IP (nginx is the only ingress)
+# --proxy-headers: trust X-Forwarded-For/Proto from reverse proxy (ALB/nginx)
+# --forwarded-allow-ips: restrict to private networks by default; override
+#   via FORWARDED_ALLOW_IPS env var for specific network topologies.
+#   Use '*' ONLY in environments where the ALB/proxy is the sole ingress.
 # exec: replaces shell with uvicorn for proper PID 1 signal handling
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY} --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY} --proxy-headers --forwarded-allow-ips=${FORWARDED_ALLOW_IPS:-'10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'}"]

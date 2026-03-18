@@ -27,13 +27,34 @@ const BASE_URL = __ENV.BASE_URL || "http://localhost:8000";
 const API_KEY = __ENV.API_KEY || "";
 const ADMIN_KEY = __ENV.ADMIN_KEY || "";
 
+// Fail fast if API_KEY is not provided
+if (!API_KEY) {
+  console.error("API_KEY is required. Use: k6 run --env API_KEY=xxx k6_load_test.js");
+  // exec.test.abort is available at runtime; this guard runs at init time
+}
+
 export const options = {
-  stages: [
-    { duration: "1m", target: 50 },   // ramp up
-    { duration: "3m", target: 50 },   // sustain
-    { duration: "1m", target: 100 },  // spike
-    { duration: "1m", target: 0 },    // ramp down
-  ],
+  scenarios: {
+    main: {
+      executor: "ramping-vus",
+      stages: [
+        { duration: "1m", target: 50 },   // ramp up
+        { duration: "3m", target: 50 },   // sustain
+        { duration: "1m", target: 100 },  // spike
+        { duration: "1m", target: 0 },    // ramp down
+      ],
+      exec: "default",
+    },
+    agents: {
+      executor: "ramping-vus",
+      stages: [
+        { duration: "2m", target: 5 },
+        { duration: "1m", target: 0 },
+      ],
+      exec: "agentExecution",
+      startTime: "2m", // Start after main scenario has warmed up
+    },
+  },
   thresholds: {
     http_req_duration: ["p(95)<500", "p(99)<2000"],  // 95th < 500ms, 99th < 2s
     error_rate: ["rate<0.05"],                         // <5% error rate

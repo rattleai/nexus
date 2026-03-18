@@ -220,6 +220,10 @@ def enforce_data_retention() -> dict:
             cutoff = now - timedelta(days=policy.retention_days)
 
             try:
+                # Use a savepoint so a failure in one policy does not
+                # corrupt the session for subsequent policies.
+                nested = db.begin_nested()
+
                 # Count via ORM
                 count_result = db.execute(
                     select(func.count()).select_from(model_cls).where(
@@ -230,6 +234,7 @@ def enforce_data_retention() -> dict:
                 count = count_result.scalar() or 0
 
                 if count == 0:
+                    nested.rollback()
                     continue
 
                 if policy.archive_before_delete and resource != "audit_logs":
@@ -252,6 +257,7 @@ def enforce_data_retention() -> dict:
                     )
                 )
                 total_deleted += count
+                nested.commit()
 
             except Exception:
                 logger.error(
@@ -294,7 +300,13 @@ def hard_purge_deleted_accounts() -> dict:
         purged = 0
         for tenant in tenants:
             try:
+                # Use a savepoint per tenant so a failure in one tenant
+                # does not commit partial state for other tenants.
+                nested = db.begin_nested()
+
                 # Cascade delete tenant data in order (respecting FK constraints)
+                # Table names are hardcoded (not user-supplied) — quote them
+                # for safety against identifier collisions.
                 for table in [
                     "agent_memory_entries", "agent_sessions", "agent_instances",
                     "agent_definitions", "workflow_runs", "workflow_definitions",
@@ -303,19 +315,20 @@ def hard_purge_deleted_accounts() -> dict:
                     "notifications", "invitations", "api_keys",
                 ]:
                     db.execute(
-                        text(f"DELETE FROM {table} WHERE tenant_id = :tid"),
+                        text(f'DELETE FROM "{table}" WHERE tenant_id = :tid'),
                         {"tid": str(tenant.id)},
                     )
 
                 # Finally delete the tenant itself
                 db.execute(
-                    text("DELETE FROM tenant_memberships WHERE tenant_id = :tid"),
+                    text('DELETE FROM "tenant_memberships" WHERE tenant_id = :tid'),
                     {"tid": str(tenant.id)},
                 )
                 db.execute(
-                    text("DELETE FROM tenants WHERE id = :tid"),
+                    text('DELETE FROM "tenants" WHERE id = :tid'),
                     {"tid": str(tenant.id)},
                 )
+                nested.commit()
                 purged += 1
             except Exception:
                 logger.error("hard_purge_failed", tenant_id=str(tenant.id), exc_info=True)

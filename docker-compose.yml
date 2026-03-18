@@ -82,7 +82,7 @@ services:
       RESERVE_POOL_SIZE: "5"
       RESERVE_POOL_TIMEOUT: "3"
       SERVER_RESET_QUERY: "DISCARD ALL"
-      AUTH_TYPE: plain
+      AUTH_TYPE: scram-sha-256
     ports:
       - "127.0.0.1:6432:6432"
     depends_on:

@@ -26,11 +26,14 @@ resource "aws_security_group" "rds" {
     security_groups = [aws_security_group.ecs_tasks.id]
   }
 
+  # RDS never initiates outbound connections — restrict egress to prevent
+  # exfiltration if the instance were compromised.
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = []
+    description = "No outbound (RDS is server-only)"
   }
 
   lifecycle { create_before_destroy = true }

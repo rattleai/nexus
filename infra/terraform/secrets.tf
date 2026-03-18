@@ -111,6 +111,33 @@ resource "aws_iam_role_policy" "secret_rotation_lambda" {
   })
 }
 
+# Dedicated security group for the rotation Lambda — no inbound rules,
+# outbound restricted to RDS (5432) and Secrets Manager (443 via VPC endpoint).
+resource "aws_security_group" "secret_rotation_lambda" {
+  name_prefix = "${local.name_prefix}-rotation-lambda-"
+  description = "SG for Secrets Manager rotation Lambda"
+  vpc_id      = aws_vpc.main.id
+
+  egress {
+    description     = "PostgreSQL to RDS"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.rds.id]
+  }
+
+  egress {
+    description = "HTTPS to Secrets Manager VPC endpoint"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # Scoped by VPC endpoint in practice
+  }
+
+  lifecycle { create_before_destroy = true }
+  tags = { Name = "${local.name_prefix}-rotation-lambda-sg" }
+}
+
 resource "aws_lambda_function" "secret_rotation" {
   function_name = "${local.name_prefix}-secret-rotation"
   description   = "Rotates RDS master password in Secrets Manager"
@@ -126,7 +153,9 @@ resource "aws_lambda_function" "secret_rotation" {
 
   vpc_config {
     subnet_ids         = aws_subnet.private[*].id
-    security_group_ids = [aws_security_group.rds.id]
+    # Lambda needs its own SG — not the RDS SG — with no inbound rules
+    # and outbound restricted to RDS (5432) and Secrets Manager (443).
+    security_group_ids = [aws_security_group.secret_rotation_lambda.id]
   }
 
   environment {

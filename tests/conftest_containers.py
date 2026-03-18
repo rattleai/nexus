@@ -73,6 +73,14 @@ def container_env(postgres_container, redis_container):
     redis_host = redis_container.get_container_host_ip()
     redis_port = redis_container.get_exposed_port(6379)
 
+    # Save original env vars and restore on cleanup to avoid poisoning
+    # parallel test workers or subsequent test sessions.
+    _orig_env = {
+        "DATABASE_URL": os.environ.get("DATABASE_URL"),
+        "DATABASE_SYNC_URL": os.environ.get("DATABASE_SYNC_URL"),
+        "REDIS_URL": os.environ.get("REDIS_URL"),
+    }
+
     os.environ["DATABASE_URL"] = async_pg_url
     os.environ["DATABASE_SYNC_URL"] = pg_url
     os.environ["REDIS_URL"] = f"redis://{redis_host}:{redis_port}/0"
@@ -82,3 +90,10 @@ def container_env(postgres_container, redis_container):
         "database_sync_url": pg_url,
         "redis_url": f"redis://{redis_host}:{redis_port}/0",
     }
+
+    # Restore original env vars
+    for key, val in _orig_env.items():
+        if val is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = val

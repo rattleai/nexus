@@ -29,16 +29,25 @@ def upgrade() -> None:
     )
 
     # Step 2: Migrate existing JSONB embeddings to vector column
+    # Use a subquery with array_agg to safely handle malformed data
+    # instead of a direct cast that would abort the entire migration.
     op.execute("""
         UPDATE agent_memory_entries
-        SET embedding_vec = embedding::text::vector
+        SET embedding_vec = (
+            SELECT array_agg(v::float)::vector
+            FROM jsonb_array_elements_text(embedding) AS v
+        )
         WHERE embedding IS NOT NULL
+          AND jsonb_typeof(embedding) = 'array'
           AND jsonb_array_length(embedding) = 1536
     """)
 
-    # Step 3: Create HNSW index for fast approximate nearest neighbor search
+    # Step 3: Create HNSW index CONCURRENTLY to avoid blocking the table.
+    # CONCURRENTLY cannot run inside a transaction, so we end the
+    # Alembic-managed transaction first.
+    op.execute("COMMIT")
     op.execute(
-        "CREATE INDEX IF NOT EXISTS ix_agent_memory_embedding_vec "
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_agent_memory_embedding_vec "
         "ON agent_memory_entries USING hnsw (embedding_vec vector_cosine_ops) "
         "WITH (m = 16, ef_construction = 64)"
     )
