@@ -24,7 +24,6 @@ services:
     command: sh -c "alembic upgrade head && python -m scripts.seed_dev && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     stop_grace_period: 30s
     restart: unless-stopped
-    profiles: ["core"]
     deploy:
       resources:
         limits:
@@ -45,7 +44,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    profiles: ["core"]
 
   db:
     image: pgvector/pgvector:pg16
@@ -64,7 +62,6 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
-    profiles: ["core"]
     deploy:
       resources:
         limits:
@@ -97,7 +94,6 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
-    profiles: ["core"]
     deploy:
       resources:
         limits:
@@ -115,7 +111,6 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
-    profiles: ["core"]
     deploy:
       resources:
         limits:
