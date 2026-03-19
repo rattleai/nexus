@@ -239,6 +239,47 @@ async def login(body: UserLogin, request: Request, response: Response, db: Async
     member = membership.scalar_one_or_none()
     role = member.role.value if member else None
 
+    # Check if MFA is required
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+    login_tenant = tenant_result.scalar_one_or_none()
+    tenant_requires_mfa = (login_tenant and login_tenant.settings or {}).get("require_mfa", False)
+
+    if (getattr(user, "mfa_enabled", False) or tenant_requires_mfa):
+        # Check if user has WebAuthn credentials
+        from app.db.models.mobile import WebAuthnCredential
+        cred_result = await db.execute(
+            select(WebAuthnCredential).where(WebAuthnCredential.user_id == user.id).limit(1)
+        )
+        has_webauthn = cred_result.scalar_one_or_none() is not None
+
+        if has_webauthn:
+            await db.commit()
+            # Issue MFA-pending token (5 minute TTL)
+            mfa_token = create_access_token(
+                {
+                    "sub": str(user.id),
+                    "tenant_id": str(user.tenant_id),
+                    "type": "mfa_pending",
+                    "amr": ["pwd"],
+                },
+                expires_delta=timedelta(minutes=5),
+            )
+            return AuthResponse(
+                access_token=mfa_token,
+                expires_in=300,
+                mfa_required=True,
+                user=UserResponse(
+                    id=user.id,
+                    email=user.email,
+                    display_name=user.display_name,
+                    email_verified=user.email_verified,
+                    is_active=user.is_active,
+                    tenant_id=user.tenant_id,
+                    role=role,
+                    created_at=user.created_at,
+                ),
+            )
+
     # Revoke oldest tokens if exceeding limit
     existing_tokens = await db.execute(
         select(RefreshToken)

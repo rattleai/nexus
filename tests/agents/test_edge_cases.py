@@ -281,6 +281,7 @@ class TestVersionFields:
             "max_duration_seconds": 300,
             "max_tokens_per_run": 100000,
             "sandbox_enabled": False,
+            "parallel_tool_execution": True,
             "memory_config": {},
             "governance_policy": {},
             "metadata": {},

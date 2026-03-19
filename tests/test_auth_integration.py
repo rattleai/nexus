@@ -24,6 +24,7 @@ def _mock_user(tenant_id=None, **overrides):
         "display_name": "Test User",
         "is_active": True,
         "last_login_at": None,
+        "mfa_enabled": False,
         "created_at": datetime.now(UTC),
         "updated_at": datetime.now(UTC),
         "deleted_at": None,
@@ -207,10 +208,15 @@ async def test_login_success(auth_client):
     user_result.scalar_one_or_none.return_value = user
     member_result = MagicMock()
     member_result.scalar_one_or_none.return_value = membership
+    # Mock tenant result for MFA check (tenant with no require_mfa setting)
+    mock_tenant = MagicMock()
+    mock_tenant.settings = {}
+    tenant_result = MagicMock()
+    tenant_result.scalar_one_or_none.return_value = mock_tenant
     tokens_result = MagicMock()
     tokens_result.scalars.return_value.all.return_value = []
 
-    mock_db.execute = AsyncMock(side_effect=[user_result, member_result, tokens_result])
+    mock_db.execute = AsyncMock(side_effect=[user_result, member_result, tenant_result, tokens_result])
     mock_db.add = MagicMock()
     mock_db.commit = AsyncMock()
 

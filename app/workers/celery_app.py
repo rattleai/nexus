@@ -56,6 +56,18 @@ celery.conf.update(
             "task": "agents.cleanup_stale_instances",
             "schedule": crontab(minute="*/15"),
         },
+        "hard-purge-deleted-accounts": {
+            "task": "app.workers.periodic.hard_purge_deleted_accounts",
+            "schedule": crontab(hour=4, minute=0),
+        },
+        "hard-purge-deleted-users": {
+            "task": "app.workers.periodic.hard_purge_deleted_users",
+            "schedule": crontab(hour=4, minute=30),
+        },
+        "enforce-data-retention": {
+            "task": "app.workers.periodic.enforce_data_retention",
+            "schedule": crontab(hour=5, minute=0),
+        },
     },
     beat_max_loop_interval=60,
     beat_scheduler="redbeat.RedBeatScheduler",

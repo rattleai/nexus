@@ -1,7 +1,10 @@
 """Pact provider verification tests.
 
 Verifies that the FastAPI backend satisfies the API contracts expected
-by the React frontend. Consumer contracts are defined in pact/*.json.
+by the React frontend. Consumer contracts are defined in pacts/*.json.
+
+Uses Pact Verifier for proper contract testing when pact-python is
+available, with httpx-based fallback tests for environments without it.
 
 Usage:
     pytest tests/contract/test_pact_provider.py -v
@@ -12,11 +15,14 @@ Requires:
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 
 # Pact provider verification runs against the actual running API
-PROVIDER_URL = "http://localhost:8000"
-PACT_DIR = "tests/contract/pacts"
+PROVIDER_URL = os.environ.get("PACT_PROVIDER_URL", "http://localhost:8000")
+PACT_DIR = str(Path(__file__).parent / "pacts")
 
 
 @pytest.fixture(scope="module")
@@ -33,10 +39,28 @@ def pact_verifier():
     )
 
 
-class TestHealthContract:
-    """Verify health endpoint contract."""
+class TestPactVerification:
+    """Run Pact verification against all consumer contracts."""
 
-    def test_health_live(self, pact_verifier):
+    def test_verify_pacts(self, pact_verifier):
+        """Verify all pact files in the pacts directory."""
+        pact_files = list(Path(PACT_DIR).glob("*.json"))
+        if not pact_files:
+            pytest.skip("No pact files found in pacts directory")
+
+        output, logs = pact_verifier.verify_pacts(
+            *[str(f) for f in pact_files],
+            enable_pending=False,
+            verbose=True,
+        )
+
+        assert output == 0, f"Pact verification failed:\n{logs}"
+
+
+class TestHealthContract:
+    """Verify health endpoint contract (fallback without pact-python)."""
+
+    def test_health_live(self):
         """Health endpoint returns 200 with expected shape."""
         import httpx
 

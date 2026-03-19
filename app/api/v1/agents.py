@@ -15,7 +15,7 @@ from __future__ import annotations
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -435,6 +435,93 @@ async def stop_agent_instance(
         logger.warning("celery_revoke_failed", instance_id=str(instance_id), exc_info=True)
 
     return instance
+
+
+# ── Agent Definition Streaming (ReAct Loop SSE) ──────────────────────────
+
+
+@router.post(
+    "/definitions/{agent_id}/run-stream",
+    dependencies=[Depends(RequireScopes("agents:execute"))],
+)
+async def run_agent_stream(
+    agent_id: uuid.UUID,
+    body: AgentInstanceCreate,
+    request: Request,
+    tenant: Tenant = Depends(get_current_tenant),
+    api_key: ApiKey = Depends(get_current_api_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run an agent definition with streaming SSE output.
+
+    Streams step-by-step ReAct loop events (thinking, tool_call, tool_result,
+    content_delta, step_completed, run_completed) in real-time.
+    """
+    from starlette.responses import StreamingResponse
+
+    from app.agents.runtime import AgentRuntime
+
+    await set_tenant_context(db, str(tenant.id))
+    agent = await _get_agent_or_404(db, agent_id, tenant.id)
+
+    if agent.status != AgentStatus.ACTIVE:
+        raise HTTPException(400, f"Agent '{agent.name}' is not active")
+
+    # Resolve API key for the runtime
+    from app.core.encryption import decrypt
+    from sqlalchemy import select as _select
+    from app.db.models.ai import TenantAIProviderKey
+
+    # Use platform key resolution
+    provider_key_result = await db.execute(
+        _select(TenantAIProviderKey).where(
+            TenantAIProviderKey.tenant_id == tenant.id,
+            TenantAIProviderKey.is_active.is_(True),
+        ).limit(1)
+    )
+    provider_key = provider_key_result.scalar_one_or_none()
+    resolved_api_key = decrypt(provider_key.encrypted_api_key) if provider_key else ""
+
+    runtime = AgentRuntime(
+        definition=agent,
+        tenant_id=tenant.id,
+        api_key=resolved_api_key,
+        key_source="platform",
+    )
+
+    instance_id = uuid.uuid4()
+    messages = body.input_data.get("messages", [{"role": "user", "content": str(body.input_data)}])
+
+    async def event_generator():
+        import json as _json
+
+        try:
+            async for event in runtime.run_stream(
+                messages=messages,
+                instance_id=instance_id,
+                db=db,
+            ):
+                # Check client disconnect
+                if await request.is_disconnected():
+                    runtime.cancel()
+                    return
+
+                event_type = event.get("event", "message")
+                event_data = event.get("data", {})
+                yield f"event: {event_type}\ndata: {_json.dumps(event_data, default=str)}\n\n"
+        except Exception as exc:
+            import json as _json2
+            yield f"event: error\ndata: {_json2.dumps({'message': str(exc)[:500]})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ── Agent Instance Streaming (SSE) ──────────────────────────────────────

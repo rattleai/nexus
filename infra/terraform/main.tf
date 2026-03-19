@@ -16,14 +16,16 @@ terraform {
     }
   }
 
-  # Uncomment and configure for remote state
-  # backend "s3" {
-  #   bucket         = "cadprice-terraform-state"
-  #   key            = "prod/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   dynamodb_table = "cadprice-terraform-locks"
-  #   encrypt        = true
-  # }
+  # Remote state backend — requires bootstrap resources.
+  # Run `cd infra/terraform/bootstrap && terraform apply` first,
+  # then `cd .. && terraform init -migrate-state` to migrate.
+  backend "s3" {
+    bucket         = "cadprice-terraform-state"
+    key            = "prod/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "cadprice-terraform-locks"
+    encrypt        = true
+  }
 }
 
 provider "aws" {

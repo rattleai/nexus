@@ -111,14 +111,18 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     to_encode = data.copy()
     expire = datetime.now(UTC) + (expires_delta or timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES))
     jti = uuid.uuid4().hex
-    to_encode.update({
+    defaults = {
         "exp": expire,
         "iat": datetime.now(UTC),
         "type": "access",
         "jti": jti,
         "iss": "saas-platform",
         "aud": "saas-platform",
-    })
+    }
+    # Preserve caller-supplied fields (e.g., type="mfa_pending", amr=[...])
+    for k, v in defaults.items():
+        if k not in to_encode:
+            to_encode[k] = v
     algorithm = _get_effective_algorithm()
     return jwt.encode(to_encode, _get_jwt_signing_key(), algorithm=algorithm)
 

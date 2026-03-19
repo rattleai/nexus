@@ -334,6 +334,67 @@ jobs:
           IMAGE_REPO: ghcr.io/${{ github.repository }}
         run: cosign sign --yes "${IMAGE_REPO}@${IMAGE_DIGEST}"
 
+  terraform-plan:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9"
+      - run: terraform init -backend=false
+      - run: terraform validate
+      - run: terraform fmt -check -recursive
+
+  contract-test:
+    name: Contract Tests (Pact)
+    runs-on: ubuntu-latest
+    needs: [backend-test]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-test-secret
+      ADMIN_KEY: ci-test-admin-key
+      DEBUG: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]" pact-python
+      - run: alembic upgrade head
+      - name: Start API server
+        run: |
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          sleep 3
+          curl -sf http://localhost:8000/api/v1/health/live || exit 1
+      - run: pytest tests/contract/ -v --tb=short
+
   dependency-audit:
     name: Dependency Audit
     runs-on: ubuntu-latest
@@ -399,7 +460,27 @@ jobs:
             echo "deploy_user=${{ secrets.STAGING_DEPLOY_USER }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Deploy via SSH
+      - name: Deploy via ECS (preferred)
+        if: vars.DEPLOY_METHOD == 'ecs'
+        env:
+          AWS_REGION: us-east-1
+          ECS_CLUSTER: cadprice-${{ github.event.inputs.environment }}
+          ECS_SERVICE: cadprice-api
+          IMAGE_TAG: sha-${{ github.sha }}
+        run: |
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --force-new-deployment \
+            --region "$AWS_REGION"
+          echo "Waiting for service stability..."
+          aws ecs wait services-stable \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --region "$AWS_REGION"
+
+      - name: Deploy via SSH (fallback)
+        if: vars.DEPLOY_METHOD != 'ecs'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ steps.config.outputs.deploy_host }}

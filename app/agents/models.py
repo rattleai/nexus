@@ -116,6 +116,9 @@ class AgentDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Version
     max_tokens_per_run: Mapped[int] = mapped_column(Integer, default=100_000, server_default="100000")
     sandbox_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
+    # Parallel tool execution — when True, multiple tool calls are run concurrently
+    parallel_tool_execution: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+
     # Memory configuration
     memory_config: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
 

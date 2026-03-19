@@ -36,6 +36,7 @@ dependencies = [
     "opentelemetry-instrumentation-redis>=0.45b,<1",
     "opentelemetry-instrumentation-celery>=0.45b,<1",
     "prometheus-client>=0.20,<1",
+    "opentelemetry-exporter-prometheus>=0.45b,<1",
     "stripe>=8.0,<12",
     "cryptography>=42.0,<45",
     "litellm>=1.55,<2",
@@ -57,6 +58,7 @@ dev = [
     "httpx>=0.28,<1",
     "ruff>=0.9,<1",
     "mypy>=1.8,<2",
+    "pact-python>=2.2,<3",
 ]
 cli = [
     "typer>=0.12,<1",

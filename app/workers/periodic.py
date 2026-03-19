@@ -183,7 +183,9 @@ def _get_retention_model_map() -> dict:
 
     return {
         "jobs": (Job, Job.completed_at),
-        "audit_logs": (AuditLog, AuditLog.occurred_at),
+        # audit_logs excluded: immutable by trigger (migration 0008).
+        # Use privileged purge_audit_logs task with GUC bypass for
+        # compliance-mandated 7-year retention purge.
         "agent_instances": (AgentInstance, AgentInstance.completed_at),
         "wallet_transactions": (WalletTransaction, WalletTransaction.created_at),
     }
@@ -336,6 +338,99 @@ def hard_purge_deleted_accounts() -> dict:
         db.commit()
 
     logger.info("hard_purge_deleted_accounts_completed", purged=purged)
+    return {"purged": purged}
+
+
+@celery.task(name="app.workers.periodic.hard_purge_deleted_users")
+def hard_purge_deleted_users() -> dict:
+    """Hard-purge soft-deleted user records older than 30 days.
+
+    GDPR requires that deleted personal data is actually removed.
+    This task handles user-level cleanup (complementing the tenant-level
+    hard_purge_deleted_accounts task).
+
+    Skips users who are the sole member of an active tenant (orphan prevention).
+    Deletes FK-dependent records in order before removing the user row.
+    """
+    from app.db.models.core import Tenant, TenantMembership, User
+
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    purged = 0
+
+    with _SyncSession() as db:
+        # Find users soft-deleted > 30 days ago
+        users = db.execute(
+            select(User).where(
+                User.deleted_at.isnot(None),
+                User.deleted_at < cutoff,
+            )
+        ).scalars().all()
+
+        for user in users:
+            try:
+                nested = db.begin_nested()
+
+                # Skip if user is sole member of an active tenant
+                if user.tenant_id:
+                    tenant = db.execute(
+                        select(Tenant).where(Tenant.id == user.tenant_id)
+                    ).scalar_one_or_none()
+                    if tenant and tenant.is_active and tenant.deleted_at is None:
+                        member_count = db.execute(
+                            select(func.count()).select_from(TenantMembership).where(
+                                TenantMembership.tenant_id == user.tenant_id,
+                            )
+                        ).scalar() or 0
+                        if member_count <= 1:
+                            logger.info(
+                                "hard_purge_skipped_sole_member",
+                                user_id=str(user.id),
+                                tenant_id=str(user.tenant_id),
+                            )
+                            nested.rollback()
+                            continue
+
+                # Emit audit event BEFORE deletion (compliance trail)
+                from app.db.models.operations import AuditLog
+                audit = AuditLog(
+                    tenant_id=user.tenant_id,
+                    actor_type="system",
+                    action="gdpr_user_purge",
+                    resource_type="user",
+                    resource_id=str(user.id),
+                    changes={"email_hash": str(hash(user.email))[:12]},
+                )
+                db.add(audit)
+
+                # Delete FK-dependent records in order
+                for table_name in [
+                    "refresh_tokens",
+                    "email_verification_tokens",
+                    "oauth_accounts",
+                    "webauthn_credentials",
+                    "push_subscriptions",
+                    "tenant_memberships",
+                ]:
+                    db.execute(
+                        text(f'DELETE FROM "{table_name}" WHERE user_id = :uid'),
+                        {"uid": str(user.id)},
+                    )
+
+                # Delete user row
+                db.execute(
+                    text('DELETE FROM "users" WHERE id = :uid'),
+                    {"uid": str(user.id)},
+                )
+
+                nested.commit()
+                purged += 1
+
+            except Exception:
+                logger.error("hard_purge_user_failed", user_id=str(user.id), exc_info=True)
+
+        db.commit()
+
+    logger.info("hard_purge_deleted_users_completed", purged=purged)
     return {"purged": purged}
 
 

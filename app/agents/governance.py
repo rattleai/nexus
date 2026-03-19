@@ -253,6 +253,41 @@ class GovernanceEngine:
                     details={"daily_spend": daily_spend, "limit": max_per_day},
                 )
 
+        # Per-month limit — same atomic pattern as per-day
+        max_per_month = self.policy.get("max_spend_per_month_usd")
+        if max_per_month is not None and instance_id:
+            agent_id = context.get("agent_id", "unknown")
+            estimated_cost = context.get("estimated_cost", 0.01)
+            from datetime import UTC, datetime
+            this_month = datetime.now(UTC).strftime("%Y-%m")
+            month_key = _SPEND_MONTH_KEY.format(
+                tenant_id=tenant_id, agent_id=agent_id, month=this_month,
+            )
+            try:
+                lua_result = await _atomic_check_and_increment(
+                    month_key, estimated_cost, max_per_month, ttl_seconds=86400 * 35,
+                )
+            except Exception as exc:
+                logger.error("governance_redis_unavailable", check="monthly_spending_limit", exc_info=True)
+                raise GovernanceViolationError(
+                    "spending_limit",
+                    "Unable to verify monthly spending limits (Redis unavailable). Action blocked.",
+                    details={"reason": "redis_unavailable"},
+                ) from exc
+            if lua_result == -1:
+                monthly_spend = float(await redis_pool.get(month_key) or 0)
+                await self._emit_violation(
+                    tenant_id=tenant_id,
+                    context=context,
+                    violation_type="spending_limit",
+                    details=f"Monthly spending limit exceeded: ${monthly_spend:.4f} >= ${max_per_month:.2f}",
+                )
+                raise GovernanceViolationError(
+                    "spending_limit",
+                    f"Agent has exceeded monthly spending limit (${max_per_month:.2f})",
+                    details={"monthly_spend": monthly_spend, "limit": max_per_month},
+                )
+
     async def _check_rate_limits(
         self,
         action: str,
