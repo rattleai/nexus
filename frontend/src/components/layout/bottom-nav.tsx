@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router"
 import { useTranslation } from "react-i18next"
-import { LayoutDashboard, Briefcase, MessageSquare, FolderOpen, Menu } from "lucide-react"
+import { LayoutDashboard, Bot, MessageSquare, Briefcase, Menu } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useSidebar } from "@/components/ui/sidebar"
@@ -13,9 +13,9 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
-  { href: "/jobs", labelKey: "nav.jobs", icon: Briefcase },
+  { href: "/agents", labelKey: "nav.agents", icon: Bot },
   { href: "/chat", labelKey: "nav.ai_chat", icon: MessageSquare },
-  { href: "/files", labelKey: "nav.files", icon: FolderOpen },
+  { href: "/jobs", labelKey: "nav.jobs", icon: Briefcase },
 ]
 
 export function BottomNav() {

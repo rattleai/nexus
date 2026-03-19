@@ -12,6 +12,7 @@ import {
   Shield,
   Settings,
   MessageSquare,
+  Bot,
 } from "lucide-react"
 import { APP_NAME } from "@/lib/constants"
 import {
@@ -62,10 +63,11 @@ const NAV_GROUPS: NavGroup[] = [
   {
     labelKey: "nav.platform",
     items: [
+      { href: "/agents", labelKey: "nav.agents", icon: Bot },
+      { href: "/chat", labelKey: "nav.ai_chat", icon: MessageSquare },
       { href: "/jobs", labelKey: "nav.jobs", icon: Briefcase },
       { href: "/files", labelKey: "nav.files", icon: FolderOpen },
       { href: "/api-keys", labelKey: "nav.api_keys", icon: Key },
-      { href: "/chat", labelKey: "nav.ai_chat", icon: MessageSquare },
     ],
   },
   {

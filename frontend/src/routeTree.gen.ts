@@ -23,6 +23,7 @@ import { Route as ChatRouteImport } from './routes/chat'
 import { Route as BillingRouteImport } from './routes/billing'
 import { Route as AuditLogRouteImport } from './routes/audit-log'
 import { Route as ApiKeysRouteImport } from './routes/api-keys'
+import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -100,6 +101,11 @@ const ApiKeysRoute = ApiKeysRouteImport.update({
   path: '/api-keys',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/api-keys.lazy').then((d) => d.Route))
+const AgentsRoute = AgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/agents.lazy').then((d) => d.Route))
 const AcceptInvitationRoute = AcceptInvitationRouteImport.update({
   id: '/accept-invitation',
   path: '/accept-invitation',
@@ -116,6 +122,7 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
+  '/agents': typeof AgentsRoute
   '/api-keys': typeof ApiKeysRoute
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
@@ -134,6 +141,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
+  '/agents': typeof AgentsRoute
   '/api-keys': typeof ApiKeysRoute
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
@@ -153,6 +161,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
+  '/agents': typeof AgentsRoute
   '/api-keys': typeof ApiKeysRoute
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
@@ -173,6 +182,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/accept-invitation'
+    | '/agents'
     | '/api-keys'
     | '/audit-log'
     | '/billing'
@@ -191,6 +201,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/accept-invitation'
+    | '/agents'
     | '/api-keys'
     | '/audit-log'
     | '/billing'
@@ -209,6 +220,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/accept-invitation'
+    | '/agents'
     | '/api-keys'
     | '/audit-log'
     | '/billing'
@@ -228,6 +240,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AcceptInvitationRoute: typeof AcceptInvitationRoute
+  AgentsRoute: typeof AgentsRoute
   ApiKeysRoute: typeof ApiKeysRoute
   AuditLogRoute: typeof AuditLogRoute
   BillingRoute: typeof BillingRoute
@@ -344,6 +357,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiKeysRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/agents': {
+      id: '/agents'
+      path: '/agents'
+      fullPath: '/agents'
+      preLoaderRoute: typeof AgentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/accept-invitation': {
       id: '/accept-invitation'
       path: '/accept-invitation'
@@ -364,6 +384,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcceptInvitationRoute: AcceptInvitationRoute,
+  AgentsRoute: AgentsRoute,
   ApiKeysRoute: ApiKeysRoute,
   AuditLogRoute: AuditLogRoute,
   BillingRoute: BillingRoute,
