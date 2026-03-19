@@ -42,11 +42,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable"
 import { AgentCard } from "./agent-card"
 import { AgentOverview } from "./agent-overview"
 import { AgentChatPanel } from "./agent-chat-panel"
@@ -270,7 +265,7 @@ export function AgentWorkspace() {
 
   // Main panel content
   const mainContent = selectedAgent ? (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Tab bar */}
       <div className="flex items-center border-b px-4 py-2 gap-4">
         <div className="flex items-center gap-2 min-w-0">
@@ -381,24 +376,13 @@ export function AgentWorkspace() {
           )}
         </div>
       ) : (
-        <div className="flex-1 min-h-0">
-          <ResizablePanelGroup
-            orientation="horizontal"
-            className="rounded-xl border"
-          >
-            <ResizablePanel
-              defaultSize={28}
-              minSize={20}
-              maxSize={40}
-              className="bg-background"
-            >
-              {sidebarContent}
-            </ResizablePanel>
-            <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={72} className="bg-background">
-              {mainContent}
-            </ResizablePanel>
-          </ResizablePanelGroup>
+        <div className="flex flex-1 min-h-0 rounded-xl border overflow-hidden">
+          <div className="w-72 shrink-0 border-r bg-background">
+            {sidebarContent}
+          </div>
+          <div className="flex-1 min-w-0 bg-background">
+            {mainContent}
+          </div>
         </div>
       )}
 
@@ -460,7 +444,7 @@ function PanelErrorFallback({ tab }: { tab: string }) {
 
 function EmptyState({ onCreateNew }: { onCreateNew: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full text-center px-8">
+    <div className="flex flex-col items-center justify-center flex-1 text-center px-8">
       <div className="relative mb-6">
         <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 shadow-inner">
           <Bot className="h-10 w-10 text-primary" />
