@@ -37,27 +37,40 @@ function Dashboard() {
   const { isAuthenticated } = useAuth()
 
   if (!isAuthenticated) {
-    return <GuestDashboard />
+    return <LandingPage />
   }
 
   return <AuthenticatedDashboard />
 }
 
-function GuestDashboard() {
+function LandingPage() {
   const { t } = useTranslation("dashboard")
   const { t: tc } = useTranslation("common")
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">{t("guest.title")}</h1>
-        <p className="mt-1 text-muted-foreground">
-          {t("guest.subtitle")}
+    <div className="space-y-12 py-8">
+      {/* Hero */}
+      <div className="text-center space-y-4 max-w-2xl mx-auto">
+        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
+          {t("landing.hero_title")}
+        </h1>
+        <p className="text-lg text-muted-foreground">
+          {t("landing.hero_subtitle")}
         </p>
+        <div className="flex gap-3 justify-center pt-2">
+          <Button size="lg" asChild>
+            <Link to="/login">{t("landing.cta_sign_in")}</Link>
+          </Button>
+          <Button size="lg" variant="outline" asChild>
+            <Link to="/register">{t("landing.cta_register")}</Link>
+          </Button>
+        </div>
       </div>
+
+      {/* Feature cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardContent className="p-6 text-center space-y-3">
-            <Briefcase className="h-8 w-8 mx-auto text-muted-foreground" />
+            <Briefcase className="h-8 w-8 mx-auto text-primary" />
             <h3 className="font-semibold">{t("guest.async_jobs_title")}</h3>
             <p className="text-sm text-muted-foreground">
               {t("guest.async_jobs_desc")}
@@ -66,7 +79,7 @@ function GuestDashboard() {
         </Card>
         <Card>
           <CardContent className="p-6 text-center space-y-3">
-            <Key className="h-8 w-8 mx-auto text-muted-foreground" />
+            <Key className="h-8 w-8 mx-auto text-primary" />
             <h3 className="font-semibold">{t("guest.api_keys_title")}</h3>
             <p className="text-sm text-muted-foreground">
               {t("guest.api_keys_desc")}
@@ -75,21 +88,13 @@ function GuestDashboard() {
         </Card>
         <Card>
           <CardContent className="p-6 text-center space-y-3">
-            <Users className="h-8 w-8 mx-auto text-muted-foreground" />
+            <Users className="h-8 w-8 mx-auto text-primary" />
             <h3 className="font-semibold">{t("guest.team_mgmt_title")}</h3>
             <p className="text-sm text-muted-foreground">
               {t("guest.team_mgmt_desc")}
             </p>
           </CardContent>
         </Card>
-      </div>
-      <div className="flex gap-3">
-        <Button asChild>
-          <Link to="/login">{tc("buttons.sign_in")}</Link>
-        </Button>
-        <Button variant="outline" asChild>
-          <Link to="/register">{tc("buttons.create_account")}</Link>
-        </Button>
       </div>
     </div>
   )

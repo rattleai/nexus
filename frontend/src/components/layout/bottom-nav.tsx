@@ -4,6 +4,7 @@ import { LayoutDashboard, Bot, MessageSquare, Briefcase, Menu } from "lucide-rea
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useSidebar } from "@/components/ui/sidebar"
+import { useAuth } from "@/hooks/use-auth"
 
 interface NavItem {
   href: string
@@ -24,8 +25,9 @@ export function BottomNav() {
   const currentPath = router.location.pathname
   const { toggleSidebar } = useSidebar()
   const { t } = useTranslation()
+  const { isAuthenticated } = useAuth()
 
-  if (!isMobile) return null
+  if (!isMobile || !isAuthenticated) return null
 
   return (
     <nav

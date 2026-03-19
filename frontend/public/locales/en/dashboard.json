@@ -1,4 +1,10 @@
 {
+  "landing": {
+    "hero_title": "Welcome to CAD Price",
+    "hero_subtitle": "Manage your jobs, API keys, and team — all in one place.",
+    "cta_sign_in": "Sign In",
+    "cta_register": "Create Account"
+  },
   "guest": {
     "title": "Welcome to your platform",
     "subtitle": "Sign in or enter your API key to get started.",

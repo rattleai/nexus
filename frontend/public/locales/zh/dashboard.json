@@ -1,4 +1,10 @@
 {
+  "landing": {
+    "hero_title": "欢迎使用 CAD Price",
+    "hero_subtitle": "在一个平台上管理您的任务、API 密钥和团队。",
+    "cta_sign_in": "登录",
+    "cta_register": "创建账户"
+  },
   "guest": {
     "title": "欢迎使用您的平台",
     "subtitle": "请登录或输入您的 API 密钥以开始使用。",

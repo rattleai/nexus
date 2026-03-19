@@ -61,6 +61,18 @@ async def get_current_api_key(
     return api_key
 
 
+async def get_current_api_key_optional(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> ApiKey | None:
+    """Resolve the API key if present, or return None for JWT-authenticated users.
+
+    Use this instead of get_current_api_key in endpoints that support both
+    JWT and API key authentication.
+    """
+    return await _resolve_api_key(request, db)
+
+
 async def _resolve_api_key(request: Request, db: AsyncSession) -> ApiKey | None:
     """Try to resolve an API key from the X-API-Key header. Returns None if absent."""
     x_api_key = request.headers.get("X-API-Key")

@@ -52,7 +52,7 @@ from app.agents.schemas import (
     WorkflowRunCreate,
     WorkflowRunResponse,
 )
-from app.api.deps import RequireScopes, get_current_api_key, get_current_tenant, get_db
+from app.api.deps import RequireScopes, get_current_api_key, get_current_api_key_optional, get_current_tenant, get_db
 from app.core.events import emit
 from app.db.models import ApiKey, Tenant
 from app.db.session import set_tenant_context
@@ -77,7 +77,7 @@ router = APIRouter(prefix="/agents")
 async def create_agent_definition(
     body: AgentDefinitionCreate,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new agent definition."""
@@ -194,7 +194,7 @@ async def update_agent_definition(
     agent_id: uuid.UUID,
     body: AgentDefinitionUpdate,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Update an agent definition."""
@@ -250,7 +250,7 @@ async def update_agent_definition(
 async def delete_agent_definition(
     agent_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Soft-delete an agent definition."""
@@ -276,7 +276,7 @@ async def create_agent_instance(
     agent_id: uuid.UUID,
     body: AgentInstanceCreate,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Spawn a new agent instance (async execution via Celery)."""
@@ -342,7 +342,7 @@ async def create_agent_instance(
             "definition_id": str(agent.id),
             "tenant_id": str(tenant.id),
             "input_data": body.input_data,
-            "api_key_id": str(api_key.id),  # Worker resolves key by ID
+            "api_key_id": str(api_key.id) if api_key else None,  # Worker resolves key by ID
             "key_source": "platform",
             "session_id": str(body.session_id) if body.session_id else None,
         },
@@ -423,7 +423,7 @@ async def get_agent_instance(
 async def stop_agent_instance(
     instance_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Stop a running agent instance."""
@@ -457,7 +457,7 @@ async def run_agent_stream(
     body: AgentInstanceCreate,
     request: Request,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Run an agent definition with streaming SSE output.
@@ -755,7 +755,7 @@ async def write_agent_memory(
     instance_id: uuid.UUID,
     body: MemoryWriteRequest,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Write an agent memory entry (rate-limited per instance)."""
@@ -799,7 +799,7 @@ async def clear_agent_memory(
     instance_id: uuid.UUID,
     namespace: str | None = None,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Clear agent memory."""
@@ -823,7 +823,7 @@ async def clear_agent_memory(
 async def create_workflow(
     body: WorkflowDefinitionCreate,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new workflow definition."""
@@ -898,7 +898,7 @@ async def run_workflow(
     workflow_id: uuid.UUID,
     body: WorkflowRunCreate,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Execute a workflow (async via Celery)."""
@@ -936,7 +936,7 @@ async def run_workflow(
         workflow_id=str(workflow_id),
         tenant_id=str(tenant.id),
         input_data=body.input_data,
-        api_key_id=str(api_key.id),  # Worker resolves key by ID
+        api_key_id=str(api_key.id) if api_key else None,  # Worker resolves key by ID
     )
 
     return run
@@ -994,7 +994,7 @@ async def list_workflow_runs(
 async def register_tenant_tool(
     body: TenantToolCreate,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Register a custom tool for agents."""
@@ -1078,7 +1078,7 @@ async def list_tools(
 async def remove_tenant_tool(
     tool_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Remove a custom tool."""
@@ -1116,7 +1116,7 @@ async def resolve_approval(
     approval_id: str,
     body: dict,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
 ):
     """Resolve a pending agent approval request.
 
@@ -1148,7 +1148,7 @@ async def resolve_approval(
     result = await GovernanceEngine.resolve_approval(
         approval_id=approval_id,
         decision=decision,
-        resolved_by=str(api_key.id),
+        resolved_by=str(api_key.id) if api_key else "jwt-user",
     )
 
     if result is None:
@@ -1169,7 +1169,7 @@ async def resolve_approval(
 async def create_agent_policy(
     body: AgentPolicyCreate,
     tenant: Tenant = Depends(get_current_tenant),
-    api_key: ApiKey = Depends(get_current_api_key),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a reusable governance policy."""
