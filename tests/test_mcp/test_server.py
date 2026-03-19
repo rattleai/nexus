@@ -2,6 +2,8 @@
 
 import pytest
 
+fastmcp = pytest.importorskip("fastmcp", reason="fastmcp package not installed")
+
 
 def test_create_mcp_server():
     """Test that the MCP server creates successfully with all tools registered."""

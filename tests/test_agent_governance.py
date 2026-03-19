@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -30,8 +30,11 @@ class TestToolAccessControl:
             patch("app.agents.governance.emit", new_callable=AsyncMock),
             patch("app.agents.governance.redis_pool") as mock_redis,
         ):
-            mock_redis.incr = AsyncMock(return_value=1)
-            mock_redis.expire = AsyncMock()
+            mock_pipe = MagicMock()
+            mock_pipe.incr = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(return_value=[1, True])
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             # Should not raise
             await engine.check(
                 action="tool_call",
@@ -74,8 +77,11 @@ class TestToolAccessControl:
             patch("app.agents.governance.emit", new_callable=AsyncMock),
             patch("app.agents.governance.redis_pool") as mock_redis,
         ):
-            mock_redis.incr = AsyncMock(return_value=1)
-            mock_redis.expire = AsyncMock()
+            mock_pipe = MagicMock()
+            mock_pipe.incr = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(return_value=[1, True])
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             # Non-tool actions should pass tool check
             await engine.check(
                 action="llm_call",
@@ -92,8 +98,11 @@ class TestSpendingLimits:
             patch("app.agents.governance.emit", new_callable=AsyncMock),
             patch("app.agents.governance.redis_pool") as mock_redis,
         ):
-            mock_redis.incr = AsyncMock(return_value=1)
-            mock_redis.expire = AsyncMock()
+            mock_pipe = MagicMock()
+            mock_pipe.incr = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(return_value=[1, True])
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             await engine.check(
                 action="llm_call",
                 context={"current_cost": 0.50, "instance_id": "x"},
@@ -123,8 +132,11 @@ class TestRateLimiting:
             patch("app.agents.governance.emit", new_callable=AsyncMock),
             patch("app.agents.governance.redis_pool") as mock_redis,
         ):
-            mock_redis.incr = AsyncMock(return_value=5)
-            mock_redis.expire = AsyncMock()
+            mock_pipe = MagicMock()
+            mock_pipe.incr = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(return_value=[5, True])
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             await engine.check(
                 action="llm_call",
                 context={"instance_id": "x"},
@@ -138,8 +150,11 @@ class TestRateLimiting:
             patch("app.agents.governance.emit", new_callable=AsyncMock),
             patch("app.agents.governance.redis_pool") as mock_redis,
         ):
-            mock_redis.incr = AsyncMock(return_value=11)
-            mock_redis.expire = AsyncMock()
+            mock_pipe = MagicMock()
+            mock_pipe.incr = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(return_value=[11, True])
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             with pytest.raises(GovernanceViolationError) as exc_info:
                 await engine.check(
                     action="llm_call",
@@ -163,8 +178,11 @@ class TestApprovalWorkflow:
             patch("app.agents.governance.emit", new_callable=AsyncMock),
             patch("app.agents.governance.redis_pool") as mock_redis,
         ):
-            mock_redis.incr = AsyncMock(return_value=1)
-            mock_redis.expire = AsyncMock()
+            mock_pipe = MagicMock()
+            mock_pipe.incr = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(return_value=[1, True])
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             with pytest.raises(GovernanceViolationError) as exc_info:
                 await engine.check(
                     action="tool_call",
@@ -180,8 +198,11 @@ class TestApprovalWorkflow:
             patch("app.agents.governance.emit", new_callable=AsyncMock),
             patch("app.agents.governance.redis_pool") as mock_redis,
         ):
-            mock_redis.incr = AsyncMock(return_value=1)
-            mock_redis.expire = AsyncMock()
+            mock_pipe = MagicMock()
+            mock_pipe.incr = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(return_value=[1, True])
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             await engine.check(
                 action="tool_call",
                 context={"tool_name": "team_invite", "instance_id": "x"},
@@ -200,8 +221,11 @@ class TestDailySpendingLimits:
         ):
             # Lua script returns 0 → within budget
             mock_redis.eval = AsyncMock(return_value=0)
-            mock_redis.incr = AsyncMock(return_value=1)
-            mock_redis.expire = AsyncMock()
+            mock_pipe = MagicMock()
+            mock_pipe.incr = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(return_value=[1, True])
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             await engine.check(
                 action="tool_call",
                 context={"tool_name": "test", "instance_id": "x", "current_cost": 0.5},
@@ -219,8 +243,11 @@ class TestDailySpendingLimits:
             # Lua script returns -1 → over budget
             mock_redis.eval = AsyncMock(return_value=-1)
             mock_redis.get = AsyncMock(return_value="10.5")
-            mock_redis.incr = AsyncMock(return_value=1)
-            mock_redis.expire = AsyncMock()
+            mock_pipe = MagicMock()
+            mock_pipe.incr = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(return_value=[1, True])
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             with pytest.raises(GovernanceViolationError) as exc_info:
                 await engine.check(
                     action="tool_call",
@@ -240,8 +267,11 @@ class TestDailySpendingLimits:
         ):
             # Lua eval fails → Redis unavailable
             mock_redis.eval = AsyncMock(side_effect=ConnectionError("Redis down"))
-            mock_redis.incr = AsyncMock(return_value=1)
-            mock_redis.expire = AsyncMock()
+            mock_pipe = MagicMock()
+            mock_pipe.incr = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(return_value=[1, True])
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             with pytest.raises(GovernanceViolationError) as exc_info:
                 await engine.check(
                     action="tool_call",
@@ -261,7 +291,11 @@ class TestRateLimitRedisFailure:
             patch("app.agents.governance.emit", new_callable=AsyncMock),
             patch("app.agents.governance.redis_pool") as mock_redis,
         ):
-            mock_redis.incr = AsyncMock(side_effect=ConnectionError("Redis down"))
+            mock_pipe = MagicMock()
+            mock_pipe.incr = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(side_effect=ConnectionError("Redis down"))
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             with pytest.raises(GovernanceViolationError) as exc_info:
                 await engine.check(
                     action="tool_call",
@@ -275,21 +309,28 @@ class TestSpendingTracking:
     @pytest.mark.asyncio
     async def test_track_spending_records_to_redis(self):
         with patch("app.agents.governance.redis_pool") as mock_redis:
-            mock_redis.incrbyfloat = AsyncMock()
-            mock_redis.expire = AsyncMock()
+            mock_pipe = MagicMock()
+            mock_pipe.incrbyfloat = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(return_value=[0.05, True, 0.05, True, 0.05, True])
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             await GovernanceEngine.track_spending(
                 tenant_id=uuid.uuid4(),
                 agent_id="agent1",
                 instance_id="inst1",
                 cost_usd=0.05,
             )
-            assert mock_redis.incrbyfloat.call_count == 3  # run, day, month
+            assert mock_pipe.incrbyfloat.call_count == 3  # run, day, month
 
     @pytest.mark.asyncio
     async def test_track_spending_best_effort_on_redis_failure(self):
         """track_spending should not raise on Redis failure."""
         with patch("app.agents.governance.redis_pool") as mock_redis:
-            mock_redis.incrbyfloat = AsyncMock(side_effect=ConnectionError("Redis down"))
+            mock_pipe = MagicMock()
+            mock_pipe.incrbyfloat = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(side_effect=ConnectionError("Redis down"))
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             # Should not raise
             await GovernanceEngine.track_spending(
                 tenant_id=uuid.uuid4(),
@@ -307,8 +348,11 @@ class TestEmptyPolicy:
             patch("app.agents.governance.emit", new_callable=AsyncMock),
             patch("app.agents.governance.redis_pool") as mock_redis,
         ):
-            mock_redis.incr = AsyncMock(return_value=1)
-            mock_redis.expire = AsyncMock()
+            mock_pipe = MagicMock()
+            mock_pipe.incr = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock(return_value=[1, True])
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
             await engine.check(
                 action="tool_call",
                 context={"tool_name": "anything", "instance_id": "x"},

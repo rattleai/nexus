@@ -86,6 +86,17 @@ def _check_resolved_ips(url: str, hostname: str, results: list) -> str | None:
     return None
 
 
+def validate_url(url: str) -> None:
+    """Validate a URL is safe to call, raising ValueError if not.
+
+    Convenience wrapper used by tool_registry and other callers that
+    prefer a raise-on-error API.
+    """
+    error = validate_webhook_url(url)
+    if error:
+        raise ValueError(error)
+
+
 def validate_webhook_url(url: str) -> str | None:
     """Validate a webhook URL is safe to call (synchronous).
 

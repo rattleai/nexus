@@ -73,14 +73,14 @@ async def job_client():
 async def test_create_job_requires_auth(job_client):
     client, _ = job_client
     response = await client.post("/api/v1/jobs", json={"type": "export"})
-    assert response.status_code == 422
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_list_jobs_requires_auth(job_client):
     client, _ = job_client
     response = await client.get("/api/v1/jobs")
-    assert response.status_code == 422
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -102,7 +102,8 @@ async def test_get_job_not_found(job_client):
     app.dependency_overrides[get_current_api_key] = lambda: api_key
 
     try:
-        response = await client.get(f"/api/v1/jobs/{uuid.uuid4()}")
+        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=api_key):
+            response = await client.get(f"/api/v1/jobs/{uuid.uuid4()}")
         assert response.status_code == 404
     finally:
         app.dependency_overrides.clear()
@@ -129,7 +130,8 @@ async def test_cancel_completed_job(job_client):
     app.dependency_overrides[get_current_api_key] = lambda: api_key
 
     try:
-        response = await client.post(f"/api/v1/jobs/{job.id}/cancel")
+        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=api_key):
+            response = await client.post(f"/api/v1/jobs/{job.id}/cancel")
         assert response.status_code == 200
         data = response.json()
         assert data["cancelled"] is False
@@ -165,7 +167,10 @@ async def test_cancel_pending_job(job_client):
     app.dependency_overrides[get_current_api_key] = lambda: api_key
 
     try:
-        with patch("app.api.v1.jobs.invalidate", new_callable=AsyncMock):
+        with (
+            patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=api_key),
+            patch("app.api.v1.jobs.invalidate", new_callable=AsyncMock),
+        ):
             response = await client.post(f"/api/v1/jobs/{job.id}/cancel")
         assert response.status_code == 200
         data = response.json()

@@ -285,6 +285,7 @@ class AgentRuntime:
         step_span: Any,
     ) -> str:
         """Execute one ReAct step. Returns "done", "break", or "continue"."""
+        step_start = time.monotonic()
         llm_timeout = settings.AI_REQUEST_TIMEOUT_SECONDS
 
         completion = await asyncio.wait_for(
