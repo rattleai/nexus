@@ -1,0 +1,31 @@
+{%- if include_db %}
+"""SQLAlchemy async engine and session factory."""
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.config import settings
+
+async_engine = create_async_engine(
+    settings.DATABASE_URL,
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,
+)
+
+async_session_factory = async_sessionmaker(
+    async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+
+async def get_db():
+    """FastAPI dependency for async DB sessions."""
+    async with async_session_factory() as session:
+        yield session
+
+
+async def dispose_engines():
+    """Dispose engine pools during shutdown."""
+    await async_engine.dispose()
+{%- endif %}

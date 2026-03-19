@@ -1,0 +1,104 @@
+services:
+  api:
+    build: .
+    ports:
+      - "127.0.0.1:{{ port }}:{{ port }}"
+    env_file: .env
+    environment:
+      - PYTHONPATH=/app
+{%- if include_db %}
+      - DATABASE_URL=postgresql+asyncpg://app:app@db:5432/{{ python_package }}
+{%- endif %}
+    volumes:
+      - .:/app
+{%- if include_db %}
+    depends_on:
+      db:
+        condition: service_healthy
+{%- endif %}
+{%- if include_redis %}
+      redis:
+        condition: service_healthy
+{%- endif %}
+    command: >-
+      sh -c "
+{%- if include_db %}alembic upgrade head && {% endif %}uvicorn app.main:app --host 0.0.0.0 --port {{ port }} --reload"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+
+{%- if include_db %}
+
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "127.0.0.1:5434:5432"
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: {{ python_package }}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+{%- endif %}
+
+{%- if include_redis %}
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6380:6379"
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+{%- endif %}
+
+{%- if include_celery %}
+
+  worker:
+    build: .
+    env_file: .env
+    environment:
+      - PYTHONPATH=/app
+{%- if include_db %}
+      - DATABASE_URL=postgresql+asyncpg://app:app@db:5432/{{ python_package }}
+{%- endif %}
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    restart: unless-stopped
+
+  beat:
+    build: .
+    env_file: .env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app beat --loglevel=info
+    restart: unless-stopped
+{%- endif %}
+
+{%- if include_db %}
+
+volumes:
+  pgdata:
+{%- endif %}

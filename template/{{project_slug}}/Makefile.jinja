@@ -1,0 +1,36 @@
+.PHONY: dev dev-up dev-down test lint format{% if include_db %} migrate{% endif %}
+
+dev-up:  ## Start all services
+	docker compose up -d
+
+dev-down:  ## Stop all services
+	docker compose down
+
+dev:  ## Start with log output
+	docker compose up
+
+test:  ## Run tests
+	python -m pytest tests/ -v
+
+lint:  ## Lint code
+	ruff check app/ tests/
+
+format:  ## Format code
+	ruff format app/ tests/
+	ruff check --fix app/ tests/
+
+typecheck:  ## Run mypy
+	mypy app/
+
+{% if include_db -%}
+migrate:  ## Run database migrations
+	alembic upgrade head
+
+migrate-new:  ## Create a new migration (usage: make migrate-new msg="add table")
+	alembic revision --autogenerate -m "$(msg)"
+{%- endif %}
+
+help:  ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
+
+.DEFAULT_GOAL := help

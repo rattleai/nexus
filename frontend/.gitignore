@@ -15,6 +15,10 @@ dist-ssr
 # TanStack Router auto-generated route tree
 src/routeTree.gen.ts
 
+# Auto-generated API client (run `npm run api:sync` to regenerate)
+src/generated/api/*
+!src/generated/api/.gitkeep
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

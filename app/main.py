@@ -208,6 +208,7 @@ def create_app() -> FastAPI:
             "description": "CADPrice multi-tenant SaaS platform MCP server",
             "transport": settings.MCP_TRANSPORT,
             "url": f"{settings.APP_BASE_URL}/mcp" if settings.MCP_TRANSPORT == "http" else None,
+            "api_bridge": f"{settings.APP_BASE_URL}/mcp" if settings.MCP_EXPOSE_API_ROUTES else None,
             "authentication": {"type": "api_key", "header": "X-API-Key"},
             "capabilities": {
                 "tools": True,
@@ -232,6 +233,11 @@ def create_app() -> FastAPI:
 
     # API routes (must be before SPA catch-all)
     app.include_router(v1_router, prefix=settings.API_V1_PREFIX)
+
+    # Mount fastapi-mcp bridge (auto-exposes API routes as MCP tools)
+    from app.mcp.api_bridge import mount_api_mcp
+
+    mount_api_mcp(app)
 
     # Enrich OpenAPI schema with agent-friendly metadata
     _original_openapi = app.openapi

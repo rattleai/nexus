@@ -1,0 +1,18 @@
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+{%- if include_db %}
+    DATABASE_URL: str = "postgresql+asyncpg://app:app@localhost:5432/{{ python_package }}"
+{%- endif %}
+{%- if include_redis %}
+    REDIS_URL: str = "redis://localhost:6379/0"
+{%- endif %}
+    DEBUG: bool = False
+    CORS_ORIGINS: str = "http://localhost:3000"
+    PORT: int = {{ port }}
+
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+
+settings = Settings()

@@ -1,0 +1,78 @@
+"""{{ project_name }} — FastAPI microservice."""
+
+from contextlib import asynccontextmanager
+
+import structlog
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+
+from app import __version__
+from app.config import settings
+from app.api.v1 import v1_router
+from app.core.logging import setup_logging
+
+setup_logging()
+logger = structlog.stdlib.get_logger()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("app_starting", version=__version__, debug=settings.DEBUG)
+{%- if include_redis %}
+
+    from app.core.redis import redis_pool
+
+    try:
+        await redis_pool.ping()
+        logger.info("redis_connected")
+    except Exception:
+        logger.warning("redis_unavailable_at_startup")
+{%- endif %}
+
+    yield
+
+    logger.info("app_shutting_down")
+{%- if include_redis %}
+
+    try:
+        await redis_pool.aclose()
+    except Exception:
+        logger.warning("redis_close_error", exc_info=True)
+{%- endif %}
+{%- if include_db %}
+
+    from app.db.session import dispose_engines
+
+    try:
+        await dispose_engines()
+    except Exception:
+        logger.warning("db_dispose_error", exc_info=True)
+{%- endif %}
+
+    logger.info("app_shutdown")
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="{{ project_name }}",
+        version=__version__,
+        description="{{ description }}",
+        lifespan=lifespan,
+    )
+
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",")],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Request-ID"],
+    )
+
+    app.include_router(v1_router, prefix="/api/v1")
+
+    return app
+
+
+app = create_app()

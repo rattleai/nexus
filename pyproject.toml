@@ -48,6 +48,7 @@ dependencies = [
     "webauthn>=2.0,<3",
     "websockets>=15.0,<16",
     "fastmcp>=3.1,<4",
+    "fastapi-mcp>=0.5,<1",
 ]
 
 [project.optional-dependencies]
@@ -66,6 +67,9 @@ cli = [
 ]
 perf = [
     "locust>=2.20,<3",
+]
+scaffold = [
+    "copier>=9.0,<10",
 ]
 
 [project.scripts]

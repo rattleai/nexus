@@ -1,0 +1,60 @@
+# Copier template for CADPrice microservices.
+#
+# Usage:
+#   pip install copier
+#   copier copy template/ services/my-new-service
+#
+# Or from a remote repo:
+#   copier copy gh:yourorg/cadprice-template services/my-new-service
+
+_min_copier_version: "9.0.0"
+_subdirectory: "{{project_slug}}"
+
+# ── Prompts ──────────────────────────────────────────────────
+
+project_name:
+  type: str
+  help: "Human-readable service name (e.g. 'Notification Service')"
+
+project_slug:
+  type: str
+  default: "{{ project_name | lower | replace(' ', '-') }}"
+  help: "Directory and package name (e.g. 'notification-service')"
+
+python_package:
+  type: str
+  default: "{{ project_slug | replace('-', '_') }}"
+  help: "Python package name (e.g. 'notification_service')"
+
+description:
+  type: str
+  default: "A CADPrice microservice"
+  help: "Short description for pyproject.toml and Docker labels"
+
+port:
+  type: int
+  default: 8010
+  help: "HTTP port the service listens on"
+
+include_celery:
+  type: bool
+  default: false
+  help: "Include Celery worker and beat scheduler?"
+
+include_db:
+  type: bool
+  default: true
+  help: "Include PostgreSQL + Alembic migrations?"
+
+include_redis:
+  type: bool
+  default: true
+  help: "Include Redis for caching / task queue?"
+
+author_name:
+  type: str
+  default: "CADPrice Team"
+
+author_email:
+  type: str
+  default: "team@cadprice.com"
