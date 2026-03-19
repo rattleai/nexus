@@ -39,11 +39,25 @@ const statusConfig: Record<
 
 export function AgentRunsPanel({ agent }: AgentRunsPanelProps) {
   const [statusFilter, setStatusFilter] = React.useState<string>("all")
+  const [stoppingIds, setStoppingIds] = React.useState<Set<string>>(new Set())
   const { data, isLoading, refetch } = useAgentInstances(
     agent.id,
     statusFilter !== "all" ? statusFilter : undefined,
   )
   const stopInstance = useStopInstance()
+
+  const handleStop = (instanceId: string) => {
+    setStoppingIds((prev) => new Set(prev).add(instanceId))
+    stopInstance.mutate(instanceId, {
+      onSettled: () => {
+        setStoppingIds((prev) => {
+          const next = new Set(prev)
+          next.delete(instanceId)
+          return next
+        })
+      },
+    })
+  }
 
   const instances = data?.items ?? []
 
@@ -104,8 +118,8 @@ export function AgentRunsPanel({ agent }: AgentRunsPanelProps) {
             <RunCard
               key={instance.id}
               instance={instance}
-              onStop={() => stopInstance.mutate(instance.id)}
-              isStopping={stopInstance.isPending}
+              onStop={() => handleStop(instance.id)}
+              isStopping={stoppingIds.has(instance.id)}
             />
           ))}
         </div>

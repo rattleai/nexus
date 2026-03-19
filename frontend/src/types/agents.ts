@@ -1,7 +1,7 @@
 // ── Agent workspace types (mirrors backend Pydantic schemas) ──────
 
 export type AgentStatus = "draft" | "active" | "disabled"
-export type InstanceStatus = "pending" | "running" | "completed" | "failed" | "cancelled"
+export type InstanceStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled"
 
 // ── Agent Definition ──────────────────────────────────────────────
 

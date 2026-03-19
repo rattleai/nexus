@@ -40,7 +40,7 @@ export const useAgentStore = create<AgentWorkspaceState>()(
       selectAgent: (id) =>
         set({
           selectedAgentId: id,
-          activeTab: id ? "overview" : "overview",
+          activeTab: "overview",
         }),
 
       setActiveTab: (tab) => set({ activeTab: tab }),

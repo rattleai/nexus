@@ -175,18 +175,22 @@ export function CreateAgentDialog({
     const tpl = TEMPLATES.find((t) => t.id === selectedTemplate)
     if (!tpl || !name.trim() || !slug.trim()) return
 
-    const result = await createAgent.mutateAsync({
-      name: name.trim(),
-      slug: slug.trim(),
-      description: description.trim(),
-      system_prompt: tpl.defaults.system_prompt,
-      model,
-      temperature: tpl.defaults.temperature,
-      allowed_tools: tpl.defaults.allowed_tools ?? [],
-    })
+    try {
+      const result = await createAgent.mutateAsync({
+        name: name.trim(),
+        slug: slug.trim(),
+        description: description.trim(),
+        system_prompt: tpl.defaults.system_prompt,
+        model,
+        temperature: tpl.defaults.temperature,
+        allowed_tools: tpl.defaults.allowed_tools ?? [],
+      })
 
-    onOpenChange(false)
-    onCreated?.(result.id)
+      onOpenChange(false)
+      onCreated?.(result.id)
+    } catch {
+      // Error toast is handled by the mutation's onError callback
+    }
   }
 
   return (

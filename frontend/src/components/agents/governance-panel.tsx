@@ -65,6 +65,7 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
   }, [agent])
 
   const handleSave = async () => {
+    const timeoutVal = Number(approvalTimeout)
     const newPolicy: GovernancePolicy = {
       ...policy,
       max_spend_per_run_usd: maxRunSpend ? Number(maxRunSpend) : null,
@@ -72,18 +73,22 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
       max_spend_per_month_usd: maxMonthSpend ? Number(maxMonthSpend) : null,
       denied_tools: deniedTools,
       require_approval_for: requireApproval,
-      approval_timeout_seconds: Number(approvalTimeout),
+      approval_timeout_seconds: timeoutVal >= 1 ? timeoutVal : 300,
       approval_default_action: approvalDefault as "deny" | "approve",
       max_requests_per_minute: maxRpm ? Number(maxRpm) : null,
     }
 
-    await updateAgent.mutateAsync({
-      id: agent.id,
-      data: {
-        governance_policy: newPolicy,
-        expected_version: agent.version,
-      },
-    })
+    try {
+      await updateAgent.mutateAsync({
+        id: agent.id,
+        data: {
+          governance_policy: newPolicy,
+          expected_version: agent.version,
+        },
+      })
+    } catch {
+      // Error toast handled by mutation onError
+    }
   }
 
   return (

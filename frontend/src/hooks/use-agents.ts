@@ -160,7 +160,10 @@ export function useRunAgent() {
     }) => {
       return api
         .post(`agents/definitions/${agentId}/instances`, {
-          json: { input_data: input },
+          json: {
+            input_data: input,
+            idempotency_key: crypto.randomUUID(),
+          },
         })
         .json<AgentInstance>()
     },

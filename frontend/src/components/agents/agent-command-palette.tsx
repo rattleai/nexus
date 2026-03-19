@@ -2,11 +2,7 @@ import * as React from "react"
 import {
   Bot,
   MessageSquare,
-  Settings,
-  Zap,
-  Play,
   Plus,
-  Search,
 } from "lucide-react"
 import {
   CommandDialog,
@@ -148,8 +144,6 @@ export function AgentCommandPalette({
 function AgentCommandItem({
   agent,
   onChat,
-  onConfigure,
-  onView,
 }: {
   agent: AgentDefinition
   onChat: () => void
@@ -160,7 +154,6 @@ function AgentCommandItem({
     <CommandItem
       value={`${agent.name} ${agent.slug} ${agent.description}`}
       onSelect={onChat}
-      className="group"
     >
       <div className="flex items-center gap-3 w-full">
         <div
@@ -189,28 +182,7 @@ function AgentCommandItem({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1 opacity-0 group-aria-selected:opacity-100 transition-opacity">
-          <button
-            className="p-1 rounded hover:bg-accent"
-            onClick={(e) => {
-              e.stopPropagation()
-              onChat()
-            }}
-            title="Chat"
-          >
-            <MessageSquare className="h-3.5 w-3.5" />
-          </button>
-          <button
-            className="p-1 rounded hover:bg-accent"
-            onClick={(e) => {
-              e.stopPropagation()
-              onConfigure()
-            }}
-            title="Configure"
-          >
-            <Settings className="h-3.5 w-3.5" />
-          </button>
-        </div>
+        <MessageSquare className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       </div>
     </CommandItem>
   )

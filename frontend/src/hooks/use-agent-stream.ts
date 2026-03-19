@@ -72,6 +72,7 @@ export function useAgentStream({
         toolCalls: [],
       }
 
+      // Snapshot history before adding new messages
       const currentMessages = messagesRef.current
       setMessages((prev) => [...prev, userMsg, assistantMsg])
       setIsStreaming(true)
@@ -106,7 +107,15 @@ export function useAgentStream({
         })
 
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          // Parse the backend error message instead of raw HTTP status
+          let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+          try {
+            const errBody = await response.json()
+            if (errBody.detail) errorMessage = errBody.detail
+          } catch {
+            // use default message
+          }
+          throw new Error(errorMessage)
         }
 
         const reader = response.body?.getReader()
@@ -118,7 +127,9 @@ export function useAgentStream({
         let totalTokens = 0
         let totalCost = 0
         let totalSteps = 0
-        const toolCalls: AgentStreamMessage["toolCalls"] = []
+        // Track tool calls by name for matching tool_call -> tool_result
+        const toolCalls: NonNullable<AgentStreamMessage["toolCalls"]> = []
+        let currentEventType = ""
 
         while (true) {
           const { done, value } = await reader.read()
@@ -129,11 +140,12 @@ export function useAgentStream({
           lineBuffer = lines.pop() ?? ""
 
           for (const line of lines) {
+            // Track current event type from SSE "event:" lines
             if (line.startsWith("event: ")) {
-              const eventType = line.slice(7).trim()
-              if (eventType === "thinking") setAgentState("thinking")
-              else if (eventType === "tool_call") setAgentState("acting")
-              else if (eventType === "content_delta") setAgentState("thinking")
+              currentEventType = line.slice(7).trim()
+              if (currentEventType === "thinking") setAgentState("thinking")
+              else if (currentEventType === "tool_call") setAgentState("acting")
+              else if (currentEventType === "content_delta") setAgentState("thinking")
               continue
             }
 
@@ -144,64 +156,100 @@ export function useAgentStream({
             try {
               const parsed = JSON.parse(raw)
 
-              if (parsed.content) {
-                accumulated += parsed.content
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMsg.id
-                      ? { ...m, content: accumulated }
-                      : m,
-                  ),
-                )
-              }
+              // Handle based on the SSE event type from the preceding "event:" line
+              switch (currentEventType) {
+                case "content_delta":
+                  if (parsed.content) {
+                    accumulated += parsed.content
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === assistantMsg.id
+                          ? { ...m, content: accumulated }
+                          : m,
+                      ),
+                    )
+                  }
+                  break
 
-              if (parsed.tool_name) {
-                const tc = {
-                  id: crypto.randomUUID(),
-                  name: parsed.tool_name,
-                  arguments: parsed.tool_args ?? parsed.arguments ?? {},
-                  status: "running" as const,
-                  result: parsed.tool_result,
-                  duration: parsed.duration,
-                }
-                toolCalls!.push(tc)
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMsg.id
-                      ? { ...m, toolCalls: [...toolCalls!] }
-                      : m,
-                  ),
-                )
-              }
+                case "thinking":
+                  // Backend emits: {tokens, cost_usd}
+                  if (parsed.tokens) totalTokens += parsed.tokens
+                  if (parsed.cost_usd) totalCost += parsed.cost_usd
+                  break
 
-              if (parsed.tool_result !== undefined && toolCalls!.length > 0) {
-                const last = toolCalls![toolCalls!.length - 1]
-                last.status = parsed.error ? "error" : "completed"
-                last.result = parsed.tool_result
-                last.error = parsed.error
-                last.duration = parsed.duration
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMsg.id
-                      ? { ...m, toolCalls: [...toolCalls!] }
-                      : m,
-                  ),
-                )
-              }
+                case "step_started":
+                  if (parsed.step_number) totalSteps = parsed.step_number
+                  break
 
-              if (parsed.tokens) totalTokens += parsed.tokens
-              if (parsed.cost) totalCost += parsed.cost
-              if (parsed.step) totalSteps = parsed.step
+                case "tool_call":
+                  // Backend emits: {tool_name, arguments}
+                  if (parsed.tool_name) {
+                    toolCalls.push({
+                      id: crypto.randomUUID(),
+                      name: parsed.tool_name,
+                      arguments: parsed.arguments ?? {},
+                      status: "running",
+                    })
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === assistantMsg.id
+                          ? { ...m, toolCalls: [...toolCalls] }
+                          : m,
+                      ),
+                    )
+                  }
+                  break
+
+                case "tool_result":
+                  // Backend emits: {tool_name, result}
+                  // Match by tool_name to update the correct tool call
+                  if (parsed.tool_name && toolCalls.length > 0) {
+                    const matchIdx = toolCalls.findLastIndex(
+                      (tc) => tc.name === parsed.tool_name && tc.status === "running",
+                    )
+                    const idx = matchIdx >= 0 ? matchIdx : toolCalls.length - 1
+                    toolCalls[idx].status = "completed"
+                    toolCalls[idx].result = parsed.result
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === assistantMsg.id
+                          ? { ...m, toolCalls: [...toolCalls] }
+                          : m,
+                      ),
+                    )
+                  }
+                  break
+
+                case "run_completed":
+                  // Backend emits: {finish_reason, output, total_tokens?, total_cost_usd?}
+                  if (parsed.total_tokens) totalTokens = parsed.total_tokens
+                  if (parsed.total_cost_usd) totalCost = parsed.total_cost_usd
+                  break
+
+                case "error":
+                  // Backend emits: {message}
+                  if (parsed.message) {
+                    setError(new Error(parsed.message))
+                  }
+                  break
+              }
             } catch {
-              // skip malformed data
+              // skip malformed SSE data
             }
+          }
+        }
+
+        // Finalize: mark any still-running tool calls as completed
+        for (const tc of toolCalls) {
+          if (tc.status === "running") {
+            tc.status = "completed"
           }
         }
 
         const finalMsg: AgentStreamMessage = {
           ...assistantMsg,
           content: accumulated,
-          toolCalls: toolCalls!.length > 0 ? toolCalls : undefined,
+          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
           tokens: totalTokens,
           cost: totalCost,
           steps: totalSteps,
@@ -214,11 +262,18 @@ export function useAgentStream({
         onFinish?.(finalMsg)
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return
-        const error = err instanceof Error ? err : new Error("Stream failed")
-        setError(error)
+        const streamError = err instanceof Error ? err : new Error("Stream failed")
+        setError(streamError)
         setAgentState("error")
-        onError?.(error)
-        setMessages((prev) => prev.filter((m) => m.id !== assistantMsg.id))
+        onError?.(streamError)
+        // Preserve partial content on error instead of deleting the message
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsg.id
+              ? { ...m, content: m.content || "An error occurred." }
+              : m,
+          ),
+        )
       } finally {
         setIsStreaming(false)
         abortRef.current = null

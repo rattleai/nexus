@@ -97,6 +97,7 @@ async def create_agent_definition(
         max_duration_seconds=body.max_duration_seconds,
         max_tokens_per_run=body.max_tokens_per_run,
         sandbox_enabled=body.sandbox_enabled,
+        parallel_tool_execution=body.parallel_tool_execution,
         memory_config=body.memory_config,
         governance_policy=body.governance_policy,
         metadata_=body.metadata,
@@ -209,8 +210,8 @@ async def update_agent_definition(
         "name", "slug", "description", "status", "system_prompt", "model",
         "temperature", "max_tokens", "allowed_tools", "tool_versions",
         "max_steps_per_run", "max_duration_seconds", "max_tokens_per_run",
-        "sandbox_enabled", "memory_config", "output_schema",
-        "governance_policy", "metadata",
+        "sandbox_enabled", "parallel_tool_execution", "memory_config",
+        "output_schema", "governance_policy", "metadata",
     }
     changes = {}
     update_data = body.model_dump(exclude_unset=True)

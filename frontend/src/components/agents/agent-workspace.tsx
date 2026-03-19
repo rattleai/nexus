@@ -109,10 +109,10 @@ export function AgentWorkspace() {
     )
   }, [data, searchQuery])
 
-  // Ctrl+K shortcut for agent palette
+  // Ctrl+Shift+K shortcut for agent palette (Ctrl+Shift+K is used by the global command palette)
   React.useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "K") {
         e.preventDefault()
         setAgentPaletteOpen(!agentPaletteOpen)
       }
@@ -163,7 +163,7 @@ export function AgentWorkspace() {
                 </TooltipTrigger>
                 <TooltipContent side="bottom">
                   <p>
-                    Quick switch <kbd className="ml-1 text-[10px]">Ctrl+K</kbd>
+                    Quick switch <kbd className="ml-1 text-[10px]">Ctrl+Shift+K</kbd>
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -260,7 +260,7 @@ export function AgentWorkspace() {
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{data?.total ?? 0} agents</span>
           <kbd className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono">
-            Ctrl+K
+            Ctrl+Shift+K
           </kbd>
         </div>
       </div>
@@ -321,29 +321,28 @@ export function AgentWorkspace() {
         </Tabs>
       </div>
 
-      {/* Tab content */}
-      <ScrollArea className="flex-1">
-        <div className="p-6">
-          {activeTab === "overview" && (
-            <AgentOverview agent={selectedAgent} />
-          )}
-          {activeTab === "config" && (
-            <AgentConfigPanel agent={selectedAgent} />
-          )}
-          {activeTab === "governance" && (
-            <GovernancePanel agent={selectedAgent} />
-          )}
-          {activeTab === "runs" && (
-            <AgentRunsPanel agent={selectedAgent} />
-          )}
-        </div>
-      </ScrollArea>
-
-      {/* Chat tab needs full height without scroll wrapper */}
-      {activeTab === "chat" && (
+      {/* Tab content — chat gets its own full-height container, other tabs use ScrollArea */}
+      {activeTab === "chat" ? (
         <div className="flex-1 p-6 min-h-0">
           <AgentChatPanel agent={selectedAgent} />
         </div>
+      ) : (
+        <ScrollArea className="flex-1">
+          <div className="p-6">
+            {activeTab === "overview" && (
+              <AgentOverview agent={selectedAgent} />
+            )}
+            {activeTab === "config" && (
+              <AgentConfigPanel agent={selectedAgent} />
+            )}
+            {activeTab === "governance" && (
+              <GovernancePanel agent={selectedAgent} />
+            )}
+            {activeTab === "runs" && (
+              <AgentRunsPanel agent={selectedAgent} />
+            )}
+          </div>
+        </ScrollArea>
       )}
     </div>
   ) : (
@@ -449,7 +448,7 @@ function EmptyState({ onCreateNew }: { onCreateNew: () => void }) {
         Select an agent from the sidebar to view its details, chat with it, or
         configure its behavior. Use{" "}
         <kbd className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">
-          Ctrl+K
+          Ctrl+Shift+K
         </kbd>{" "}
         to quickly find and switch between agents.
       </p>
