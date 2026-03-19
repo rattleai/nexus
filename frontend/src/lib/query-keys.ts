@@ -64,6 +64,11 @@ export const queryKeys = {
     current: () => ["tenants", "current"] as const,
   },
 
+  providerKeys: {
+    all: ["provider-keys"] as const,
+    list: () => ["provider-keys", "list"] as const,
+  },
+
   ai: {
     all: ["ai"] as const,
     models: () => ["ai", "models"] as const,

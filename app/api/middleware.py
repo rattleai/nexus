@@ -33,6 +33,11 @@ _CSRF_EXEMPT_PREFIXES = (
     "/api/v1/billing/webhooks",
 )
 
+# Paths that serve interactive documentation (Swagger UI / ReDoc).
+# These load JS/CSS from cdn.jsdelivr.net and images from fastapi.tiangolo.com,
+# so they need a relaxed CSP that still prohibits everything else.
+_DOCS_PATHS = frozenset({"/api/docs", "/api/redoc"})
+
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
     """Reject oversized request bodies to prevent memory exhaustion.
@@ -75,7 +80,9 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def _add_security_headers(response: Response, request_id: str, *, is_agent: bool = False) -> None:
+def _add_security_headers(
+    response: Response, request_id: str, *, is_agent: bool = False, path: str = "",
+) -> None:
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
 
@@ -92,19 +99,38 @@ def _add_security_headers(response: Response, request_id: str, *, is_agent: bool
         )
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), publickey-credentials-get=self"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: blob:; "
-        "font-src 'self'; "
-        "connect-src 'self' wss: ws:; "
-        "worker-src 'self'; "
-        "manifest-src 'self'; "
-        "frame-ancestors 'none'; "
-        "base-uri 'self'; "
-        "form-action 'self'"
-    )
+
+    if path in _DOCS_PATHS:
+        # Swagger UI and ReDoc load assets from cdn.jsdelivr.net and a favicon
+        # from fastapi.tiangolo.com.  Allow only those origins, keep everything
+        # else locked down.
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "img-src 'self' data: blob: https://fastapi.tiangolo.com; "
+            "font-src 'self' https://cdn.jsdelivr.net; "
+            "connect-src 'self'; "
+            "worker-src 'self'; "
+            "manifest-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'"
+        )
+    else:
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; "
+            "font-src 'self'; "
+            "connect-src 'self' wss: ws:; "
+            "worker-src 'self'; "
+            "manifest-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'"
+        )
 
 
 def _generate_csrf_token() -> str:
@@ -217,7 +243,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             # response.headers["Link"] = '</api/v2/>; rel="successor-version"'
 
         # ── Security headers & timing ──
-        _add_security_headers(response, request_id, is_agent=_is_agent)
+        _add_security_headers(response, request_id, is_agent=_is_agent, path=request.url.path)
         response.headers["X-Response-Time"] = f"{duration_ms}ms"
 
         # ── Rate limit headers on successful responses (P1-12) ──

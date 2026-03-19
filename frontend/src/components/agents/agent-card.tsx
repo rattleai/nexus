@@ -7,7 +7,6 @@ import {
   Clock,
   Cpu,
 } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -17,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import { StatusDot, statusToVariant } from "@/components/status-dot"
 import type { AgentDefinition } from "@/types/agents"
 
 interface AgentCardProps {
@@ -28,12 +28,6 @@ interface AgentCardProps {
   onDelete: () => void
 }
 
-const statusStyles: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
-  active: { variant: "default", label: "Active" },
-  draft: { variant: "secondary", label: "Draft" },
-  disabled: { variant: "destructive", label: "Disabled" },
-}
-
 export function AgentCard({
   agent,
   isSelected,
@@ -42,8 +36,6 @@ export function AgentCard({
   onConfigure,
   onDelete,
 }: AgentCardProps) {
-  const status = statusStyles[agent.status] ?? statusStyles.draft
-
   return (
     <div
       role="button"
@@ -79,9 +71,7 @@ export function AgentCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-medium text-sm truncate">{agent.name}</span>
-            <Badge variant={status.variant} className="text-[10px] h-4.5 px-1.5 shrink-0">
-              {status.label}
-            </Badge>
+            <StatusDot variant={statusToVariant(agent.status)} />
           </div>
           {agent.description && (
             <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">

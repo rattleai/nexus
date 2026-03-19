@@ -15,6 +15,7 @@ import { Route as TeamRouteImport } from './routes/team'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as ProviderKeysRouteImport } from './routes/provider-keys'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
@@ -60,6 +61,11 @@ const RegisterRoute = RegisterRouteImport.update({
   path: '/register',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/register.lazy').then((d) => d.Route))
+const ProviderKeysRoute = ProviderKeysRouteImport.update({
+  id: '/provider-keys',
+  path: '/provider-keys',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/provider-keys.lazy').then((d) => d.Route))
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/forgot-password': typeof ForgotPasswordRoute
   '/jobs': typeof JobsRoute
   '/login': typeof LoginRoute
+  '/provider-keys': typeof ProviderKeysRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute
   '/jobs': typeof JobsRoute
   '/login': typeof LoginRoute
+  '/provider-keys': typeof ProviderKeysRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -179,6 +187,7 @@ export interface FileRoutesById {
   '/forgot-password': typeof ForgotPasswordRoute
   '/jobs': typeof JobsRoute
   '/login': typeof LoginRoute
+  '/provider-keys': typeof ProviderKeysRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -201,6 +210,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/jobs'
     | '/login'
+    | '/provider-keys'
     | '/register'
     | '/reset-password'
     | '/settings'
@@ -221,6 +231,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/jobs'
     | '/login'
+    | '/provider-keys'
     | '/register'
     | '/reset-password'
     | '/settings'
@@ -241,6 +252,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/jobs'
     | '/login'
+    | '/provider-keys'
     | '/register'
     | '/reset-password'
     | '/settings'
@@ -262,6 +274,7 @@ export interface RootRouteChildren {
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   JobsRoute: typeof JobsRoute
   LoginRoute: typeof LoginRoute
+  ProviderKeysRoute: typeof ProviderKeysRoute
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
@@ -312,6 +325,13 @@ declare module '@tanstack/react-router' {
       path: '/register'
       fullPath: '/register'
       preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/provider-keys': {
+      id: '/provider-keys'
+      path: '/provider-keys'
+      fullPath: '/provider-keys'
+      preLoaderRoute: typeof ProviderKeysRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -414,6 +434,7 @@ const rootRouteChildren: RootRouteChildren = {
   ForgotPasswordRoute: ForgotPasswordRoute,
   JobsRoute: JobsRoute,
   LoginRoute: LoginRoute,
+  ProviderKeysRoute: ProviderKeysRoute,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,

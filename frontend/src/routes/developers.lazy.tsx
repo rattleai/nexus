@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next"
 import {
   BookOpen,
   Key,
+  KeyRound,
   Webhook,
   ExternalLink,
   Terminal,
@@ -35,7 +36,7 @@ function DevelopersPage() {
         </div>
 
         {/* Quick links grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2">
           {/* API Reference */}
           <Card className="group relative overflow-hidden border transition-colors hover:border-primary/50">
             <CardHeader>
@@ -98,6 +99,32 @@ function DevelopersPage() {
               <Button variant="outline" size="sm" asChild>
                 <Link to="/webhooks">
                   {t("cards.webhooks.action")}
+                  <ArrowRight className="ml-2 h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Provider Keys (BYOK) */}
+          <Card className="group relative overflow-hidden border transition-colors hover:border-primary/50">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <KeyRound className="h-5 w-5" />
+                </div>
+                <div className="flex-1">
+                  <CardTitle className="text-base">{t("cards.provider_keys.title")}</CardTitle>
+                </div>
+                <Badge variant="secondary" className="text-xs">
+                  BYOK
+                </Badge>
+              </div>
+              <CardDescription>{t("cards.provider_keys.description")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/provider-keys">
+                  {t("cards.provider_keys.action")}
                   <ArrowRight className="ml-2 h-3.5 w-3.5" />
                 </Link>
               </Button>

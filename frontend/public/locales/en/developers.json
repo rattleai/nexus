@@ -16,6 +16,11 @@
       "title": "Webhooks",
       "description": "Configure endpoints to receive real-time event notifications.",
       "action": "Manage webhooks"
+    },
+    "provider_keys": {
+      "title": "Provider Keys",
+      "description": "Bring your own API keys for OpenAI, Anthropic, Google, and other LLM providers.",
+      "action": "Manage provider keys"
     }
   },
   "getting_started": {

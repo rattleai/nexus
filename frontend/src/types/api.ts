@@ -53,6 +53,18 @@ export interface ApiKeyCreated extends ApiKey {
   raw_key: string
 }
 
+// ── Provider Key (BYOK) ─────────────────────────────
+
+export interface ProviderKey {
+  id: string
+  provider: string
+  display_name: string
+  is_active: boolean
+  last_used_at: string | null
+  last_error: string | null
+  created_at: string
+}
+
 // ── User / Auth ──────────────────────────────────────
 
 export interface User {

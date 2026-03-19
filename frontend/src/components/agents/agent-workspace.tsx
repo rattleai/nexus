@@ -15,7 +15,6 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -56,6 +55,7 @@ import {
 } from "@/hooks/use-agents"
 import { useAgentStore, type AgentTab } from "@/stores/agent-store"
 import { cn } from "@/lib/utils"
+import { StatusDot, statusToVariant } from "@/components/status-dot"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ErrorBoundary } from "@/components/error-boundary"
 
@@ -282,14 +282,7 @@ export function AgentWorkspace() {
           <span className="font-medium text-sm truncate">
             {selectedAgent.name}
           </span>
-          <Badge
-            variant={
-              selectedAgent.status === "active" ? "default" : "secondary"
-            }
-            className="text-[10px] h-4 px-1.5 shrink-0"
-          >
-            {selectedAgent.status}
-          </Badge>
+          <StatusDot variant={statusToVariant(selectedAgent.status)} />
         </div>
 
         <Separator orientation="vertical" className="h-5" />

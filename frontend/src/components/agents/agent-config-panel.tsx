@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Save, RotateCcw } from "lucide-react"
+import { Save, RotateCcw, KeyRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -21,6 +21,7 @@ import {
 import { useUpdateAgent } from "@/hooks/use-agents"
 import { useModels } from "@/hooks/use-models"
 import type { AgentDefinition, AgentStatus } from "@/types/agents"
+import { Link } from "@tanstack/react-router"
 import { toast } from "sonner"
 
 interface AgentConfigPanelProps {
@@ -270,6 +271,16 @@ export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
                 max={1000000}
               />
             </div>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+            <KeyRound className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              Using your own API key?{" "}
+              <Link to="/provider-keys" className="text-primary hover:underline font-medium">
+                Manage provider keys
+              </Link>
+            </span>
           </div>
 
           <div className="space-y-3">

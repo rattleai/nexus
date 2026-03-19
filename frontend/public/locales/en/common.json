@@ -6,6 +6,7 @@
     "jobs": "Jobs",
     "files": "Files",
     "api_keys": "API Keys",
+    "provider_keys": "Provider Keys",
     "agents": "Agents",
     "ai_chat": "AI Chat",
     "organization": "Organization",

@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   Briefcase,
   Key,
+  KeyRound,
   FolderOpen,
   CreditCard,
   Users,
@@ -69,6 +70,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/jobs", labelKey: "nav.jobs", icon: Briefcase },
       { href: "/files", labelKey: "nav.files", icon: FolderOpen },
       { href: "/api-keys", labelKey: "nav.api_keys", icon: Key },
+      { href: "/provider-keys", labelKey: "nav.provider_keys", icon: KeyRound },
     ],
   },
   {
@@ -141,33 +143,24 @@ export function AppShell({ children }: AppShellProps) {
             </SidebarGroup>
           ))}
 
-          {/* Developers — standalone item with distinct treatment */}
-          <SidebarGroup className="mt-auto">
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={currentPath.startsWith("/developers")}
-                    tooltip={t("nav.developers" as never) as string}
-                  >
-                    <Link to="/developers">
-                      <Code2 className="h-4 w-4" />
-                      <span>{t("nav.developers" as never)}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
         </SidebarContent>
-        <SidebarFooter className="p-4 space-y-2">
+        <SidebarFooter className="p-3 space-y-2">
           <div className="group-data-[collapsible=icon]:hidden">
             <LanguageSwitcher />
           </div>
-          <p className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-            v{APP_VERSION}
-          </p>
+          <Link
+            to="/developers"
+            data-active={currentPath.startsWith("/developers") || undefined}
+            className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground data-[active]:bg-primary/10 data-[active]:text-primary"
+          >
+            <Code2 className="h-4 w-4 shrink-0" />
+            <span className="flex-1 group-data-[collapsible=icon]:hidden">
+              {t("nav.developers" as never)}
+            </span>
+            <span className="text-[10px] font-normal text-muted-foreground/60 tabular-nums group-data-[collapsible=icon]:hidden">
+              v{APP_VERSION}
+            </span>
+          </Link>
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>

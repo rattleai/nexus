@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { StatusDot, statusToVariant } from "@/components/status-dot"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { useAgentAnalytics, useAgentInstances } from "@/hooks/use-agents"
@@ -19,12 +20,6 @@ import { cn } from "@/lib/utils"
 
 interface AgentOverviewProps {
   agent: AgentDefinition
-}
-
-const statusStyles: Record<string, string> = {
-  active: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
-  draft: "bg-muted text-muted-foreground",
-  disabled: "bg-destructive/10 text-destructive border-destructive/20",
 }
 
 export function AgentOverview({ agent }: AgentOverviewProps) {
@@ -58,12 +53,7 @@ export function AgentOverview({ agent }: AgentOverviewProps) {
             <div>
               <div className="flex items-center gap-3">
                 <h2 className="text-xl font-semibold">{agent.name}</h2>
-                <Badge
-                  className={cn("text-xs", statusStyles[agent.status])}
-                  variant="outline"
-                >
-                  {agent.status}
-                </Badge>
+                <StatusDot variant={statusToVariant(agent.status)} />
                 <span className="text-xs text-muted-foreground">v{agent.version}</span>
               </div>
               {agent.description && (
