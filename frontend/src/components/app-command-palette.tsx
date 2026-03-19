@@ -1,6 +1,5 @@
 import * as React from "react"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
-import { useTranslation } from "react-i18next"
 import {
   LayoutDashboard,
   Bot,
@@ -14,8 +13,6 @@ import {
   Shield,
   Settings,
   Plus,
-  Cpu,
-  ArrowRight,
   ChevronRight,
 } from "lucide-react"
 import {
@@ -26,7 +23,6 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
-  CommandShortcut,
 } from "@/components/ui/command"
 import { Badge } from "@/components/ui/badge"
 import { useAgentDefinitions } from "@/hooks/use-agents"
@@ -43,7 +39,6 @@ import type { AgentDefinition } from "@/types/agents"
 export function AppCommandPalette() {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
-  const { t } = useTranslation()
   const navigate = useNavigate()
   const router = useRouterState()
   const currentPath = router.location.pathname

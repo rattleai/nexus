@@ -189,7 +189,7 @@ export function useStopInstance() {
         .post(`agents/instances/${instanceId}/stop`)
         .json<AgentInstance>()
     },
-    onSuccess: (instance) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: agentKeys.instances.all })
       toast.success("Agent stopped")
     },

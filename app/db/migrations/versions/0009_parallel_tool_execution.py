@@ -18,14 +18,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "agent_definitions",
-        sa.Column(
-            "parallel_tool_execution",
-            sa.Boolean,
-            server_default="true",
-            nullable=False,
-        ),
+    op.execute(
+        "ALTER TABLE agent_definitions "
+        "ADD COLUMN IF NOT EXISTS parallel_tool_execution BOOLEAN NOT NULL DEFAULT true"
     )
 
 

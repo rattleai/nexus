@@ -42,13 +42,27 @@ def upgrade() -> None:
         EXECUTE FUNCTION prevent_audit_log_mutation();
     """)
 
-    # Defense-in-depth: revoke UPDATE/DELETE from app_user
-    op.execute("REVOKE UPDATE, DELETE ON audit_logs FROM app_user")
+    # Defense-in-depth: revoke UPDATE/DELETE from app_user (if role exists)
+    op.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+                EXECUTE 'REVOKE UPDATE, DELETE ON audit_logs FROM app_user';
+            END IF;
+        END $$
+    """)
 
 
 def downgrade() -> None:
-    # Restore permissions
-    op.execute("GRANT UPDATE, DELETE ON audit_logs TO app_user")
+    # Restore permissions (if role exists)
+    op.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+                EXECUTE 'GRANT UPDATE, DELETE ON audit_logs TO app_user';
+            END IF;
+        END $$
+    """)
 
     # Remove trigger and function
     op.execute("DROP TRIGGER IF EXISTS audit_log_immutability_trigger ON audit_logs")

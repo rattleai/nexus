@@ -23,26 +23,48 @@ GDPR_TABLES = [
 ]
 
 
+def _constraint_exists(name: str) -> bool:
+    conn = op.get_bind()
+    result = conn.execute(
+        text("SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = :name"),
+        {"name": name},
+    )
+    return result.scalar() is not None
+
+
+def _index_exists(name: str) -> bool:
+    conn = op.get_bind()
+    result = conn.execute(
+        text("SELECT 1 FROM pg_indexes WHERE indexname = :name"),
+        {"name": name},
+    )
+    return result.scalar() is not None
+
+
 def upgrade() -> None:
-    # Add FK constraints to GDPR tables
-    op.create_foreign_key(
-        "fk_consents_tenant_id", "consents", "tenants", ["tenant_id"], ["id"]
-    )
-    op.create_foreign_key(
-        "fk_data_subject_requests_tenant_id", "data_subject_requests", "tenants", ["tenant_id"], ["id"]
-    )
-    op.create_foreign_key(
-        "fk_data_retention_policies_tenant_id", "data_retention_policies", "tenants", ["tenant_id"], ["id"]
-    )
+    # Add FK constraints to GDPR tables (idempotent)
+    if not _constraint_exists("fk_consents_tenant_id"):
+        op.create_foreign_key(
+            "fk_consents_tenant_id", "consents", "tenants", ["tenant_id"], ["id"]
+        )
+    if not _constraint_exists("fk_data_subject_requests_tenant_id"):
+        op.create_foreign_key(
+            "fk_data_subject_requests_tenant_id", "data_subject_requests", "tenants", ["tenant_id"], ["id"]
+        )
+    if not _constraint_exists("fk_data_retention_policies_tenant_id"):
+        op.create_foreign_key(
+            "fk_data_retention_policies_tenant_id", "data_retention_policies", "tenants", ["tenant_id"], ["id"]
+        )
 
     # Add unique partial index on idempotency_key for agent_instances
-    op.create_index(
-        "ix_agent_instances_idempotency",
-        "agent_instances",
-        ["tenant_id", "definition_id", "idempotency_key"],
-        unique=True,
-        postgresql_where=text("idempotency_key IS NOT NULL"),
-    )
+    if not _index_exists("ix_agent_instances_idempotency"):
+        op.create_index(
+            "ix_agent_instances_idempotency",
+            "agent_instances",
+            ["tenant_id", "definition_id", "idempotency_key"],
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        )
 
     for table in GDPR_TABLES:
         # Enable row-level security on the table

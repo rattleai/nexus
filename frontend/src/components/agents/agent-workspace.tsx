@@ -382,7 +382,7 @@ export function AgentWorkspace() {
         </div>
       ) : (
         <ResizablePanelGroup
-          direction="horizontal"
+          orientation="horizontal"
           className="h-[calc(100vh-8rem)] rounded-xl border"
         >
           <ResizablePanel

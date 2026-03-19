@@ -93,7 +93,7 @@ export const api = ky.create({
         if (_accessToken) {
           request.headers.set("Authorization", `Bearer ${_accessToken}`)
           // Tag request with token version for staleness detection in afterResponse
-          ;(request as Record<string, unknown>).__tokenVersion = _tokenVersion
+          ;(request as unknown as Record<string, unknown>).__tokenVersion = _tokenVersion
           return
         }
         // Fall back to API key auth
@@ -110,7 +110,7 @@ export const api = ky.create({
     afterResponse: [
       async (request, options, response) => {
         if (response.status === 401) {
-          const reqVersion = (request as Record<string, unknown>).__tokenVersion as number | undefined
+          const reqVersion = (request as unknown as Record<string, unknown>).__tokenVersion as number | undefined
 
           // Only handle 401 for requests that were sent with a JWT token
           if (reqVersion === undefined) return

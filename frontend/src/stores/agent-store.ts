@@ -1,6 +1,5 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
-import type { AgentDefinition } from "@/types/agents"
 
 type AgentTab = "overview" | "chat" | "config" | "governance" | "runs"
 
@@ -28,7 +27,7 @@ export type { AgentTab }
 
 export const useAgentStore = create<AgentWorkspaceState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       selectedAgentId: null,
       activeTab: "overview",
       searchQuery: "",

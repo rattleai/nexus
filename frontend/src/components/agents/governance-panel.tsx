@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -359,7 +358,7 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="gov-default">Default on Timeout</Label>
-              <Select value={approvalDefault} onValueChange={setApprovalDefault}>
+              <Select value={approvalDefault} onValueChange={(v) => setApprovalDefault(v as "deny" | "approve")}>
                 <SelectTrigger id="gov-default">
                   <SelectValue />
                 </SelectTrigger>

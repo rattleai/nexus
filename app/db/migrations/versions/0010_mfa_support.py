@@ -18,14 +18,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "users",
-        sa.Column(
-            "mfa_enabled",
-            sa.Boolean,
-            server_default="false",
-            nullable=False,
-        ),
+    op.execute(
+        "ALTER TABLE users "
+        "ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT false"
     )
 
 

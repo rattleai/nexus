@@ -215,7 +215,7 @@ function BillingPage() {
                   plans={plans.map((p) => ({
                     id: p.id,
                     name: p.name,
-                    price: p.price_cents / 100,
+                    price: p.price_monthly,
                     interval: "month" as const,
                     features: p.features,
                     isPopular: p.name.toLowerCase() === "pro",

@@ -15,6 +15,16 @@ branch_labels = None
 depends_on = None
 
 
+def _table_exists(name: str) -> bool:
+    """Check if a table already exists (handles create_all pre-creation)."""
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text("SELECT 1 FROM information_schema.tables WHERE table_name = :name"),
+        {"name": name},
+    )
+    return result.scalar() is not None
+
+
 def upgrade() -> None:
     # ── pgvector extension ───────────────────────────────────────
     # Install pgvector if available (requires the extension to be installed
@@ -46,85 +56,74 @@ def upgrade() -> None:
     # These must be created BEFORE the COMMIT below so they run inside
     # the Alembic-managed transaction and are rolled back on failure.
 
-    op.create_table(
-        "consents",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
-        sa.Column("consent_type", sa.String(50), nullable=False),
-        sa.Column("granted", sa.Boolean, nullable=False, server_default="true"),
-        sa.Column("policy_version", sa.String(50), nullable=False),
-        sa.Column("ip_address", sa.String(45), nullable=True),
-        sa.Column("user_agent", sa.String(512), nullable=True),
-        sa.Column("granted_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("withdrawn_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-    )
-    op.create_index("ix_consents_user_type", "consents", ["user_id", "consent_type"])
-    op.create_index("ix_consents_tenant", "consents", ["tenant_id"])
+    if not _table_exists("consents"):
+        op.create_table(
+            "consents",
+            sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+            sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+            sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+            sa.Column("consent_type", sa.String(50), nullable=False),
+            sa.Column("granted", sa.Boolean, nullable=False, server_default="true"),
+            sa.Column("policy_version", sa.String(50), nullable=False),
+            sa.Column("ip_address", sa.String(45), nullable=True),
+            sa.Column("user_agent", sa.String(512), nullable=True),
+            sa.Column("granted_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+            sa.Column("withdrawn_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+            sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        )
+    op.execute("CREATE INDEX IF NOT EXISTS ix_consents_user_type ON consents (user_id, consent_type)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_consents_tenant ON consents (tenant_id)")
 
-    op.create_table(
-        "data_subject_requests",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
-        sa.Column("request_type", sa.String(50), nullable=False),
-        sa.Column("status", sa.String(50), nullable=False, server_default="received"),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column("response_notes", sa.Text, nullable=True),
-        sa.Column("received_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("due_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("evidence", JSONB, nullable=True),
-        sa.Column("processed_by", sa.String(255), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-    )
-    op.create_index("ix_dsar_tenant_status", "data_subject_requests", ["tenant_id", "status"])
-    op.create_index("ix_dsar_user", "data_subject_requests", ["user_id"])
+    if not _table_exists("data_subject_requests"):
+        op.create_table(
+            "data_subject_requests",
+            sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+            sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+            sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+            sa.Column("request_type", sa.String(50), nullable=False),
+            sa.Column("status", sa.String(50), nullable=False, server_default="received"),
+            sa.Column("description", sa.Text, nullable=True),
+            sa.Column("response_notes", sa.Text, nullable=True),
+            sa.Column("received_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+            sa.Column("due_at", sa.DateTime(timezone=True), nullable=False),
+            sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("evidence", JSONB, nullable=True),
+            sa.Column("processed_by", sa.String(255), nullable=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+            sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        )
+    op.execute("CREATE INDEX IF NOT EXISTS ix_dsar_tenant_status ON data_subject_requests (tenant_id, status)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_dsar_user ON data_subject_requests (user_id)")
 
-    op.create_table(
-        "data_retention_policies",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("resource_type", sa.String(100), nullable=False),
-        sa.Column("retention_days", sa.Integer, nullable=False),
-        sa.Column("archive_before_delete", sa.Boolean, server_default="true"),
-        sa.Column("is_active", sa.Boolean, server_default="true"),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column("version", sa.Integer, server_default="1"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-    )
-    op.create_index(
-        "ix_retention_tenant_resource",
-        "data_retention_policies",
-        ["tenant_id", "resource_type"],
-        unique=True,
+    if not _table_exists("data_retention_policies"):
+        op.create_table(
+            "data_retention_policies",
+            sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+            sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+            sa.Column("resource_type", sa.String(100), nullable=False),
+            sa.Column("retention_days", sa.Integer, nullable=False),
+            sa.Column("archive_before_delete", sa.Boolean, server_default="true"),
+            sa.Column("is_active", sa.Boolean, server_default="true"),
+            sa.Column("description", sa.Text, nullable=True),
+            sa.Column("version", sa.Integer, server_default="1"),
+            sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+            sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        )
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_retention_tenant_resource "
+        "ON data_retention_policies (tenant_id, resource_type)"
     )
 
     # ── Agent definition new columns ─────────────────────────────
 
-    op.add_column(
-        "agent_definitions",
-        sa.Column("output_schema", JSONB, server_default="{}", nullable=False),
-    )
-    op.add_column(
-        "agent_definitions",
-        sa.Column("tool_versions", JSONB, server_default="{}", nullable=False),
-    )
+    op.execute("ALTER TABLE agent_definitions ADD COLUMN IF NOT EXISTS output_schema JSONB NOT NULL DEFAULT '{}'")
+    op.execute("ALTER TABLE agent_definitions ADD COLUMN IF NOT EXISTS tool_versions JSONB NOT NULL DEFAULT '{}'")
 
     # ── Tool versioning columns ──────────────────────────────────
 
-    op.add_column(
-        "tenant_tools",
-        sa.Column("version", sa.Integer, server_default="1", nullable=False),
-    )
-    op.add_column(
-        "tenant_tools",
-        sa.Column("version_notes", sa.Text, nullable=True),
-    )
+    op.execute("ALTER TABLE tenant_tools ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1")
+    op.execute("ALTER TABLE tenant_tools ADD COLUMN IF NOT EXISTS version_notes TEXT")
 
     # Step 3: Create HNSW index CONCURRENTLY to avoid blocking the table.
     # CONCURRENTLY cannot run inside a transaction. Manually commit the
