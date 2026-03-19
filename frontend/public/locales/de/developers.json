@@ -1,0 +1,33 @@
+{
+  "title": "Entwickler",
+  "description": "Alles, was Sie für die Integration mit unserer API benötigen.",
+  "cards": {
+    "api_reference": {
+      "title": "API-Referenz",
+      "description": "Entdecken Sie die vollständige REST-API mit interaktiver Swagger-Dokumentation.",
+      "action": "API-Docs anzeigen"
+    },
+    "api_keys": {
+      "title": "API-Schlüssel",
+      "description": "Erstellen und verwalten Sie API-Schlüssel zur Authentifizierung Ihrer Anfragen.",
+      "action": "Schlüssel verwalten"
+    },
+    "webhooks": {
+      "title": "Webhooks",
+      "description": "Konfigurieren Sie Endpunkte für Echtzeit-Ereignisbenachrichtigungen.",
+      "action": "Webhooks verwalten"
+    }
+  },
+  "getting_started": {
+    "title": "Erste Schritte",
+    "quickstart": {
+      "title": "Schnellstart",
+      "comment": "Testen Sie Ihren API-Schlüssel"
+    },
+    "openapi": {
+      "title": "OpenAPI-Spezifikation",
+      "description": "Laden Sie die OpenAPI-Spezifikation herunter, um Client-Bibliotheken in jeder Sprache zu generieren.",
+      "action": "Spezifikation herunterladen"
+    }
+  }
+}

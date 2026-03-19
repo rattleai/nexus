@@ -19,6 +19,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FilesRouteImport } from './routes/files'
+import { Route as DevelopersRouteImport } from './routes/developers'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as BillingRouteImport } from './routes/billing'
 import { Route as AuditLogRouteImport } from './routes/audit-log'
@@ -81,6 +82,11 @@ const FilesRoute = FilesRouteImport.update({
   path: '/files',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/files.lazy').then((d) => d.Route))
+const DevelopersRoute = DevelopersRouteImport.update({
+  id: '/developers',
+  path: '/developers',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/developers.lazy').then((d) => d.Route))
 const ChatRoute = ChatRouteImport.update({
   id: '/chat',
   path: '/chat',
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
   '/chat': typeof ChatRoute
+  '/developers': typeof DevelopersRoute
   '/files': typeof FilesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/jobs': typeof JobsRoute
@@ -146,6 +153,7 @@ export interface FileRoutesByTo {
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
   '/chat': typeof ChatRoute
+  '/developers': typeof DevelopersRoute
   '/files': typeof FilesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/jobs': typeof JobsRoute
@@ -166,6 +174,7 @@ export interface FileRoutesById {
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
   '/chat': typeof ChatRoute
+  '/developers': typeof DevelopersRoute
   '/files': typeof FilesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/jobs': typeof JobsRoute
@@ -187,6 +196,7 @@ export interface FileRouteTypes {
     | '/audit-log'
     | '/billing'
     | '/chat'
+    | '/developers'
     | '/files'
     | '/forgot-password'
     | '/jobs'
@@ -206,6 +216,7 @@ export interface FileRouteTypes {
     | '/audit-log'
     | '/billing'
     | '/chat'
+    | '/developers'
     | '/files'
     | '/forgot-password'
     | '/jobs'
@@ -225,6 +236,7 @@ export interface FileRouteTypes {
     | '/audit-log'
     | '/billing'
     | '/chat'
+    | '/developers'
     | '/files'
     | '/forgot-password'
     | '/jobs'
@@ -245,6 +257,7 @@ export interface RootRouteChildren {
   AuditLogRoute: typeof AuditLogRoute
   BillingRoute: typeof BillingRoute
   ChatRoute: typeof ChatRoute
+  DevelopersRoute: typeof DevelopersRoute
   FilesRoute: typeof FilesRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   JobsRoute: typeof JobsRoute
@@ -329,6 +342,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FilesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/developers': {
+      id: '/developers'
+      path: '/developers'
+      fullPath: '/developers'
+      preLoaderRoute: typeof DevelopersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/chat': {
       id: '/chat'
       path: '/chat'
@@ -389,6 +409,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuditLogRoute: AuditLogRoute,
   BillingRoute: BillingRoute,
   ChatRoute: ChatRoute,
+  DevelopersRoute: DevelopersRoute,
   FilesRoute: FilesRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   JobsRoute: JobsRoute,

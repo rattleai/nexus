@@ -1,0 +1,33 @@
+{
+  "title": "Desarrolladores",
+  "description": "Todo lo que necesita para integrar con nuestra API.",
+  "cards": {
+    "api_reference": {
+      "title": "Referencia API",
+      "description": "Explore la API REST completa con documentación interactiva de Swagger.",
+      "action": "Ver docs de API"
+    },
+    "api_keys": {
+      "title": "Claves API",
+      "description": "Cree y gestione claves API para autenticar sus solicitudes.",
+      "action": "Gestionar claves"
+    },
+    "webhooks": {
+      "title": "Webhooks",
+      "description": "Configure endpoints para recibir notificaciones de eventos en tiempo real.",
+      "action": "Gestionar webhooks"
+    }
+  },
+  "getting_started": {
+    "title": "Primeros pasos",
+    "quickstart": {
+      "title": "Inicio rápido",
+      "comment": "Pruebe su clave API"
+    },
+    "openapi": {
+      "title": "Especificación OpenAPI",
+      "description": "Descargue la especificación OpenAPI para generar bibliotecas cliente en cualquier lenguaje.",
+      "action": "Descargar especificación"
+    }
+  }
+}

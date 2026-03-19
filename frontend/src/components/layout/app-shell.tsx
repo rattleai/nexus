@@ -13,6 +13,7 @@ import {
   Settings,
   MessageSquare,
   Bot,
+  Code2,
 } from "lucide-react"
 import { APP_NAME } from "@/lib/constants"
 import {
@@ -139,6 +140,26 @@ export function AppShell({ children }: AppShellProps) {
               </SidebarGroupContent>
             </SidebarGroup>
           ))}
+
+          {/* Developers — standalone item with distinct treatment */}
+          <SidebarGroup className="mt-auto">
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={currentPath.startsWith("/developers")}
+                    tooltip={t("nav.developers" as never) as string}
+                  >
+                    <Link to="/developers">
+                      <Code2 className="h-4 w-4" />
+                      <span>{t("nav.developers" as never)}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
         </SidebarContent>
         <SidebarFooter className="p-4 space-y-2">
           <div className="group-data-[collapsible=icon]:hidden">
