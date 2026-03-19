@@ -45,11 +45,11 @@ export const agentKeys = {
 export function useAgentDefinitions(status?: string) {
   return useQuery({
     queryKey: agentKeys.definitions.list(status),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params: Record<string, string> = { page_size: "100" }
       if (status && status !== "all") params.status = status
       return api
-        .get("agents/definitions", { searchParams: params })
+        .get("agents/definitions", { searchParams: params, signal })
         .json<PaginatedAgentResponse<AgentDefinition>>()
     },
   })
@@ -132,7 +132,7 @@ export function useRunAgent() {
         })
         .json<AgentInstance>(),
     onSuccess: (instance) => {
-      qc.invalidateQueries({ queryKey: agentKeys.instances.list(instance.definition_id) })
+      qc.invalidateQueries({ queryKey: agentKeys.instances.all })
       toast.success("Agent run started")
     },
   })
@@ -155,9 +155,9 @@ export function useStopInstance() {
 export function useAgentTools() {
   return useQuery({
     queryKey: agentKeys.tools.list(),
-    queryFn: async () =>
+    queryFn: async ({ signal }) =>
       api
-        .get("agents/tools", { searchParams: { page_size: "100" } })
+        .get("agents/tools", { searchParams: { page_size: "100" }, signal })
         .json<PaginatedAgentResponse<TenantTool>>(),
   })
 }
@@ -167,9 +167,9 @@ export function useAgentTools() {
 export function useAgentPolicies() {
   return useQuery({
     queryKey: agentKeys.policies.list(),
-    queryFn: async () =>
+    queryFn: async ({ signal }) =>
       api
-        .get("agents/policies", { searchParams: { page_size: "100" } })
+        .get("agents/policies", { searchParams: { page_size: "100" }, signal })
         .json<PaginatedAgentResponse<AgentPolicy>>(),
   })
 }
@@ -179,11 +179,11 @@ export function useAgentPolicies() {
 export function useAgentAnalytics(days = 30, agentId?: string) {
   return useQuery({
     queryKey: agentKeys.analytics(days, agentId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params: Record<string, string> = { days: String(days) }
       if (agentId) params.agent_id = agentId
       return api
-        .get("agents/analytics", { searchParams: params })
+        .get("agents/analytics", { searchParams: params, signal })
         .json<AgentAnalytics>()
     },
   })

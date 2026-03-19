@@ -252,7 +252,7 @@ async def exchange_token(
 
     rl_key = f"rl:oauth_client:{client.client_id}"
     count = await _check_rate(rl_key, 10, 60)
-    if count > 10:
+    if count >= 10:
         raise HTTPException(
             status_code=429,
             detail="Too many token requests for this client",

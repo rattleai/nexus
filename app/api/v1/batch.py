@@ -100,10 +100,12 @@ async def batch_execute(
     ) as client:
         for sub in batch.requests:
             try:
-                # Merge forwarded headers with sub-request specific headers
+                # Merge forwarded headers with sub-request specific headers,
+                # filtering out protected headers to prevent auth bypass
+                PROTECTED_HEADERS = {"authorization", "x-api-key", "cookie", "x-admin-key"}
                 req_headers = {**forwarded_headers}
                 if sub.headers:
-                    req_headers.update(sub.headers)
+                    req_headers.update({k: v for k, v in sub.headers.items() if k.lower() not in PROTECTED_HEADERS})
 
                 # Build the request
                 kwargs: dict[str, Any] = {

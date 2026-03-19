@@ -308,7 +308,7 @@ export function AgentOverview({ agent }: AgentOverviewProps) {
                     {run.steps_executed} steps
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    ${run.cost_usd.toFixed(4)}
+                    ${(run.cost_usd ?? 0).toFixed(4)}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     {new Date(run.created_at).toLocaleTimeString()}

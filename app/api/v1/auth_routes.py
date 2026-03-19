@@ -586,8 +586,7 @@ async def resend_email_verification(
 
     from app.db.models.auth import EmailVerificationToken
 
-    token = generate_secure_token()
-    token_hash = hash_token(token)
+    raw_token, token_hash = generate_secure_token()
 
     verification = EmailVerificationToken(
         user_id=user.id,
@@ -597,10 +596,11 @@ async def resend_email_verification(
     db.add(verification)
     await db.commit()
 
+    verify_url = f"{settings.APP_BASE_URL}/verify-email?token={raw_token}"
     await send_email(
         to=user.email,
         template=EmailTemplate.EMAIL_VERIFICATION,
-        context={"token": token, "display_name": user.display_name or user.email},
+        context={"display_name": user.display_name or user.email, "verify_url": verify_url},
     )
 
     return {"message": "Verification email sent"}

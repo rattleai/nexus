@@ -188,6 +188,7 @@ async def push_changes(
         for entry in changelog_entries:
             db.add(entry)
         await db.flush()
+        await db.commit()
 
     # Build accepted list with actual server versions (ChangeLog.id)
     for entry in changelog_entries:

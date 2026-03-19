@@ -91,7 +91,7 @@ export function AgentWorkspace() {
       (a) =>
         a.name.toLowerCase().includes(q) ||
         a.slug.toLowerCase().includes(q) ||
-        a.description.toLowerCase().includes(q),
+        (a.description ?? "").toLowerCase().includes(q),
     )
   }, [data, searchQuery])
 

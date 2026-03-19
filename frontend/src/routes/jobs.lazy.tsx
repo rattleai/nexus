@@ -26,6 +26,7 @@ const statusVariant: Record<JobStatus, "default" | "secondary" | "destructive" |
   processing: "secondary",
   completed: "default",
   failed: "destructive",
+  cancelled: "outline",
 }
 
 function CancelButton({ job }: { job: Job }) {

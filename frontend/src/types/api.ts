@@ -1,5 +1,6 @@
 export interface HealthResponse {
   status: "ok" | "degraded"
+  version?: string
 }
 
 export interface ErrorResponse {
@@ -88,7 +89,7 @@ export interface AuthResponse extends TokenResponse {
 
 // ── Job ───────────────────────────────────────────────
 
-export type JobStatus = "pending" | "processing" | "completed" | "failed"
+export type JobStatus = "pending" | "processing" | "completed" | "failed" | "cancelled"
 
 export interface Job {
   id: string
@@ -121,10 +122,11 @@ export interface FileRecord {
 export interface Plan {
   id: string
   name: string
-  price_monthly: number
+  price_cents: number
   limits: Record<string, number>
   features: string[]
-  is_default: boolean
+  tier: string
+  billing_period: string
 }
 
 export interface Subscription {
@@ -133,7 +135,7 @@ export interface Subscription {
   plan: Plan | null
   current_period_start: string | null
   current_period_end: string | null
-  cancel_at_period_end: boolean
+  cancel_at: string | null
   created_at: string
 }
 
@@ -174,13 +176,10 @@ export interface WebhookEndpoint {
 export interface WebhookDelivery {
   id: string
   endpoint_id: string
-  event_type: string
-  payload: Record<string, unknown>
+  event: string
   status_code: number | null
-  response_body: string | null
-  success: boolean
   attempts: number
-  delivered_at: string | null
+  completed_at: string | null
   created_at: string
 }
 
@@ -202,15 +201,13 @@ export interface Notification {
 
 export interface AuditLog {
   id: string
-  user_id: string | null
-  user_email: string | null
+  actor_id: string | null
   action: string
   resource_type: string
   resource_id: string | null
-  metadata: Record<string, unknown> | null
+  changes: Record<string, unknown> | null
   ip_address: string | null
-  user_agent: string | null
-  created_at: string
+  occurred_at: string
 }
 
 // ── Usage ─────────────────────────────────────────────

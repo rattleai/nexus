@@ -53,7 +53,7 @@ celery.conf.update(
             "schedule": crontab(hour=3, minute=30),
         },
         "cleanup-stale-agent-instances": {
-            "task": "agents.cleanup_stale_instances",
+            "task": "app.agents.tasks.cleanup_stale_instances",
             "schedule": crontab(minute="*/15"),
         },
         "hard-purge-deleted-accounts": {
@@ -102,7 +102,10 @@ def _publish_to_dlq(sender=None, task_id=None, exception=None, traceback=None, a
             "kwargs": json.dumps(safe_kwargs, default=str)[:2000] if safe_kwargs else "{}",
         }
         r = redis.from_url(settings.REDIS_URL)
-        r.xadd("dlq:celery", dlq_entry, maxlen=10000)
+        try:
+            r.xadd("dlq:celery", dlq_entry, maxlen=10000)
+        finally:
+            r.close()
     except Exception:
         import structlog
         structlog.stdlib.get_logger().error(

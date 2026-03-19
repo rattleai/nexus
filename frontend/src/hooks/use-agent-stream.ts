@@ -66,7 +66,7 @@ export function useAgentStream({
 
   const sendMessage = React.useCallback(
     async (content: string) => {
-      if (isStreaming) return
+      if (abortRef.current) return
       setError(null)
       setAgentState("thinking")
 
@@ -143,6 +143,7 @@ export function useAgentStream({
         let currentEventType = ""
 
         while (true) {
+          if (controller.signal.aborted) break
           const { done, value } = await reader.read()
           if (done) break
 
@@ -294,7 +295,7 @@ export function useAgentStream({
         abortRef.current = null
       }
     },
-    [agentId, isStreaming, onError, onFinish],
+    [agentId, onError, onFinish],
   )
 
   const clearMessages = React.useCallback(() => {

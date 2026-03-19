@@ -74,14 +74,14 @@ function AuditEntry({ entry }: { entry: AuditLog }) {
         </div>
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {entry.user_email && <span>{entry.user_email}</span>}
-          {entry.user_email && <span>&middot;</span>}
+          {entry.actor_id && <span>{entry.actor_id}</span>}
+          {entry.actor_id && <span>&middot;</span>}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="cursor-default">{formatRelativeTime(entry.created_at)}</span>
+                <span className="cursor-default">{formatRelativeTime(entry.occurred_at)}</span>
               </TooltipTrigger>
-              <TooltipContent>{formatDateTime(entry.created_at)}</TooltipContent>
+              <TooltipContent>{formatDateTime(entry.occurred_at)}</TooltipContent>
             </Tooltip>
           </TooltipProvider>
           {entry.ip_address && (
@@ -92,7 +92,7 @@ function AuditEntry({ entry }: { entry: AuditLog }) {
           )}
         </div>
 
-        {entry.metadata && Object.keys(entry.metadata).length > 0 && (
+        {entry.changes && Object.keys(entry.changes).length > 0 && (
           <Collapsible>
             <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
               <ChevronDown className="h-3 w-3" />
@@ -100,7 +100,7 @@ function AuditEntry({ entry }: { entry: AuditLog }) {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <pre className="mt-2 rounded-md bg-muted p-3 text-xs overflow-x-auto">
-                {JSON.stringify(entry.metadata, null, 2)}
+                {JSON.stringify(entry.changes, null, 2)}
               </pre>
             </CollapsibleContent>
           </Collapsible>

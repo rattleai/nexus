@@ -6,6 +6,7 @@ import {
   Loader2,
   Clock,
   Square,
+  Pause,
   RefreshCw,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -35,6 +36,7 @@ const statusConfig: Record<
   completed: { icon: CheckCircle, color: "text-emerald-500", bg: "bg-emerald-500/10" },
   failed: { icon: XCircle, color: "text-red-500", bg: "bg-red-500/10" },
   cancelled: { icon: Square, color: "text-muted-foreground", bg: "bg-muted" },
+  paused: { icon: Pause, color: "text-amber-500", bg: "bg-amber-500/10" },
 }
 
 export function AgentRunsPanel({ agent }: AgentRunsPanelProps) {
@@ -85,6 +87,7 @@ export function AgentRunsPanel({ agent }: AgentRunsPanelProps) {
               <SelectItem value="completed">Completed</SelectItem>
               <SelectItem value="failed">Failed</SelectItem>
               <SelectItem value="cancelled">Cancelled</SelectItem>
+              <SelectItem value="paused">Paused</SelectItem>
             </SelectContent>
           </Select>
           <Button
@@ -180,8 +183,8 @@ function RunCard({
           </div>
           <div className="flex items-center gap-4 mt-0.5 text-xs text-muted-foreground">
             <span>{instance.steps_executed} steps</span>
-            <span>{instance.tokens_used.toLocaleString()} tokens</span>
-            <span>${instance.cost_usd.toFixed(4)}</span>
+            <span>{(instance.tokens_used ?? 0).toLocaleString()} tokens</span>
+            <span>${(instance.cost_usd ?? 0).toFixed(4)}</span>
             <span>{duration}</span>
           </div>
         </div>
