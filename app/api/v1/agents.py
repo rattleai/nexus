@@ -281,6 +281,13 @@ async def create_agent_instance(
 ):
     """Spawn a new agent instance (async execution via Celery)."""
     await set_tenant_context(db, str(tenant.id))
+
+    from app.billing.entitlements import entitlements, EntitlementDenied
+    try:
+        await entitlements.require_feature(tenant.id, "agents:execute", db=db)
+    except EntitlementDenied as exc:
+        raise HTTPException(403, str(exc)) from exc
+
     agent = await _get_agent_or_404(db, agent_id, tenant.id)
 
     if agent.status != AgentStatus.ACTIVE:
@@ -463,6 +470,13 @@ async def run_agent_stream(
     from app.agents.runtime import AgentRuntime
 
     await set_tenant_context(db, str(tenant.id))
+
+    from app.billing.entitlements import entitlements, EntitlementDenied
+    try:
+        await entitlements.require_feature(tenant.id, "agents:execute", db=db)
+    except EntitlementDenied as exc:
+        raise HTTPException(403, str(exc)) from exc
+
     agent = await _get_agent_or_404(db, agent_id, tenant.id)
 
     if agent.status != AgentStatus.ACTIVE:
@@ -483,6 +497,9 @@ async def run_agent_stream(
     provider_key = provider_key_result.scalar_one_or_none()
     resolved_api_key = decrypt(provider_key.encrypted_api_key) if provider_key else ""
 
+    if not resolved_api_key:
+        raise HTTPException(503, "No AI provider key configured for this tenant")
+
     runtime = AgentRuntime(
         definition=agent,
         tenant_id=tenant.id,
@@ -491,6 +508,19 @@ async def run_agent_stream(
     )
 
     instance_id = uuid.uuid4()
+
+    # Create agent instance record for audit trail
+    instance = AgentInstance(
+        id=instance_id,
+        tenant_id=tenant.id,
+        definition_id=agent.id,
+        status=InstanceStatus.RUNNING,
+        input_data=body.input_data,
+    )
+    db.add(instance)
+    await db.commit()
+    await db.refresh(instance)
+
     messages = body.input_data.get("messages", [{"role": "user", "content": str(body.input_data)}])
 
     async def event_generator():
@@ -874,11 +904,21 @@ async def run_workflow(
     """Execute a workflow (async via Celery)."""
     await set_tenant_context(db, str(tenant.id))
 
+    from app.billing.entitlements import entitlements, EntitlementDenied
+    try:
+        await entitlements.require_feature(tenant.id, "agents:workflow", db=db)
+    except EntitlementDenied as exc:
+        raise HTTPException(403, str(exc)) from exc
+
     workflow = await db.get(WorkflowDefinition, workflow_id)
     if not workflow or workflow.tenant_id != tenant.id or workflow.deleted_at:
         raise HTTPException(404, "Workflow not found")
     if workflow.status != WorkflowStatus.ACTIVE:
         raise HTTPException(400, "Workflow is not active")
+
+    # TODO: Add idempotency_key support to WorkflowRunCreate schema and
+    # implement deduplication logic (similar to create_agent_instance) to
+    # prevent duplicate workflow runs on client retries.
 
     # Create run record
     run = WorkflowRun(
@@ -1083,6 +1123,10 @@ async def resolve_approval(
     Body: {"decision": "approved" | "denied"}
     """
     from app.agents.governance import GovernanceEngine
+
+    import re as _re
+    if not _re.match(r'^[a-f0-9]{32}$', approval_id):
+        raise HTTPException(400, "Invalid approval ID format")
 
     decision = body.get("decision")
     if decision not in ("approved", "denied"):

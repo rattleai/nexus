@@ -72,7 +72,7 @@ export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
     parallelTools !== agent.parallel_tool_execution ||
     sandboxEnabled !== agent.sandbox_enabled ||
     status !== agent.status ||
-    JSON.stringify(allowedTools) !== JSON.stringify(agent.allowed_tools)
+    JSON.stringify([...allowedTools].sort()) !== JSON.stringify([...agent.allowed_tools].sort())
 
   const handleSave = async () => {
     await updateAgent.mutateAsync({
@@ -112,9 +112,15 @@ export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
     setAllowedTools(agent.allowed_tools)
   }
 
+  const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/
   const addTool = () => {
     const trimmed = toolInput.trim()
-    if (trimmed && !allowedTools.includes(trimmed)) {
+    if (!trimmed) return
+    if (!TOOL_NAME_PATTERN.test(trimmed)) {
+      toast.error("Tool name must be lowercase alphanumeric with underscores, starting with a letter (max 64 chars)")
+      return
+    }
+    if (!allowedTools.includes(trimmed)) {
       setAllowedTools([...allowedTools, trimmed])
       setToolInput("")
     }
@@ -141,9 +147,10 @@ export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
               size="sm"
               onClick={handleSave}
               disabled={updateAgent.isPending}
+              variant={updateAgent.isError ? "destructive" : "default"}
             >
               <Save className="mr-1.5 h-3.5 w-3.5" />
-              {updateAgent.isPending ? "Saving..." : "Save Changes"}
+              {updateAgent.isPending ? "Saving..." : updateAgent.isError ? "Retry Save" : "Save Changes"}
             </Button>
           </div>
         </div>

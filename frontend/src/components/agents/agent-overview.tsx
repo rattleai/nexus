@@ -30,7 +30,7 @@ const statusStyles: Record<string, string> = {
 
 export function AgentOverview({ agent }: AgentOverviewProps) {
   const { setActiveTab } = useAgentStore()
-  const { data: analytics } = useAgentAnalytics(7, agent.id)
+  const { data: analytics, isError: analyticsError, refetch: refetchAnalytics } = useAgentAnalytics(7, agent.id)
   const { data: instances } = useAgentInstances(agent.id)
 
   const recentRuns = instances?.items?.slice(0, 5) ?? []
@@ -107,6 +107,14 @@ export function AgentOverview({ agent }: AgentOverviewProps) {
 
       {/* Quick stats */}
       <div className="grid grid-cols-4 gap-4">
+        {analyticsError && (
+          <div className="col-span-4 text-center py-2">
+            <span className="text-xs text-muted-foreground">Failed to load analytics. </span>
+            <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => refetchAnalytics()}>
+              Retry
+            </Button>
+          </div>
+        )}
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold">{analytics?.total_runs ?? 0}</div>

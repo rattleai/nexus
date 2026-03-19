@@ -272,12 +272,15 @@ class TestBillingEndpoints:
         """Cancel subscription returns 503 when Stripe is not configured."""
         client, app = billing_client
 
-        from app.api.deps import get_current_user_from_token
+        from app.api.deps import get_current_tenant, get_current_user_from_token
 
+        tenant_id = uuid.uuid4()
         user = MagicMock(
-            id=uuid.uuid4(), tenant_id=uuid.uuid4(), is_active=True
+            id=uuid.uuid4(), tenant_id=tenant_id, is_active=True
         )
+        tenant = MagicMock(id=tenant_id)
         app.dependency_overrides[get_current_user_from_token] = lambda: user
+        app.dependency_overrides[get_current_tenant] = lambda: tenant
 
         mock_db = AsyncMock()
         # RequireRole needs membership check

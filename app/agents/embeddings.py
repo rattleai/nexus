@@ -271,6 +271,15 @@ class RAGPipeline:
             for r in results
         ]
 
+    @staticmethod
+    def _sanitize_rag_chunk(text: str) -> str:
+        """Strip characters that could be used for prompt injection in RAG chunks."""
+        # Remove system/assistant role markers that could confuse the LLM
+        import re
+        sanitized = re.sub(r'<\|?(system|assistant|user|im_start|im_end)\|?>', '', text)
+        # Limit chunk size
+        return sanitized[:4096]
+
     def format_context(self, results: list[dict[str, Any]]) -> str:
         """Format retrieved results as context for injection into system prompt."""
         if not results:
@@ -286,7 +295,8 @@ class RAGPipeline:
                 source = f" (source: {sanitized_source})"
             else:
                 source = ""
-            lines.append(f"{i}. {r['text']}{source}")
+            sanitized_text = self._sanitize_rag_chunk(r["text"])
+            lines.append(f"{i}. {sanitized_text}{source}")
 
         return "\n".join(lines)
 

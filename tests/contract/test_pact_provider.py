@@ -70,6 +70,12 @@ class TestHealthContract:
         assert "status" in data
 
 
+def _assert_error_response_shape(response):
+    """Validate that error responses (401/403) have the expected JSON shape."""
+    data = response.json()
+    assert "detail" in data, f"Error response missing 'detail' field: {data}"
+
+
 class TestJobsContract:
     """Verify jobs API contract matches frontend expectations."""
 
@@ -82,8 +88,13 @@ class TestJobsContract:
             headers={"X-API-Key": "test"},
             timeout=5,
         )
-        # Even a 401 tells us the endpoint exists and routes correctly
         assert response.status_code in (200, 401, 403)
+        if response.status_code == 200:
+            data = response.json()
+            assert "items" in data, "Paginated response missing 'items'"
+            assert "total" in data or "count" in data, "Paginated response missing count field"
+        else:
+            _assert_error_response_shape(response)
 
 
 class TestAgentsContract:
@@ -99,6 +110,11 @@ class TestAgentsContract:
             timeout=5,
         )
         assert response.status_code in (200, 401, 403)
+        if response.status_code == 200:
+            data = response.json()
+            assert "items" in data, "Paginated response missing 'items'"
+        else:
+            _assert_error_response_shape(response)
 
     def test_analytics_shape(self):
         """GET /agents/analytics returns aggregate metrics."""
@@ -110,6 +126,11 @@ class TestAgentsContract:
             timeout=5,
         )
         assert response.status_code in (200, 401, 403)
+        if response.status_code == 200:
+            data = response.json()
+            assert isinstance(data, dict), "Analytics response should be a JSON object"
+        else:
+            _assert_error_response_shape(response)
 
 
 class TestBillingContract:
@@ -125,6 +146,11 @@ class TestBillingContract:
             timeout=5,
         )
         assert response.status_code in (200, 401, 403)
+        if response.status_code == 200:
+            data = response.json()
+            assert isinstance(data, dict), "Usage response should be a JSON object"
+        else:
+            _assert_error_response_shape(response)
 
 
 class TestMCPDiscovery:

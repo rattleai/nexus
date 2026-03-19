@@ -72,8 +72,8 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
       REDIS_URL: redis://localhost:6379/0
-      SECRET_KEY: ci-test-secret
-      ADMIN_KEY: ci-test-admin-key
+      SECRET_KEY: ${{ secrets.CI_SECRET_KEY || 'ci-test-secret-key-min-32-chars-long' }}
+      ADMIN_KEY: ${{ secrets.CI_ADMIN_KEY || 'ci-test-admin-key-min-32-chars-long' }}
       DEBUG: "true"
     steps:
       - uses: actions/checkout@v4
@@ -107,8 +107,8 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
-      SECRET_KEY: ci-test-secret
-      ADMIN_KEY: ci-test-admin-key
+      SECRET_KEY: ${{ secrets.CI_SECRET_KEY || 'ci-test-secret-key-min-32-chars-long' }}
+      ADMIN_KEY: ${{ secrets.CI_ADMIN_KEY || 'ci-test-admin-key-min-32-chars-long' }}
       DEBUG: "true"
     steps:
       - uses: actions/checkout@v4
@@ -210,8 +210,8 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
       REDIS_URL: redis://localhost:6379/0
-      SECRET_KEY: ci-test-secret
-      ADMIN_KEY: ci-test-admin-key
+      SECRET_KEY: ${{ secrets.CI_SECRET_KEY || 'ci-test-secret-key-min-32-chars-long' }}
+      ADMIN_KEY: ${{ secrets.CI_ADMIN_KEY || 'ci-test-admin-key-min-32-chars-long' }}
       DEBUG: "true"
     steps:
       - uses: actions/checkout@v4
@@ -377,8 +377,8 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
       REDIS_URL: redis://localhost:6379/0
-      SECRET_KEY: ci-test-secret
-      ADMIN_KEY: ci-test-admin-key
+      SECRET_KEY: ${{ secrets.CI_SECRET_KEY || 'ci-test-secret-key-min-32-chars-long' }}
+      ADMIN_KEY: ${{ secrets.CI_ADMIN_KEY || 'ci-test-admin-key-min-32-chars-long' }}
       DEBUG: "true"
     steps:
       - uses: actions/checkout@v4

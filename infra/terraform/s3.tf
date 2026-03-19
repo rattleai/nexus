@@ -18,6 +18,20 @@ resource "aws_s3_bucket_versioning" "uploads" {
   }
 }
 
+# ── Customer-Managed KMS Key for S3 ──────────────────────────
+
+resource "aws_kms_key" "s3" {
+  description             = "Customer-managed key for S3 encryption"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+  tags                    = local.common_tags
+}
+
+resource "aws_kms_alias" "s3" {
+  name          = "alias/${local.name_prefix}-s3"
+  target_key_id = aws_kms_key.s3.key_id
+}
+
 # ── Server-Side Encryption ──────────────────────────────────
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "uploads" {
@@ -25,7 +39,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "uploads" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "aws:kms"
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.s3.arn
     }
     bucket_key_enabled = true
   }

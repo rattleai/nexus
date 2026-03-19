@@ -10,6 +10,13 @@
 #   aws secretsmanager update-secret --secret-id <arn> \
 #     --secret-string '{"SECRET_KEY":"...", ...}'
 
+data "aws_prefix_list" "secretsmanager" {
+  filter {
+    name   = "prefix-list-name"
+    values = ["com.amazonaws.${var.aws_region}.secretsmanager"]
+  }
+}
+
 resource "aws_secretsmanager_secret" "app_config" {
   name                    = "${local.name_prefix}/app/config"
   description             = "CAD Price application secrets (referenced by ECS tasks)"
@@ -127,11 +134,11 @@ resource "aws_security_group" "secret_rotation_lambda" {
   }
 
   egress {
-    description = "HTTPS to Secrets Manager VPC endpoint"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Scoped by VPC endpoint in practice
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_prefix_list.secretsmanager.id]
+    description     = "HTTPS to Secrets Manager VPC endpoint only"
   }
 
   lifecycle { create_before_destroy = true }

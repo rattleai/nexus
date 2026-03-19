@@ -42,17 +42,9 @@ def upgrade() -> None:
           AND jsonb_array_length(embedding) = 1536
     """)
 
-    # Step 3: Create HNSW index CONCURRENTLY to avoid blocking the table.
-    # CONCURRENTLY cannot run inside a transaction, so we end the
-    # Alembic-managed transaction first.
-    op.execute("COMMIT")
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_agent_memory_embedding_vec "
-        "ON agent_memory_entries USING hnsw (embedding_vec vector_cosine_ops) "
-        "WITH (m = 16, ef_construction = 64)"
-    )
-
     # ── GDPR tables ──────────────────────────────────────────────
+    # These must be created BEFORE the COMMIT below so they run inside
+    # the Alembic-managed transaction and are rolled back on failure.
 
     op.create_table(
         "consents",
@@ -133,6 +125,18 @@ def upgrade() -> None:
         "tenant_tools",
         sa.Column("version_notes", sa.Text, nullable=True),
     )
+
+    # Step 3: Create HNSW index CONCURRENTLY to avoid blocking the table.
+    # CONCURRENTLY cannot run inside a transaction. Manually commit the
+    # Alembic-managed transaction, create the index, then re-enter a
+    # transaction for any remaining operations.
+    op.execute("COMMIT")
+    op.execute(
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_agent_memory_embedding_vec "
+        "ON agent_memory_entries USING hnsw (embedding_vec vector_cosine_ops) "
+        "WITH (m = 16, ef_construction = 64)"
+    )
+    op.execute("BEGIN")
 
 
 def downgrade() -> None:

@@ -62,6 +62,13 @@ def _get_key(version: int) -> bytes:
     """
     if version == 1:
         source_key = settings.ENCRYPTION_KEY or settings.SECRET_KEY
+        if not settings.ENCRYPTION_KEY and not settings.DEBUG:
+            import warnings
+            warnings.warn(
+                "ENCRYPTION_KEY is not set; falling back to SECRET_KEY. "
+                "Set ENCRYPTION_KEY independently in production.",
+                stacklevel=2,
+            )
     else:
         # Support additional key versions via environment variables
         attr = f"ENCRYPTION_KEY_V{version}"
@@ -78,6 +85,13 @@ def _get_aes_gcm_key(version: int) -> bytes:
     """
     if version == 2:
         source_key = settings.ENCRYPTION_KEY or settings.SECRET_KEY
+        if not settings.ENCRYPTION_KEY and not settings.DEBUG:
+            import warnings
+            warnings.warn(
+                "ENCRYPTION_KEY is not set; falling back to SECRET_KEY. "
+                "Set ENCRYPTION_KEY independently in production.",
+                stacklevel=2,
+            )
     else:
         attr = f"ENCRYPTION_KEY_V{version}"
         source_key = getattr(settings, attr, "") or settings.ENCRYPTION_KEY or settings.SECRET_KEY
@@ -152,8 +166,13 @@ def decrypt(ciphertext: str) -> str:
         if version >= 2:
             try:
                 return _decrypt_v2(raw, version)
-            except Exception:
-                pass
+            except Exception as exc:
+                import structlog
+                structlog.stdlib.get_logger().warning(
+                    "v2_decrypt_failed_trying_fallback",
+                    version=version,
+                    error=str(exc)[:100],
+                )
         else:
             try:
                 f = Fernet(_get_key(version))

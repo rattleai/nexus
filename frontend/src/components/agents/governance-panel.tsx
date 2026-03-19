@@ -16,6 +16,9 @@ import {
 } from "@/components/ui/select"
 import { useUpdateAgent } from "@/hooks/use-agents"
 import type { AgentDefinition, GovernancePolicy } from "@/types/agents"
+import { toast } from "sonner"
+
+const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/
 
 interface GovernancePanelProps {
   agent: AgentDefinition
@@ -64,6 +67,16 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
     setMaxRpm(p.max_requests_per_minute?.toString() ?? "")
   }, [agent])
 
+  const isDirty =
+    maxRunSpend !== (policy.max_spend_per_run_usd?.toString() ?? "") ||
+    maxDaySpend !== (policy.max_spend_per_day_usd?.toString() ?? "") ||
+    maxMonthSpend !== (policy.max_spend_per_month_usd?.toString() ?? "") ||
+    JSON.stringify([...deniedTools].sort()) !== JSON.stringify([...(policy.denied_tools as string[] ?? [])].sort()) ||
+    JSON.stringify([...requireApproval].sort()) !== JSON.stringify([...(policy.require_approval_for as string[] ?? [])].sort()) ||
+    approvalTimeout !== (policy.approval_timeout_seconds?.toString() ?? "300") ||
+    approvalDefault !== (policy.approval_default_action ?? "deny") ||
+    maxRpm !== (policy.max_requests_per_minute?.toString() ?? "")
+
   const handleSave = async () => {
     const timeoutVal = Number(approvalTimeout)
     const newPolicy: GovernancePolicy = {
@@ -103,7 +116,7 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
             Control spending, access, and approval workflows for this agent.
           </p>
         </div>
-        <Button onClick={handleSave} disabled={updateAgent.isPending} size="sm">
+        <Button onClick={handleSave} disabled={updateAgent.isPending || !isDirty} size="sm">
           <Save className="mr-1.5 h-3.5 w-3.5" />
           {updateAgent.isPending ? "Saving..." : "Save Policies"}
         </Button>
@@ -206,10 +219,16 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
               onChange={(e) => setToolInput(e.target.value)}
               placeholder="Tool name to deny..."
               onKeyDown={(e) => {
-                if (e.key === "Enter" && toolInput.trim()) {
+                if (e.key === "Enter") {
                   e.preventDefault()
-                  if (!deniedTools.includes(toolInput.trim())) {
-                    setDeniedTools([...deniedTools, toolInput.trim()])
+                  const trimmed = toolInput.trim()
+                  if (!trimmed) return
+                  if (!TOOL_NAME_PATTERN.test(trimmed)) {
+                    toast.error("Tool name must be lowercase alphanumeric with underscores, starting with a letter (max 64 chars)")
+                    return
+                  }
+                  if (!deniedTools.includes(trimmed)) {
+                    setDeniedTools([...deniedTools, trimmed])
                   }
                   setToolInput("")
                 }
@@ -218,8 +237,14 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
             <Button
               variant="outline"
               onClick={() => {
-                if (toolInput.trim() && !deniedTools.includes(toolInput.trim())) {
-                  setDeniedTools([...deniedTools, toolInput.trim()])
+                const trimmed = toolInput.trim()
+                if (!trimmed) return
+                if (!TOOL_NAME_PATTERN.test(trimmed)) {
+                  toast.error("Tool name must be lowercase alphanumeric with underscores, starting with a letter (max 64 chars)")
+                  return
+                }
+                if (!deniedTools.includes(trimmed)) {
+                  setDeniedTools([...deniedTools, trimmed])
                 }
                 setToolInput("")
               }}
@@ -267,10 +292,16 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
               onChange={(e) => setApprovalInput(e.target.value)}
               placeholder="Tool name requiring approval..."
               onKeyDown={(e) => {
-                if (e.key === "Enter" && approvalInput.trim()) {
+                if (e.key === "Enter") {
                   e.preventDefault()
-                  if (!requireApproval.includes(approvalInput.trim())) {
-                    setRequireApproval([...requireApproval, approvalInput.trim()])
+                  const trimmed = approvalInput.trim()
+                  if (!trimmed) return
+                  if (!TOOL_NAME_PATTERN.test(trimmed)) {
+                    toast.error("Tool name must be lowercase alphanumeric with underscores, starting with a letter (max 64 chars)")
+                    return
+                  }
+                  if (!requireApproval.includes(trimmed)) {
+                    setRequireApproval([...requireApproval, trimmed])
                   }
                   setApprovalInput("")
                 }
@@ -279,8 +310,14 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
             <Button
               variant="outline"
               onClick={() => {
-                if (approvalInput.trim() && !requireApproval.includes(approvalInput.trim())) {
-                  setRequireApproval([...requireApproval, approvalInput.trim()])
+                const trimmed = approvalInput.trim()
+                if (!trimmed) return
+                if (!TOOL_NAME_PATTERN.test(trimmed)) {
+                  toast.error("Tool name must be lowercase alphanumeric with underscores, starting with a letter (max 64 chars)")
+                  return
+                }
+                if (!requireApproval.includes(trimmed)) {
+                  setRequireApproval([...requireApproval, trimmed])
                 }
                 setApprovalInput("")
               }}

@@ -1,5 +1,6 @@
 import * as React from "react"
 import {
+  AlertTriangle,
   Bot,
   Plus,
   Search,
@@ -61,6 +62,7 @@ import {
 import { useAgentStore, type AgentTab } from "@/stores/agent-store"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { ErrorBoundary } from "@/components/error-boundary"
 
 const TABS: { id: AgentTab; label: string; icon: React.ElementType }[] = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
@@ -69,6 +71,9 @@ const TABS: { id: AgentTab; label: string; icon: React.ElementType }[] = [
   { id: "governance", label: "Governance", icon: Shield },
   { id: "runs", label: "Runs", icon: Activity },
 ]
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+const modKey = isMac ? "\u2318" : "Ctrl"
 
 export function AgentWorkspace() {
   const isMobile = useIsMobile()
@@ -86,6 +91,7 @@ export function AgentWorkspace() {
 
   const [createOpen, setCreateOpen] = React.useState(false)
   const [deleteId, setDeleteId] = React.useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = React.useState(false)
 
   const { data, isLoading } = useAgentDefinitions(
     statusFilter !== "all" ? statusFilter : undefined,
@@ -111,10 +117,15 @@ export function AgentWorkspace() {
   }
 
   const handleDelete = async () => {
-    if (!deleteId) return
-    await deleteAgent.mutateAsync(deleteId)
-    if (selectedAgentId === deleteId) selectAgent(null)
-    setDeleteId(null)
+    if (!deleteId || isDeleting) return
+    setIsDeleting(true)
+    try {
+      await deleteAgent.mutateAsync(deleteId)
+      if (selectedAgentId === deleteId) selectAgent(null)
+    } finally {
+      setIsDeleting(false)
+      setDeleteId(null)
+    }
   }
 
   const handleAgentCreated = (agentId: string) => {
@@ -140,6 +151,7 @@ export function AgentWorkspace() {
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7"
+                    aria-label="Open command palette"
                     onClick={() => {
                       // Programmatically dispatch Ctrl+K to open the global palette
                       document.dispatchEvent(
@@ -152,7 +164,7 @@ export function AgentWorkspace() {
                 </TooltipTrigger>
                 <TooltipContent side="bottom">
                   <p>
-                    Quick switch <kbd className="ml-1 text-[10px]">Ctrl+K &gt;</kbd>
+                    Quick switch <kbd className="ml-1 text-[10px]">{modKey}+K &gt;</kbd>
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -249,7 +261,7 @@ export function AgentWorkspace() {
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{data?.total ?? 0} agents</span>
           <kbd className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono">
-            Ctrl+K &gt;
+            {modKey}+K &gt;
           </kbd>
         </div>
       </div>
@@ -313,22 +325,32 @@ export function AgentWorkspace() {
       {/* Tab content — chat gets its own full-height container, other tabs use ScrollArea */}
       {activeTab === "chat" ? (
         <div className="flex-1 p-6 min-h-0">
-          <AgentChatPanel agent={selectedAgent} />
+          <ErrorBoundary fallback={<PanelErrorFallback tab="chat" />}>
+            <AgentChatPanel agent={selectedAgent} />
+          </ErrorBoundary>
         </div>
       ) : (
         <ScrollArea className="flex-1">
           <div className="p-6">
             {activeTab === "overview" && (
-              <AgentOverview agent={selectedAgent} />
+              <ErrorBoundary fallback={<PanelErrorFallback tab="overview" />}>
+                <AgentOverview agent={selectedAgent} />
+              </ErrorBoundary>
             )}
             {activeTab === "config" && (
-              <AgentConfigPanel agent={selectedAgent} />
+              <ErrorBoundary fallback={<PanelErrorFallback tab="config" />}>
+                <AgentConfigPanel agent={selectedAgent} />
+              </ErrorBoundary>
             )}
             {activeTab === "governance" && (
-              <GovernancePanel agent={selectedAgent} />
+              <ErrorBoundary fallback={<PanelErrorFallback tab="governance" />}>
+                <GovernancePanel agent={selectedAgent} />
+              </ErrorBoundary>
             )}
             {activeTab === "runs" && (
-              <AgentRunsPanel agent={selectedAgent} />
+              <ErrorBoundary fallback={<PanelErrorFallback tab="runs" />}>
+                <AgentRunsPanel agent={selectedAgent} />
+              </ErrorBoundary>
             )}
           </div>
         </ScrollArea>
@@ -401,14 +423,36 @@ export function AgentWorkspace() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
+              disabled={isDeleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete Agent
+              {isDeleting ? "Deleting..." : "Delete Agent"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </>
+  )
+}
+
+function PanelErrorFallback({ tab }: { tab: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center py-12 px-4">
+      <AlertTriangle className="h-10 w-10 text-destructive mb-3" />
+      <h3 className="text-sm font-semibold mb-1">
+        Something went wrong in the {tab} panel
+      </h3>
+      <p className="text-xs text-muted-foreground mb-4">
+        An unexpected error occurred. Try switching tabs or reloading the page.
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => window.location.reload()}
+      >
+        Reload page
+      </Button>
+    </div>
   )
 }
 
@@ -428,7 +472,7 @@ function EmptyState({ onCreateNew }: { onCreateNew: () => void }) {
         Select an agent from the sidebar to view its details, chat with it, or
         configure its behavior. Press{" "}
         <kbd className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">
-          Ctrl+K
+          {modKey}+K
         </kbd>{" "}
         then type{" "}
         <kbd className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">
@@ -452,7 +496,7 @@ function EmptyState({ onCreateNew }: { onCreateNew: () => void }) {
           <Command className="mr-1.5 h-4 w-4" />
           Search
           <kbd className="ml-1.5 text-[10px] bg-muted px-1 py-0.5 rounded font-mono">
-            Ctrl+K
+            {modKey}+K
           </kbd>
         </Button>
       </div>

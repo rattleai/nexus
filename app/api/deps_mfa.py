@@ -48,6 +48,12 @@ class RequireMFA:
         except jwt.InvalidTokenError:
             raise HTTPException(status_code=401, detail="Invalid token") from None
 
+        # Check token revocation
+        from app.core.security import is_token_revoked
+        jti = payload.get("jti")
+        if jti and await is_token_revoked(jti):
+            raise HTTPException(status_code=401, detail="Token has been revoked")
+
         amr = payload.get("amr", [])
         if "mfa" not in amr:
             raise HTTPException(

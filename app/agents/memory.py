@@ -258,6 +258,7 @@ return 1
         offset: int = 0,
     ) -> list[AgentMemoryEntry]:
         """List long-term memory entries for an instance."""
+        limit = min(limit, 50)
         stmt = (
             select(AgentMemoryEntry)
             .where(
@@ -349,6 +350,7 @@ return 1
         (embedding_vec column with HNSW index). Falls back to Python-side
         cosine similarity on JSONB embeddings for non-pgvector setups.
         """
+        limit = min(limit, 50)
         import math
         from app.config import settings
 

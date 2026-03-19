@@ -52,9 +52,10 @@ services:
     ports:
       - "127.0.0.1:5433:5432"
     environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
-      POSTGRES_DB: app
+      # WARNING: Override these in production via environment variables
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -72,7 +73,7 @@ services:
 
   # ── PgBouncer connection pooler ──────────────────────────
   pgbouncer:
-    image: edoburu/pgbouncer:1.23.1
+    image: edoburu/pgbouncer:v1.25.1-p0
     environment:
       DATABASE_URL: postgresql://app:app@db:5432/app
       POOL_MODE: transaction

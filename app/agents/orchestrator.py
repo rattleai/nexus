@@ -464,6 +464,7 @@ class AgentOrchestrator:
                 })
 
         all_worker_results: list[dict[str, Any]] = []
+        executor = AgentExecutor(self.db)
 
         for round_num in range(max_rounds):
             # Phase 1: Delegate — ask supervisor to create delegation plan

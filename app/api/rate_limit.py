@@ -199,8 +199,13 @@ class AgentAwareRateLimiter:
 
     async def __call__(self, request: Request) -> None:
         is_agent = _is_agent_request(request)
-        effective_limit = self.agent_max_requests if is_agent else self.max_requests
-        effective_window = settings.AGENT_RATE_LIMIT_WINDOW_SECONDS if is_agent else self.window
+        # Only grant elevated agent limits to authenticated requests (API key).
+        # Self-reported User-Agent without authentication is not sufficient
+        # to receive higher rate limits (M6: trivially bypassable).
+        api_key = getattr(request.state, "api_key", None)
+        trusted_agent = is_agent and api_key is not None
+        effective_limit = self.agent_max_requests if trusted_agent else self.max_requests
+        effective_window = settings.AGENT_RATE_LIMIT_WINDOW_SECONDS if trusted_agent else self.window
 
         client_ip = _get_client_ip(request)
         normalized_path = request.url.path.rstrip("/").lower().replace("//", "/")

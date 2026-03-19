@@ -91,6 +91,7 @@ export function AgentRunsPanel({ agent }: AgentRunsPanelProps) {
             variant="outline"
             size="sm"
             className="h-8"
+            aria-label="Refresh runs"
             onClick={() => refetch()}
           >
             <RefreshCw className="h-3.5 w-3.5" />
@@ -156,6 +157,7 @@ function RunCard({
     <div className="rounded-lg border overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
         className="w-full flex items-center gap-3 p-3 text-left hover:bg-accent/30 transition-colors"
       >
         <div className={cn("flex h-8 w-8 items-center justify-center rounded-md shrink-0", config.bg)}>

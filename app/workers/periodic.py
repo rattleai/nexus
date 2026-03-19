@@ -306,6 +306,12 @@ def hard_purge_deleted_accounts() -> dict:
                 # does not commit partial state for other tenants.
                 nested = db.begin_nested()
 
+                # Note: Raw SQL intentionally bypasses RLS. This task runs as a
+                # privileged system operation for GDPR compliance.
+
+                # Temporarily disable audit immutability trigger for GDPR purge
+                db.execute(text("SET LOCAL app.audit_purge_enabled = 'true'"))
+
                 # Cascade delete tenant data in order (respecting FK constraints)
                 # Table names are hardcoded (not user-supplied) — quote them
                 # for safety against identifier collisions.
@@ -315,6 +321,7 @@ def hard_purge_deleted_accounts() -> dict:
                     "consents", "data_subject_requests", "data_retention_policies",
                     "jobs", "webhook_deliveries", "webhook_endpoints",
                     "notifications", "invitations", "api_keys",
+                    "audit_logs",  # Must be last — audit_log_immutability trigger is bypassed by SET LOCAL above
                 ]:
                     db.execute(
                         text(f'DELETE FROM "{table}" WHERE tenant_id = :tid'),
@@ -398,7 +405,7 @@ def hard_purge_deleted_users() -> dict:
                     action="gdpr_user_purge",
                     resource_type="user",
                     resource_id=str(user.id),
-                    changes={"email_hash": str(hash(user.email))[:12]},
+                    changes={"email_hash": __import__('hashlib').sha256(user.email.encode()).hexdigest()[:16]},
                 )
                 db.add(audit)
 

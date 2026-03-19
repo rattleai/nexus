@@ -182,6 +182,7 @@ async def get_subscription(
 )
 async def cancel_subscription(
     user: User = Depends(get_current_user_from_token),
+    tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """Cancel the current subscription at period end."""
@@ -190,7 +191,7 @@ async def cancel_subscription(
 
     from app.billing.stripe_service import cancel_subscription as stripe_cancel
 
-    subscription = await stripe_cancel(user.tenant_id, db)
+    subscription = await stripe_cancel(tenant.id, db)
     if not subscription:
         raise HTTPException(status_code=404, detail="No active subscription")
 
@@ -199,7 +200,7 @@ async def cancel_subscription(
         action=AuditAction.UPDATE,
         resource_type="subscription",
         resource_id=str(subscription.id),
-        tenant_id=user.tenant_id,
+        tenant_id=tenant.id,
         actor_id=str(user.id),
         changes={"action": "cancel"},
     )

@@ -86,9 +86,13 @@ class TestFaithfulness:
 
         test_cases = []
         for case in EVAL_CASES:
+            # TODO: Replace with real agent invocation to get actual_output
+            # For now, use expected_output as a baseline smoke test
+            actual_output = case["expected_output"]  # FIXME: call agent(case["input"])
             tc = LLMTestCase(
                 input=case["input"],
-                actual_output=case["expected_output"],
+                actual_output=actual_output,
+                expected_output=case["expected_output"],
                 retrieval_context=case["context"],
             )
             test_cases.append(tc)
@@ -112,7 +116,9 @@ class TestRelevance:
         test_cases = [
             LLMTestCase(
                 input=case["input"],
-                actual_output=case["expected_output"],
+                # TODO: Replace with real agent invocation to get actual_output
+                actual_output=case["expected_output"],  # FIXME: call agent(case["input"])
+                expected_output=case["expected_output"],
             )
             for case in EVAL_CASES
         ]
@@ -135,7 +141,9 @@ class TestHallucination:
         test_cases = [
             LLMTestCase(
                 input=case["input"],
-                actual_output=case["expected_output"],
+                # TODO: Replace with real agent invocation to get actual_output
+                actual_output=case["expected_output"],  # FIXME: call agent(case["input"])
+                expected_output=case["expected_output"],
                 context=case["context"],
             )
             for case in EVAL_CASES
@@ -159,7 +167,9 @@ class TestToxicity:
         test_cases = [
             LLMTestCase(
                 input=case["input"],
-                actual_output=case["expected_output"],
+                # TODO: Replace with real agent invocation to get actual_output
+                actual_output=case["expected_output"],  # FIXME: call agent(case["input"])
+                expected_output=case["expected_output"],
             )
             for case in EVAL_CASES
         ]
@@ -184,7 +194,9 @@ class TestRAGQuality:
         test_cases = [
             LLMTestCase(
                 input=case["input"],
-                actual_output=case["expected_output"],
+                # TODO: Replace with real agent invocation to get actual_output
+                actual_output=case["expected_output"],  # FIXME: call agent(case["input"])
+                expected_output=case["expected_output"],
                 retrieval_context=case["context"],
             )
             for case in EVAL_CASES

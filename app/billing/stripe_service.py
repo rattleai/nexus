@@ -196,7 +196,6 @@ async def cancel_subscription(tenant_id: uuid.UUID, db: AsyncSession) -> Subscri
     )
 
     subscription.cancel_at = subscription.current_period_end
-    await db.commit()
     await db.refresh(subscription)
 
     logger.info("subscription_cancelled", tenant_id=str(tenant_id))
@@ -794,7 +793,7 @@ async def get_usage_summary(
     result = await db.execute(
         select(
             UsageRecord.metric,
-            func.sum(UsageRecord.quantity).label("total"),
+            func.sum(UsageRecord.value).label("total"),
             func.count(UsageRecord.id).label("count"),
         )
         .where(

@@ -47,6 +47,16 @@ export function useAgentStream({
     }
   }, [])
 
+  // Reset state when agentId changes
+  React.useEffect(() => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setMessages([])
+    setIsStreaming(false)
+    setAgentState("idle")
+    setError(null)
+  }, [agentId])
+
   const stop = React.useCallback(() => {
     abortRef.current?.abort()
     abortRef.current = null
@@ -56,6 +66,7 @@ export function useAgentStream({
 
   const sendMessage = React.useCallback(
     async (content: string) => {
+      if (isStreaming) return
       setError(null)
       setAgentState("thinking")
 
@@ -136,6 +147,10 @@ export function useAgentStream({
           if (done) break
 
           lineBuffer += decoder.decode(value, { stream: true })
+          // Prevent unbounded buffer growth on hung connections
+          if (lineBuffer.length > 1_000_000) {
+            lineBuffer = lineBuffer.slice(-100_000)
+          }
           const lines = lineBuffer.split("\n")
           lineBuffer = lines.pop() ?? ""
 
@@ -279,7 +294,7 @@ export function useAgentStream({
         abortRef.current = null
       }
     },
-    [agentId, onError, onFinish],
+    [agentId, isStreaming, onError, onFinish],
   )
 
   const clearMessages = React.useCallback(() => {

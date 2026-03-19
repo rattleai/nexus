@@ -94,6 +94,29 @@ async def agent_run(
 
     await set_tenant_context(db, str(tenant.id))
 
+    # Use the caller's actual API key (not hardcoded "platform") so that
+    # billing, audit trails, and scope enforcement apply correctly.
+    effective_key = api_key or "platform"
+    effective_source = key_source or "mcp"
+
+    # Entitlement check
+    from app.billing.entitlements import entitlements, EntitlementDenied
+    try:
+        await entitlements.require_feature(tenant.id, "agents:execute", db=db)
+    except EntitlementDenied as exc:
+        return {"error": str(exc)}
+
+    # Audit event
+    from app.core.audit import AuditAction, emit_audit_event
+    await emit_audit_event(
+        db,
+        action=AuditAction.CREATE,
+        resource_type="agent_run",
+        resource_id=agent_id,
+        tenant_id=tenant.id,
+        metadata={"source": "mcp", "key_source": effective_source},
+    )
+
     # Validate input_messages size to prevent abuse via massive LLM calls
     messages = input_messages or []
     _MAX_MESSAGES = 50
@@ -104,11 +127,6 @@ async def agent_run(
         content = msg.get("content", "")
         if isinstance(content, str) and len(content) > _MAX_CONTENT_LEN:
             return {"error": f"Message content too long (max {_MAX_CONTENT_LEN} chars)"}
-
-    # Use the caller's actual API key (not hardcoded "platform") so that
-    # billing, audit trails, and scope enforcement apply correctly.
-    effective_key = api_key or "platform"
-    effective_source = key_source or "mcp"
 
     executor = AgentExecutor(db)
     try:

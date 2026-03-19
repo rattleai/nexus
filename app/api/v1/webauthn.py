@@ -35,9 +35,12 @@ from webauthn.helpers.structs import (
 )
 
 from app.api.deps import get_current_user_from_token, get_db
+from app.api.rate_limit import RateLimiter
 from app.config import settings
 from app.core.redis import redis_pool
 from app.db.models import User
+
+_auth_begin_rate_limit = RateLimiter(max_requests=20, window=60, key_prefix="rl:webauthn-begin")
 
 logger = structlog.stdlib.get_logger()
 
@@ -208,7 +211,7 @@ async def registration_complete(
     return {"credential_id": str(credential.id)}
 
 
-@router.post("/authenticate/begin", response_model=AuthenticationBeginResponse)
+@router.post("/authenticate/begin", response_model=AuthenticationBeginResponse, dependencies=[Depends(_auth_begin_rate_limit)])
 async def authentication_begin() -> AuthenticationBeginResponse:
     """Begin WebAuthn authentication.
 
@@ -288,7 +291,6 @@ async def authentication_complete(
 
     credential.sign_count = verification.new_sign_count
     credential.last_used_at = datetime.now(UTC)
-    await db.commit()
 
     from app.db.models import User as UserModel
 
@@ -299,12 +301,14 @@ async def authentication_complete(
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
 
+    await db.commit()
+
     from app.core.security import create_access_token
 
     access_token = create_access_token({
         "sub": str(user.id),
         "tenant_id": str(user.tenant_id),
-        "amr": ["hwk"],
+        "amr": ["hwk", "mfa"],
     })
 
     logger.info("webauthn_authenticated", user_id=str(user.id))

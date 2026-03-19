@@ -115,7 +115,7 @@ def record_tool_call(
         _ensure_instruments()
         _agent_tool_duration.record(duration_ms, {
             "gen_ai.tool.name": tool_name,
-            "status": status,
+            "gen_ai.response.finish_reason": status,
         })
 
 

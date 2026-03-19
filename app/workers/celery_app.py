@@ -91,13 +91,15 @@ def _publish_to_dlq(sender=None, task_id=None, exception=None, traceback=None, a
     import redis
 
     try:
+        # Redact sensitive fields before DLQ publish
+        safe_kwargs = {k: v for k, v in kwargs.items() if k != "api_key_id"} if kwargs else {}
         dlq_entry = {
             "task_id": task_id or "",
             "task_name": sender.name if sender else "unknown",
             "exception_type": type(exception).__name__ if exception else "Unknown",
             "exception_message": str(exception)[:1000] if exception else "",
             "args": json.dumps(args, default=str)[:2000] if args else "[]",
-            "kwargs": json.dumps(kwargs, default=str)[:2000] if kwargs else "{}",
+            "kwargs": json.dumps(safe_kwargs, default=str)[:2000] if safe_kwargs else "{}",
         }
         r = redis.from_url(settings.REDIS_URL)
         r.xadd("dlq:celery", dlq_entry, maxlen=10000)

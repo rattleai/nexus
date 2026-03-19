@@ -77,7 +77,10 @@ export function AgentChatPanel({ agent }: AgentChatPanelProps) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={clearMessages}
+              onClick={() => {
+                if (isStreaming) stop()
+                clearMessages()
+              }}
               className="h-7 text-xs"
             >
               <Trash2 className="mr-1 h-3 w-3" />
@@ -156,6 +159,7 @@ export function AgentChatPanel({ agent }: AgentChatPanelProps) {
               size="icon"
               variant="destructive"
               onClick={stop}
+              aria-label="Stop streaming"
               className="h-8 w-8 shrink-0"
             >
               <Square className="h-3.5 w-3.5" />
@@ -165,6 +169,7 @@ export function AgentChatPanel({ agent }: AgentChatPanelProps) {
               size="icon"
               onClick={handleSubmit}
               disabled={isDisabled || !inputValue.trim()}
+              aria-label="Send message"
               className="h-8 w-8 shrink-0"
             >
               <ArrowUp className="h-4 w-4" />

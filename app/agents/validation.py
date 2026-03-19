@@ -10,6 +10,7 @@ Called by the runtime after each agent response to enforce quality gates.
 
 from __future__ import annotations
 
+import concurrent.futures
 import re
 from typing import Any
 
@@ -83,7 +84,20 @@ class OutputValidator:
 
         # 4. Prohibited patterns (pre-compiled in __init__)
         for pattern_str, pattern in self._compiled_prohibited:
-            if pattern is not None and pattern.search(output):
+            if pattern is None:
+                continue
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(pattern.search, output)
+                    match = future.result(timeout=1.0)  # 1 second timeout
+            except (concurrent.futures.TimeoutError, Exception):
+                errors.append(ValidationError(
+                    "prohibited_pattern_timeout",
+                    f"Pattern check timed out (possible ReDoS): {pattern_str[:50]}",
+                    severity="warning",
+                ))
+                continue
+            if match:
                 errors.append(ValidationError(
                     "prohibited_content",
                     f"Output contains prohibited pattern: {pattern_str[:50]}",
@@ -118,7 +132,9 @@ class OutputValidator:
 
         try:
             import jsonschema
-            jsonschema.validate(data, schema)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(jsonschema.validate, data, schema)
+                future.result(timeout=2.0)
             return []
         except ImportError:
             # jsonschema not installed — skip schema validation
