@@ -1,7 +1,6 @@
 import {
   Bot,
   MoreHorizontal,
-  Play,
   Settings,
   Trash2,
   MessageSquare,

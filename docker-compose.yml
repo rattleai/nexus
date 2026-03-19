@@ -85,6 +85,7 @@ services:
       SERVER_RESET_QUERY: "DISCARD ALL"
       AUTH_TYPE: scram-sha-256
       LISTEN_PORT: "6432"
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits,statement_timeout,lock_timeout,idle_in_transaction_session_timeout
     ports:
       - "127.0.0.1:6432:6432"
     depends_on:
