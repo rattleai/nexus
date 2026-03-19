@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAuthContext } from "@/lib/auth-context"
 import { parseApiError } from "@/lib/api-client"
+import { SocialLoginButtons } from "@/components/auth/social-login-buttons"
 
 export const Route = createLazyFileRoute("/login")({
   component: LoginPage,
@@ -101,6 +102,7 @@ function LoginPage() {
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? t("sign_in.submitting") : t("sign_in.submit")}
             </Button>
+            <SocialLoginButtons mode="login" disabled={isLoading} />
             <div className="text-sm text-center text-muted-foreground space-y-1">
               <p>
                 {t("sign_in.no_account")}{" "}

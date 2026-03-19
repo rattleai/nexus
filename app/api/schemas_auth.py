@@ -90,3 +90,21 @@ class RegisterResponse(BaseModel):
 
 class OAuthAuthorizeResponse(BaseModel):
     url: str
+
+
+class OAuthCallbackRequest(BaseModel):
+    code: str
+    state: str
+
+
+class OAuthAccountResponse(BaseModel):
+    id: uuid.UUID
+    provider: str
+    provider_user_id: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class OAuthProvidersResponse(BaseModel):
+    providers: list[str]

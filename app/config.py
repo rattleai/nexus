@@ -196,6 +196,14 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @property
+    def google_oauth_configured(self) -> bool:
+        return bool(self.OAUTH_GOOGLE_CLIENT_ID and self.OAUTH_GOOGLE_CLIENT_SECRET)
+
+    @property
+    def github_oauth_configured(self) -> bool:
+        return bool(self.OAUTH_GITHUB_CLIENT_ID and self.OAUTH_GITHUB_CLIENT_SECRET)
+
+    @property
     def storage_configured(self) -> bool:
         return bool(self.S3_ENDPOINT_URL and self.S3_ACCESS_KEY_ID and self.S3_SECRET_ACCESS_KEY)
 

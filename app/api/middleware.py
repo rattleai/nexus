@@ -30,6 +30,7 @@ _CSRF_EXEMPT_PREFIXES = (
     "/api/v1/auth/accept-invitation",
     "/api/v1/auth/refresh",
     "/api/v1/auth/logout",
+    "/api/v1/auth/oauth/",
     "/api/v1/billing/webhooks",
 )
 

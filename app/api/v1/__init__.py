@@ -57,12 +57,14 @@ if settings.AGENT_EXECUTION_ENABLED:
 if settings.AUTH_ENABLED:
     from app.api.v1.auth_routes import router as auth_router
     from app.api.v1.notifications import router as notifications_router
+    from app.api.v1.oauth_social import router as oauth_social_router
     from app.api.v1.push import router as push_router
     from app.api.v1.sync import router as sync_router
     from app.api.v1.team import router as team_router
     from app.api.v1.webauthn import router as webauthn_router
 
     v1_router.include_router(auth_router, tags=["auth"])
+    v1_router.include_router(oauth_social_router, tags=["auth"])
     v1_router.include_router(team_router, tags=["team"])
     v1_router.include_router(notifications_router, tags=["notifications"])
     v1_router.include_router(push_router, tags=["push"])
