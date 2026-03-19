@@ -144,7 +144,7 @@ class Settings(BaseSettings):
     MCP_HTTP_PORT: int = 8001
     MCP_LOG_TOOL_CALLS: bool = True
     MCP_RATE_LIMIT_REQUESTS: int = 300  # Max MCP requests per tenant per minute
-    MCP_EXPOSE_API_ROUTES: bool = True  # Auto-expose FastAPI routes as MCP tools via fastapi-mcp
+    MCP_EXPOSE_API_ROUTES: bool = False  # Auto-expose FastAPI routes as MCP tools via fastapi-mcp (opt-in)
 
     # ── Agent / Bot API Enhancements ──────────────────────
     AGENT_HINTS_ENABLED: bool = True

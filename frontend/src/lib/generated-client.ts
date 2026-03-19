@@ -7,7 +7,7 @@
  *
  * Usage:
  *   import { initGeneratedClient } from "@/lib/generated-client"
- *   initGeneratedClient()
+ *   await initGeneratedClient()
  *
  * Then use the generated SDK anywhere:
  *   import { getHealthLive } from "@/generated/api"
@@ -22,15 +22,20 @@ let _initialized = false
 /**
  * Initialize the @hey-api generated client with auth interceptors.
  * Safe to call multiple times — only runs once.
+ *
+ * Uses dynamic import() so the app still builds before the first codegen run.
  */
-export function initGeneratedClient(): void {
+export async function initGeneratedClient(): Promise<void> {
   if (_initialized) return
 
-  // Lazy import so the app still builds before the first codegen run.
-  // The generated module exposes a `client` singleton with a config method.
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { client } = require("@/generated/api") as {
+    const mod = await import("@/generated/api").catch(() => null)
+    if (!mod) {
+      console.debug("[generated-client] SDK not yet generated — run `npm run api:generate`")
+      return
+    }
+
+    const { client } = mod as {
       client: {
         setConfig: (cfg: Record<string, unknown>) => void
         interceptors: {
@@ -61,10 +66,7 @@ export function initGeneratedClient(): void {
     })
 
     _initialized = true
-  } catch {
-    // Generated client not yet available — codegen hasn't been run.
-    // This is expected during initial setup; the hand-written api-client
-    // continues to work as a fallback.
-    console.debug("[generated-client] SDK not yet generated — run `npm run api:generate`")
+  } catch (err) {
+    console.warn("[generated-client] Failed to initialize SDK:", err)
   }
 }

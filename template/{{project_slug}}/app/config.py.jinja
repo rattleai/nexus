@@ -1,3 +1,5 @@
+import warnings
+
 from pydantic_settings import BaseSettings
 
 
@@ -8,6 +10,7 @@ class Settings(BaseSettings):
 {%- if include_redis %}
     REDIS_URL: str = "redis://localhost:6379/0"
 {%- endif %}
+    SECRET_KEY: str = "change-me"
     DEBUG: bool = False
     CORS_ORIGINS: str = "http://localhost:3000"
     PORT: int = {{ port }}
@@ -16,3 +19,21 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def validate_settings() -> None:
+    """Validate critical settings on startup. Call from lifespan."""
+    if settings.SECRET_KEY == "change-me":
+        if settings.DEBUG:
+            warnings.warn(
+                "SECRET_KEY is using the default value — not safe for production",
+                stacklevel=2,
+            )
+        else:
+            raise RuntimeError(
+                "SECRET_KEY must be set to a unique value in production (DEBUG=false)"
+            )
+
+    origins = [o.strip() for o in settings.CORS_ORIGINS.split(",")]
+    if "*" in origins and not settings.DEBUG:
+        raise RuntimeError("CORS_ORIGINS must not be '*' in production — specify explicit origins")

@@ -234,11 +234,6 @@ def create_app() -> FastAPI:
     # API routes (must be before SPA catch-all)
     app.include_router(v1_router, prefix=settings.API_V1_PREFIX)
 
-    # Mount fastapi-mcp bridge (auto-exposes API routes as MCP tools)
-    from app.mcp.api_bridge import mount_api_mcp
-
-    mount_api_mcp(app)
-
     # Enrich OpenAPI schema with agent-friendly metadata
     _original_openapi = app.openapi
 
@@ -279,6 +274,12 @@ def create_app() -> FastAPI:
                 openapi_url="/api/v1/openapi.json",
                 title=f"{app.title} — ReDoc",
             )
+
+    # Mount fastapi-mcp bridge AFTER all routes and schema enrichment are complete,
+    # so the bridge sees the final enriched OpenAPI schema and all registered routes.
+    from app.mcp.api_bridge import mount_api_mcp
+
+    mount_api_mcp(app)
 
     # SPA static assets
     if (SPA_DIR / "assets").is_dir():

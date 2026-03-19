@@ -1,5 +1,6 @@
 """{{ project_name }} — FastAPI microservice."""
 
+import asyncio
 from contextlib import asynccontextmanager
 
 import structlog
@@ -8,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app import __version__
-from app.config import settings
+from app.config import settings, validate_settings
 from app.api.v1 import v1_router
 from app.core.logging import setup_logging
 
@@ -18,6 +19,7 @@ logger = structlog.stdlib.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_settings()
     logger.info("app_starting", version=__version__, debug=settings.DEBUG)
 {%- if include_redis %}
 
@@ -36,7 +38,9 @@ async def lifespan(app: FastAPI):
 {%- if include_redis %}
 
     try:
-        await redis_pool.aclose()
+        await asyncio.wait_for(redis_pool.aclose(), timeout=5.0)
+    except TimeoutError:
+        logger.warning("redis_close_timeout")
     except Exception:
         logger.warning("redis_close_error", exc_info=True)
 {%- endif %}
@@ -45,7 +49,9 @@ async def lifespan(app: FastAPI):
     from app.db.session import dispose_engines
 
     try:
-        await dispose_engines()
+        await asyncio.wait_for(dispose_engines(), timeout=10.0)
+    except TimeoutError:
+        logger.warning("db_dispose_timeout")
     except Exception:
         logger.warning("db_dispose_error", exc_info=True)
 {%- endif %}

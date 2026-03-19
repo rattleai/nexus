@@ -20,11 +20,13 @@ project_slug:
   type: str
   default: "{{ project_name | lower | replace(' ', '-') }}"
   help: "Directory and package name (e.g. 'notification-service')"
+  validator: "{% if not project_slug | regex_search('^[a-z][a-z0-9-]*$') %}Must start with a lowercase letter and contain only lowercase letters, digits, and hyphens{% endif %}"
 
 python_package:
   type: str
   default: "{{ project_slug | replace('-', '_') }}"
   help: "Python package name (e.g. 'notification_service')"
+  validator: "{% if not python_package | regex_search('^[a-z][a-z0-9_]*$') %}Must be a valid Python identifier (lowercase letters, digits, underscores; must start with a letter){% endif %}"
 
 description:
   type: str
@@ -35,6 +37,7 @@ port:
   type: int
   default: 8010
   help: "HTTP port the service listens on"
+  validator: "{% if port < 1024 or port > 65535 %}Port must be between 1024 and 65535{% endif %}"
 
 include_celery:
   type: bool
