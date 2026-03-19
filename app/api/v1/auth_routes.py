@@ -41,6 +41,7 @@ from app.db.models import (
 )
 
 _auth_rate_limit = RateLimiter(max_requests=settings.RATE_LIMIT_AUTH_ENDPOINTS, window=60, key_prefix="rl:auth")
+_refresh_rate_limit = RateLimiter(max_requests=30, window=60, key_prefix="rl:auth-refresh")
 
 router = APIRouter(prefix="/auth")
 logger = structlog.stdlib.get_logger()
@@ -326,7 +327,7 @@ async def login(body: UserLogin, request: Request, response: Response, db: Async
 _REFRESH_GRACE_SECONDS = 30  # Allow replay of recently-revoked token (lost response recovery)
 
 
-@router.post("/refresh", response_model=TokenResponse, dependencies=[Depends(_auth_rate_limit)])
+@router.post("/refresh", response_model=TokenResponse, dependencies=[Depends(_refresh_rate_limit)])
 async def refresh(
     response: Response,
     refresh_token: str | None = Cookie(default=None),
