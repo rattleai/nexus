@@ -110,11 +110,11 @@ class AgentDefinitionResponse(BaseModel):
     parallel_tool_execution: bool
     memory_config: dict[str, Any]
     governance_policy: dict[str, Any]
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 # ── Agent Instance ─────────────────────────────────────────────────────
@@ -154,7 +154,7 @@ class AgentSessionResponse(BaseModel):
     instance_id: uuid.UUID
     status: str
     messages: list[dict[str, Any]]
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)
     expires_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -240,7 +240,7 @@ class WorkflowDefinitionResponse(BaseModel):
     version: int
     definition: dict[str, Any]
     governance: dict[str, Any]
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
@@ -333,7 +333,7 @@ class TenantToolResponse(BaseModel):
     auth_config: dict[str, Any] = {}
     is_active: bool
     health_check_url: str | None
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)
     created_at: datetime
     updated_at: datetime
 

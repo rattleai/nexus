@@ -29,8 +29,10 @@ export const queryClient = new QueryClient({
       staleTime: 30_000,
       // Never retry auth errors — they're handled by the token refresh flow.
       // Retrying 401s amplifies the problem and hammers the refresh endpoint.
+      // Don't retry 5xx server errors either — they indicate bugs, not transient issues.
       retry: (failureCount, error) => {
         if (isAuthError(error)) return false
+        if (error instanceof HTTPError && error.response.status >= 500) return false
         return failureCount < 2
       },
       refetchOnWindowFocus: true,

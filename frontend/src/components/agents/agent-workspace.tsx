@@ -381,23 +381,25 @@ export function AgentWorkspace() {
           )}
         </div>
       ) : (
-        <ResizablePanelGroup
-          orientation="horizontal"
-          className="flex-1 min-h-0 rounded-xl border"
-        >
-          <ResizablePanel
-            defaultSize={28}
-            minSize={20}
-            maxSize={40}
-            className="bg-background"
+        <div className="flex-1 min-h-0">
+          <ResizablePanelGroup
+            orientation="horizontal"
+            className="rounded-xl border"
           >
-            {sidebarContent}
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={72} className="bg-background">
-            {mainContent}
-          </ResizablePanel>
-        </ResizablePanelGroup>
+            <ResizablePanel
+              defaultSize={28}
+              minSize={20}
+              maxSize={40}
+              className="bg-background"
+            >
+              {sidebarContent}
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={72} className="bg-background">
+              {mainContent}
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </div>
       )}
 
       {/* Dialogs */}

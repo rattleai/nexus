@@ -118,6 +118,7 @@ export function useAgentInstances(agentId: string | null, status?: string) {
     enabled: !!agentId,
     refetchInterval: 10_000,
     refetchIntervalInBackground: false,
+    meta: { suppressErrorToast: true },
   })
 }
 

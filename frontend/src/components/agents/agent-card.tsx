@@ -45,10 +45,18 @@ export function AgentCard({
   const status = statusStyles[agent.status] ?? statusStyles.draft
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          onSelect()
+        }
+      }}
       className={cn(
-        "w-full text-left rounded-lg border p-3 transition-all duration-150",
+        "w-full text-left rounded-lg border p-3 transition-all duration-150 cursor-pointer",
         "hover:bg-accent/50 hover:border-accent-foreground/20",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         isSelected &&
@@ -140,6 +148,6 @@ export function AgentCard({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-    </button>
+    </div>
   )
 }
