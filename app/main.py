@@ -208,6 +208,7 @@ def create_app() -> FastAPI:
             "description": "CADPrice multi-tenant SaaS platform MCP server",
             "transport": settings.MCP_TRANSPORT,
             "url": f"{settings.APP_BASE_URL}/mcp" if settings.MCP_TRANSPORT == "http" else None,
+            "api_bridge": f"{settings.APP_BASE_URL}/mcp" if settings.MCP_EXPOSE_API_ROUTES else None,
             "authentication": {"type": "api_key", "header": "X-API-Key"},
             "capabilities": {
                 "tools": True,
@@ -273,6 +274,12 @@ def create_app() -> FastAPI:
                 openapi_url="/api/v1/openapi.json",
                 title=f"{app.title} — ReDoc",
             )
+
+    # Mount fastapi-mcp bridge AFTER all routes and schema enrichment are complete,
+    # so the bridge sees the final enriched OpenAPI schema and all registered routes.
+    from app.mcp.api_bridge import mount_api_mcp
+
+    mount_api_mcp(app)
 
     # SPA static assets
     if (SPA_DIR / "assets").is_dir():

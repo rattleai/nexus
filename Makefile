@@ -1,5 +1,6 @@
 .PHONY: dev dev-up dev-down test lint format migrate seed build seed-docker mcp mcp-http \
-       prod-up prod-down prod-logs prod-deploy prod-backup prod-certbot-init
+       prod-up prod-down prod-logs prod-deploy prod-backup prod-certbot-init \
+       api-export api-generate api-sync new-service
 
 # ── Development ──────────────────────────────────────────────
 dev-up:  ## Start all services (DB, Redis, API, frontend, worker)
@@ -53,6 +54,22 @@ fe-test:  ## Run frontend tests
 
 fe-lint:  ## Lint frontend code
 	cd frontend && npm run lint
+
+# ── API Client Generation ────────────────────────────────────
+api-export:  ## Export OpenAPI spec from the FastAPI app
+	python -m scripts.export_openapi openapi.json
+
+api-generate:  ## Generate TypeScript API client from openapi.json
+	cd frontend && npx openapi-ts
+
+api-sync:  ## Export OpenAPI spec and regenerate TypeScript client
+	$(MAKE) api-export
+	$(MAKE) api-generate
+
+# ── Scaffolding ──────────────────────────────────────────────
+new-service:  ## Scaffold a new microservice (usage: make new-service dest=services/my-svc)
+	@test -n "$(dest)" || (echo "Usage: make new-service dest=services/my-svc" && exit 1)
+	copier copy template/ $(dest)
 
 # ── MCP Server ──────────────────────────────────────────────
 mcp:  ## Start MCP server (stdio transport)

@@ -1,0 +1,54 @@
+# syntax=docker/dockerfile:1
+
+# ── Builder stage: install deps, run tests/lint ──────────
+FROM python:3.12-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /build
+
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir ".[dev]"
+
+COPY . .
+
+# Run linting and tests during build (fail-fast)
+RUN ruff check app/ && python -m pytest tests/ -x -q
+
+# ── Runtime stage: production image without dev deps ─────
+FROM python:3.12-slim AS runtime
+
+LABEL org.opencontainers.image.title="{{ project_name }}"
+LABEL org.opencontainers.image.description="{{ description }}"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Install system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user (created before COPY so files are owned by appuser)
+RUN groupadd -g 1001 appuser && useradd -u 1001 -g appuser -s /sbin/nologin appuser
+
+# Install production deps only (no dev extras)
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir .
+
+# Copy application code and set ownership
+COPY --chown=appuser:appuser . .
+
+USER appuser
+
+EXPOSE {{ port }}
+
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=10s \
+    CMD curl -sf http://localhost:{{ port }}/health/live || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "{{ port }}", "--proxy-headers"]

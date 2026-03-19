@@ -59,6 +59,7 @@ infra/k8s/secrets.yaml
 # ──────────────────────────────────────────────
 node_modules/
 frontend/dist/
+openapi.json
 
 # ──────────────────────────────────────────────
 # IDE & Editors
