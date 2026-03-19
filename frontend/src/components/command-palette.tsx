@@ -49,16 +49,8 @@ export function CommandPalette({
     [isControlled, onOpenChange],
   )
 
-  React.useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault()
-        handleOpenChange(!open)
-      }
-    }
-    document.addEventListener("keydown", handleKeyDown)
-    return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [open, handleOpenChange])
+  // Note: Ctrl+K is owned by AppCommandPalette (mounted at root).
+  // This component is a reusable building block without global keybindings.
 
   const grouped = React.useMemo(() => {
     const groups = new Map<string, CommandAction[]>()

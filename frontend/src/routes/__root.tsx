@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Toaster } from "sonner"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { OfflineBanner } from "@/components/layout/offline-banner"
+import { AppCommandPalette } from "@/components/app-command-palette"
 
 function RootErrorComponent({ reset }: ErrorComponentProps) {
   const { t } = useTranslation("errors")
@@ -57,6 +58,7 @@ function RootLayout() {
     <AppShell>
       <OfflineBanner />
       <Outlet />
+      <AppCommandPalette />
       <Toaster
         position={isMobile ? "bottom-center" : "top-right"}
         richColors

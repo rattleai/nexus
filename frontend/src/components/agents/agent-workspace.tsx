@@ -8,7 +8,6 @@ import {
   Settings,
   Shield,
   Activity,
-  ChevronRight,
   Loader2,
   Sparkles,
   Command,
@@ -54,7 +53,6 @@ import { AgentConfigPanel } from "./agent-config-panel"
 import { GovernancePanel } from "./governance-panel"
 import { AgentRunsPanel } from "./agent-runs-panel"
 import { CreateAgentDialog } from "./create-agent-dialog"
-import { AgentCommandPalette } from "./agent-command-palette"
 import {
   useAgentDefinitions,
   useAgentDefinition,
@@ -79,12 +77,10 @@ export function AgentWorkspace() {
     activeTab,
     searchQuery,
     statusFilter,
-    agentPaletteOpen,
     selectAgent,
     setActiveTab,
     setSearchQuery,
     setStatusFilter,
-    setAgentPaletteOpen,
     addRecentAgent,
   } = useAgentStore()
 
@@ -108,18 +104,6 @@ export function AgentWorkspace() {
         a.description.toLowerCase().includes(q),
     )
   }, [data, searchQuery])
-
-  // Ctrl+Shift+K shortcut for agent palette (Ctrl+Shift+K is used by the global command palette)
-  React.useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "K") {
-        e.preventDefault()
-        setAgentPaletteOpen(!agentPaletteOpen)
-      }
-    }
-    document.addEventListener("keydown", handleKeyDown)
-    return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [agentPaletteOpen, setAgentPaletteOpen])
 
   const handleSelectAgent = (id: string) => {
     selectAgent(id)
@@ -156,14 +140,19 @@ export function AgentWorkspace() {
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7"
-                    onClick={() => setAgentPaletteOpen(true)}
+                    onClick={() => {
+                      // Programmatically dispatch Ctrl+K to open the global palette
+                      document.dispatchEvent(
+                        new KeyboardEvent("keydown", { key: "k", metaKey: true }),
+                      )
+                    }}
                   >
                     <Command className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">
                   <p>
-                    Quick switch <kbd className="ml-1 text-[10px]">Ctrl+Shift+K</kbd>
+                    Quick switch <kbd className="ml-1 text-[10px]">Ctrl+K &gt;</kbd>
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -260,7 +249,7 @@ export function AgentWorkspace() {
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{data?.total ?? 0} agents</span>
           <kbd className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono">
-            Ctrl+Shift+K
+            Ctrl+K &gt;
           </kbd>
         </div>
       </div>
@@ -396,15 +385,6 @@ export function AgentWorkspace() {
         onCreated={handleAgentCreated}
       />
 
-      <AgentCommandPalette
-        open={agentPaletteOpen}
-        onOpenChange={setAgentPaletteOpen}
-        onCreateNew={() => {
-          setAgentPaletteOpen(false)
-          setCreateOpen(true)
-        }}
-      />
-
       <AlertDialog
         open={!!deleteId}
         onOpenChange={(open) => !open && setDeleteId(null)}
@@ -446,9 +426,13 @@ function EmptyState({ onCreateNew }: { onCreateNew: () => void }) {
       <h3 className="text-xl font-semibold mb-2">Agent Workspace</h3>
       <p className="text-sm text-muted-foreground max-w-md mb-6">
         Select an agent from the sidebar to view its details, chat with it, or
-        configure its behavior. Use{" "}
+        configure its behavior. Press{" "}
         <kbd className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">
-          Ctrl+Shift+K
+          Ctrl+K
+        </kbd>{" "}
+        then type{" "}
+        <kbd className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">
+          &gt;
         </kbd>{" "}
         to quickly find and switch between agents.
       </p>
@@ -459,10 +443,17 @@ function EmptyState({ onCreateNew }: { onCreateNew: () => void }) {
         </Button>
         <Button
           variant="outline"
-          onClick={() => useAgentStore.getState().setAgentPaletteOpen(true)}
+          onClick={() =>
+            document.dispatchEvent(
+              new KeyboardEvent("keydown", { key: "k", metaKey: true }),
+            )
+          }
         >
           <Command className="mr-1.5 h-4 w-4" />
-          Quick Switch
+          Search
+          <kbd className="ml-1.5 text-[10px] bg-muted px-1 py-0.5 rounded font-mono">
+            Ctrl+K
+          </kbd>
         </Button>
       </div>
     </div>

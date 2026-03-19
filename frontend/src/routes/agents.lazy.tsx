@@ -13,7 +13,7 @@ function AgentsPage() {
       <div className="space-y-4">
         <PageHeader
           title="Agent Workspace"
-          description="Create, configure, and manage AI agents. Press Ctrl+Shift+K to quickly find agents."
+          description="Create, configure, and manage AI agents. Press Ctrl+K then type > to quickly find agents."
         />
         <AgentWorkspace />
       </div>
