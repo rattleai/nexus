@@ -1,10 +1,11 @@
 import * as React from "react"
-import { ArrowUp, Square, Trash2, Bot, User } from "lucide-react"
+import { ArrowUp, Square, Trash2, Bot, User, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { AgentStatus, type AgentState } from "@/components/ai/agent-status"
 import { ToolCallDisplay } from "@/components/ai/tool-call-display"
 import { useAgentStream, type AgentStreamMessage } from "@/hooks/use-agent-stream"
+import { useUpdateAgent } from "@/hooks/use-agents"
 import { cn } from "@/lib/utils"
 import type { AgentDefinition } from "@/types/agents"
 
@@ -59,6 +60,11 @@ export function AgentChatPanel({ agent }: AgentChatPanelProps) {
   }
 
   const isDisabled = agent.status !== "active"
+  const updateAgent = useUpdateAgent()
+
+  const handleActivate = () => {
+    updateAgent.mutate({ id: agent.id, data: { status: "active" } })
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -91,11 +97,18 @@ export function AgentChatPanel({ agent }: AgentChatPanelProps) {
       </div>
 
       {isDisabled && (
-        <div className="rounded-lg border border-dashed border-yellow-500/50 bg-yellow-500/5 p-4 mb-4 text-center">
+        <div className="rounded-lg border border-dashed border-yellow-500/50 bg-yellow-500/5 p-4 mb-4 text-center space-y-3">
           <p className="text-sm text-yellow-600 dark:text-yellow-400">
-            This agent is not active. Set its status to <strong>Active</strong> in
-            the Config tab to start chatting.
+            This agent is not active. Activate it to start chatting.
           </p>
+          <Button
+            size="sm"
+            onClick={handleActivate}
+            disabled={updateAgent.isPending}
+          >
+            <Zap className="mr-1.5 h-3.5 w-3.5" />
+            {updateAgent.isPending ? "Activating..." : "Activate Agent"}
+          </Button>
         </div>
       )}
 
