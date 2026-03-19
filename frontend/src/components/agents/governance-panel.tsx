@@ -37,10 +37,10 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
     policy.max_spend_per_month_usd?.toString() ?? "",
   )
   const [deniedTools, setDeniedTools] = React.useState<string[]>(
-    (policy.denied_tools as string[]) ?? [],
+    policy.denied_tools ?? [],
   )
   const [requireApproval, setRequireApproval] = React.useState<string[]>(
-    (policy.require_approval_for as string[]) ?? [],
+    policy.require_approval_for ?? [],
   )
   const [approvalTimeout, setApprovalTimeout] = React.useState(
     policy.approval_timeout_seconds?.toString() ?? "300",
@@ -59,8 +59,8 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
     setMaxRunSpend(p.max_spend_per_run_usd?.toString() ?? "")
     setMaxDaySpend(p.max_spend_per_day_usd?.toString() ?? "")
     setMaxMonthSpend(p.max_spend_per_month_usd?.toString() ?? "")
-    setDeniedTools((p.denied_tools as string[]) ?? [])
-    setRequireApproval((p.require_approval_for as string[]) ?? [])
+    setDeniedTools(p.denied_tools ?? [])
+    setRequireApproval(p.require_approval_for ?? [])
     setApprovalTimeout(p.approval_timeout_seconds?.toString() ?? "300")
     setApprovalDefault(p.approval_default_action ?? "deny")
     setMaxRpm(p.max_requests_per_minute?.toString() ?? "")
@@ -70,8 +70,8 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
     maxRunSpend !== (policy.max_spend_per_run_usd?.toString() ?? "") ||
     maxDaySpend !== (policy.max_spend_per_day_usd?.toString() ?? "") ||
     maxMonthSpend !== (policy.max_spend_per_month_usd?.toString() ?? "") ||
-    JSON.stringify([...deniedTools].sort()) !== JSON.stringify([...(policy.denied_tools as string[] ?? [])].sort()) ||
-    JSON.stringify([...requireApproval].sort()) !== JSON.stringify([...(policy.require_approval_for as string[] ?? [])].sort()) ||
+    JSON.stringify([...deniedTools].sort()) !== JSON.stringify([...(policy.denied_tools ?? [])].sort()) ||
+    JSON.stringify([...requireApproval].sort()) !== JSON.stringify([...(policy.require_approval_for ?? [])].sort()) ||
     approvalTimeout !== (policy.approval_timeout_seconds?.toString() ?? "300") ||
     approvalDefault !== (policy.approval_default_action ?? "deny") ||
     maxRpm !== (policy.max_requests_per_minute?.toString() ?? "")

@@ -158,7 +158,7 @@ export function AppShell({ children }: AppShellProps) {
           <NotificationBell />
           <UserMenu />
         </header>
-        <main id="main-content" className="flex-1 p-6 pb-20 md:pb-6">
+        <main id="main-content" className="flex-1 flex flex-col min-h-0 p-6 pb-20 md:pb-6">
           {children}
         </main>
       </SidebarInset>

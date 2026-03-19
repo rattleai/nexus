@@ -501,6 +501,110 @@ async def get_current_user_profile(
     )
 
 
+# ── Profile update ──────────────────────────────────────
+
+
+class UpdateProfileRequest(BaseModel):
+    display_name: str | None = Field(None, min_length=1, max_length=255)
+    locale: str | None = Field(None, min_length=2, max_length=10)
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_current_user_profile(
+    body: UpdateProfileRequest,
+    user: User = Depends(get_current_user_from_token),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the current user's profile."""
+    update_data = body.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(400, "No fields to update")
+
+    for field, value in update_data.items():
+        setattr(user, field, value)
+
+    await db.commit()
+    await db.refresh(user)
+
+    membership = await db.execute(
+        select(TenantMembership).where(
+            TenantMembership.user_id == user.id,
+            TenantMembership.tenant_id == user.tenant_id,
+        )
+    )
+    member = membership.scalar_one_or_none()
+    role = member.role.value if member else None
+
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        email_verified=user.email_verified,
+        is_active=user.is_active,
+        tenant_id=user.tenant_id,
+        role=role,
+        created_at=user.created_at,
+    )
+
+
+# ── Change password ────────────────────────────────────
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+@router.post("/change-password", dependencies=[Depends(_auth_rate_limit)])
+async def change_password(
+    body: ChangePasswordRequest,
+    user: User = Depends(get_current_user_from_token),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change the current user's password."""
+    if not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(400, "Current password is incorrect")
+
+    user.password_hash = hash_password(body.new_password)
+    await db.commit()
+
+    return {"message": "Password changed successfully"}
+
+
+# ── Resend email verification ──────────────────────────
+
+
+@router.post("/resend-verification", dependencies=[Depends(_auth_rate_limit)])
+async def resend_email_verification(
+    user: User = Depends(get_current_user_from_token),
+    db: AsyncSession = Depends(get_db),
+):
+    """Resend the email verification token."""
+    if user.email_verified:
+        return {"message": "Email is already verified"}
+
+    from app.db.models.auth import EmailVerificationToken
+
+    token = generate_secure_token()
+    token_hash = hash_token(token)
+
+    verification = EmailVerificationToken(
+        user_id=user.id,
+        token_hash=token_hash,
+        expires_at=datetime.now(UTC) + timedelta(hours=24),
+    )
+    db.add(verification)
+    await db.commit()
+
+    await send_email(
+        to=user.email,
+        template=EmailTemplate.EMAIL_VERIFICATION,
+        context={"token": token, "display_name": user.display_name or user.email},
+    )
+
+    return {"message": "Verification email sent"}
+
+
 # ── Email verification ──────────────────────────────────
 
 

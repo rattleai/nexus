@@ -48,7 +48,7 @@ export function useCreateCheckout() {
 export function useCancelSubscription() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () => api.post("billing/cancel").json<Subscription>(),
+    mutationFn: () => api.post("billing/subscription/cancel").json<Subscription>(),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.billing.all }),
   })
 }

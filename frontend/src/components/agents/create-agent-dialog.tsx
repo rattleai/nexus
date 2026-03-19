@@ -14,11 +14,14 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
 import { useCreateAgent } from "@/hooks/use-agents"
+import { useModels } from "@/hooks/use-models"
 import { Bot, Sparkles, Code, FileSearch, PenTool, Brain } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -143,6 +146,18 @@ export function CreateAgentDialog({
   const [description, setDescription] = React.useState("")
   const [model, setModel] = React.useState("gpt-4o")
   const createAgent = useCreateAgent()
+  const { data: models = [] } = useModels()
+
+  // Group models by provider for the select dropdown
+  const modelsByProvider = React.useMemo(() => {
+    const grouped = new Map<string, typeof models>()
+    for (const m of models) {
+      const list = grouped.get(m.provider) ?? []
+      list.push(m)
+      grouped.set(m.provider, list)
+    }
+    return grouped
+  }, [models])
 
   React.useEffect(() => {
     if (open) {
@@ -287,11 +302,16 @@ export function CreateAgentDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="gpt-4o">GPT-4o</SelectItem>
-                  <SelectItem value="gpt-4o-mini">GPT-4o Mini</SelectItem>
-                  <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6</SelectItem>
-                  <SelectItem value="claude-opus-4-6">Claude Opus 4.6</SelectItem>
-                  <SelectItem value="claude-haiku-4-5">Claude Haiku 4.5</SelectItem>
+                  {[...modelsByProvider.entries()].map(([provider, providerModels]) => (
+                    <SelectGroup key={provider}>
+                      <SelectLabel className="capitalize">{provider}</SelectLabel>
+                      {providerModels.map((m) => (
+                        <SelectItem key={m.model_id} value={m.model_id}>
+                          {m.display_name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

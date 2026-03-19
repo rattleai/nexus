@@ -9,9 +9,11 @@ function isAuthError(error: unknown): boolean {
 
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
-    onError: async (error) => {
+    onError: async (error, query) => {
       // Don't toast for 401/403 — those are handled by auth flow
       if (isAuthError(error)) return
+      // Suppress toast for polling queries (e.g., approvals, instances)
+      if (query.meta?.suppressErrorToast) return
       const apiError = await parseApiError(error)
       toast.error("Request failed", { description: apiError.detail })
     },

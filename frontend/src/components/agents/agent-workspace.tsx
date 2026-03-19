@@ -363,7 +363,7 @@ export function AgentWorkspace() {
   return (
     <>
       {isMobile ? (
-        <div className="flex flex-col h-[calc(100vh-8rem)]">
+        <div className="flex flex-col flex-1 min-h-0">
           {!selectedAgentId ? (
             sidebarContent
           ) : (
@@ -383,7 +383,7 @@ export function AgentWorkspace() {
       ) : (
         <ResizablePanelGroup
           orientation="horizontal"
-          className="h-[calc(100vh-8rem)] rounded-xl border"
+          className="flex-1 min-h-0 rounded-xl border"
         >
           <ResizablePanel
             defaultSize={28}

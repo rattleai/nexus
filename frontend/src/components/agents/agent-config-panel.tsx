@@ -12,11 +12,14 @@ import { Separator } from "@/components/ui/separator"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
 import { useUpdateAgent } from "@/hooks/use-agents"
+import { useModels } from "@/hooks/use-models"
 import type { AgentDefinition, AgentStatus } from "@/types/agents"
 import { toast } from "sonner"
 
@@ -26,6 +29,17 @@ interface AgentConfigPanelProps {
 
 export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
   const updateAgent = useUpdateAgent()
+  const { data: models = [] } = useModels()
+
+  const modelsByProvider = React.useMemo(() => {
+    const grouped = new Map<string, typeof models>()
+    for (const m of models) {
+      const list = grouped.get(m.provider) ?? []
+      list.push(m)
+      grouped.set(m.provider, list)
+    }
+    return grouped
+  }, [models])
 
   const [name, setName] = React.useState(agent.name)
   const [description, setDescription] = React.useState(agent.description)
@@ -232,12 +246,16 @@ export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="gpt-4o">GPT-4o</SelectItem>
-                  <SelectItem value="gpt-4o-mini">GPT-4o Mini</SelectItem>
-                  <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
-                  <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6</SelectItem>
-                  <SelectItem value="claude-opus-4-6">Claude Opus 4.6</SelectItem>
-                  <SelectItem value="claude-haiku-4-5">Claude Haiku 4.5</SelectItem>
+                  {[...modelsByProvider.entries()].map(([provider, providerModels]) => (
+                    <SelectGroup key={provider}>
+                      <SelectLabel className="capitalize">{provider}</SelectLabel>
+                      {providerModels.map((m) => (
+                        <SelectItem key={m.model_id} value={m.model_id}>
+                          {m.display_name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

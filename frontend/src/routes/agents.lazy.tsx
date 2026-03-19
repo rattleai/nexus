@@ -10,10 +10,9 @@ export const Route = createLazyFileRoute("/agents")({
 function AgentsPage() {
   return (
     <AuthGuard>
-      <div className="space-y-4">
+      <div className="flex flex-col flex-1 min-h-0 gap-4">
         <PageHeader
           title="Agent Workspace"
-          description="Create, configure, and manage AI agents. Press Ctrl+K then type > to quickly find agents."
         />
         <AgentWorkspace />
       </div>

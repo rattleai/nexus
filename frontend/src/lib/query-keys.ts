@@ -63,4 +63,9 @@ export const queryKeys = {
     all: ["tenants"] as const,
     current: () => ["tenants", "current"] as const,
   },
+
+  ai: {
+    all: ["ai"] as const,
+    models: () => ["ai", "models"] as const,
+  },
 } as const

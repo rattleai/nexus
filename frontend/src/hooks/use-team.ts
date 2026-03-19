@@ -23,7 +23,7 @@ export function useInviteMember() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: { email: string; role: TeamRole }) =>
-      api.post("team/invite", { json: body }).json<Invitation>(),
+      api.post("team/invitations", { json: body }).json<Invitation>(),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.team.all }),
   })
 }

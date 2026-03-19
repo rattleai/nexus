@@ -1,4 +1,5 @@
 import * as React from "react"
+import { getAccessToken } from "@/lib/api-client"
 
 export interface ChatStreamMessage {
   id: string
@@ -74,9 +75,13 @@ export function useChatStream({
       abortControllerRef.current = controller
 
       try {
+        const headers: Record<string, string> = { "Content-Type": "application/json" }
+        const token = getAccessToken()
+        if (token) headers["Authorization"] = `Bearer ${token}`
+
         const response = await fetch(apiUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({
             messages: [
               ...currentMessages.map((m) => ({ role: m.role, content: m.content })),
@@ -90,7 +95,12 @@ export function useChatStream({
         })
 
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+          try {
+            const errBody = await response.json()
+            if (errBody.detail) errorMessage = errBody.detail
+          } catch { /* use default */ }
+          throw new Error(errorMessage)
         }
 
         const reader = response.body?.getReader()

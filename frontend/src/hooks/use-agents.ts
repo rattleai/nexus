@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { api, parseApiError } from "@/lib/api-client"
+import { api } from "@/lib/api-client"
 import { toast } from "sonner"
 import type {
   AgentDefinition,
@@ -48,10 +48,9 @@ export function useAgentDefinitions(status?: string) {
     queryFn: async () => {
       const params: Record<string, string> = { page_size: "100" }
       if (status && status !== "all") params.status = status
-      const res = await api
+      return api
         .get("agents/definitions", { searchParams: params })
         .json<PaginatedAgentResponse<AgentDefinition>>()
-      return res
     },
   })
 }
@@ -59,12 +58,8 @@ export function useAgentDefinitions(status?: string) {
 export function useAgentDefinition(id: string | null) {
   return useQuery({
     queryKey: agentKeys.definitions.detail(id ?? ""),
-    queryFn: async () => {
-      const res = await api
-        .get(`agents/definitions/${id}`)
-        .json<AgentDefinition>()
-      return res
-    },
+    queryFn: async () =>
+      api.get(`agents/definitions/${id}`).json<AgentDefinition>(),
     enabled: !!id,
   })
 }
@@ -72,44 +67,25 @@ export function useAgentDefinition(id: string | null) {
 export function useCreateAgent() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (data: AgentDefinitionCreate) => {
-      return api.post("agents/definitions", { json: data }).json<AgentDefinition>()
-    },
+    mutationFn: async (data: AgentDefinitionCreate) =>
+      api.post("agents/definitions", { json: data }).json<AgentDefinition>(),
     onSuccess: (agent) => {
       qc.invalidateQueries({ queryKey: agentKeys.definitions.all })
       toast.success(`Agent "${agent.name}" created`)
     },
-    onError: async (err) => {
-      const e = await parseApiError(err)
-      toast.error(e.detail)
-    },
+    // No onError — global MutationCache.onError shows the API error detail
   })
 }
 
 export function useUpdateAgent() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: string
-      data: AgentDefinitionUpdate
-    }) => {
-      return api
-        .put(`agents/definitions/${id}`, { json: data })
-        .json<AgentDefinition>()
-    },
+    mutationFn: async ({ id, data }: { id: string; data: AgentDefinitionUpdate }) =>
+      api.put(`agents/definitions/${id}`, { json: data }).json<AgentDefinition>(),
     onSuccess: (agent) => {
       qc.invalidateQueries({ queryKey: agentKeys.definitions.all })
-      qc.invalidateQueries({
-        queryKey: agentKeys.definitions.detail(agent.id),
-      })
+      qc.invalidateQueries({ queryKey: agentKeys.definitions.detail(agent.id) })
       toast.success(`Agent "${agent.name}" updated`)
-    },
-    onError: async (err) => {
-      const e = await parseApiError(err)
-      toast.error(e.detail)
     },
   })
 }
@@ -123,10 +99,6 @@ export function useDeleteAgent() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: agentKeys.definitions.all })
       toast.success("Agent deleted")
-    },
-    onError: async (err) => {
-      const e = await parseApiError(err)
-      toast.error(e.detail)
     },
   })
 }
@@ -152,31 +124,15 @@ export function useAgentInstances(agentId: string | null, status?: string) {
 export function useRunAgent() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({
-      agentId,
-      input,
-    }: {
-      agentId: string
-      input: Record<string, unknown>
-    }) => {
-      return api
+    mutationFn: async ({ agentId, input }: { agentId: string; input: Record<string, unknown> }) =>
+      api
         .post(`agents/definitions/${agentId}/instances`, {
-          json: {
-            input_data: input,
-            idempotency_key: crypto.randomUUID(),
-          },
+          json: { input_data: input, idempotency_key: crypto.randomUUID() },
         })
-        .json<AgentInstance>()
-    },
+        .json<AgentInstance>(),
     onSuccess: (instance) => {
-      qc.invalidateQueries({
-        queryKey: agentKeys.instances.list(instance.definition_id),
-      })
+      qc.invalidateQueries({ queryKey: agentKeys.instances.list(instance.definition_id) })
       toast.success("Agent run started")
-    },
-    onError: async (err) => {
-      const e = await parseApiError(err)
-      toast.error(e.detail)
     },
   })
 }
@@ -184,18 +140,11 @@ export function useRunAgent() {
 export function useStopInstance() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (instanceId: string) => {
-      return api
-        .post(`agents/instances/${instanceId}/stop`)
-        .json<AgentInstance>()
-    },
+    mutationFn: async (instanceId: string) =>
+      api.post(`agents/instances/${instanceId}/stop`).json<AgentInstance>(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: agentKeys.instances.all })
       toast.success("Agent stopped")
-    },
-    onError: async (err) => {
-      const e = await parseApiError(err)
-      toast.error(e.detail)
     },
   })
 }
@@ -205,11 +154,10 @@ export function useStopInstance() {
 export function useAgentTools() {
   return useQuery({
     queryKey: agentKeys.tools.list(),
-    queryFn: async () => {
-      return api
+    queryFn: async () =>
+      api
         .get("agents/tools", { searchParams: { page_size: "100" } })
-        .json<PaginatedAgentResponse<TenantTool>>()
-    },
+        .json<PaginatedAgentResponse<TenantTool>>(),
   })
 }
 
@@ -218,11 +166,10 @@ export function useAgentTools() {
 export function useAgentPolicies() {
   return useQuery({
     queryKey: agentKeys.policies.list(),
-    queryFn: async () => {
-      return api
+    queryFn: async () =>
+      api
         .get("agents/policies", { searchParams: { page_size: "100" } })
-        .json<PaginatedAgentResponse<AgentPolicy>>()
-    },
+        .json<PaginatedAgentResponse<AgentPolicy>>(),
   })
 }
 
@@ -246,11 +193,13 @@ export function useAgentAnalytics(days = 30, agentId?: string) {
 export function usePendingApprovals() {
   return useQuery({
     queryKey: agentKeys.approvals(),
-    queryFn: async () => {
-      return api
+    queryFn: async () =>
+      api
         .get("agents/approvals")
-        .json<{ approvals: Array<Record<string, unknown>>; count: number }>()
-    },
+        .json<{ approvals: Array<Record<string, unknown>>; count: number }>(),
     refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+    // Suppress global error toast for polling — only show errors when user actively queries
+    meta: { suppressErrorToast: true },
   })
 }

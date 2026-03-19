@@ -8,16 +8,12 @@ interface AgentWorkspaceState {
   activeTab: AgentTab
   searchQuery: string
   statusFilter: "all" | "draft" | "active" | "disabled"
-  commandPaletteOpen: boolean
-  agentPaletteOpen: boolean
   recentAgentIds: string[]
 
   selectAgent: (id: string | null) => void
   setActiveTab: (tab: AgentTab) => void
   setSearchQuery: (query: string) => void
   setStatusFilter: (filter: "all" | "draft" | "active" | "disabled") => void
-  setCommandPaletteOpen: (open: boolean) => void
-  setAgentPaletteOpen: (open: boolean) => void
   addRecentAgent: (id: string) => void
 }
 
@@ -32,8 +28,6 @@ export const useAgentStore = create<AgentWorkspaceState>()(
       activeTab: "overview",
       searchQuery: "",
       statusFilter: "all",
-      commandPaletteOpen: false,
-      agentPaletteOpen: false,
       recentAgentIds: [],
 
       selectAgent: (id) =>
@@ -45,8 +39,6 @@ export const useAgentStore = create<AgentWorkspaceState>()(
       setActiveTab: (tab) => set({ activeTab: tab }),
       setSearchQuery: (query) => set({ searchQuery: query }),
       setStatusFilter: (filter) => set({ statusFilter: filter }),
-      setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
-      setAgentPaletteOpen: (open) => set({ agentPaletteOpen: open }),
 
       addRecentAgent: (id) =>
         set((s) => {
