@@ -148,8 +148,7 @@ async def ai_complete(
         "prompt_tokens": result.prompt_tokens,
         "completion_tokens": result.completion_tokens,
         "total_tokens": result.total_tokens,
-        "billed_tokens": result.billed_tokens,
-        "cost_usd": result.cost_usd,
+        "billed_amount_usd": float(result.billed_amount_usd),
         "latency_ms": result.latency_ms,
         "finish_reason": result.finish_reason,
     }
@@ -205,7 +204,7 @@ async def ai_get_usage(days: int = 30, *, tenant: Any, db: Any) -> dict:
             func.coalesce(func.sum(AIUsageLog.total_tokens), 0).label("total_tokens"),
             func.coalesce(func.sum(AIUsageLog.prompt_tokens), 0).label("total_prompt_tokens"),
             func.coalesce(func.sum(AIUsageLog.completion_tokens), 0).label("total_completion_tokens"),
-            func.coalesce(func.sum(AIUsageLog.cost_usd), 0).label("total_cost_usd"),
+            func.coalesce(func.sum(AIUsageLog.billed_amount_usd), 0).label("total_billed_usd"),
         ).where(
             AIUsageLog.tenant_id == tenant.id,
             AIUsageLog.created_at >= period_start,
@@ -218,7 +217,7 @@ async def ai_get_usage(days: int = 30, *, tenant: Any, db: Any) -> dict:
         "total_tokens": int(row.total_tokens),
         "total_prompt_tokens": int(row.total_prompt_tokens),
         "total_completion_tokens": int(row.total_completion_tokens),
-        "total_cost_usd": float(row.total_cost_usd),
+        "total_billed_usd": float(row.total_billed_usd),
         "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat(),
         "days": days,

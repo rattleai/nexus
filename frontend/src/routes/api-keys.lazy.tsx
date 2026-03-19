@@ -101,13 +101,21 @@ function RevokeButton({ apiKey }: { apiKey: ApiKey }) {
 }
 
 function ApiKeysPage() {
+  return (
+    <AuthGuard>
+      <ApiKeysPageContent />
+    </AuthGuard>
+  )
+}
+
+function ApiKeysPageContent() {
   const { t } = useTranslation("api_keys")
   const queryResult = useApiKeys()
   const [createOpen, setCreateOpen] = useState(false)
   const columns = useApiKeyColumns()
 
   return (
-    <AuthGuard>
+    <>
       <ResourcePage
         title={t("title")}
         description={t("description")}
@@ -134,7 +142,7 @@ function ApiKeysPage() {
         }
       />
       <CreateKeyDialog open={createOpen} onOpenChange={setCreateOpen} />
-    </AuthGuard>
+    </>
   )
 }
 

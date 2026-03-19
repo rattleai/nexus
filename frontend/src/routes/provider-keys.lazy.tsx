@@ -64,6 +64,14 @@ function getProviderLabel(value: string) {
 }
 
 function ProviderKeysPage() {
+  return (
+    <AuthGuard>
+      <ProviderKeysPageContent />
+    </AuthGuard>
+  )
+}
+
+function ProviderKeysPageContent() {
   const { data: keys = [], isLoading } = useProviderKeys()
   const [createOpen, setCreateOpen] = useState(false)
 
@@ -71,7 +79,7 @@ function ProviderKeysPage() {
   const connectedProviders = new Set(activeKeys.map((k) => k.provider))
 
   return (
-    <AuthGuard>
+    <>
       <div className="space-y-8">
         <PageHeader
           title="Provider Keys"
@@ -126,7 +134,7 @@ function ProviderKeysPage() {
       </div>
 
       <AddKeyDialog open={createOpen} onOpenChange={setCreateOpen} />
-    </AuthGuard>
+    </>
   )
 }
 

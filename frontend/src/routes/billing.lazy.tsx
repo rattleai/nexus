@@ -73,6 +73,14 @@ function UsageBar({ label, metric, isBytes }: { label: string; metric: UsageMetr
 }
 
 function BillingPage() {
+  return (
+    <AuthGuard requiredRole="admin">
+      <BillingPageContent />
+    </AuthGuard>
+  )
+}
+
+function BillingPageContent() {
   const { t } = useTranslation("billing")
   const { data: subscription, isLoading: subLoading, error: subError, refetch: subRefetch } = useSubscription()
   const { data: plans, isLoading: plansLoading } = usePlans()
@@ -109,8 +117,7 @@ function BillingPage() {
   const isLoading = subLoading || plansLoading || usageLoading
 
   return (
-    <AuthGuard requiredRole="admin">
-      <div className="space-y-6">
+    <div className="space-y-6">
         <PageHeader
           title={t("title")}
           description={t("description")}
@@ -228,6 +235,5 @@ function BillingPage() {
           </>
         )}
       </div>
-    </AuthGuard>
   )
 }

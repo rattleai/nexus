@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -113,9 +113,9 @@ def create_app() -> FastAPI:
         version=__version__,
         description="Multi-tenant SaaS platform",
         lifespan=lifespan,
-        docs_url="/api/docs",
-        redoc_url="/api/redoc",
-        openapi_url="/api/v1/openapi.json",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
 
     # Exception handlers (fail-closed)
@@ -242,6 +242,37 @@ def create_app() -> FastAPI:
         return enrich_openapi_schema(schema)
 
     app.openapi = _enriched_openapi
+
+    # ── Two-Tier OpenAPI: public (filtered) vs admin (full) ───────
+    from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+
+    from app.api.deps import require_admin_key
+    from app.api.openapi_enrichment import filter_internal_paths
+
+    @app.get("/api/v1/openapi.json", include_in_schema=False)
+    async def public_openapi():
+        """Public OpenAPI spec with internal paths stripped."""
+        return JSONResponse(filter_internal_paths(app.openapi()))
+
+    @app.get("/admin/openapi.json", include_in_schema=False, dependencies=[Depends(require_admin_key)])
+    async def admin_openapi():
+        """Full unfiltered OpenAPI spec — admin only."""
+        return JSONResponse(app.openapi())
+
+    if settings.DEBUG:
+        @app.get("/api/docs", include_in_schema=False)
+        async def swagger_ui():
+            return get_swagger_ui_html(
+                openapi_url="/api/v1/openapi.json",
+                title=f"{app.title} — Swagger UI",
+            )
+
+        @app.get("/api/redoc", include_in_schema=False)
+        async def redoc_ui():
+            return get_redoc_html(
+                openapi_url="/api/v1/openapi.json",
+                title=f"{app.title} — ReDoc",
+            )
 
     # SPA static assets
     if (SPA_DIR / "assets").is_dir():

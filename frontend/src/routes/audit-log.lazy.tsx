@@ -138,6 +138,14 @@ function useResourceOptions() {
 }
 
 function AuditLogPage() {
+  return (
+    <AuthGuard requiredRole="admin">
+      <AuditLogPageContent />
+    </AuthGuard>
+  )
+}
+
+function AuditLogPageContent() {
   const { t } = useTranslation("audit_log")
   const [actionFilter, setActionFilter] = useState("all")
   const [resourceFilter, setResourceFilter] = useState("all")
@@ -150,8 +158,7 @@ function AuditLogPage() {
   })
 
   return (
-    <AuthGuard requiredRole="admin">
-      <div className="space-y-6">
+    <div className="space-y-6">
         <PageHeader title={t("title")} description={t("description")} />
 
         {/* Filters */}
@@ -208,6 +215,5 @@ function AuditLogPage() {
           </CardContent>
         </Card>
       </div>
-    </AuthGuard>
   )
 }

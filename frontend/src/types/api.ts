@@ -1,7 +1,5 @@
 export interface HealthResponse {
   status: "ok" | "degraded"
-  version: string
-  services: Record<string, boolean>
 }
 
 export interface ErrorResponse {
@@ -123,7 +121,6 @@ export interface FileRecord {
 export interface Plan {
   id: string
   name: string
-  stripe_price_id: string | null
   price_monthly: number
   limits: Record<string, number>
   features: string[]
@@ -132,7 +129,6 @@ export interface Plan {
 
 export interface Subscription {
   id: string
-  stripe_subscription_id: string | null
   status: "active" | "past_due" | "canceled" | "trialing" | "incomplete"
   plan: Plan | null
   current_period_start: string | null

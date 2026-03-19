@@ -112,11 +112,14 @@ function RootLayout() {
     )
   }
 
-  // Unauthenticated — public layout
+  // Unauthenticated — public layout.
+  // Only render Outlet for public routes; protected routes must not mount
+  // their components (which fire authenticated API hooks) before the
+  // redirect effect navigates away.
   return (
     <PublicLayout>
       <OfflineBanner />
-      <Outlet />
+      {isPublicRoute && <Outlet />}
       {toaster}
     </PublicLayout>
   )

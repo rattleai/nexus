@@ -44,10 +44,8 @@ class AICompletionResponse(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
-    cost_usd: float
     billed_amount_usd: float
     latency_ms: int
-    key_source: str
     finish_reason: str | None = None
 
 
@@ -65,7 +63,6 @@ class AIStreamUsage(BaseModel):
     completion_tokens: int
     total_tokens: int
     billed_amount_usd: float
-    cost_usd: float
     latency_ms: int
 
 
@@ -131,7 +128,6 @@ class WalletTransactionResponse(BaseModel):
     type: str
     amount_usd: Decimal
     balance_after_usd: Decimal
-    provider_cost_usd: Decimal | None
     description: str | None
     reference_id: str | None
     created_at: datetime
@@ -180,7 +176,7 @@ class ModelUsageSummary(BaseModel):
     total_tokens: int
     prompt_tokens: int
     completion_tokens: int
-    total_cost_usd: float
+    total_billed_usd: float
 
 
 class AIUsageResponse(BaseModel):
@@ -188,7 +184,7 @@ class AIUsageResponse(BaseModel):
     total_tokens: int
     total_prompt_tokens: int
     total_completion_tokens: int
-    total_cost_usd: float
+    total_billed_usd: float
     by_model: list[ModelUsageSummary]
     period_start: datetime
     period_end: datetime

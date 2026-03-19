@@ -112,8 +112,19 @@ export const api = ky.create({
         if (response.status === 401) {
           const reqVersion = (request as unknown as Record<string, unknown>).__tokenVersion as number | undefined
 
-          // Only handle 401 for requests that were sent with a JWT token
-          if (reqVersion === undefined) return
+          // For requests sent without JWT (API key auth or no auth):
+          // clear the invalid API key so the user gets re-prompted.
+          if (reqVersion === undefined) {
+            if (request.headers.has("X-API-Key")) {
+              try {
+                localStorage.removeItem(AUTH_STORAGE_KEY)
+              } catch {
+                // localStorage may be unavailable
+              }
+              window.dispatchEvent(new Event("auth-change"))
+            }
+            return
+          }
 
           // If the token was already refreshed since this request was sent,
           // just retry with the new token — no need to trigger another refresh

@@ -11,7 +11,6 @@ import {
   Activity,
   Loader2,
   Sparkles,
-  Command,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,12 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -55,7 +48,6 @@ import {
 } from "@/hooks/use-agents"
 import { useAgentStore, type AgentTab } from "@/stores/agent-store"
 import { cn } from "@/lib/utils"
-import { StatusDot, statusToVariant } from "@/components/status-dot"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ErrorBoundary } from "@/components/error-boundary"
 
@@ -66,9 +58,6 @@ const TABS: { id: AgentTab; label: string; icon: React.ElementType }[] = [
   { id: "governance", label: "Governance", icon: Shield },
   { id: "runs", label: "Runs", icon: Activity },
 ]
-
-const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
-const modKey = isMac ? "\u2318" : "Ctrl"
 
 export function AgentWorkspace() {
   const isMobile = useIsMobile()
@@ -138,41 +127,14 @@ export function AgentWorkspace() {
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
             Agents
           </h2>
-          <div className="flex items-center gap-1">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    aria-label="Open command palette"
-                    onClick={() => {
-                      // Programmatically dispatch Ctrl+K to open the global palette
-                      document.dispatchEvent(
-                        new KeyboardEvent("keydown", { key: "k", metaKey: true }),
-                      )
-                    }}
-                  >
-                    <Command className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <p>
-                    Quick switch <kbd className="ml-1 text-[10px]">{modKey}+K &gt;</kbd>
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <Button
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => setCreateOpen(true)}
-            >
-              <Plus className="mr-1 h-3 w-3" />
-              New
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="mr-1 h-3 w-3" />
+            New
+          </Button>
         </div>
 
         <div className="relative">
@@ -253,12 +215,9 @@ export function AgentWorkspace() {
 
       {/* Footer */}
       <div className="p-3 border-t">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{data?.total ?? 0} agents</span>
-          <kbd className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono">
-            {modKey}+K &gt;
-          </kbd>
-        </div>
+        <span className="text-xs text-muted-foreground">
+          {data?.total ?? 0} agents
+        </span>
       </div>
     </div>
   )
@@ -282,7 +241,6 @@ export function AgentWorkspace() {
           <span className="font-medium text-sm truncate">
             {selectedAgent.name}
           </span>
-          <StatusDot variant={statusToVariant(selectedAgent.status)} />
         </div>
 
         <Separator orientation="vertical" className="h-5" />
@@ -449,36 +407,12 @@ function EmptyState({ onCreateNew }: { onCreateNew: () => void }) {
       <h3 className="text-xl font-semibold mb-2">Agent Workspace</h3>
       <p className="text-sm text-muted-foreground max-w-md mb-6">
         Select an agent from the sidebar to view its details, chat with it, or
-        configure its behavior. Press{" "}
-        <kbd className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">
-          {modKey}+K
-        </kbd>{" "}
-        then type{" "}
-        <kbd className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">
-          &gt;
-        </kbd>{" "}
-        to quickly find and switch between agents.
+        configure its behavior.
       </p>
-      <div className="flex gap-3">
-        <Button onClick={onCreateNew}>
-          <Plus className="mr-1.5 h-4 w-4" />
-          Create Agent
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() =>
-            document.dispatchEvent(
-              new KeyboardEvent("keydown", { key: "k", metaKey: true }),
-            )
-          }
-        >
-          <Command className="mr-1.5 h-4 w-4" />
-          Search
-          <kbd className="ml-1.5 text-[10px] bg-muted px-1 py-0.5 rounded font-mono">
-            {modKey}+K
-          </kbd>
-        </Button>
-      </div>
+      <Button onClick={onCreateNew}>
+        <Plus className="mr-1.5 h-4 w-4" />
+        Create Agent
+      </Button>
     </div>
   )
 }

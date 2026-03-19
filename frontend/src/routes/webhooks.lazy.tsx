@@ -228,6 +228,14 @@ function useWebhookColumns(): ColumnDef<WebhookEndpoint>[] {
 }
 
 function WebhooksPage() {
+  return (
+    <AuthGuard>
+      <WebhooksPageContent />
+    </AuthGuard>
+  )
+}
+
+function WebhooksPageContent() {
   const { t } = useTranslation("webhooks")
   const { t: tc } = useTranslation("common")
   const { t: tv } = useTranslation("validation")
@@ -257,7 +265,7 @@ function WebhooksPage() {
   }
 
   return (
-    <AuthGuard>
+    <>
       <ResourcePage
         title={t("title")}
         description={t("description")}
@@ -322,6 +330,6 @@ function WebhooksPage() {
           </div>
         </div>
       </FormDialog>
-    </AuthGuard>
+    </>
   )
 }

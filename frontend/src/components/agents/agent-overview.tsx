@@ -10,7 +10,6 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { StatusDot, statusToVariant } from "@/components/status-dot"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { useAgentAnalytics, useAgentInstances } from "@/hooks/use-agents"
@@ -53,7 +52,6 @@ export function AgentOverview({ agent }: AgentOverviewProps) {
             <div>
               <div className="flex items-center gap-3">
                 <h2 className="text-xl font-semibold">{agent.name}</h2>
-                <StatusDot variant={statusToVariant(agent.status)} />
                 <span className="text-xs text-muted-foreground">v{agent.version}</span>
               </div>
               {agent.description && (

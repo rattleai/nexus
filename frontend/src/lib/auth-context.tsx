@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
 import i18n from "i18next"
 import { HTTPError } from "ky"
-import { api, setAccessToken as setApiClientToken } from "./api-client"
+import { api, getAccessToken, setAccessToken as setApiClientToken } from "./api-client"
 
 interface AuthUser {
   id: string
@@ -44,6 +44,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Keep api-client in sync whenever React state changes
   useEffect(() => {
     setApiClientToken(accessToken)
+  }, [accessToken])
+
+  // Sync React auth state when the api-client's token changes externally
+  // (e.g. when attemptTokenRefresh() fails in the afterResponse hook and
+  // clears the module-level _accessToken, or when an invalid API key is
+  // detected and cleared). Without this, React state stays "authenticated"
+  // while the actual token is null, causing persistent 401 errors.
+  useEffect(() => {
+    const handleAuthChange = () => {
+      const currentToken = getAccessToken()
+      if (currentToken !== accessToken) {
+        _setAccessToken(currentToken)
+        if (!currentToken) {
+          setUser(null)
+        }
+      }
+    }
+    window.addEventListener("auth-change", handleAuthChange)
+    return () => window.removeEventListener("auth-change", handleAuthChange)
   }, [accessToken])
 
   // Attempt session restoration on mount via refresh token cookie.

@@ -1,10 +1,11 @@
 """Tenant-scoped audit log endpoint for authenticated users."""
 
+import ipaddress
 import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +15,25 @@ from app.db.models import AuditLog, Tenant
 from app.db.session import set_tenant_context
 
 router = APIRouter(prefix="/audit-logs", tags=["audit"])
+
+
+def _mask_ip(ip_str: str | None) -> str | None:
+    """Mask IP addresses for GDPR compliance: IPv4 → /24, IPv6 → /48."""
+    if not ip_str:
+        return None
+    try:
+        addr = ipaddress.ip_address(ip_str)
+        if isinstance(addr, ipaddress.IPv4Address):
+            # Zero out the last octet
+            network = ipaddress.IPv4Network(f"{ip_str}/24", strict=False)
+            parts = str(network.network_address).rsplit(".", 1)
+            return f"{parts[0]}.xxx"
+        else:
+            # Zero out after /48
+            network = ipaddress.IPv6Network(f"{ip_str}/48", strict=False)
+            return f"{network.network_address}/48"
+    except ValueError:
+        return ip_str
 
 
 class AuditLogResponse(BaseModel):
@@ -29,6 +49,11 @@ class AuditLogResponse(BaseModel):
     occurred_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def mask_ip_address(self) -> "AuditLogResponse":
+        self.ip_address = _mask_ip(self.ip_address)
+        return self
 
 
 @router.get("", response_model=CursorPage[AuditLogResponse])

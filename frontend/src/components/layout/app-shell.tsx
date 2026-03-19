@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Bot,
   Code2,
+  Search,
 } from "lucide-react"
 import { APP_NAME } from "@/lib/constants"
 import {
@@ -32,6 +33,7 @@ import {
   SidebarInset,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
+import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { LanguageSwitcher } from "@/components/language-switcher"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -43,6 +45,7 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import type { LucideIcon } from "lucide-react"
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? "0.1.0"
+const isMac = typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
 
 interface NavItem {
   href: string
@@ -167,6 +170,22 @@ export function AppShell({ children }: AppShellProps) {
         <header className="flex h-14 items-center gap-2 border-b px-4">
           {!isMobile && <SidebarTrigger />}
           {!isMobile && <Separator orientation="vertical" className="h-6" />}
+          <div className="flex-1" />
+          <Button
+            variant="outline"
+            className="h-8 w-full max-w-sm justify-start gap-2 text-sm text-muted-foreground font-normal px-3"
+            onClick={() =>
+              document.dispatchEvent(
+                new KeyboardEvent("keydown", { key: "k", metaKey: true }),
+              )
+            }
+          >
+            <Search className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline-flex">{t("labels.search" as never)}</span>
+            <kbd className="pointer-events-none ml-auto hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium sm:inline-flex">
+              {isMac ? "⌘" : "Ctrl"}K
+            </kbd>
+          </Button>
           <div className="flex-1" />
           <ThemeToggle />
           <NotificationBell />

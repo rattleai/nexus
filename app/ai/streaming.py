@@ -159,7 +159,6 @@ async def sse_stream_response(
                 "completion_tokens": completion_tokens,
                 "total_tokens": total_tokens,
                 "billed_amount_usd": float(billed_amount_usd),
-                "cost_usd": cost_usd,
                 "latency_ms": latency_ms,
             }
             yield f"data: {json.dumps(usage_data)}\n\n"
