@@ -14,6 +14,7 @@ blocked.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from typing import Any
 
@@ -30,6 +31,10 @@ _SPEND_RUN_KEY = "agent:gov:spend:run:{instance_id}"
 _SPEND_DAY_KEY = "agent:gov:spend:day:{tenant_id}:{agent_id}:{date}"
 _SPEND_MONTH_KEY = "agent:gov:spend:month:{tenant_id}:{agent_id}:{month}"
 _RATE_KEY = "agent:gov:rate:{tenant_id}:{instance_id}"
+
+# Redis keys for approval queue
+_APPROVAL_KEY = "agent:gov:approval:{approval_id}"
+_APPROVAL_PENDING_KEY = "agent:gov:approvals:pending:{tenant_id}"
 
 
 class GovernanceViolationError(Exception):
@@ -248,6 +253,41 @@ class GovernanceEngine:
                     details={"daily_spend": daily_spend, "limit": max_per_day},
                 )
 
+        # Per-month limit — same atomic pattern as per-day
+        max_per_month = self.policy.get("max_spend_per_month_usd")
+        if max_per_month is not None and instance_id:
+            agent_id = context.get("agent_id", "unknown")
+            estimated_cost = context.get("estimated_cost", 0.01)
+            from datetime import UTC, datetime
+            this_month = datetime.now(UTC).strftime("%Y-%m")
+            month_key = _SPEND_MONTH_KEY.format(
+                tenant_id=tenant_id, agent_id=agent_id, month=this_month,
+            )
+            try:
+                lua_result = await _atomic_check_and_increment(
+                    month_key, estimated_cost, max_per_month, ttl_seconds=86400 * 35,
+                )
+            except Exception as exc:
+                logger.error("governance_redis_unavailable", check="monthly_spending_limit", exc_info=True)
+                raise GovernanceViolationError(
+                    "spending_limit",
+                    "Unable to verify monthly spending limits (Redis unavailable). Action blocked.",
+                    details={"reason": "redis_unavailable"},
+                ) from exc
+            if lua_result == -1:
+                monthly_spend = float(await redis_pool.get(month_key) or 0)
+                await self._emit_violation(
+                    tenant_id=tenant_id,
+                    context=context,
+                    violation_type="spending_limit",
+                    details=f"Monthly spending limit exceeded: ${monthly_spend:.4f} >= ${max_per_month:.2f}",
+                )
+                raise GovernanceViolationError(
+                    "spending_limit",
+                    f"Agent has exceeded monthly spending limit (${max_per_month:.2f})",
+                    details={"monthly_spend": monthly_spend, "limit": max_per_month},
+                )
+
     async def _check_rate_limits(
         self,
         action: str,
@@ -265,9 +305,13 @@ class GovernanceEngine:
 
         rate_key = _RATE_KEY.format(tenant_id=tenant_id, instance_id=instance_id)
         try:
-            current = await redis_pool.incr(rate_key)
-            if current == 1:
-                await redis_pool.expire(rate_key, 60)
+            # Use a pipeline to make INCR + EXPIRE atomic (avoids permanent
+            # keys if the process crashes between the two calls).
+            pipe = redis_pool.pipeline()
+            pipe.incr(rate_key)
+            pipe.expire(rate_key, 60)  # Always refresh TTL
+            results = await pipe.execute()
+            current = results[0]
         except Exception as exc:
             # Fail-closed: if Redis is unavailable, block the action
             logger.error("governance_redis_unavailable", check="rate_limit", exc_info=True)
@@ -298,8 +342,11 @@ class GovernanceEngine:
     ) -> None:
         """Check if the action requires human approval.
 
-        If approval is required, emits an event and raises GovernanceViolationError
-        to pause the agent. The agent can be resumed after approval.
+        If approval is required:
+        1. Creates an approval request in Redis with a TTL
+        2. Emits an AgentApprovalRequested event for WebSocket/SSE push
+        3. Polls Redis for the approval decision until timeout
+        4. Raises GovernanceViolationError if denied or timed out
         """
         require_approval = self.policy.get("require_approval_for", [])
         if not require_approval:
@@ -311,12 +358,38 @@ class GovernanceEngine:
 
         approval_id = uuid.uuid4().hex
         timeout = self.policy.get("approval_timeout_seconds", 300)
+        instance_id = context.get("instance_id", "")
+        agent_id = context.get("agent_id", "")
+        default_action = self.policy.get("approval_default_action", "deny")
+
+        # Store approval request in Redis for the approval queue
+        approval_key = _APPROVAL_KEY.format(approval_id=approval_id)
+        import json
+        from datetime import UTC, datetime
+        approval_data = json.dumps({
+            "approval_id": approval_id,
+            "tenant_id": str(tenant_id),
+            "instance_id": instance_id,
+            "agent_id": agent_id,
+            "action": f"tool_call:{tool_name}",
+            "tool_name": tool_name,
+            "context": {k: str(v) for k, v in context.items()},
+            "status": "pending",
+            "default_action": default_action,
+            "created_at": datetime.now(UTC).isoformat(),
+        })
+        await redis_pool.setex(approval_key, timeout + 60, approval_data)
+
+        # Add to tenant's pending approvals list
+        pending_key = _APPROVAL_PENDING_KEY.format(tenant_id=tenant_id)
+        await redis_pool.sadd(pending_key, approval_id)
+        await redis_pool.expire(pending_key, timeout + 60)
 
         await emit(
             AgentApprovalRequested(
                 tenant_id=str(tenant_id),
-                instance_id=context.get("instance_id", ""),
-                agent_id=context.get("agent_id", ""),
+                instance_id=instance_id,
+                agent_id=agent_id,
                 action=f"tool_call:{tool_name}",
                 approval_id=approval_id,
                 timeout_seconds=timeout,
@@ -324,15 +397,108 @@ class GovernanceEngine:
             durable=True,
         )
 
-        # In a full implementation, this would pause and wait for approval
-        # via WebSocket notification. For now, apply the default action.
-        default_action = self.policy.get("approval_default_action", "deny")
-        if default_action == "deny":
+        # Wait for approval via Redis pub/sub (low-latency) with polling fallback
+        import asyncio
+        decision = await self._wait_for_approval(approval_id, approval_key, timeout)
+
+        # Clean up pending set
+        await redis_pool.srem(pending_key, approval_id)
+
+        if decision is None:
+            # Timeout: apply default action
+            from app.agents.events import AgentApprovalResolved
+            await emit(
+                AgentApprovalResolved(
+                    tenant_id=str(tenant_id),
+                    approval_id=approval_id,
+                    decision="timeout",
+                    resolved_by="system",
+                ),
+                durable=True,
+            )
+            decision = default_action
+
+        if decision == "denied" or (decision != "approved" and default_action == "deny"):
             raise GovernanceViolationError(
                 "approval_required",
-                f"Action '{tool_name}' requires human approval",
-                details={"approval_id": approval_id, "tool_name": tool_name},
+                f"Action '{tool_name}' was {'denied' if decision == 'denied' else 'not approved (timeout)'}",
+                details={"approval_id": approval_id, "tool_name": tool_name, "decision": decision},
             )
+
+    async def _wait_for_approval(
+        self,
+        approval_id: str,
+        approval_key: str,
+        timeout: int,
+    ) -> str | None:
+        """Wait for an approval decision via Redis pub/sub with polling fallback.
+
+        Uses pub/sub for near-instant notification when resolve_approval() is
+        called. Falls back to polling every 5s if pub/sub fails to connect.
+        Returns the decision ("approved"/"denied") or None on timeout.
+        """
+        import asyncio
+        import json
+
+        decision_event = asyncio.Event()
+        decision_holder: list[str | None] = [None]
+        channel_name = f"agent:approval:resolved:{approval_id}"
+
+        async def _pubsub_listener() -> None:
+            """Listen for pub/sub notification of approval resolution."""
+            try:
+                pubsub = redis_pool.pubsub()
+                await pubsub.subscribe(channel_name)
+                try:
+                    async for message in pubsub.listen():
+                        if message["type"] == "message":
+                            data = message["data"]
+                            if isinstance(data, bytes):
+                                data = data.decode()
+                            decision_holder[0] = data
+                            decision_event.set()
+                            return
+                finally:
+                    await pubsub.unsubscribe(channel_name)
+                    await pubsub.aclose()
+            except Exception:
+                # Pub/sub failed — polling fallback will handle it
+                logger.debug("approval_pubsub_failed", approval_id=approval_id)
+
+        async def _polling_fallback() -> None:
+            """Poll Redis key as fallback if pub/sub doesn't fire."""
+            elapsed = 0.0
+            while elapsed < timeout and not decision_event.is_set():
+                await asyncio.sleep(3.0)
+                elapsed += 3.0
+                try:
+                    raw = await redis_pool.get(approval_key)
+                    if raw:
+                        data = json.loads(raw)
+                        if data.get("status") != "pending":
+                            decision_holder[0] = data["status"]
+                            decision_event.set()
+                            return
+                except Exception:
+                    pass
+
+        # Run pub/sub listener and polling fallback concurrently
+        listener_task = asyncio.create_task(_pubsub_listener())
+        poller_task = asyncio.create_task(_polling_fallback())
+
+        try:
+            await asyncio.wait_for(decision_event.wait(), timeout=timeout)
+        except TimeoutError:
+            pass
+        finally:
+            listener_task.cancel()
+            poller_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await listener_task
+            with contextlib.suppress(asyncio.CancelledError):
+                await poller_task
+
+        return decision_holder[0]
 
     async def _emit_violation(
         self,
@@ -373,24 +539,24 @@ class GovernanceEngine:
         try:
             now = datetime.now(UTC)
 
-            # Per-run spending
+            # Use a pipeline to batch all writes atomically, preventing
+            # partial updates if the process dies mid-sequence.
             run_key = _SPEND_RUN_KEY.format(instance_id=instance_id)
-            await redis_pool.incrbyfloat(run_key, cost_usd)
-            await redis_pool.expire(run_key, 3600)  # 1 hour TTL
-
-            # Per-day spending
             day_key = _SPEND_DAY_KEY.format(
                 tenant_id=tenant_id, agent_id=agent_id, date=now.strftime("%Y-%m-%d"),
             )
-            await redis_pool.incrbyfloat(day_key, cost_usd)
-            await redis_pool.expire(day_key, 86400 * 2)  # 2 days TTL
-
-            # Per-month spending
             month_key = _SPEND_MONTH_KEY.format(
                 tenant_id=tenant_id, agent_id=agent_id, month=now.strftime("%Y-%m"),
             )
-            await redis_pool.incrbyfloat(month_key, cost_usd)
-            await redis_pool.expire(month_key, 86400 * 35)  # ~35 days TTL
+
+            pipe = redis_pool.pipeline()
+            pipe.incrbyfloat(run_key, cost_usd)
+            pipe.expire(run_key, 3600)  # 1 hour TTL
+            pipe.incrbyfloat(day_key, cost_usd)
+            pipe.expire(day_key, 86400 * 2)  # 2 days TTL
+            pipe.incrbyfloat(month_key, cost_usd)
+            pipe.expire(month_key, 86400 * 35)  # ~35 days TTL
+            await pipe.execute()
         except Exception:
             logger.error(
                 "track_spending_failed",
@@ -400,3 +566,109 @@ class GovernanceEngine:
                 cost_usd=cost_usd,
                 exc_info=True,
             )
+
+    @staticmethod
+    async def resolve_approval(
+        *,
+        approval_id: str,
+        decision: str,
+        resolved_by: str,
+    ) -> dict[str, Any] | None:
+        """Resolve a pending approval request.
+
+        Args:
+            approval_id: The approval request ID.
+            decision: "approved" or "denied".
+            resolved_by: User ID or email of the approver.
+
+        Returns:
+            The approval data if found and resolved, None if not found.
+        """
+        import json
+
+        approval_key = _APPROVAL_KEY.format(approval_id=approval_id)
+
+        # Use WATCH/MULTI/EXEC for optimistic locking to prevent TOCTOU
+        # races where two concurrent approvers both read "pending" and
+        # both write their decisions.
+        from datetime import UTC, datetime
+
+        max_retries = 3
+        for _attempt in range(max_retries):
+            try:
+                async with redis_pool.pipeline(transaction=True) as pipe:
+                    await pipe.watch(approval_key)
+                    raw = await pipe.get(approval_key)
+                    if not raw:
+                        await pipe.unwatch()
+                        return None
+
+                    data = json.loads(raw)
+                    if data.get("status") != "pending":
+                        await pipe.unwatch()
+                        return data  # Already resolved
+
+                    data["status"] = decision
+                    data["resolved_by"] = resolved_by
+                    data["resolved_at"] = datetime.now(UTC).isoformat()
+
+                    ttl = await pipe.ttl(approval_key)
+
+                    pipe.multi()
+                    if ttl > 0:
+                        pipe.setex(approval_key, ttl, json.dumps(data))
+                    else:
+                        pipe.set(approval_key, json.dumps(data))
+                    await pipe.execute()
+                    break  # Success
+            except Exception:
+                # WatchError or connection error — retry
+                if _attempt == max_retries - 1:
+                    raise
+
+        # Notify waiting agent via pub/sub (near-instant unblock)
+        channel_name = f"agent:approval:resolved:{approval_id}"
+        with contextlib.suppress(Exception):
+            await redis_pool.publish(channel_name, decision)
+
+        from app.agents.events import AgentApprovalResolved
+        await emit(
+            AgentApprovalResolved(
+                tenant_id=data.get("tenant_id", ""),
+                approval_id=approval_id,
+                decision=decision,
+                resolved_by=resolved_by,
+            ),
+            durable=True,
+        )
+
+        logger.info(
+            "approval_resolved",
+            approval_id=approval_id,
+            decision=decision,
+            resolved_by=resolved_by,
+        )
+        return data
+
+    @staticmethod
+    async def list_pending_approvals(tenant_id: uuid.UUID) -> list[dict[str, Any]]:
+        """List all pending approval requests for a tenant."""
+        import json
+
+        pending_key = _APPROVAL_PENDING_KEY.format(tenant_id=tenant_id)
+        approval_ids = await redis_pool.smembers(pending_key)
+
+        approvals = []
+        for aid in approval_ids:
+            aid_str = aid if isinstance(aid, str) else aid.decode()
+            approval_key = _APPROVAL_KEY.format(approval_id=aid_str)
+            raw = await redis_pool.get(approval_key)
+            if raw:
+                data = json.loads(raw)
+                if data.get("status") == "pending":
+                    approvals.append(data)
+                else:
+                    # Clean up resolved entries from pending set
+                    await redis_pool.srem(pending_key, aid_str)
+
+        return approvals

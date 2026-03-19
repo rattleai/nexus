@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api-client"
 import { queryKeys } from "@/lib/query-keys"
-import type { AuditLog } from "@/types/api"
+import type { AuditLog, CursorPaginatedResponse } from "@/types/api"
 
 interface AuditLogFilters {
   action?: string
@@ -17,12 +17,14 @@ export function useAuditLogs(filters?: AuditLogFilters) {
 
   return useQuery({
     queryKey: queryKeys.auditLogs.list(searchParams),
-    queryFn: ({ signal }) =>
-      api
-        .get("admin/audit-logs", {
+    queryFn: async ({ signal }) => {
+      const res = await api
+        .get("audit-logs", {
           searchParams: Object.keys(searchParams).length ? searchParams : undefined,
           signal,
         })
-        .json<AuditLog[]>(),
+        .json<CursorPaginatedResponse<AuditLog>>()
+      return res.items
+    },
   })
 }

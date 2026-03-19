@@ -22,6 +22,10 @@ def _make_definition(**overrides):
     mock.max_tokens_per_run = overrides.get("max_tokens_per_run", 100_000)
     mock.allowed_tools = overrides.get("allowed_tools", [])
     mock.id = overrides.get("id", uuid.uuid4())
+    mock.governance_policy = overrides.get("governance_policy", {})
+    mock.output_schema = overrides.get("output_schema", {})
+    mock.memory_config = overrides.get("memory_config", {})
+    mock.name = overrides.get("name", "test-agent")
     return mock
 
 
@@ -263,4 +267,5 @@ class TestAgentRuntimeToolCallExtraction:
                     )
 
         assert result.finish_reason == "error"
-        assert len(result.steps) == 0
+        assert len(result.steps) == 1
+        assert result.steps[0].action == "error"

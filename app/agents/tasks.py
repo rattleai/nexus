@@ -227,7 +227,7 @@ def execute_workflow_run(
         raise
 
 
-@celery_app.task(name="agents.cleanup_stale_instances")
+@celery_app.task(name="app.agents.tasks.cleanup_stale_instances")
 def cleanup_stale_instances() -> dict:
     """Periodic task: mark running instances that have been stale for too long as failed.
 

@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.admin import router as admin_router
+from app.api.v1.audit import router as audit_router
 from app.api.v1.agent_info import router as agent_info_router
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.api_keys import router as api_keys_router
@@ -19,6 +20,7 @@ v1_router = APIRouter()
 v1_router.include_router(health_router, tags=["health"])
 v1_router.include_router(tenants_router, tags=["tenants"])
 v1_router.include_router(admin_router, tags=["admin"])
+v1_router.include_router(audit_router)
 v1_router.include_router(api_keys_router, tags=["api-keys"])
 v1_router.include_router(jobs_router, tags=["jobs"])
 v1_router.include_router(files_router, tags=["files"])

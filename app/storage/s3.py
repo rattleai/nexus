@@ -309,6 +309,35 @@ class S3Storage:
     async def async_list_objects(self, prefix: str) -> list[str]:
         return await asyncio.to_thread(self.list_objects, prefix)
 
+    def list_objects_detailed(self, prefix: str) -> list[dict]:
+        """List objects under prefix with size and last-modified metadata."""
+        prefix = _validate_key(prefix)
+        items: list[dict] = []
+        try:
+            kwargs = {"Bucket": self._bucket, "Prefix": prefix}
+            while True:
+                response = self._client.list_objects_v2(**kwargs)
+                for obj in response.get("Contents", []):
+                    items.append({
+                        "key": obj["Key"],
+                        "size": obj["Size"],
+                        "last_modified": obj["LastModified"],
+                    })
+                if not response.get("IsTruncated"):
+                    break
+                kwargs["ContinuationToken"] = response["NextContinuationToken"]
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.error("s3_list_failed", prefix=prefix, error_code=error_code)
+            raise StorageError(f"List failed: {error_code}") from exc
+        except BotoCoreError as exc:
+            logger.error("s3_list_failed", prefix=prefix, error=str(exc))
+            raise StorageError("List failed: storage service unavailable") from exc
+        return items
+
+    async def async_list_objects_detailed(self, prefix: str) -> list[dict]:
+        return await asyncio.to_thread(self.list_objects_detailed, prefix)
+
 
 def handle_storage_error(exc: StorageError) -> HTTPException:
     """Convert a StorageError into an appropriate HTTPException."""

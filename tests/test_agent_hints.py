@@ -53,7 +53,8 @@ async def test_http_exception_includes_hint():
             response = await client.get("/api/v1/nonexistent")
             assert response.status_code == 404
             data = response.json()
-            assert "hint" in data
+            assert "code" in data
+            assert data["code"] == "HTTP_404"
 
 
 @pytest.mark.asyncio

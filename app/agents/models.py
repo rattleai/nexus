@@ -106,14 +106,24 @@ class AgentDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Version
     # Tool access — JSON array of tool names this agent may invoke
     allowed_tools: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
 
+    # Tool version pinning — JSON object {"tool_name": version_int}
+    # When set, the agent uses the pinned schema version instead of latest
+    tool_versions: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+
     # Execution constraints
     max_steps_per_run: Mapped[int] = mapped_column(Integer, default=50, server_default="50")
     max_duration_seconds: Mapped[int] = mapped_column(Integer, default=300, server_default="300")
     max_tokens_per_run: Mapped[int] = mapped_column(Integer, default=100_000, server_default="100000")
     sandbox_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
+    # Parallel tool execution — when True, multiple tool calls are run concurrently
+    parallel_tool_execution: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+
     # Memory configuration
     memory_config: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+
+    # Output validation — JSON schema enforced on agent responses
+    output_schema: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
 
     # Governance policy (inline or reference to AgentPolicy)
     governance_policy: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
@@ -122,7 +132,7 @@ class AgentDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Version
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, server_default="{}")
 
     # Relationships
-    instances: Mapped[list[AgentInstance]] = relationship(back_populates="definition", lazy="selectin")
+    instances: Mapped[list[AgentInstance]] = relationship(back_populates="definition", lazy="raise")
 
 
 # ── Agent Instance ─────────────────────────────────────────────────────
@@ -172,7 +182,7 @@ class AgentInstance(Base, TimestampMixin):
 
     # Relationships
     definition: Mapped[AgentDefinition] = relationship(back_populates="instances")
-    sessions: Mapped[list[AgentSession]] = relationship(back_populates="instance", lazy="selectin")
+    sessions: Mapped[list[AgentSession]] = relationship(back_populates="instance", lazy="raise")
 
 
 # ── Agent Session ──────────────────────────────────────────────────────
@@ -236,7 +246,7 @@ class AgentMemoryEntry(Base, TimestampMixin):
 
     # Optional vector embedding for semantic search (pgvector)
     # Stored as JSONB array; use pgvector extension for actual vector ops
-    embedding: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    embedding: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # TTL support
@@ -341,6 +351,10 @@ class TenantTool(Base, TimestampMixin, SoftDeleteMixin):
     # MCP tool schema
     input_schema: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
     output_schema: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+
+    # Versioning — allows agents to pin to a specific tool version
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    version_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # External endpoint (for tenant-hosted tools)
     endpoint_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)

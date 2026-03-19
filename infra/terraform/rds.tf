@@ -26,11 +26,14 @@ resource "aws_security_group" "rds" {
     security_groups = [aws_security_group.ecs_tasks.id]
   }
 
+  # RDS never initiates outbound connections — restrict egress to prevent
+  # exfiltration if the instance were compromised.
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = []
+    description = "No outbound (RDS is server-only)"
   }
 
   lifecycle { create_before_destroy = true }
@@ -97,7 +100,34 @@ resource "aws_db_parameter_group" "main" {
     value = "ddl"
   }
 
+  # Noisy neighbor prevention: kill queries running longer than 30 seconds
+  # Prevents one tenant's expensive query from starving the connection pool
+  parameter {
+    name  = "statement_timeout"
+    value = "30000"
+  }
+
+  # Prevent individual queries from consuming excessive temp disk
+  parameter {
+    name  = "temp_file_limit"
+    value = "1048576"  # 1 GB in KB
+  }
+
   lifecycle { create_before_destroy = true }
+}
+
+# ── Customer-Managed KMS Key for RDS ─────────────────────────
+
+resource "aws_kms_key" "rds" {
+  description             = "Customer-managed key for RDS encryption"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+  tags                    = local.common_tags
+}
+
+resource "aws_kms_alias" "rds" {
+  name          = "alias/${local.name_prefix}-rds"
+  target_key_id = aws_kms_key.rds.key_id
 }
 
 # ── Master Password ──────────────────────────────────────────
@@ -125,6 +155,7 @@ resource "aws_db_instance" "main" {
   max_allocated_storage = var.db_max_allocated_storage
   storage_type          = "gp3"
   storage_encrypted     = true
+  kms_key_id            = aws_kms_key.rds.arn
 
   db_name  = var.db_name
   username = var.db_master_username
@@ -147,8 +178,9 @@ resource "aws_db_instance" "main" {
   copy_tags_to_snapshot     = true
 
   # Monitoring
-  performance_insights_enabled    = true
+  performance_insights_enabled          = true
   performance_insights_retention_period = 7
+  performance_insights_kms_key_id       = aws_kms_key.rds.arn
   monitoring_interval             = 60
   monitoring_role_arn             = aws_iam_role.rds_monitoring.arn
 
@@ -182,6 +214,20 @@ resource "aws_iam_role_policy_attachment" "rds_monitoring" {
 }
 
 # ── Store passwords in Secrets Manager ───────────────────────
+# The master password is stored here. The app_user password is
+# included in the app_config secret (see secrets.tf).
+
+# ── Cross-Region Backup Replication (DR) ─────────────────
+
+resource "aws_db_instance_automated_backups_replication" "dr" {
+  count    = var.dr_region != "" ? 1 : 0
+  provider = aws.dr_region
+
+  source_db_instance_arn = aws_db_instance.main.arn
+  retention_period       = 14
+}
+
+# ── Store passwords in Secrets Manager ───────────────────
 # The master password is stored here. The app_user password is
 # included in the app_config secret (see secrets.tf).
 

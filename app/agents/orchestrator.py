@@ -282,27 +282,59 @@ class AgentOrchestrator:
     ) -> dict[str, Any]:
         """Execute a single workflow step using the specified pattern.
 
-        Enforces per-step timeout from step definition.
+        Enforces per-step timeout and retry logic from step definition.
         """
-        if pattern == "parallel":
-            coro = self._execute_parallel(
-                step_def, step_input, tenant_id, api_key, key_source, workflow_run,
-            )
-        else:
-            # "single" or "supervisor" — both use single agent execution
-            coro = self._execute_single(
-                step_def, step_input, tenant_id, api_key, key_source, workflow_run,
-            )
-
+        max_retries = step_def.get("max_retries", 0)
+        retry_delay = step_def.get("retry_delay_seconds", 5)
         timeout = step_def.get("timeout_seconds")
-        if timeout:
+
+        last_error = None
+        for attempt in range(max_retries + 1):
             try:
-                return await asyncio.wait_for(coro, timeout=timeout)
-            except TimeoutError as exc:
-                raise OrchestrationError(
-                    f"Step '{step_def.get('name', '?')}' timed out after {timeout}s"
-                ) from exc
-        return await coro
+                if pattern == "parallel":
+                    coro = self._execute_parallel(
+                        step_def, step_input, tenant_id, api_key, key_source, workflow_run,
+                    )
+                elif pattern == "supervisor":
+                    coro = self._execute_supervisor(
+                        step_def, step_input, tenant_id, api_key, key_source, workflow_run,
+                    )
+                else:
+                    coro = self._execute_single(
+                        step_def, step_input, tenant_id, api_key, key_source, workflow_run,
+                    )
+
+                if timeout:
+                    result = await asyncio.wait_for(coro, timeout=timeout)
+                else:
+                    result = await coro
+
+                return result
+
+            except (TimeoutError, OrchestrationError, Exception) as exc:
+                last_error = exc
+                step_name = step_def.get("name", "?")
+
+                if attempt < max_retries:
+                    logger.warning(
+                        "workflow_step_retry",
+                        step_name=step_name,
+                        attempt=attempt + 1,
+                        max_retries=max_retries,
+                        error=str(exc)[:200],
+                    )
+                    await asyncio.sleep(retry_delay)
+                else:
+                    if isinstance(exc, TimeoutError):
+                        raise OrchestrationError(
+                            f"Step '{step_name}' timed out after {timeout}s "
+                            f"(attempted {max_retries + 1} times)"
+                        ) from exc
+                    raise
+
+        raise OrchestrationError(
+            f"Step '{step_def.get('name', '?')}' failed after {max_retries + 1} attempts: {last_error}"
+        )
 
     async def _execute_single(
         self,
@@ -391,6 +423,155 @@ class AgentOrchestrator:
 
         return {"parallel_results": outputs}
 
+    async def _execute_supervisor(
+        self,
+        step_def: dict[str, Any],
+        step_input: dict[str, Any],
+        tenant_id: uuid.UUID,
+        api_key: str,
+        key_source: str,
+        workflow_run: WorkflowRun,
+    ) -> dict[str, Any]:
+        """Execute a supervisor orchestration pattern (3-phase: delegate → execute → synthesize).
+
+        1. Delegate: Run supervisor agent with task + worker descriptions → delegation plan
+        2. Execute: Run delegated sub-tasks on workers via asyncio.gather
+        3. Synthesize: Run supervisor again with worker results → final output
+        """
+        supervisor_agent_id = step_def.get("agent_id")
+        worker_agent_ids = step_def.get("worker_agent_ids", [])
+        max_rounds = step_def.get("max_delegation_rounds", 1)
+
+        if not supervisor_agent_id:
+            raise OrchestrationError(f"Supervisor step '{step_def['name']}' has no agent_id")
+        if not worker_agent_ids:
+            raise OrchestrationError(f"Supervisor step '{step_def['name']}' has no worker_agent_ids")
+
+        # Load worker descriptions for the supervisor prompt
+        from app.agents.models import AgentDefinition as AgentDef
+        worker_descriptions = []
+        for wid in worker_agent_ids:
+            result = await self.db.execute(
+                select(AgentDef).where(AgentDef.id == uuid.UUID(wid))
+            )
+            worker = result.scalar_one_or_none()
+            if worker:
+                worker_descriptions.append({
+                    "agent_id": wid,
+                    "name": worker.name,
+                    "description": worker.description,
+                    "allowed_tools": worker.allowed_tools,
+                })
+
+        all_worker_results: list[dict[str, Any]] = []
+        executor = AgentExecutor(self.db)
+
+        for round_num in range(max_rounds):
+            # Phase 1: Delegate — ask supervisor to create delegation plan
+            delegation_input = {
+                "task": step_input,
+                "available_workers": worker_descriptions,
+                "round": round_num + 1,
+                "previous_results": all_worker_results if all_worker_results else None,
+                "instruction": (
+                    "You are a supervisor agent. Analyze the task and delegate sub-tasks "
+                    "to the available workers. Return a JSON object with a 'delegations' array, "
+                    "where each item has 'agent_id' and 'task' fields."
+                ),
+            }
+
+            executor = AgentExecutor(self.db)
+            supervisor_instance = await executor.run(
+                definition_id=uuid.UUID(supervisor_agent_id),
+                tenant_id=tenant_id,
+                input_data=delegation_input,
+                api_key=api_key,
+                key_source=key_source,
+            )
+            workflow_run.total_tokens += supervisor_instance.tokens_used
+            workflow_run.total_cost_usd += supervisor_instance.cost_usd
+
+            delegation_plan = supervisor_instance.output_data
+
+            # Parse delegations from supervisor output
+            delegations = delegation_plan.get("delegations", [])
+            if not delegations:
+                # No delegations — supervisor handled it directly
+                break
+
+            # Phase 2: Execute — run delegated tasks on workers in parallel
+            step_metrics: list[tuple[int, float]] = []
+            _metrics_lock = asyncio.Lock()
+
+            async def run_worker(delegation: dict[str, Any]) -> dict[str, Any]:
+                worker_id = delegation.get("agent_id", "")
+                worker_task = delegation.get("task", {})
+
+                if worker_id not in worker_agent_ids:
+                    return {"agent_id": worker_id, "error": "Worker not in allowed list"}
+
+                async with async_session_factory() as branch_session:
+                    await set_tenant_context(branch_session, str(tenant_id))
+                    branch_executor = AgentExecutor(branch_session)
+                    try:
+                        instance = await branch_executor.run(
+                            definition_id=uuid.UUID(worker_id),
+                            tenant_id=tenant_id,
+                            input_data=worker_task if isinstance(worker_task, dict) else {"task": str(worker_task)},
+                            api_key=api_key,
+                            key_source=key_source,
+                        )
+                        async with _metrics_lock:
+                            step_metrics.append((instance.tokens_used, instance.cost_usd))
+                        return {"agent_id": worker_id, "output": instance.output_data, "status": "completed"}
+                    except Exception as exc:
+                        return {"agent_id": worker_id, "error": str(exc)[:500], "status": "failed"}
+
+            worker_results = await asyncio.gather(
+                *[run_worker(d) for d in delegations],
+                return_exceptions=True,
+            )
+
+            # Accumulate worker metrics
+            for tokens, cost in step_metrics:
+                workflow_run.total_tokens += tokens
+                workflow_run.total_cost_usd += cost
+
+            round_results = []
+            for r in worker_results:
+                if isinstance(r, Exception):
+                    round_results.append({"error": str(r)[:500], "status": "failed"})
+                else:
+                    round_results.append(r)
+
+            all_worker_results.extend(round_results)
+
+        # Phase 3: Synthesize — ask supervisor to combine worker results
+        synthesis_input = {
+            "original_task": step_input,
+            "worker_results": all_worker_results,
+            "instruction": (
+                "You are a supervisor agent. Synthesize the results from your workers "
+                "into a coherent final output. Handle any worker failures gracefully."
+            ),
+        }
+
+        synthesis_instance = await executor.run(
+            definition_id=uuid.UUID(supervisor_agent_id),
+            tenant_id=tenant_id,
+            input_data=synthesis_input,
+            api_key=api_key,
+            key_source=key_source,
+        )
+        workflow_run.total_tokens += synthesis_instance.tokens_used
+        workflow_run.total_cost_usd += synthesis_instance.cost_usd
+
+        return {
+            "supervisor_output": synthesis_instance.output_data,
+            "worker_results": all_worker_results,
+            "rounds": max_rounds,
+        }
+
     # Pattern for safe path components — prevents __dict__, __class__ traversal.
     # Blocks components starting with double underscore (dunder attributes).
     _SAFE_PATH_RE = __import__("re").compile(r"^(?!__)[a-zA-Z0-9_]+$")
@@ -460,20 +641,110 @@ class AgentOrchestrator:
         transitions: list[dict[str, str]],
         step_result: dict[str, Any],
     ) -> str | None:
-        """Find the next step based on transition conditions."""
+        """Find the next step based on transition conditions.
+
+        Supports:
+        - "always": Always transition
+        - "on_success": Transition if no error in step result
+        - "on_failure": Transition if error in step result
+        - JSONPath expression: Evaluate against step_result (e.g., "$.sentiment == 'negative'")
+        - Comparison expressions: "$.field > 100", "$.status == 'active'"
+        """
         for t in transitions:
             if t.get("from") != current_step:
                 continue
 
             condition = t.get("condition", "always")
-            if (
-                condition == "always"
-                or (condition == "on_success" and not step_result.get("error"))
-                or (condition == "on_failure" and step_result.get("error"))
-            ):
+            if condition == "always":
+                return t.get("to")
+            if condition == "on_success" and not step_result.get("error"):
+                return t.get("to")
+            if condition == "on_failure" and step_result.get("error"):
                 return t.get("to")
 
+            # Data-dependent routing: evaluate expression against step_result
+            if condition.startswith("$."):
+                if self._evaluate_condition(condition, step_result):
+                    return t.get("to")
+
         return None  # No more steps — workflow complete
+
+    # Supported comparison operators for condition expressions
+    _CONDITION_OPS = {
+        "==": lambda a, b: str(a) == str(b),
+        "!=": lambda a, b: str(a) != str(b),
+        ">": lambda a, b: float(a) > float(b),
+        "<": lambda a, b: float(a) < float(b),
+        ">=": lambda a, b: float(a) >= float(b),
+        "<=": lambda a, b: float(a) <= float(b),
+        "in": lambda a, b: str(a) in [s.strip().strip("'\"") for s in str(b).strip("[]").split(",")] if str(b).startswith("[") else str(a) == str(b),
+        "contains": lambda a, b: str(b) in str(a),
+    }
+
+    def _evaluate_condition(
+        self,
+        expression: str,
+        step_result: dict[str, Any],
+    ) -> bool:
+        """Evaluate a JSONPath-like condition expression against step result.
+
+        Supports: "$.field.subfield == 'value'", "$.count > 10", "$.tags contains 'urgent'"
+        """
+        # Find the operator
+        op_name = None
+        op_func = None
+        for op in sorted(self._CONDITION_OPS.keys(), key=len, reverse=True):
+            # Look for operator surrounded by spaces
+            if f" {op} " in expression:
+                op_name = op
+                op_func = self._CONDITION_OPS[op]
+                break
+
+        if op_func is None:
+            # No operator — just check if the path exists and is truthy
+            value = self._resolve_jsonpath(expression, step_result)
+            return bool(value)
+
+        # Split on operator
+        parts = expression.split(f" {op_name} ", 1)
+        if len(parts) != 2:
+            return False
+
+        path_expr, expected = parts[0].strip(), parts[1].strip()
+
+        # Remove quotes from expected value
+        if (expected.startswith("'") and expected.endswith("'")) or \
+           (expected.startswith('"') and expected.endswith('"')):
+            expected = expected[1:-1]
+
+        value = self._resolve_jsonpath(path_expr, step_result)
+        if value is None:
+            return False
+
+        try:
+            return op_func(value, expected)
+        except (ValueError, TypeError):
+            return False
+
+    def _resolve_jsonpath(self, path: str, data: dict[str, Any]) -> Any:
+        """Resolve a simple JSONPath expression ($.field.subfield) against data."""
+        if not path.startswith("$."):
+            return None
+
+        parts = path[2:].split(".")
+
+        # Validate path components
+        for part in parts:
+            if not self._SAFE_PATH_RE.match(part):
+                return None
+
+        current: Any = data
+        for part in parts:
+            if isinstance(current, dict):
+                current = current.get(part)
+            else:
+                return None
+        return current
 
     async def _load_workflow(
         self, workflow_id: uuid.UUID, tenant_id: uuid.UUID | None = None,

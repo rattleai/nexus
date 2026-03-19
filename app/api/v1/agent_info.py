@@ -10,7 +10,6 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.api.rate_limit import AGENT_UA_PREFIXES
 from app.config import settings
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -18,7 +17,6 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 class RateLimits(BaseModel):
     standard_requests_per_window: int
-    agent_requests_per_window: int
     window_seconds: int
     ai_requests_per_window: int
 
@@ -71,7 +69,6 @@ class AgentCapabilities(BaseModel):
     batch: BatchConfig
     optimizations: AgentOptimizations
     recognized_agent_headers: list[str]
-    recognized_user_agents: list[str]
     features: dict[str, bool]
 
 
@@ -93,7 +90,6 @@ async def get_agent_capabilities() -> AgentCapabilities:
         ),
         rate_limits=RateLimits(
             standard_requests_per_window=settings.RATE_LIMIT_DEFAULT,
-            agent_requests_per_window=settings.AGENT_RATE_LIMIT_REQUESTS,
             window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
             ai_requests_per_window=settings.RATE_LIMIT_AI_REQUESTS,
         ),
@@ -102,13 +98,10 @@ async def get_agent_capabilities() -> AgentCapabilities:
             error_hints=settings.AGENT_HINTS_ENABLED,
         ),
         recognized_agent_headers=["X-Agent-Name", "X-API-Key"],
-        recognized_user_agents=list(AGENT_UA_PREFIXES),
         features={
             "ai_gateway": settings.AI_ENABLED,
             "mcp_server": settings.MCP_ENABLED,
             "agent_execution": settings.AGENT_EXECUTION_ENABLED,
-            "billing": settings.stripe_configured,
-            "file_storage": settings.storage_configured,
             "webhooks": True,
             "batch_api": True,
         },

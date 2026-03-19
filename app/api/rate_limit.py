@@ -79,7 +79,8 @@ async def _check_rate(key: str, max_requests: int, window: int) -> int:
     try:
         pipe = redis_pool.pipeline()
         pipe.zremrangebyscore(key, 0, window_start)
-        pipe.zadd(key, {str(now): now})
+        import secrets as _secrets
+        pipe.zadd(key, {f"{now}:{_secrets.token_hex(4)}": now})
         pipe.zcard(key)
         pipe.expire(key, window)
         results = await pipe.execute()
@@ -115,7 +116,7 @@ class RateLimiter:
         request.state.rate_limit_remaining = remaining
         request.state.rate_limit_reset = int(time.time()) + self.window
 
-        if request_count > self.max_requests:
+        if request_count >= self.max_requests:
             logger.warning(
                 "rate_limit_exceeded",
                 client_ip=client_ip,
@@ -128,9 +129,8 @@ class RateLimiter:
                 detail="Too many requests",
                 headers={
                     "Retry-After": str(self.window),
-                    "X-RateLimit-Limit": str(self.max_requests),
-                    "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Reset": str(int(time.time()) + self.window),
+                    "RateLimit-Policy": f"{self.max_requests};w={self.window}",
+                    "RateLimit": f"limit={self.max_requests}, remaining=0, reset={self.window}",
                 },
             )
 
@@ -161,7 +161,10 @@ def is_agent_request(request: Request) -> bool:
     if cached is not None:
         return cached
 
-    if request.headers.get("X-Agent-Name"):
+    # Only trust X-Agent-Name from authenticated requests (API key resolved).
+    # Self-reported headers from unauthenticated requests are not trusted.
+    api_key = getattr(request.state, "api_key", None)
+    if api_key and request.headers.get("X-Agent-Name"):
         result = True
     else:
         ua = request.headers.get("User-Agent", "").lower()
@@ -196,8 +199,13 @@ class AgentAwareRateLimiter:
 
     async def __call__(self, request: Request) -> None:
         is_agent = _is_agent_request(request)
-        effective_limit = self.agent_max_requests if is_agent else self.max_requests
-        effective_window = settings.AGENT_RATE_LIMIT_WINDOW_SECONDS if is_agent else self.window
+        # Only grant elevated agent limits to authenticated requests (API key).
+        # Self-reported User-Agent without authentication is not sufficient
+        # to receive higher rate limits (M6: trivially bypassable).
+        api_key = getattr(request.state, "api_key", None)
+        trusted_agent = is_agent and api_key is not None
+        effective_limit = self.agent_max_requests if trusted_agent else self.max_requests
+        effective_window = settings.AGENT_RATE_LIMIT_WINDOW_SECONDS if trusted_agent else self.window
 
         client_ip = _get_client_ip(request)
         normalized_path = request.url.path.rstrip("/").lower().replace("//", "/")
@@ -211,7 +219,7 @@ class AgentAwareRateLimiter:
         request.state.rate_limit_remaining = remaining
         request.state.rate_limit_reset = int(time.time()) + effective_window
 
-        if request_count > effective_limit:
+        if request_count >= effective_limit:
             logger.warning(
                 "rate_limit_exceeded",
                 client_ip=client_ip,
@@ -225,9 +233,8 @@ class AgentAwareRateLimiter:
                 detail="Too many requests",
                 headers={
                     "Retry-After": str(effective_window),
-                    "X-RateLimit-Limit": str(effective_limit),
-                    "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Reset": str(int(time.time()) + effective_window),
+                    "RateLimit-Policy": f"{effective_limit};w={effective_window}",
+                    "RateLimit": f"limit={effective_limit}, remaining=0, reset={effective_window}",
                 },
             )
 
@@ -252,7 +259,7 @@ class ApiKeyRateLimiter:
 
         request_count = await _check_rate(key, max_requests, window)
 
-        if request_count > max_requests:
+        if request_count >= max_requests:
             logger.warning(
                 "api_key_rate_limit_exceeded",
                 key_id=str(api_key.id),
@@ -264,7 +271,7 @@ class ApiKeyRateLimiter:
                 detail="API key rate limit exceeded",
                 headers={
                     "Retry-After": str(window),
-                    "X-RateLimit-Limit": str(max_requests),
-                    "X-RateLimit-Remaining": "0",
+                    "RateLimit-Policy": f"{max_requests};w={window}",
+                    "RateLimit": f"limit={max_requests}, remaining=0, reset={window}",
                 },
             )

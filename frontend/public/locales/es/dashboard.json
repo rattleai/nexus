@@ -1,4 +1,10 @@
 {
+  "landing": {
+    "hero_title": "Bienvenido a CAD Price",
+    "hero_subtitle": "Administre sus trabajos, claves API y equipo — todo en un solo lugar.",
+    "cta_sign_in": "Iniciar sesión",
+    "cta_register": "Crear cuenta"
+  },
   "guest": {
     "title": "Bienvenido a su plataforma",
     "subtitle": "Inicie sesión o ingrese su clave API para comenzar.",

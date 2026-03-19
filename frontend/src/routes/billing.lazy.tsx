@@ -73,6 +73,14 @@ function UsageBar({ label, metric, isBytes }: { label: string; metric: UsageMetr
 }
 
 function BillingPage() {
+  return (
+    <AuthGuard requiredRole="admin">
+      <BillingPageContent />
+    </AuthGuard>
+  )
+}
+
+function BillingPageContent() {
   const { t } = useTranslation("billing")
   const { data: subscription, isLoading: subLoading, error: subError, refetch: subRefetch } = useSubscription()
   const { data: plans, isLoading: plansLoading } = usePlans()
@@ -109,8 +117,7 @@ function BillingPage() {
   const isLoading = subLoading || plansLoading || usageLoading
 
   return (
-    <AuthGuard requiredRole="admin">
-      <div className="space-y-6">
+    <div className="space-y-6">
         <PageHeader
           title={t("title")}
           description={t("description")}
@@ -152,13 +159,13 @@ function BillingPage() {
                         {formatDate(subscription.current_period_end)}
                       </p>
                     )}
-                    {subscription?.cancel_at_period_end && (
+                    {subscription?.cancel_at && (
                       <p className="text-sm text-amber-600 dark:text-amber-400 font-medium">
                         {t("cancels_at_period_end")}
                       </p>
                     )}
                   </div>
-                  {subscription?.status === "active" && !subscription.cancel_at_period_end && (
+                  {subscription?.status === "active" && !subscription.cancel_at && (
                     <ConfirmDialog
                       title={t("cancel_subscription")}
                       description={t("cancel_confirm")}
@@ -215,7 +222,7 @@ function BillingPage() {
                   plans={plans.map((p) => ({
                     id: p.id,
                     name: p.name,
-                    price: p.price_cents / 100,
+                    price: p.price_cents,
                     interval: "month" as const,
                     features: p.features,
                     isPopular: p.name.toLowerCase() === "pro",
@@ -228,6 +235,5 @@ function BillingPage() {
           </>
         )}
       </div>
-    </AuthGuard>
   )
 }

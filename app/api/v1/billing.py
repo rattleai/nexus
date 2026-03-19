@@ -56,7 +56,8 @@ def _validate_return_url(v: str) -> str:
 
     parsed = urlparse(v)
     expected = urlparse(settings.APP_BASE_URL)
-    if parsed.scheme != expected.scheme or parsed.hostname != expected.hostname:
+    # Compare netloc (includes port) to prevent bypass via non-standard ports
+    if parsed.scheme != expected.scheme or parsed.netloc != expected.netloc:
         raise ValueError("return_url must be on the application domain")
     return v
 
@@ -181,6 +182,7 @@ async def get_subscription(
 )
 async def cancel_subscription(
     user: User = Depends(get_current_user_from_token),
+    tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """Cancel the current subscription at period end."""
@@ -189,7 +191,7 @@ async def cancel_subscription(
 
     from app.billing.stripe_service import cancel_subscription as stripe_cancel
 
-    subscription = await stripe_cancel(user.tenant_id, db)
+    subscription = await stripe_cancel(tenant.id, db)
     if not subscription:
         raise HTTPException(status_code=404, detail="No active subscription")
 
@@ -198,7 +200,7 @@ async def cancel_subscription(
         action=AuditAction.UPDATE,
         resource_type="subscription",
         resource_id=str(subscription.id),
-        tenant_id=user.tenant_id,
+        tenant_id=tenant.id,
         actor_id=str(user.id),
         changes={"action": "cancel"},
     )
@@ -423,6 +425,26 @@ async def create_setup_intent(
         raise HTTPException(status_code=400, detail=str(e)) from None
 
     return SetupIntentResponse(client_secret=client_secret)
+
+
+# ── Usage ────────────────────────────────────────────────
+
+
+@router.get(
+    "/usage",
+    dependencies=[Depends(RequireScopes("billing:read"))],
+)
+async def get_usage(
+    days: int = 30,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get usage summary for the current tenant over the specified period."""
+    if days < 1 or days > 365:
+        raise HTTPException(400, "days must be between 1 and 365")
+
+    from app.billing.stripe_service import get_usage_summary
+    return await get_usage_summary(tenant.id, db, days=days)
 
 
 # ── Stripe Webhook ───────────────────────────────────────

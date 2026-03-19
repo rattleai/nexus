@@ -1,0 +1,28 @@
+{
+  "name": "cadprice",
+  "version": "1.0.0",
+  "description": "CADPrice SaaS platform — AI gateway, agent orchestration, billing, and file management",
+  "mcpServers": {
+    "cadprice": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-e", "CADPRICE_API_KEY", "ghcr.io/mngapps/cadprice-mcp:latest"],
+      "cwd": "${extensionPath}"
+    }
+  },
+  "settings": [
+    {
+      "name": "API Key",
+      "description": "Your CADPrice API key (get one at https://cadprice.com/settings/api-keys)",
+      "envVariable": "CADPRICE_API_KEY",
+      "sensitive": true
+    },
+    {
+      "name": "API URL",
+      "description": "API base URL (default: https://api.cadprice.com)",
+      "envVariable": "CADPRICE_API_URL",
+      "sensitive": false
+    }
+  ],
+  "contextFileName": "CADPRICE.md",
+  "excludeTools": []
+}

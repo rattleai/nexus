@@ -35,9 +35,12 @@ from webauthn.helpers.structs import (
 )
 
 from app.api.deps import get_current_user_from_token, get_db
+from app.api.rate_limit import RateLimiter
 from app.config import settings
 from app.core.redis import redis_pool
 from app.db.models import User
+
+_auth_begin_rate_limit = RateLimiter(max_requests=20, window=60, key_prefix="rl:webauthn-begin")
 
 logger = structlog.stdlib.get_logger()
 
@@ -196,14 +199,19 @@ async def registration_complete(
         device_name=body.device_name,
     )
     db.add(credential)
+
+    # Auto-enable MFA on first WebAuthn credential registration
+    if not user.mfa_enabled:
+        user.mfa_enabled = True
+
     await db.commit()
     await db.refresh(credential)
 
-    logger.info("webauthn_registered", user_id=str(user.id), device=body.device_name)
+    logger.info("webauthn_registered", user_id=str(user.id), device=body.device_name, mfa_enabled=True)
     return {"credential_id": str(credential.id)}
 
 
-@router.post("/authenticate/begin", response_model=AuthenticationBeginResponse)
+@router.post("/authenticate/begin", response_model=AuthenticationBeginResponse, dependencies=[Depends(_auth_begin_rate_limit)])
 async def authentication_begin() -> AuthenticationBeginResponse:
     """Begin WebAuthn authentication.
 
@@ -283,7 +291,6 @@ async def authentication_complete(
 
     credential.sign_count = verification.new_sign_count
     credential.last_used_at = datetime.now(UTC)
-    await db.commit()
 
     from app.db.models import User as UserModel
 
@@ -294,9 +301,125 @@ async def authentication_complete(
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
 
+    await db.commit()
+
     from app.core.security import create_access_token
 
-    access_token = create_access_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})
+    access_token = create_access_token({
+        "sub": str(user.id),
+        "tenant_id": str(user.tenant_id),
+        "amr": ["hwk", "mfa"],
+    })
 
     logger.info("webauthn_authenticated", user_id=str(user.id))
     return {"access_token": access_token}
+
+
+# ── MFA Verification ────────────────────────────────────────────────────
+
+
+class MFAVerifyRequest(BaseModel):
+    """Request body for MFA verification after password login."""
+    mfa_token: str = Field(..., description="The MFA-pending token from password login")
+    id: str
+    rawId: str
+    response: dict[str, Any]
+    type: str = "public-key"
+    authenticatorAttachment: str | None = None
+    clientExtensionResults: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/mfa/verify")
+async def verify_mfa(
+    body: MFAVerifyRequest,
+    session_id: str = Query(..., description="Session ID from authentication/begin"),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Complete MFA verification after password login.
+
+    Accepts an MFA-pending token + WebAuthn assertion, and issues a full
+    access token with amr=["pwd", "mfa"].
+    """
+    from app.db.models.mobile import WebAuthnCredential
+
+    # Validate the MFA-pending token
+    import jwt as pyjwt
+    from app.core.security import _get_effective_algorithm, _get_jwt_verification_key
+
+    try:
+        algorithm = _get_effective_algorithm()
+        payload = pyjwt.decode(
+            body.mfa_token,
+            _get_jwt_verification_key(),
+            algorithms=[algorithm],
+            issuer="saas-platform",
+            audience="saas-platform",
+        )
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="MFA token has expired") from None
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid MFA token") from None
+
+    if payload.get("type") != "mfa_pending":
+        raise HTTPException(status_code=401, detail="Not an MFA-pending token")
+
+    user_id = payload.get("sub")
+    tenant_id = payload.get("tenant_id")
+
+    # Retrieve and consume the WebAuthn challenge
+    challenge_key = _challenge_key("auth", session_id)
+    stored_challenge = await redis_pool.getdel(challenge_key)
+    if not stored_challenge:
+        raise HTTPException(status_code=400, detail="Authentication challenge expired or not found")
+
+    # Find the credential
+    result = await db.execute(
+        select(WebAuthnCredential).where(WebAuthnCredential.credential_id == body.id)
+    )
+    credential = result.scalar_one_or_none()
+    if not credential:
+        raise HTTPException(status_code=401, detail="Unknown credential")
+
+    # Verify the credential belongs to the MFA-pending user
+    if str(credential.user_id) != user_id:
+        raise HTTPException(status_code=401, detail="Credential does not belong to this user")
+
+    try:
+        verification = verify_authentication_response(
+            credential={
+                "id": body.id,
+                "rawId": body.rawId,
+                "response": body.response,
+                "type": body.type,
+                "authenticatorAttachment": body.authenticatorAttachment,
+                "clientExtensionResults": body.clientExtensionResults,
+            },
+            expected_challenge=base64url_to_bytes(stored_challenge),
+            expected_rp_id=settings.WEBAUTHN_RP_ID,
+            expected_origin=settings.WEBAUTHN_ORIGIN,
+            credential_public_key=base64url_to_bytes(credential.public_key),
+            credential_current_sign_count=credential.sign_count,
+        )
+    except Exception as e:
+        logger.warning("mfa_verification_failed", user_id=user_id, error=str(e))
+        raise HTTPException(status_code=401, detail="MFA verification failed") from e
+
+    credential.sign_count = verification.new_sign_count
+    credential.last_used_at = datetime.now(UTC)
+    await db.commit()
+
+    # Issue full access token with MFA AMR
+    from app.core.security import create_access_token
+
+    # Combine AMR from MFA-pending token with "mfa"
+    original_amr = payload.get("amr", ["pwd"])
+    full_amr = list(set(original_amr + ["mfa"]))
+
+    access_token = create_access_token({
+        "sub": user_id,
+        "tenant_id": tenant_id,
+        "amr": full_amr,
+    })
+
+    logger.info("mfa_verified", user_id=user_id)
+    return {"access_token": access_token, "amr": full_amr}

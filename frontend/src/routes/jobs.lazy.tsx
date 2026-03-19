@@ -26,6 +26,7 @@ const statusVariant: Record<JobStatus, "default" | "secondary" | "destructive" |
   processing: "secondary",
   completed: "default",
   failed: "destructive",
+  cancelled: "outline",
 }
 
 function CancelButton({ job }: { job: Job }) {
@@ -101,6 +102,14 @@ function useJobColumns(): ColumnDef<Job>[] {
 }
 
 function JobsPage() {
+  return (
+    <AuthGuard>
+      <JobsPageContent />
+    </AuthGuard>
+  )
+}
+
+function JobsPageContent() {
   const { t } = useTranslation("jobs")
   const { t: tc } = useTranslation("common")
   const queryResult = useJobs()
@@ -123,7 +132,7 @@ function JobsPage() {
   }
 
   return (
-    <AuthGuard>
+    <>
       <ResourcePage
         title={t("title")}
         description={t("description")}
@@ -175,6 +184,6 @@ function JobsPage() {
           />
         </div>
       </FormDialog>
-    </AuthGuard>
+    </>
   )
 }

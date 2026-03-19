@@ -9,9 +9,11 @@ function isAuthError(error: unknown): boolean {
 
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
-    onError: async (error) => {
+    onError: async (error, query) => {
       // Don't toast for 401/403 — those are handled by auth flow
       if (isAuthError(error)) return
+      // Suppress toast for polling queries (e.g., approvals, instances)
+      if (query.meta?.suppressErrorToast) return
       const apiError = await parseApiError(error)
       toast.error("Request failed", { description: apiError.detail })
     },
@@ -27,8 +29,10 @@ export const queryClient = new QueryClient({
       staleTime: 30_000,
       // Never retry auth errors — they're handled by the token refresh flow.
       // Retrying 401s amplifies the problem and hammers the refresh endpoint.
+      // Don't retry 5xx server errors either — they indicate bugs, not transient issues.
       retry: (failureCount, error) => {
         if (isAuthError(error)) return false
+        if (error instanceof HTTPError && error.response.status >= 500) return false
         return failureCount < 2
       },
       refetchOnWindowFocus: true,

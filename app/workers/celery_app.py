@@ -53,8 +53,20 @@ celery.conf.update(
             "schedule": crontab(hour=3, minute=30),
         },
         "cleanup-stale-agent-instances": {
-            "task": "agents.cleanup_stale_instances",
+            "task": "app.agents.tasks.cleanup_stale_instances",
             "schedule": crontab(minute="*/15"),
+        },
+        "hard-purge-deleted-accounts": {
+            "task": "app.workers.periodic.hard_purge_deleted_accounts",
+            "schedule": crontab(hour=4, minute=0),
+        },
+        "hard-purge-deleted-users": {
+            "task": "app.workers.periodic.hard_purge_deleted_users",
+            "schedule": crontab(hour=4, minute=30),
+        },
+        "enforce-data-retention": {
+            "task": "app.workers.periodic.enforce_data_retention",
+            "schedule": crontab(hour=5, minute=0),
         },
     },
     beat_max_loop_interval=60,
@@ -79,16 +91,21 @@ def _publish_to_dlq(sender=None, task_id=None, exception=None, traceback=None, a
     import redis
 
     try:
+        # Redact sensitive fields before DLQ publish
+        safe_kwargs = {k: v for k, v in kwargs.items() if k != "api_key_id"} if kwargs else {}
         dlq_entry = {
             "task_id": task_id or "",
             "task_name": sender.name if sender else "unknown",
             "exception_type": type(exception).__name__ if exception else "Unknown",
             "exception_message": str(exception)[:1000] if exception else "",
             "args": json.dumps(args, default=str)[:2000] if args else "[]",
-            "kwargs": json.dumps(kwargs, default=str)[:2000] if kwargs else "{}",
+            "kwargs": json.dumps(safe_kwargs, default=str)[:2000] if safe_kwargs else "{}",
         }
         r = redis.from_url(settings.REDIS_URL)
-        r.xadd("dlq:celery", dlq_entry, maxlen=10000)
+        try:
+            r.xadd("dlq:celery", dlq_entry, maxlen=10000)
+        finally:
+            r.close()
     except Exception:
         import structlog
         structlog.stdlib.get_logger().error(

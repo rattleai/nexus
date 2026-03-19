@@ -1,0 +1,33 @@
+{
+  "title": "开发者",
+  "description": "集成我们 API 所需的一切。",
+  "cards": {
+    "api_reference": {
+      "title": "API 参考",
+      "description": "通过 Swagger 交互式文档探索完整的 REST API。",
+      "action": "查看 API 文档"
+    },
+    "api_keys": {
+      "title": "API 密钥",
+      "description": "创建和管理 API 密钥以验证您的请求。",
+      "action": "管理密钥"
+    },
+    "webhooks": {
+      "title": "Webhooks",
+      "description": "配置端点以接收实时事件通知。",
+      "action": "管理 Webhooks"
+    }
+  },
+  "getting_started": {
+    "title": "快速入门",
+    "quickstart": {
+      "title": "快速开始",
+      "comment": "测试您的 API 密钥"
+    },
+    "openapi": {
+      "title": "OpenAPI 规范",
+      "description": "下载 OpenAPI 规范以生成任意语言的客户端库。",
+      "action": "下载规范"
+    }
+  }
+}

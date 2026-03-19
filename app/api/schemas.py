@@ -10,7 +10,13 @@ T = TypeVar("T")
 # ── Health ────────────────────────────────────────────────
 
 
+class HealthStatusResponse(BaseModel):
+    """Public health response — aggregate status only."""
+    status: str
+
+
 class HealthResponse(BaseModel):
+    """Admin-only detailed health response."""
     status: str
     version: str
     services: dict[str, bool]

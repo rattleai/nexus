@@ -39,3 +39,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 
 -- Allow the app to use set_config for RLS tenant context
 GRANT EXECUTE ON FUNCTION set_config(text, text, boolean) TO app_user;
+
+-- Audit log immutability: revoke mutation permissions (defense-in-depth)
+-- The trigger in migration 0008 provides the primary enforcement.
+REVOKE UPDATE, DELETE ON audit_logs FROM app_user;

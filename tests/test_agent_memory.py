@@ -97,8 +97,14 @@ class TestSharedMemory:
         workflow_id = uuid.uuid4()
 
         with patch("app.agents.memory.redis_pool") as mock_redis:
-            mock_redis.hset = AsyncMock()
-            mock_redis.expire = AsyncMock()
+            # set_shared uses a pipeline: pipe = redis_pool.pipeline()
+            # pipeline() is a sync call on aioredis.Redis, so use MagicMock
+            mock_pipe = MagicMock()
+            mock_pipe.hset = MagicMock()
+            mock_pipe.expire = MagicMock()
+            mock_pipe.execute = AsyncMock()
+            mock_redis.pipeline = MagicMock(return_value=mock_pipe)
+
             mock_redis.hget = AsyncMock(return_value=json.dumps({"shared": True}))
 
             await manager.set_shared(tenant_id, workflow_id, "state", {"shared": True})

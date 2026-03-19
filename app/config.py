@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "RS256"
     JWT_PRIVATE_KEY: str = ""  # PEM-encoded RSA private key for RS256 JWT signing
     JWT_PUBLIC_KEY: str = ""   # PEM-encoded RSA public key for RS256 JWT verification
+    JWT_PUBLIC_KEY_PREVIOUS: str = ""  # Previous public key for seamless key rotation (multi-key JWKS)
     OAUTH_GOOGLE_CLIENT_ID: str = ""
     OAUTH_GOOGLE_CLIENT_SECRET: str = ""
     OAUTH_GITHUB_CLIENT_ID: str = ""
@@ -293,12 +294,11 @@ def validate_settings() -> None:
                     "openssl rsa -in private.pem -pubout -out public.pem"
                 )
 
-    # Database SSL in production
+    # Database SSL in production — enforce like other critical settings
     if not settings.DEBUG and not settings.DATABASE_SSL_MODE:
-        warnings.warn(
+        raise RuntimeError(
             "DATABASE_SSL_MODE is not set. Set to 'verify-full' (recommended) or 'require' "
-            "in production for encrypted DB connections.",
-            stacklevel=2,
+            "in production for encrypted DB connections."
         )
     elif not settings.DEBUG and settings.DATABASE_SSL_MODE == "require":
         warnings.warn(

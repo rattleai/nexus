@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { HTTPError } from "ky"
 import { api } from "@/lib/api-client"
 import { queryKeys } from "@/lib/query-keys"
 import type { CursorPaginatedResponse, FileRecord } from "@/types/api"
@@ -8,6 +9,8 @@ export function useFiles() {
     queryKey: queryKeys.files.list(),
     queryFn: ({ signal }) =>
       api.get("files", { signal }).json<CursorPaginatedResponse<FileRecord>>(),
+    retry: (count, err) =>
+      !(err instanceof HTTPError && err.response.status === 404) && count < 2,
   })
 }
 

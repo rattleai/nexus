@@ -169,14 +169,14 @@ function DeliveryHistoryDialog({
               <div key={d.id} className="flex items-center justify-between rounded-md border p-3">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <Badge variant={d.success ? "default" : "destructive"}>
+                    <Badge variant={d.status_code != null && d.status_code < 400 ? "default" : "destructive"}>
                       {d.status_code ?? "N/A"}
                     </Badge>
-                    <span className="text-sm font-medium">{d.event_type}</span>
+                    <span className="text-sm font-medium">{d.event}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {t("delivery_attempts", { count: d.attempts })}
-                    {d.delivered_at && <> &middot; {formatDateTime(d.delivered_at)}</>}
+                    {d.completed_at && <> &middot; {formatDateTime(d.completed_at)}</>}
                   </p>
                 </div>
               </div>
@@ -228,6 +228,14 @@ function useWebhookColumns(): ColumnDef<WebhookEndpoint>[] {
 }
 
 function WebhooksPage() {
+  return (
+    <AuthGuard>
+      <WebhooksPageContent />
+    </AuthGuard>
+  )
+}
+
+function WebhooksPageContent() {
   const { t } = useTranslation("webhooks")
   const { t: tc } = useTranslation("common")
   const { t: tv } = useTranslation("validation")
@@ -257,7 +265,7 @@ function WebhooksPage() {
   }
 
   return (
-    <AuthGuard>
+    <>
       <ResourcePage
         title={t("title")}
         description={t("description")}
@@ -322,6 +330,6 @@ function WebhooksPage() {
           </div>
         </div>
       </FormDialog>
-    </AuthGuard>
+    </>
   )
 }

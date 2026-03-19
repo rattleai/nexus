@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.email import EmailTemplate, send_email
 from app.core.redis import redis_pool
-from app.db.models import CreditPack, Plan, Subscription, SubscriptionStatus, Tenant, User
+from app.db.models import CreditPack, Plan, Subscription, SubscriptionStatus, Tenant, UsageRecord, User
 
 logger = structlog.stdlib.get_logger()
 
@@ -125,6 +125,7 @@ async def create_checkout_session(
         success_url=f"{return_url}?session_id={{CHECKOUT_SESSION_ID}}&status=success",
         cancel_url=f"{return_url}?status=canceled",
         metadata={"tenant_id": str(tenant_id), "plan_id": str(plan_id)},
+        automatic_tax={"enabled": True},
     )
 
     logger.info("checkout_session_created", tenant_id=str(tenant_id), plan_id=str(plan_id))
@@ -195,7 +196,6 @@ async def cancel_subscription(tenant_id: uuid.UUID, db: AsyncSession) -> Subscri
     )
 
     subscription.cancel_at = subscription.current_period_end
-    await db.commit()
     await db.refresh(subscription)
 
     logger.info("subscription_cancelled", tenant_id=str(tenant_id))
@@ -269,6 +269,7 @@ async def create_credit_pack_checkout(
             "pack_id": str(pack_id),
             "amount_usd": str(pack.amount_usd),
         },
+        automatic_tax={"enabled": True},
     )
 
     logger.info("credit_pack_checkout_created", tenant_id=str(tenant_id), pack_id=str(pack_id))
@@ -322,6 +323,22 @@ async def configure_auto_refill(
         from app.ai.wallet import wallet_service
 
         wallet = await wallet_service._get_or_create_wallet(tenant_id, db)
+
+    # Verify the payment method belongs to this tenant's Stripe customer
+    sub_result = await db.execute(
+        select(Subscription).where(Subscription.tenant_id == tenant_id)
+    )
+    subscription = sub_result.scalar_one_or_none()
+    if not subscription or not subscription.stripe_customer_id:
+        raise ValueError("No billing account found. Please set up billing first.")
+
+    stripe = _get_stripe()
+    try:
+        pm = stripe.PaymentMethod.retrieve(payment_method_id)
+        if pm.customer != subscription.stripe_customer_id:
+            raise ValueError("Payment method does not belong to this billing account")
+    except stripe.error.StripeError as exc:
+        raise ValueError(f"Invalid payment method: {exc}") from exc
 
     wallet.auto_refill_enabled = True
     wallet.auto_refill_threshold_usd = threshold_usd
@@ -564,6 +581,21 @@ async def _handle_credit_pack_checkout(
         logger.error("credit_pack_checkout_invalid_metadata", session_id=session["id"])
         return
 
+    # Cross-check metadata amount against the verified payment amount from Stripe.
+    # session["amount_total"] is in cents and comes from Stripe's verified payment,
+    # not from mutable metadata.
+    verified_amount_cents = session.get("amount_total") or 0
+    verified_usd = Decimal(verified_amount_cents) / 100
+    if verified_usd > 0 and abs(amount_usd - verified_usd) > Decimal("0.01"):
+        logger.error(
+            "credit_pack_amount_mismatch",
+            metadata_amount=str(amount_usd),
+            verified_amount=str(verified_usd),
+            session_id=session["id"],
+        )
+        # Use the verified amount from Stripe, not the metadata
+        amount_usd = verified_usd
+
     payment_intent_id = session.get("payment_intent")
     reference_id = f"credit_pack:{session['id']}"
 
@@ -611,13 +643,27 @@ async def _handle_subscription_checkout(
     )
     subscription = existing.scalar_one_or_none()
 
-    # Load Stripe subscription for period info
+    # Load Stripe subscription for period info and verify price matches plan
     stripe = _get_stripe()
     try:
         stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
     except Exception as exc:
         logger.error("checkout_stripe_retrieve_failed", stripe_sub_id=stripe_sub_id, error=str(exc))
         raise
+
+    # Verify the Stripe subscription price matches the expected plan price
+    plan_result_check = await db.execute(select(Plan).where(Plan.id == plan_id))
+    plan_check = plan_result_check.scalar_one_or_none()
+    if plan_check and plan_check.stripe_price_id:
+        stripe_price_id = stripe_sub.get("items", {}).get("data", [{}])[0].get("price", {}).get("id")
+        if stripe_price_id and stripe_price_id != plan_check.stripe_price_id:
+            logger.error(
+                "checkout_price_mismatch",
+                expected_price=plan_check.stripe_price_id,
+                actual_price=stripe_price_id,
+                session_id=session["id"],
+            )
+            return
 
     if subscription:
         # Update existing
@@ -678,6 +724,99 @@ async def _notify_tenant_owner(
         logger.error("notify_tenant_owner_failed", tenant_id=str(tenant_id), exc_info=True)
 
 
+async def report_usage_to_stripe(
+    tenant_id: uuid.UUID,
+    metric_name: str,
+    quantity: int,
+    db: AsyncSession,
+) -> bool:
+    """Report usage to Stripe's metered billing API.
+
+    Sends a MeterEvent for the given metric. Requires a Stripe Meter
+    to be configured in the Stripe dashboard for the metric_name.
+
+    Returns True if the event was sent successfully.
+    """
+    stripe = _get_stripe()
+
+    # Get customer ID
+    result = await db.execute(
+        select(Subscription).where(Subscription.tenant_id == tenant_id)
+    )
+    subscription = result.scalar_one_or_none()
+    if not subscription or not subscription.stripe_customer_id:
+        logger.warning("usage_report_no_customer", tenant_id=str(tenant_id))
+        return False
+
+    try:
+        stripe.billing.MeterEvent.create(
+            event_name=metric_name,
+            payload={
+                "value": str(quantity),
+                "stripe_customer_id": subscription.stripe_customer_id,
+            },
+            timestamp=int(datetime.now(UTC).timestamp()),
+        )
+        logger.info(
+            "usage_reported_to_stripe",
+            tenant_id=str(tenant_id),
+            metric=metric_name,
+            quantity=quantity,
+        )
+        return True
+    except Exception as exc:
+        logger.error(
+            "usage_report_failed",
+            tenant_id=str(tenant_id),
+            metric=metric_name,
+            error=str(exc),
+        )
+        return False
+
+
+async def get_usage_summary(
+    tenant_id: uuid.UUID,
+    db: AsyncSession,
+    *,
+    days: int = 30,
+) -> dict:
+    """Get usage summary for a tenant over the specified period.
+
+    Aggregates UsageRecord entries by metric type.
+    """
+    from datetime import timedelta
+
+    from sqlalchemy import func
+
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+
+    result = await db.execute(
+        select(
+            UsageRecord.metric,
+            func.sum(UsageRecord.value).label("total"),
+            func.count(UsageRecord.id).label("count"),
+        )
+        .where(
+            UsageRecord.tenant_id == tenant_id,
+            UsageRecord.created_at >= cutoff,
+        )
+        .group_by(UsageRecord.metric)
+    )
+
+    metrics = {}
+    for row in result.all():
+        metrics[row[0]] = {
+            "total": float(row[1] or 0),
+            "count": row[2] or 0,
+        }
+
+    return {
+        "tenant_id": str(tenant_id),
+        "period_days": days,
+        "metrics": metrics,
+    }
+
+
 async def _handle_payment_intent_succeeded(data: dict, db: AsyncSession) -> None:
     """Handle successful PaymentIntent — credit wallet for auto-refill payments."""
     payment_intent = data["object"]
@@ -708,6 +847,30 @@ async def _handle_payment_intent_succeeded(data: dict, db: AsyncSession) -> None
             payment_intent_id=payment_intent["id"],
         )
         return
+
+    # Enforce a ceiling on auto-refill amount to prevent abuse from
+    # tampered PaymentIntent metadata.
+    max_refill = Decimal(str(settings.AI_AUTO_REFILL_MAX_AMOUNT))
+    if refill_amount > max_refill:
+        logger.error(
+            "auto_refill_amount_exceeds_max",
+            refill_amount=str(refill_amount),
+            max_allowed=str(max_refill),
+            payment_intent_id=payment_intent["id"],
+        )
+        return
+
+    # Cross-check against the verified PaymentIntent amount
+    verified_cents = payment_intent.get("amount") or 0
+    verified_usd = Decimal(verified_cents) / 100
+    if verified_usd > 0 and abs(refill_amount - verified_usd) > Decimal("0.01"):
+        logger.error(
+            "auto_refill_amount_mismatch",
+            metadata_amount=str(refill_amount),
+            verified_amount=str(verified_usd),
+            payment_intent_id=payment_intent["id"],
+        )
+        refill_amount = verified_usd
 
     await wallet_service.topup(
         tenant_id,

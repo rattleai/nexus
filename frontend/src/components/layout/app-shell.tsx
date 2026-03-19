@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   Briefcase,
   Key,
+  KeyRound,
   FolderOpen,
   CreditCard,
   Users,
@@ -12,6 +13,9 @@ import {
   Shield,
   Settings,
   MessageSquare,
+  Bot,
+  Code2,
+  Search,
 } from "lucide-react"
 import { APP_NAME } from "@/lib/constants"
 import {
@@ -29,6 +33,7 @@ import {
   SidebarInset,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
+import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { LanguageSwitcher } from "@/components/language-switcher"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -40,6 +45,7 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import type { LucideIcon } from "lucide-react"
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? "0.1.0"
+const isMac = typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
 
 interface NavItem {
   href: string
@@ -62,10 +68,12 @@ const NAV_GROUPS: NavGroup[] = [
   {
     labelKey: "nav.platform",
     items: [
+      { href: "/agents", labelKey: "nav.agents", icon: Bot },
+      { href: "/chat", labelKey: "nav.ai_chat", icon: MessageSquare },
       { href: "/jobs", labelKey: "nav.jobs", icon: Briefcase },
       { href: "/files", labelKey: "nav.files", icon: FolderOpen },
       { href: "/api-keys", labelKey: "nav.api_keys", icon: Key },
-      { href: "/chat", labelKey: "nav.ai_chat", icon: MessageSquare },
+      { href: "/provider-keys", labelKey: "nav.provider_keys", icon: KeyRound },
     ],
   },
   {
@@ -137,14 +145,25 @@ export function AppShell({ children }: AppShellProps) {
               </SidebarGroupContent>
             </SidebarGroup>
           ))}
+
         </SidebarContent>
-        <SidebarFooter className="p-4 space-y-2">
+        <SidebarFooter className="p-3 space-y-2">
           <div className="group-data-[collapsible=icon]:hidden">
             <LanguageSwitcher />
           </div>
-          <p className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-            v{APP_VERSION}
-          </p>
+          <Link
+            to="/developers"
+            data-active={currentPath.startsWith("/developers") || undefined}
+            className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground data-[active]:bg-primary/10 data-[active]:text-primary"
+          >
+            <Code2 className="h-4 w-4 shrink-0" />
+            <span className="flex-1 group-data-[collapsible=icon]:hidden">
+              {t("nav.developers" as never)}
+            </span>
+            <span className="text-[10px] font-normal text-muted-foreground/60 tabular-nums group-data-[collapsible=icon]:hidden">
+              v{APP_VERSION}
+            </span>
+          </Link>
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
@@ -152,11 +171,27 @@ export function AppShell({ children }: AppShellProps) {
           {!isMobile && <SidebarTrigger />}
           {!isMobile && <Separator orientation="vertical" className="h-6" />}
           <div className="flex-1" />
+          <Button
+            variant="outline"
+            className="h-8 w-full max-w-sm justify-start gap-2 text-sm text-muted-foreground font-normal px-3"
+            onClick={() =>
+              document.dispatchEvent(
+                new KeyboardEvent("keydown", { key: "k", metaKey: true }),
+              )
+            }
+          >
+            <Search className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline-flex">{t("labels.search" as never)}</span>
+            <kbd className="pointer-events-none ml-auto hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium sm:inline-flex">
+              {isMac ? "⌘" : "Ctrl"}K
+            </kbd>
+          </Button>
+          <div className="flex-1" />
           <ThemeToggle />
           <NotificationBell />
           <UserMenu />
         </header>
-        <main id="main-content" className="flex-1 p-6 pb-20 md:pb-6">
+        <main id="main-content" className="flex-1 flex flex-col min-h-0 p-6 pb-20 md:pb-6">
           {children}
         </main>
       </SidebarInset>

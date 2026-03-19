@@ -47,6 +47,7 @@ class AgentDefinitionCreate(BaseModel):
     max_duration_seconds: int = Field(300, ge=10, le=3600)
     max_tokens_per_run: int = Field(100_000, ge=100, le=10_000_000)
     sandbox_enabled: bool = False
+    parallel_tool_execution: bool = True
     memory_config: dict[str, Any] = {}
     governance_policy: dict[str, Any] = {}
     metadata: dict[str, Any] = {}
@@ -74,6 +75,7 @@ class AgentDefinitionUpdate(BaseModel):
     max_duration_seconds: int | None = Field(None, ge=10, le=3600)
     max_tokens_per_run: int | None = Field(None, ge=100, le=10_000_000)
     sandbox_enabled: bool | None = None
+    parallel_tool_execution: bool | None = None
     memory_config: dict[str, Any] | None = None
     governance_policy: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
@@ -105,13 +107,14 @@ class AgentDefinitionResponse(BaseModel):
     max_duration_seconds: int
     max_tokens_per_run: int
     sandbox_enabled: bool
+    parallel_tool_execution: bool
     memory_config: dict[str, Any]
     governance_policy: dict[str, Any]
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 # ── Agent Instance ─────────────────────────────────────────────────────
@@ -151,7 +154,7 @@ class AgentSessionResponse(BaseModel):
     instance_id: uuid.UUID
     status: str
     messages: list[dict[str, Any]]
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)
     expires_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -212,6 +215,13 @@ class WorkflowDefinitionCreate(BaseModel):
             raise ValueError("entry_step must be a non-empty string")
         if v["entry_step"] not in step_names:
             raise ValueError(f"entry_step '{v['entry_step']}' does not match any step name")
+        # Validate supervisor steps have worker_agent_ids
+        for step in v["steps"]:
+            pattern = step.get("pattern", "single")
+            if pattern == "supervisor" and not step.get("worker_agent_ids"):
+                raise ValueError(
+                    f"Supervisor step '{step['name']}' requires 'worker_agent_ids' list"
+                )
         return v
 
     @field_validator("governance", "metadata")
@@ -230,7 +240,7 @@ class WorkflowDefinitionResponse(BaseModel):
     version: int
     definition: dict[str, Any]
     governance: dict[str, Any]
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
@@ -323,7 +333,7 @@ class TenantToolResponse(BaseModel):
     auth_config: dict[str, Any] = {}
     is_active: bool
     health_check_url: str | None
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)
     created_at: datetime
     updated_at: datetime
 

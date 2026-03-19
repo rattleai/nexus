@@ -57,14 +57,14 @@ async def test_create_api_key_requires_auth(auth_client):
     """Creating an API key requires X-API-Key header."""
     client, _ = auth_client
     response = await client.post("/api/v1/api-keys", json={"name": "my-key"})
-    assert response.status_code == 422
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_list_api_keys_requires_auth(auth_client):
     client, _ = auth_client
     response = await client.get("/api/v1/api-keys")
-    assert response.status_code == 422
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -87,7 +87,8 @@ async def test_revoke_nonexistent_key(auth_client):
     app.dependency_overrides[get_current_api_key] = lambda: api_key
 
     try:
-        response = await client.delete(f"/api/v1/api-keys/{uuid.uuid4()}")
+        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=api_key):
+            response = await client.delete(f"/api/v1/api-keys/{uuid.uuid4()}")
         assert response.status_code == 404
     finally:
         app.dependency_overrides.clear()
@@ -113,7 +114,8 @@ async def test_list_api_keys_returns_paginated(auth_client):
     app.dependency_overrides[get_current_api_key] = lambda: api_key
 
     try:
-        response = await client.get("/api/v1/api-keys")
+        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=api_key):
+            response = await client.get("/api/v1/api-keys")
         assert response.status_code == 200
         data = response.json()
         assert "items" in data

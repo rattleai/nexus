@@ -1,7 +1,6 @@
 export interface HealthResponse {
   status: "ok" | "degraded"
-  version: string
-  services: Record<string, boolean>
+  version?: string
 }
 
 export interface ErrorResponse {
@@ -53,6 +52,18 @@ export interface ApiKeyCreated extends ApiKey {
   raw_key: string
 }
 
+// ── Provider Key (BYOK) ─────────────────────────────
+
+export interface ProviderKey {
+  id: string
+  provider: string
+  display_name: string
+  is_active: boolean
+  last_used_at: string | null
+  last_error: string | null
+  created_at: string
+}
+
 // ── User / Auth ──────────────────────────────────────
 
 export interface User {
@@ -78,7 +89,7 @@ export interface AuthResponse extends TokenResponse {
 
 // ── Job ───────────────────────────────────────────────
 
-export type JobStatus = "pending" | "processing" | "completed" | "failed"
+export type JobStatus = "pending" | "processing" | "completed" | "failed" | "cancelled"
 
 export interface Job {
   id: string
@@ -111,21 +122,20 @@ export interface FileRecord {
 export interface Plan {
   id: string
   name: string
-  stripe_price_id: string | null
-  price_monthly: number
+  price_cents: number
   limits: Record<string, number>
   features: string[]
-  is_default: boolean
+  tier: string
+  billing_period: string
 }
 
 export interface Subscription {
   id: string
-  stripe_subscription_id: string | null
   status: "active" | "past_due" | "canceled" | "trialing" | "incomplete"
   plan: Plan | null
   current_period_start: string | null
   current_period_end: string | null
-  cancel_at_period_end: boolean
+  cancel_at: string | null
   created_at: string
 }
 
@@ -166,13 +176,10 @@ export interface WebhookEndpoint {
 export interface WebhookDelivery {
   id: string
   endpoint_id: string
-  event_type: string
-  payload: Record<string, unknown>
+  event: string
   status_code: number | null
-  response_body: string | null
-  success: boolean
   attempts: number
-  delivered_at: string | null
+  completed_at: string | null
   created_at: string
 }
 
@@ -194,15 +201,13 @@ export interface Notification {
 
 export interface AuditLog {
   id: string
-  user_id: string | null
-  user_email: string | null
+  actor_id: string | null
   action: string
   resource_type: string
   resource_id: string | null
-  metadata: Record<string, unknown> | null
+  changes: Record<string, unknown> | null
   ip_address: string | null
-  user_agent: string | null
-  created_at: string
+  occurred_at: string
 }
 
 // ── Usage ─────────────────────────────────────────────

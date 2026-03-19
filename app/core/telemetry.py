@@ -43,10 +43,19 @@ def setup_telemetry(service_name: str | None = None) -> None:
     trace.set_tracer_provider(tracer_provider)
     _tracer = trace.get_tracer(name)
 
-    # Metrics
+    # Metrics — dual export: OTLP + Prometheus bridge
     metric_exporter = OTLPMetricExporter(endpoint=settings.OTEL_EXPORTER_ENDPOINT, insecure=True)
     metric_reader = PeriodicExportingMetricReader(metric_exporter, export_interval_millis=15000)
-    meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+
+    metric_readers = [metric_reader]
+    try:
+        from opentelemetry.exporter.prometheus import PrometheusMetricReader
+        prometheus_reader = PrometheusMetricReader()
+        metric_readers.append(prometheus_reader)
+    except ImportError:
+        logger.debug("otel_prometheus_exporter_not_available")
+
+    meter_provider = MeterProvider(resource=resource, metric_readers=metric_readers)
     metrics.set_meter_provider(meter_provider)
     _meter = metrics.get_meter(name)
 

@@ -1,5 +1,6 @@
 """File upload/download endpoints — scoped to the authenticated tenant."""
 
+import mimetypes
 import re
 import threading
 import uuid
@@ -48,6 +49,36 @@ def _sanitize_filename(name: str) -> str:
 
 def _tenant_key(tenant: Tenant, filename: str) -> str:
     return f"tenants/{tenant.id}/{filename}"
+
+
+@router.get("", dependencies=[Depends(RequireScopes("files:read"))])
+async def list_files(
+    tenant: Tenant = Depends(get_current_tenant),
+):
+    """List files for the current tenant."""
+    try:
+        storage = _get_storage()
+        prefix = f"tenants/{tenant.id}/"
+        objects = await storage.async_list_objects_detailed(prefix)
+        items = []
+        for obj in objects:
+            key = obj["key"]
+            filename = key.rsplit("/", 1)[-1] if "/" in key else key
+            content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            items.append({
+                "id": key,
+                "filename": filename,
+                "content_type": content_type,
+                "size_bytes": obj["size"],
+                "storage_path": key,
+                "uploaded_by": None,
+                "created_at": obj["last_modified"].isoformat(),
+            })
+        return {"items": items, "next_cursor": None, "has_more": False}
+    except StorageError as exc:
+        raise handle_storage_error(exc) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post(

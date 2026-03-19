@@ -141,6 +141,37 @@ _ENRICHMENTS: dict[tuple[str, str], dict[str, Any]] = {
 }
 
 
+_INTERNAL_PATH_PREFIXES = ("/admin/", "/tenants/", "/metrics")
+_INTERNAL_TAGS = {"admin", "tenants", "metrics"}
+
+
+def filter_internal_paths(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of the OpenAPI schema with internal paths and tags removed.
+
+    Strips paths matching /admin/, /tenants/, /metrics and their associated
+    tag entries so the public spec only exposes tenant-facing endpoints.
+    """
+    import copy
+
+    filtered = copy.deepcopy(schema)
+    paths = filtered.get("paths", {})
+    keys_to_remove = [
+        p for p in paths
+        if any(prefix in p for prefix in _INTERNAL_PATH_PREFIXES)
+    ]
+    for key in keys_to_remove:
+        del paths[key]
+
+    # Strip internal tags from the top-level tags array
+    if "tags" in filtered:
+        filtered["tags"] = [
+            t for t in filtered["tags"]
+            if t.get("name", "").lower() not in _INTERNAL_TAGS
+        ]
+
+    return filtered
+
+
 def enrich_openapi_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """Enrich the OpenAPI schema with agent-friendly metadata.
 

@@ -1,39 +1,27 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { api } from "@/lib/api-client"
+import { api, getAccessToken } from "@/lib/api-client"
 import { queryKeys } from "@/lib/query-keys"
 import type { Notification } from "@/types/api"
 
 export function useNotifications() {
   return useQuery({
     queryKey: queryKeys.notifications.list(),
-    queryFn: async ({ signal }) => {
-      try {
-        const data = await api.get("notifications", { signal }).json<Notification[]>()
-        return data || []
-      } catch (error) {
-        console.warn("Failed to fetch notifications:", error)
-        return []
-      }
-    },
+    queryFn: async ({ signal }) =>
+      api.get("notifications", { signal }).json<Notification[]>(),
+    enabled: !!getAccessToken(),
     retry: 1,
-    retryDelay: 1000,
+    meta: { suppressErrorToast: true },
   })
 }
 
 export function useUnreadCount() {
   return useQuery({
     queryKey: queryKeys.notifications.unread(),
-    queryFn: async ({ signal }) => {
-      try {
-        const data = await api.get("notifications/unread-count", { signal }).json<{ count: number }>()
-        return data
-      } catch (error) {
-        console.warn("Failed to fetch unread count:", error)
-        return { count: 0 }
-      }
-    },
+    queryFn: async ({ signal }) =>
+      api.get("notifications/unread-count", { signal }).json<{ count: number }>(),
+    enabled: !!getAccessToken(),
     retry: 1,
-    retryDelay: 1000,
+    meta: { suppressErrorToast: true },
   })
 }
 

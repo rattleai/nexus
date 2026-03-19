@@ -39,9 +39,13 @@ async def test_token_exchange_invalid_grant_type():
     with (
         patch("app.api.v1.health._check_db", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
-        patch("app.config.settings.OAUTH_CLIENT_CREDENTIALS_ENABLED", True),
     ):
         app = create_app()
+        # Manually include the OAuth router since OAUTH_CLIENT_CREDENTIALS_ENABLED
+        # is evaluated at module import time and may be False.
+        from app.api.v1.oauth_clients import router as oauth_router
+
+        app.include_router(oauth_router, prefix="/api/v1", tags=["oauth"])
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
@@ -72,9 +76,13 @@ async def test_token_exchange_invalid_credentials():
     with (
         patch("app.api.v1.health._check_db", new_callable=AsyncMock, return_value=True),
         patch("app.api.v1.health._check_redis", new_callable=AsyncMock, return_value=True),
-        patch("app.config.settings.OAUTH_CLIENT_CREDENTIALS_ENABLED", True),
     ):
         app = create_app()
+        # Manually include the OAuth router since OAUTH_CLIENT_CREDENTIALS_ENABLED
+        # is evaluated at module import time and may be False.
+        from app.api.v1.oauth_clients import router as oauth_router
+
+        app.include_router(oauth_router, prefix="/api/v1", tags=["oauth"])
 
         from app.api.deps import get_db
         app.dependency_overrides[get_db] = fake_db

@@ -176,6 +176,14 @@ function InvitationRow({ invitation }: { invitation: Invitation }) {
 }
 
 function TeamPage() {
+  return (
+    <AuthGuard requiredRole="admin">
+      <TeamPageContent />
+    </AuthGuard>
+  )
+}
+
+function TeamPageContent() {
   const { t } = useTranslation("team")
   const membersQuery = useTeamMembers()
   const { data: invitations, isLoading: invitationsLoading } = useInvitations()
@@ -204,7 +212,7 @@ function TeamPage() {
   const queryResult = membersQuery as any
 
   return (
-    <AuthGuard requiredRole="admin">
+    <>
       <ResourcePage
         title={t("title")}
         description={t("description")}
@@ -295,6 +303,6 @@ function TeamPage() {
           </div>
         </div>
       </FormDialog>
-    </AuthGuard>
+    </>
   )
 }

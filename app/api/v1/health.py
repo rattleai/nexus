@@ -1,11 +1,13 @@
 import asyncio
 
 import structlog
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlalchemy import text
+from starlette.responses import JSONResponse
 
 from app import __version__
-from app.api.schemas import HealthResponse
+from app.api.deps import require_admin_key
+from app.api.schemas import HealthResponse, HealthStatusResponse
 from app.config import settings
 from app.core.redis import redis_pool
 from app.db.session import async_engine
@@ -103,16 +105,29 @@ async def _readiness_check() -> dict:
     }
 
 
-@router.get("/health/ready", response_model=HealthResponse)
+@router.get("/health/ready", response_model=HealthStatusResponse)
 async def readiness():
-    """Kubernetes readiness probe — are all dependencies reachable?"""
+    """Kubernetes readiness probe — returns aggregate status only."""
     data = await _readiness_check()
-    return HealthResponse(**data)
+    status_code = 200 if data["status"] == "ok" else 503
+    return JSONResponse({"status": data["status"]}, status_code=status_code)
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get("/health", response_model=HealthStatusResponse)
 async def health_check():
-    """Combined health check (backward compatible)."""
+    """Combined health check — returns aggregate status only."""
+    data = await _readiness_check()
+    status_code = 200 if data["status"] == "ok" else 503
+    return JSONResponse({"status": data["status"]}, status_code=status_code)
+
+
+@router.get(
+    "/health/details",
+    response_model=HealthResponse,
+    dependencies=[Depends(require_admin_key)],
+)
+async def health_details():
+    """Detailed health check with component breakdown — admin only."""
     data = await _readiness_check()
     return HealthResponse(**data)
 

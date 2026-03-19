@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -113,9 +113,9 @@ def create_app() -> FastAPI:
         version=__version__,
         description="Multi-tenant SaaS platform",
         lifespan=lifespan,
-        docs_url="/api/docs" if settings.DEBUG else None,
-        redoc_url="/api/redoc" if settings.DEBUG else None,
-        openapi_url="/api/v1/openapi.json",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
 
     # Exception handlers (fail-closed)
@@ -156,6 +156,80 @@ def create_app() -> FastAPI:
 
         setup_telemetry(settings.OTEL_SERVICE_NAME)
 
+    # ── Plugin Discovery Endpoints ─────────────────────────────
+    # These endpoints enable the platform to be consumed as a plugin
+    # by Claude, OpenAI, Microsoft Copilot, Langdock, Gemini, and others.
+
+    @app.get("/.well-known/ai-plugin.json")
+    async def ai_plugin_manifest():
+        """OpenAI GPT Actions / Microsoft Copilot plugin manifest."""
+        return {
+            "schema_version": "v1",
+            "name_for_human": "CADPrice",
+            "name_for_model": "cadprice",
+            "description_for_human": "Multi-tenant SaaS platform with AI gateway, agent orchestration, billing, and file management.",
+            "description_for_model": "Use CADPrice to run AI completions via a multi-provider gateway, manage and execute AI agents, create background jobs, upload/download files, track billing and usage, and manage team members and webhooks. All operations are scoped to the authenticated tenant.",
+            "auth": {
+                "type": "service_http",
+                "authorization_type": "bearer",
+                "verification_tokens": {},
+            },
+            "api": {
+                "type": "openapi",
+                "url": f"{settings.APP_BASE_URL}/api/v1/openapi.json",
+            },
+            "logo_url": f"{settings.APP_BASE_URL}/logo.png",
+            "contact_email": "support@cadprice.com",
+            "legal_info_url": f"{settings.APP_BASE_URL}/legal/privacy",
+        }
+
+    @app.get("/legal/privacy")
+    async def privacy_policy():
+        """Privacy policy endpoint (required for GPT Store and plugin publishing)."""
+        from starlette.responses import HTMLResponse
+        return HTMLResponse(
+            "<html><head><title>CADPrice Privacy Policy</title></head><body>"
+            "<h1>Privacy Policy</h1>"
+            "<p>CADPrice processes data on behalf of authenticated tenants. "
+            "All data is tenant-scoped via row-level security. "
+            "We implement GDPR Article 25 (privacy by design) with consent tracking, "
+            "data subject access request handling, and configurable retention policies.</p>"
+            "<p>For data requests, contact: privacy@cadprice.com</p>"
+            "</body></html>"
+        )
+
+    # MCP .well-known discovery endpoint (Nov 2025 spec)
+    @app.get("/.well-known/mcp")
+    async def mcp_discovery():
+        """MCP server capability discovery per the November 2025 spec."""
+        return {
+            "name": settings.MCP_SERVER_NAME,
+            "version": __version__,
+            "description": "CADPrice multi-tenant SaaS platform MCP server",
+            "transport": settings.MCP_TRANSPORT,
+            "url": f"{settings.APP_BASE_URL}/mcp" if settings.MCP_TRANSPORT == "http" else None,
+            "authentication": {"type": "api_key", "header": "X-API-Key"},
+            "capabilities": {
+                "tools": True,
+                "resources": True,
+                "prompts": True,
+                "streaming": True,
+            },
+            "tool_annotations": {
+                "ai_complete": {"readOnly": False, "costImplication": "high"},
+                "ai_list_models": {"readOnly": True, "costImplication": "none"},
+                "file_upload": {"readOnly": False, "costImplication": "low"},
+                "file_list": {"readOnly": True, "costImplication": "none"},
+                "job_create": {"readOnly": False, "costImplication": "medium"},
+                "job_list": {"readOnly": True, "costImplication": "none"},
+                "webhook_create": {"readOnly": False, "costImplication": "none"},
+                "code_execute": {"readOnly": False, "costImplication": "low"},
+                "agent_list": {"readOnly": True, "costImplication": "none"},
+                "agent_run": {"readOnly": False, "costImplication": "high"},
+                "agent_approve": {"readOnly": False, "costImplication": "none"},
+            },
+        }
+
     # API routes (must be before SPA catch-all)
     app.include_router(v1_router, prefix=settings.API_V1_PREFIX)
 
@@ -168,6 +242,37 @@ def create_app() -> FastAPI:
         return enrich_openapi_schema(schema)
 
     app.openapi = _enriched_openapi
+
+    # ── Two-Tier OpenAPI: public (filtered) vs admin (full) ───────
+    from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+
+    from app.api.deps import require_admin_key
+    from app.api.openapi_enrichment import filter_internal_paths
+
+    @app.get("/api/v1/openapi.json", include_in_schema=False)
+    async def public_openapi():
+        """Public OpenAPI spec with internal paths stripped."""
+        return JSONResponse(filter_internal_paths(app.openapi()))
+
+    @app.get("/admin/openapi.json", include_in_schema=False, dependencies=[Depends(require_admin_key)])
+    async def admin_openapi():
+        """Full unfiltered OpenAPI spec — admin only."""
+        return JSONResponse(app.openapi())
+
+    if settings.DEBUG:
+        @app.get("/api/docs", include_in_schema=False)
+        async def swagger_ui():
+            return get_swagger_ui_html(
+                openapi_url="/api/v1/openapi.json",
+                title=f"{app.title} — Swagger UI",
+            )
+
+        @app.get("/api/redoc", include_in_schema=False)
+        async def redoc_ui():
+            return get_redoc_html(
+                openapi_url="/api/v1/openapi.json",
+                title=f"{app.title} — ReDoc",
+            )
 
     # SPA static assets
     if (SPA_DIR / "assets").is_dir():

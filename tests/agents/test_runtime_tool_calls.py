@@ -31,6 +31,10 @@ def _make_definition(**overrides) -> MagicMock:
     defn.max_tokens_per_run = overrides.get("max_tokens_per_run", 100_000)
     defn.max_duration_seconds = overrides.get("max_duration_seconds", 300)
     defn.allowed_tools = overrides.get("allowed_tools", ["ai_complete"])
+    defn.governance_policy = overrides.get("governance_policy", {})
+    defn.output_schema = overrides.get("output_schema", {})
+    defn.memory_config = overrides.get("memory_config", {})
+    defn.name = overrides.get("name", "test-agent")
     return defn
 
 

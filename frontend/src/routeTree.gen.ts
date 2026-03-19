@@ -15,14 +15,17 @@ import { Route as TeamRouteImport } from './routes/team'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as ProviderKeysRouteImport } from './routes/provider-keys'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FilesRouteImport } from './routes/files'
+import { Route as DevelopersRouteImport } from './routes/developers'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as BillingRouteImport } from './routes/billing'
 import { Route as AuditLogRouteImport } from './routes/audit-log'
 import { Route as ApiKeysRouteImport } from './routes/api-keys'
+import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -58,6 +61,11 @@ const RegisterRoute = RegisterRouteImport.update({
   path: '/register',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/register.lazy').then((d) => d.Route))
+const ProviderKeysRoute = ProviderKeysRouteImport.update({
+  id: '/provider-keys',
+  path: '/provider-keys',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/provider-keys.lazy').then((d) => d.Route))
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -80,6 +88,11 @@ const FilesRoute = FilesRouteImport.update({
   path: '/files',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/files.lazy').then((d) => d.Route))
+const DevelopersRoute = DevelopersRouteImport.update({
+  id: '/developers',
+  path: '/developers',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/developers.lazy').then((d) => d.Route))
 const ChatRoute = ChatRouteImport.update({
   id: '/chat',
   path: '/chat',
@@ -100,6 +113,11 @@ const ApiKeysRoute = ApiKeysRouteImport.update({
   path: '/api-keys',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/api-keys.lazy').then((d) => d.Route))
+const AgentsRoute = AgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/agents.lazy').then((d) => d.Route))
 const AcceptInvitationRoute = AcceptInvitationRouteImport.update({
   id: '/accept-invitation',
   path: '/accept-invitation',
@@ -116,14 +134,17 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
+  '/agents': typeof AgentsRoute
   '/api-keys': typeof ApiKeysRoute
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
   '/chat': typeof ChatRoute
+  '/developers': typeof DevelopersRoute
   '/files': typeof FilesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/jobs': typeof JobsRoute
   '/login': typeof LoginRoute
+  '/provider-keys': typeof ProviderKeysRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -134,14 +155,17 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
+  '/agents': typeof AgentsRoute
   '/api-keys': typeof ApiKeysRoute
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
   '/chat': typeof ChatRoute
+  '/developers': typeof DevelopersRoute
   '/files': typeof FilesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/jobs': typeof JobsRoute
   '/login': typeof LoginRoute
+  '/provider-keys': typeof ProviderKeysRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -153,14 +177,17 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
+  '/agents': typeof AgentsRoute
   '/api-keys': typeof ApiKeysRoute
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
   '/chat': typeof ChatRoute
+  '/developers': typeof DevelopersRoute
   '/files': typeof FilesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/jobs': typeof JobsRoute
   '/login': typeof LoginRoute
+  '/provider-keys': typeof ProviderKeysRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -173,14 +200,17 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/accept-invitation'
+    | '/agents'
     | '/api-keys'
     | '/audit-log'
     | '/billing'
     | '/chat'
+    | '/developers'
     | '/files'
     | '/forgot-password'
     | '/jobs'
     | '/login'
+    | '/provider-keys'
     | '/register'
     | '/reset-password'
     | '/settings'
@@ -191,14 +221,17 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/accept-invitation'
+    | '/agents'
     | '/api-keys'
     | '/audit-log'
     | '/billing'
     | '/chat'
+    | '/developers'
     | '/files'
     | '/forgot-password'
     | '/jobs'
     | '/login'
+    | '/provider-keys'
     | '/register'
     | '/reset-password'
     | '/settings'
@@ -209,14 +242,17 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/accept-invitation'
+    | '/agents'
     | '/api-keys'
     | '/audit-log'
     | '/billing'
     | '/chat'
+    | '/developers'
     | '/files'
     | '/forgot-password'
     | '/jobs'
     | '/login'
+    | '/provider-keys'
     | '/register'
     | '/reset-password'
     | '/settings'
@@ -228,14 +264,17 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AcceptInvitationRoute: typeof AcceptInvitationRoute
+  AgentsRoute: typeof AgentsRoute
   ApiKeysRoute: typeof ApiKeysRoute
   AuditLogRoute: typeof AuditLogRoute
   BillingRoute: typeof BillingRoute
   ChatRoute: typeof ChatRoute
+  DevelopersRoute: typeof DevelopersRoute
   FilesRoute: typeof FilesRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   JobsRoute: typeof JobsRoute
   LoginRoute: typeof LoginRoute
+  ProviderKeysRoute: typeof ProviderKeysRoute
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
@@ -288,6 +327,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/provider-keys': {
+      id: '/provider-keys'
+      path: '/provider-keys'
+      fullPath: '/provider-keys'
+      preLoaderRoute: typeof ProviderKeysRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -314,6 +360,13 @@ declare module '@tanstack/react-router' {
       path: '/files'
       fullPath: '/files'
       preLoaderRoute: typeof FilesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/developers': {
+      id: '/developers'
+      path: '/developers'
+      fullPath: '/developers'
+      preLoaderRoute: typeof DevelopersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chat': {
@@ -344,6 +397,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiKeysRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/agents': {
+      id: '/agents'
+      path: '/agents'
+      fullPath: '/agents'
+      preLoaderRoute: typeof AgentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/accept-invitation': {
       id: '/accept-invitation'
       path: '/accept-invitation'
@@ -364,14 +424,17 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcceptInvitationRoute: AcceptInvitationRoute,
+  AgentsRoute: AgentsRoute,
   ApiKeysRoute: ApiKeysRoute,
   AuditLogRoute: AuditLogRoute,
   BillingRoute: BillingRoute,
   ChatRoute: ChatRoute,
+  DevelopersRoute: DevelopersRoute,
   FilesRoute: FilesRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   JobsRoute: JobsRoute,
   LoginRoute: LoginRoute,
+  ProviderKeysRoute: ProviderKeysRoute,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,

@@ -111,14 +111,18 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     to_encode = data.copy()
     expire = datetime.now(UTC) + (expires_delta or timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES))
     jti = uuid.uuid4().hex
-    to_encode.update({
+    defaults = {
         "exp": expire,
         "iat": datetime.now(UTC),
         "type": "access",
         "jti": jti,
         "iss": "saas-platform",
         "aud": "saas-platform",
-    })
+    }
+    # Preserve caller-supplied fields (e.g., type="mfa_pending", amr=[...])
+    for k, v in defaults.items():
+        if k not in to_encode:
+            to_encode[k] = v
     algorithm = _get_effective_algorithm()
     return jwt.encode(to_encode, _get_jwt_signing_key(), algorithm=algorithm)
 
@@ -182,6 +186,9 @@ async def revoke_access_token(jti: str, ttl_seconds: int | None = None) -> None:
 
     The blacklist entry expires when the token would naturally expire,
     preventing unbounded Redis memory growth.
+
+    Raises RuntimeError on Redis failure so the caller can surface the
+    error (e.g., return 503 on security-critical paths like password reset).
     """
     if not jti:
         return
@@ -189,21 +196,25 @@ async def revoke_access_token(jti: str, ttl_seconds: int | None = None) -> None:
         from app.core.redis import redis_pool
         ttl = ttl_seconds or (settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60)
         await redis_pool.setex(f"jwt:revoked:{jti}", ttl, "1")
-    except Exception:
-        logger.warning("token_revocation_failed", jti=jti)
+    except Exception as exc:
+        logger.error("token_revocation_failed", jti=jti, exc_info=True)
+        raise RuntimeError("Token revocation failed — Redis unavailable") from exc
 
 
 async def revoke_all_user_tokens(user_id: str) -> None:
     """Mark all access tokens for a user as revoked by setting a 'revoked since' timestamp.
 
     Any token issued before this timestamp will be rejected.
+
+    Raises RuntimeError on Redis failure so the caller can surface the error.
     """
     try:
         from app.core.redis import redis_pool
         ttl = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
         await redis_pool.setex(f"jwt:user_revoked:{user_id}", ttl, str(int(datetime.now(UTC).timestamp())))
-    except Exception:
-        logger.warning("user_token_revocation_failed", user_id=user_id)
+    except Exception as exc:
+        logger.error("user_token_revocation_failed", user_id=user_id, exc_info=True)
+        raise RuntimeError("User token revocation failed — Redis unavailable") from exc
 
 
 async def is_user_token_revoked(user_id: str, issued_at: int) -> bool:
@@ -235,13 +246,44 @@ async def is_user_token_revoked(user_id: str, issued_at: int) -> bool:
 
 
 def get_jwks_public_key() -> dict | None:
-    """Return the public key in JWK format for the /.well-known/jwks.json endpoint."""
-    if _get_effective_algorithm() not in ("RS256", "ES256") or not settings.JWT_PUBLIC_KEY:
-        return None
+    """Return the primary public key in JWK format for the /.well-known/jwks.json endpoint."""
+    keys = get_jwks_key_set()
+    return keys[0] if keys else None
 
+
+def get_jwks_key_set() -> list[dict]:
+    """Return all public keys in JWK format for the /.well-known/jwks.json endpoint.
+
+    Supports multi-key JWKS for seamless key rotation. Returns both the
+    current key and any previous key (JWT_PUBLIC_KEY_PREVIOUS) so that
+    tokens signed with the old key remain valid during rotation.
+    """
+    if _get_effective_algorithm() not in ("RS256", "ES256"):
+        return []
+
+    keys = []
+
+    # Current key
+    if settings.JWT_PUBLIC_KEY:
+        key = _export_jwk(settings.JWT_PUBLIC_KEY, kid_suffix="current")
+        if key:
+            keys.append(key)
+
+    # Previous key (for rotation)
+    prev_key_pem = getattr(settings, "JWT_PUBLIC_KEY_PREVIOUS", "")
+    if prev_key_pem:
+        key = _export_jwk(prev_key_pem, kid_suffix="previous")
+        if key:
+            keys.append(key)
+
+    return keys
+
+
+def _export_jwk(pem_key: str, kid_suffix: str = "") -> dict | None:
+    """Export a PEM public key as JWK dict."""
     try:
         from jwt import PyJWK
-        pem = settings.JWT_PUBLIC_KEY.replace("\\n", "\n")
+        pem = pem_key.replace("\\n", "\n")
         jwk = PyJWK.from_pem(pem.encode())
         key_dict = jwk.key.export(as_dict=True)
         key_dict["use"] = "sig"
@@ -249,7 +291,7 @@ def get_jwks_public_key() -> dict | None:
         key_dict["kid"] = hashlib.sha256(pem.encode()).hexdigest()[:16]
         return key_dict
     except Exception:
-        logger.warning("jwks_export_failed")
+        logger.warning("jwks_export_failed", kid_suffix=kid_suffix)
         return None
 
 

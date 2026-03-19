@@ -7,7 +7,7 @@ import { Key, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
+import { StatusDot } from "@/components/status-dot"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AuthGuard } from "@/components/auth/auth-guard"
 import { ResourcePage } from "@/components/resource-page"
@@ -33,9 +33,11 @@ function useApiKeyColumns(): ColumnDef<ApiKey>[] {
       accessorKey: "active",
       header: t("table.status"),
       cell: ({ row }) => (
-        <Badge variant={row.original.active ? "default" : "secondary"}>
-          {row.original.active ? tc("status.active") : tc("status.revoked")}
-        </Badge>
+        <StatusDot
+          variant={row.original.active ? "active" : "inactive"}
+          label={row.original.active ? tc("status.active") : tc("status.revoked")}
+          labelClassName="text-xs text-muted-foreground"
+        />
       ),
     },
     {
@@ -99,13 +101,21 @@ function RevokeButton({ apiKey }: { apiKey: ApiKey }) {
 }
 
 function ApiKeysPage() {
+  return (
+    <AuthGuard>
+      <ApiKeysPageContent />
+    </AuthGuard>
+  )
+}
+
+function ApiKeysPageContent() {
   const { t } = useTranslation("api_keys")
   const queryResult = useApiKeys()
   const [createOpen, setCreateOpen] = useState(false)
   const columns = useApiKeyColumns()
 
   return (
-    <AuthGuard>
+    <>
       <ResourcePage
         title={t("title")}
         description={t("description")}
@@ -132,7 +142,7 @@ function ApiKeysPage() {
         }
       />
       <CreateKeyDialog open={createOpen} onOpenChange={setCreateOpen} />
-    </AuthGuard>
+    </>
   )
 }
 

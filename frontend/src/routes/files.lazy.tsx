@@ -87,6 +87,14 @@ function useFileColumns(): ColumnDef<FileRecord>[] {
 }
 
 function FilesPage() {
+  return (
+    <AuthGuard>
+      <FilesPageContent />
+    </AuthGuard>
+  )
+}
+
+function FilesPageContent() {
   const { t } = useTranslation("files")
   const queryResult = useFiles()
   const uploadFile = useUploadFile()
@@ -103,7 +111,7 @@ function FilesPage() {
   }
 
   return (
-    <AuthGuard>
+    <>
       <ResourcePage
         title={t("title")}
         description={t("description")}
@@ -131,6 +139,6 @@ function FilesPage() {
           </Card>
         }
       />
-    </AuthGuard>
+    </>
   )
 }
