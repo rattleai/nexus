@@ -6,6 +6,7 @@ import { AgentStatus, type AgentState } from "@/components/ai/agent-status"
 import { ToolCallDisplay } from "@/components/ai/tool-call-display"
 import { useAgentStream, type AgentStreamMessage } from "@/hooks/use-agent-stream"
 import { useUpdateAgent } from "@/hooks/use-agents"
+import { useAgentStore } from "@/stores/agent-store"
 import { cn } from "@/lib/utils"
 import type { AgentDefinition } from "@/types/agents"
 
@@ -28,6 +29,19 @@ export function AgentChatPanel({ agent }: AgentChatPanelProps) {
   } = useAgentStream({
     agentId: agent.id,
   })
+
+  // Auto-send pending message from command palette
+  const { pendingMessage, consumePendingMessage } = useAgentStore()
+
+  React.useEffect(() => {
+    if (!pendingMessage || agent.status !== "active" || isStreaming) return
+    // Defer to next frame to ensure useAgentStream has reset after agentId change
+    const raf = requestAnimationFrame(() => {
+      const msg = consumePendingMessage()
+      if (msg) sendMessage(msg)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [pendingMessage, agent.id, agent.status, isStreaming, consumePendingMessage, sendMessage])
 
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })

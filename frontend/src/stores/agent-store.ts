@@ -9,12 +9,15 @@ interface AgentWorkspaceState {
   searchQuery: string
   statusFilter: "all" | "draft" | "active" | "disabled"
   recentAgentIds: string[]
+  pendingMessage: string | null
 
   selectAgent: (id: string | null) => void
   setActiveTab: (tab: AgentTab) => void
   setSearchQuery: (query: string) => void
   setStatusFilter: (filter: "all" | "draft" | "active" | "disabled") => void
   addRecentAgent: (id: string) => void
+  setPendingMessage: (msg: string | null) => void
+  consumePendingMessage: () => string | null
 }
 
 const MAX_RECENT = 10
@@ -23,12 +26,13 @@ export type { AgentTab }
 
 export const useAgentStore = create<AgentWorkspaceState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       selectedAgentId: null,
       activeTab: "overview",
       searchQuery: "",
       statusFilter: "all",
       recentAgentIds: [],
+      pendingMessage: null,
 
       selectAgent: (id) =>
         set({
@@ -47,6 +51,14 @@ export const useAgentStore = create<AgentWorkspaceState>()(
             recentAgentIds: [id, ...filtered].slice(0, MAX_RECENT),
           }
         }),
+
+      setPendingMessage: (msg) => set({ pendingMessage: msg }),
+
+      consumePendingMessage: () => {
+        const msg = get().pendingMessage
+        if (msg) set({ pendingMessage: null })
+        return msg
+      },
     }),
     {
       name: "agent-workspace",
