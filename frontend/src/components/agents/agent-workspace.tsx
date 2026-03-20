@@ -11,6 +11,7 @@ import {
   Activity,
   Loader2,
   Sparkles,
+  Gauge,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -40,6 +41,7 @@ import { AgentChatPanel } from "./agent-chat-panel"
 import { AgentConfigPanel } from "./agent-config-panel"
 import { GovernancePanel } from "./governance-panel"
 import { AgentRunsPanel } from "./agent-runs-panel"
+import { OperationsPanel } from "./operations"
 import { CreateAgentDialog } from "./create-agent-dialog"
 import {
   useAgentDefinitions,
@@ -57,6 +59,7 @@ const TABS: { id: AgentTab; label: string; icon: React.ElementType }[] = [
   { id: "config", label: "Config", icon: Settings },
   { id: "governance", label: "Governance", icon: Shield },
   { id: "runs", label: "Runs", icon: Activity },
+  { id: "operations", label: "Operations", icon: Gauge },
 ]
 
 export function AgentWorkspace() {
@@ -296,6 +299,11 @@ export function AgentWorkspace() {
             {activeTab === "runs" && (
               <ErrorBoundary fallback={<PanelErrorFallback tab="runs" />}>
                 <AgentRunsPanel agent={selectedAgent} />
+              </ErrorBoundary>
+            )}
+            {activeTab === "operations" && (
+              <ErrorBoundary fallback={<PanelErrorFallback tab="operations" />}>
+                <OperationsPanel agent={selectedAgent} />
               </ErrorBoundary>
             )}
           </div>

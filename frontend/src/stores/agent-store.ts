@@ -1,7 +1,7 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
-type AgentTab = "overview" | "chat" | "config" | "governance" | "runs"
+type AgentTab = "overview" | "chat" | "config" | "governance" | "runs" | "operations"
 
 interface AgentWorkspaceState {
   selectedAgentId: string | null
