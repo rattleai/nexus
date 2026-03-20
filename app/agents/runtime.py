@@ -28,7 +28,7 @@ from typing import Any
 import structlog
 
 from app.agents.events import AgentStepCompleted
-from app.agents.models import AgentDefinition
+from app.agents.models import AgentDefinition, AgentInstance
 from app.config import settings
 from app.core.events import emit
 
@@ -113,6 +113,42 @@ class AgentRuntime:
     def cancel(self) -> None:
         """Signal the runtime to stop after the current step."""
         self._cancelled = True
+
+    async def _checkpoint_progress(
+        self,
+        instance_id: uuid.UUID,
+        result: RunResult,
+        step_num: int,
+        db: Any,
+    ) -> None:
+        """Persist step progress and heartbeat in one write (Temporal heartbeat pattern).
+
+        Combines liveness signal with incremental metrics persistence so that
+        partial progress survives worker crashes.  Best-effort: failures are
+        logged but never crash the run.
+        """
+        from datetime import datetime, UTC
+        from sqlalchemy import update
+
+        try:
+            await db.execute(
+                update(AgentInstance)
+                .where(AgentInstance.id == instance_id)
+                .values(
+                    last_heartbeat_at=datetime.now(UTC),
+                    steps_executed=len(result.steps),
+                    tokens_used=result.total_tokens,
+                    cost_usd=result.total_cost_usd,
+                    last_checkpoint={
+                        "step": step_num,
+                        "finish_reason": result.finish_reason,
+                        "ts": datetime.now(UTC).isoformat(),
+                    },
+                )
+            )
+            await db.flush()
+        except Exception:
+            logger.debug("checkpoint_write_failed", instance_id=str(instance_id))
 
     async def run(
         self,
@@ -208,6 +244,10 @@ class AgentRuntime:
                         )
 
                         step_duration = int((time.monotonic() - step_start) * 1000)
+
+                        # Checkpoint progress after each step (heartbeat + partial metrics)
+                        if db is not None:
+                            await self._checkpoint_progress(instance_id, result, step_num, db)
 
                         if step_result == "break":
                             break
@@ -669,6 +709,10 @@ class AgentRuntime:
                     conversation.append({"role": "tool", "tool_call_id": tc.call_id, "content": str(tool_result)[:_MAX_TOOL_OUTPUT]})
 
                 yield {"event": "step_completed", "data": {"step_number": step_num, "action": "tool_call"}}
+
+                # Checkpoint progress after each step (heartbeat + partial metrics)
+                if db is not None:
+                    await self._checkpoint_progress(instance_id, result, step_num, db)
             else:
                 output_content = completion.content
                 from app.agents.validation import validate_agent_output
@@ -680,6 +724,11 @@ class AgentRuntime:
                 result.output = sanitized
                 yield {"event": "content_delta", "data": {"content": sanitized}}
                 yield {"event": "step_completed", "data": {"step_number": step_num, "action": "response"}}
+
+                # Final checkpoint before completion
+                if db is not None:
+                    await self._checkpoint_progress(instance_id, result, step_num, db)
+
                 yield {"event": "run_completed", "data": {
                     "finish_reason": "completed",
                     "output": sanitized,

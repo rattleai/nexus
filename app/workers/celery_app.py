@@ -20,6 +20,14 @@ celery.conf.update(
     task_time_limit=600,       # Hard kill after 10 minutes
     task_soft_time_limit=540,  # Raise SoftTimeLimitExceeded after 9 minutes
     task_reject_on_worker_lost=True,  # Re-queue tasks when worker is force-killed
+    # Broker connection resilience — auto-reconnect on Redis restarts
+    broker_connection_retry_on_startup=True,
+    broker_connection_retry=True,
+    broker_connection_max_retries=10,
+    broker_connection_timeout=10,
+    broker_transport_options={
+        "visibility_timeout": 43200,  # 12h — prevents premature re-delivery of long-running tasks
+    },
     # Task routing — separate queues for isolation
     task_routes={
         "app.agents.*": {"queue": "agents"},
@@ -54,7 +62,7 @@ celery.conf.update(
         },
         "cleanup-stale-agent-instances": {
             "task": "app.agents.tasks.cleanup_stale_instances",
-            "schedule": crontab(minute="*/15"),
+            "schedule": crontab(minute="*/5"),
         },
         "hard-purge-deleted-accounts": {
             "task": "app.workers.periodic.hard_purge_deleted_accounts",

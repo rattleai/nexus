@@ -538,6 +538,8 @@ async def run_agent_stream(
         key_source="platform",
     )
 
+    from datetime import UTC, datetime as _dt
+
     instance_id = uuid.uuid4()
 
     # Create agent instance record for audit trail
@@ -574,6 +576,18 @@ async def run_agent_stream(
         except Exception as exc:
             import json as _json2
             yield f"event: error\ndata: {_json2.dumps({'message': str(exc)[:500]})}\n\n"
+        finally:
+            # Immediate cleanup — don't rely on periodic sweep to catch orphaned instances
+            try:
+                inst = await db.get(AgentInstance, instance_id)
+                if inst and inst.status in (InstanceStatus.RUNNING, InstanceStatus.PENDING):
+                    inst.status = InstanceStatus.CANCELLED if runtime._cancelled else InstanceStatus.FAILED
+                    inst.completed_at = _dt.now(UTC)
+                    if not runtime._cancelled:
+                        inst.error = "Stream terminated unexpectedly"
+                    await db.commit()
+            except Exception:
+                logger.warning("stream_instance_cleanup_failed", instance_id=str(instance_id), exc_info=True)
 
     return StreamingResponse(
         event_generator(),

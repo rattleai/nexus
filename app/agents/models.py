@@ -151,6 +151,7 @@ class AgentInstance(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_agent_inst_tenant_status", "tenant_id", "status"),
         Index("ix_agent_inst_definition", "definition_id"),
+        Index("ix_agent_inst_status_heartbeat", "status", "last_heartbeat_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -169,6 +170,12 @@ class AgentInstance(Base, TimestampMixin):
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
     started_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Heartbeat: updated every step to signal liveness (Temporal pattern)
+    last_heartbeat_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Step checkpoint: last completed step's data for crash recovery & observability
+    last_checkpoint: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
 
     # Input/output
     input_data: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
