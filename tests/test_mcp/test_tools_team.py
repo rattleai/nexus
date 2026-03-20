@@ -22,7 +22,7 @@ async def test_team_list_members():
     mock_member = MagicMock(
         user_id=uuid.uuid4(),
         role=MagicMock(value="admin"),
-        user=MagicMock(email="alice@example.com", name="Alice"),
+        user=MagicMock(email="alice@example.com", display_name="Alice"),
         created_at=MagicMock(isoformat=lambda: "2026-01-01T00:00:00"),
     )
 
@@ -33,7 +33,7 @@ async def test_team_list_members():
     result = await team_list_members(tenant=tenant, db=mock_db)
 
     assert len(result) == 1
-    assert result[0]["email"] == "alice@example.com"
+    assert result[0]["email"] == "a***e@example.com"  # PII masked
     assert result[0]["role"] == "admin"
 
 

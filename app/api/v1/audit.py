@@ -1,4 +1,9 @@
-"""Tenant-scoped audit log endpoint for authenticated users."""
+"""Tenant-scoped audit log endpoint — UI-only.
+
+Audit logs contain IP addresses, user agents, and detailed change records.
+This data must only be viewable from the application UI (JWT-authenticated
+sessions) and must never be exposed via API keys or MCP.
+"""
 
 import ipaddress
 import uuid
@@ -9,12 +14,12 @@ from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_tenant, get_db
+from app.api.deps import RequireUI, get_current_tenant, get_db
 from app.core.pagination import CursorPage, paginate
 from app.db.models import AuditLog, Tenant
 from app.db.session import set_tenant_context
 
-router = APIRouter(prefix="/audit-logs", tags=["audit"])
+router = APIRouter(prefix="/audit-logs", tags=["audit"], dependencies=[Depends(RequireUI())])
 
 
 def _mask_ip(ip_str: str | None) -> str | None:

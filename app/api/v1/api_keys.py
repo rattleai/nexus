@@ -1,4 +1,9 @@
-"""API key management — scoped to the authenticated tenant."""
+"""API key management — UI-only, scoped to the authenticated tenant.
+
+These endpoints are restricted to JWT-authenticated (UI) sessions to prevent
+privilege-escalation attacks where a programmatic API key creates new keys
+with broader scopes.
+"""
 
 import secrets
 import uuid
@@ -9,20 +14,31 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import hash_api_key
-from app.api.deps import RequireScopes, get_current_tenant, get_db
+from app.api.deps import RequireUI, get_current_tenant, get_db
 from app.api.schemas import ApiKeyCreate, ApiKeyCreatedResponse, ApiKeyResponse, ApiKeyRevokeResponse
+from app.config import settings
 from app.core.pagination import CursorPage, paginate
 from app.db.models import ApiKey, Tenant
 
-router = APIRouter(prefix="/api-keys")
+router = APIRouter(prefix="/api-keys", dependencies=[Depends(RequireUI())])
 logger = structlog.stdlib.get_logger()
+
+
+def _validate_scopes(scopes: list[str]) -> list[str]:
+    """Reject infrastructure scopes that must never be granted to API keys."""
+    forbidden = set(scopes) & settings.INFRASTRUCTURE_SCOPES
+    if forbidden:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cannot grant infrastructure scopes to API keys: {', '.join(sorted(forbidden))}",
+        )
+    return scopes
 
 
 @router.post(
     "",
     response_model=ApiKeyCreatedResponse,
     status_code=201,
-    dependencies=[Depends(RequireScopes("api-keys:write"))],
 )
 async def create_api_key(
     body: ApiKeyCreate,
@@ -31,6 +47,7 @@ async def create_api_key(
 ):
     # Deduplicate scopes
     scopes = list(dict.fromkeys(body.scopes)) if body.scopes else []
+    _validate_scopes(scopes)
 
     raw_key = f"sk_{secrets.token_urlsafe(32)}"
     api_key = ApiKey(
@@ -61,7 +78,6 @@ async def create_api_key(
 @router.get(
     "",
     response_model=CursorPage[ApiKeyResponse],
-    dependencies=[Depends(RequireScopes("api-keys:read"))],
 )
 async def list_api_keys(
     cursor: str | None = None,
@@ -79,7 +95,6 @@ async def list_api_keys(
 @router.delete(
     "/{key_id}",
     response_model=ApiKeyRevokeResponse,
-    dependencies=[Depends(RequireScopes("api-keys:write"))],
 )
 async def revoke_api_key(
     key_id: uuid.UUID,

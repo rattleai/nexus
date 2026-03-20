@@ -1,4 +1,8 @@
-"""MCP tools for team management."""
+"""MCP tools for team management.
+
+PII is masked in responses to comply with GDPR data minimisation (Art. 5(1)(c))
+and OWASP API Security Top 10 (API3:2023 — Excessive Data Exposure).
+"""
 
 from __future__ import annotations
 
@@ -14,10 +18,35 @@ from app.mcp.errors import tool_error
 logger = structlog.stdlib.get_logger()
 
 
+def _mask_email(email: str | None) -> str | None:
+    """Mask an email address for programmatic consumers.
+
+    Preserves enough context to distinguish users (first/last char + domain)
+    while preventing full PII exposure to LLM context windows.
+
+    Examples:
+        "john@example.com"   -> "j***n@example.com"
+        "ab@example.com"     -> "a***b@example.com"
+        "a@example.com"      -> "a***@example.com"
+    """
+    if not email or "@" not in email:
+        return None
+    local, domain = email.rsplit("@", 1)
+    if len(local) <= 1:
+        masked_local = local[0] + "***"
+    elif len(local) == 2:
+        masked_local = local[0] + "***" + local[-1]
+    else:
+        masked_local = local[0] + "***" + local[-1]
+    return f"{masked_local}@{domain}"
+
+
 async def team_list_members(*, tenant: Any, db: AsyncSession) -> list[dict]:
     """List all members of the current tenant's team.
 
-    Returns member names, emails, roles, and join dates.
+    Returns member names, masked emails, roles, and join dates.
+    Email addresses are masked (e.g. j***n@example.com) to prevent PII
+    leakage through programmatic channels.
     """
     from sqlalchemy.orm import selectinload
 
@@ -32,8 +61,8 @@ async def team_list_members(*, tenant: Any, db: AsyncSession) -> list[dict]:
         {
             "user_id": str(m.user_id),
             "role": m.role.value if hasattr(m.role, "value") else str(m.role),
-            "email": m.user.email if m.user else None,
-            "name": m.user.name if m.user else None,
+            "email": _mask_email(m.user.email) if m.user else None,
+            "name": m.user.display_name if m.user else None,
             "joined_at": m.created_at.isoformat() if m.created_at else None,
         }
         for m in members
