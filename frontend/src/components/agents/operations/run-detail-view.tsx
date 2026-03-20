@@ -10,12 +10,11 @@ import {
   Zap,
   DollarSign,
   Copy,
-  RotateCw,
+  Hash,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { formatDateTime, formatRelativeTime } from "@/lib/format"
 import { useStopInstance } from "@/hooks/use-agents"
@@ -53,8 +52,9 @@ export function RunDetailView({ instance, onBack }: RunDetailViewProps) {
       : Date.now()
     const seconds = (end - start) / 1000
     if (seconds < 60) return `${seconds.toFixed(1)}s`
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.round(seconds % 60)
+    const totalSecs = Math.round(seconds)
+    const mins = Math.floor(totalSecs / 60)
+    const secs = totalSecs % 60
     return `${mins}m ${secs}s`
   }, [instance.started_at, instance.completed_at])
 
@@ -79,18 +79,22 @@ export function RunDetailView({ instance, onBack }: RunDetailViewProps) {
           size="icon"
           className="h-8 w-8 shrink-0"
           onClick={onBack}
+          aria-label="Back to operations"
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold">Run {instance.id.slice(0, 8)}</h3>
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5"
               onClick={copyId}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Copy run ID"
             >
               <Copy className="h-3 w-3" />
-            </button>
+            </Button>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             Created {formatRelativeTime(instance.created_at)}
@@ -124,7 +128,18 @@ export function RunDetailView({ instance, onBack }: RunDetailViewProps) {
           />
         </div>
         <div className="flex-1">
-          <p className={cn("text-sm font-medium", config.color)}>{config.label}</p>
+          <div className="flex items-center gap-2">
+            <p className={cn("text-sm font-medium", config.color)}>{config.label}</p>
+            {instance.status === "running" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-500" />
+                </span>
+                <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">Live</span>
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
             {instance.started_at
               ? `Started ${formatDateTime(instance.started_at)}`
@@ -142,9 +157,9 @@ export function RunDetailView({ instance, onBack }: RunDetailViewProps) {
 
       {/* Metrics row */}
       <div className="grid grid-cols-3 gap-3">
-        <MetricPill icon={Zap} label="Steps" value={String(instance.steps_executed)} />
+        <MetricPill icon={Hash} label="Steps" value={String(instance.steps_executed)} />
         <MetricPill
-          icon={RotateCw}
+          icon={Zap}
           label="Tokens"
           value={(instance.tokens_used ?? 0).toLocaleString()}
         />
@@ -174,6 +189,9 @@ export function RunDetailView({ instance, onBack }: RunDetailViewProps) {
           </CardContent>
         </Card>
       )}
+
+      {/* Step trace */}
+      <StepTrace instance={instance} />
 
       {/* Timeline */}
       <RunTimeline instance={instance} />
@@ -241,6 +259,79 @@ function DataSection({
             <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-muted/50 to-transparent" />
           )}
         </pre>
+      </CardContent>
+    </Card>
+  )
+}
+
+function StepTrace({ instance }: { instance: AgentInstance }) {
+  if (instance.steps_executed <= 0) return null
+
+  // Derive steps from available data
+  // The backend tracks steps_executed count. We create a visual representation
+  // showing the execution flow from start to completion.
+  const steps = instance.steps_executed
+  const tokensPerStep = steps > 0 ? Math.round((instance.tokens_used ?? 0) / steps) : 0
+  const costPerStep = steps > 0 ? (instance.cost_usd ?? 0) / steps : 0
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <p className="text-xs font-medium text-muted-foreground mb-3">
+          Execution Trace
+        </p>
+        <div className="space-y-1">
+          {Array.from({ length: Math.min(steps, 20) }, (_, i) => {
+            const isLast = i === Math.min(steps, 20) - 1
+            const isFailed = isLast && instance.status === "failed"
+            return (
+              <div key={i} className="flex items-center gap-2.5">
+                {/* Step indicator */}
+                <div className="flex flex-col items-center">
+                  <span
+                    className={cn(
+                      "flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold",
+                      isFailed
+                        ? "bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-400"
+                        : "bg-primary/10 text-primary",
+                    )}
+                  >
+                    {i + 1}
+                  </span>
+                  {!isLast && <span className="w-px h-2 bg-border" />}
+                </div>
+                {/* Step bar */}
+                <div className="flex-1 flex items-center gap-2">
+                  <div
+                    className={cn(
+                      "h-5 rounded-sm flex items-center px-2 text-[10px]",
+                      isFailed
+                        ? "bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400"
+                        : "bg-muted text-muted-foreground",
+                    )}
+                    style={{ width: `${Math.max(30, Math.min(100, (tokensPerStep / Math.max((instance.tokens_used ?? 1), 1)) * steps * 100))}%` }}
+                  >
+                    Step {i + 1}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+                    ~{tokensPerStep.toLocaleString()} tok
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+          {steps > 20 && (
+            <p className="text-[11px] text-muted-foreground pl-7">
+              +{steps - 20} more steps
+            </p>
+          )}
+        </div>
+        {/* Summary */}
+        <div className="flex gap-4 mt-3 pt-3 border-t text-[11px] text-muted-foreground">
+          <span>{steps} total steps</span>
+          <span>~{tokensPerStep.toLocaleString()} tokens/step</span>
+          <span>${costPerStep.toFixed(4)}/step</span>
+        </div>
       </CardContent>
     </Card>
   )

@@ -40,7 +40,7 @@ export function OperationsPanel({ agent }: OperationsPanelProps) {
       </Tabs>
 
       {subView === "overview" && (
-        <OperationsDashboard agent={agent} />
+        <OperationsDashboard agent={agent} onSelectRun={setSelectedRun} />
       )}
       {subView === "costs" && (
         <CostAnalytics agent={agent} />

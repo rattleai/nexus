@@ -20,7 +20,7 @@ import {
 import { useAgentAnalytics } from "@/hooks/use-agents"
 import { cn } from "@/lib/utils"
 import { formatCurrency, formatCompactNumber } from "@/lib/format"
-import type { AgentDefinition, AgentAnalytics } from "@/types/agents"
+import type { AgentDefinition } from "@/types/agents"
 
 interface CostAnalyticsProps {
   agent?: AgentDefinition
@@ -37,12 +37,24 @@ export function CostAnalytics({ agent, budget }: CostAnalyticsProps) {
   const [period, setPeriod] = React.useState("30")
   const days = Number(period)
 
-  const { data: analytics, isLoading, refetch } = useAgentAnalytics(days, agent?.id)
+  const { data: analytics, isLoading, isError, refetch } = useAgentAnalytics(days, agent?.id)
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <p className="text-sm text-muted-foreground mb-2">Failed to load cost data</p>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RotateCw className="h-3.5 w-3.5 mr-1.5" />
+          Retry
+        </Button>
       </div>
     )
   }
@@ -79,7 +91,7 @@ export function CostAnalytics({ agent, budget }: CostAnalyticsProps) {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => refetch()}>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => refetch()} aria-label="Refresh cost data">
             <RotateCw className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -153,20 +165,20 @@ export function CostAnalytics({ agent, budget }: CostAnalyticsProps) {
               Top Agents by Spend
             </p>
             <div className="space-y-3">
-              {topAgents.map((agent, i) => {
-                const maxCost = topAgents[0]?.total_cost_usd ?? 1
-                const pct = (agent.total_cost_usd / maxCost) * 100
+              {topAgents.map((agentEntry, i) => {
+                const maxCost = topAgents[0]?.total_cost_usd || 1
+                const pct = (agentEntry.total_cost_usd / maxCost) * 100
                 return (
-                  <div key={agent.agent_id} className="space-y-1.5">
+                  <div key={agentEntry.agent_id} className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="flex h-5 w-5 items-center justify-center rounded-md bg-muted text-[10px] font-bold">
                           {i + 1}
                         </span>
-                        <span className="text-sm font-medium truncate">{agent.name}</span>
+                        <span className="text-sm font-medium truncate">{agentEntry.name}</span>
                       </div>
                       <span className="text-sm font-medium tabular-nums">
-                        {formatCurrency(agent.total_cost_usd)}
+                        {formatCurrency(agentEntry.total_cost_usd)}
                       </span>
                     </div>
                     <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
@@ -176,8 +188,8 @@ export function CostAnalytics({ agent, budget }: CostAnalyticsProps) {
                       />
                     </div>
                     <div className="flex gap-4 text-[11px] text-muted-foreground">
-                      <span>{agent.runs} runs</span>
-                      <span>{formatCompactNumber(agent.total_tokens)} tokens</span>
+                      <span>{agentEntry.runs} runs</span>
+                      <span>{formatCompactNumber(agentEntry.total_tokens)} tokens</span>
                     </div>
                   </div>
                 )

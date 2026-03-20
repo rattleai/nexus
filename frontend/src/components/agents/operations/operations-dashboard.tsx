@@ -3,13 +3,12 @@ import {
   Activity,
   DollarSign,
   Zap,
-  TrendingUp,
-  TrendingDown,
-  Clock,
   CheckCircle,
   XCircle,
   Loader2,
   RotateCw,
+  Clock,
+  Minus,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -25,10 +24,11 @@ import { cn } from "@/lib/utils"
 import { formatCurrency, formatCompactNumber } from "@/lib/format"
 import { StatusRing } from "./status-ring"
 import { ActivityFeed } from "./activity-feed"
-import type { AgentDefinition } from "@/types/agents"
+import type { AgentDefinition, AgentInstance } from "@/types/agents"
 
 interface OperationsDashboardProps {
   agent?: AgentDefinition
+  onSelectRun?: (instance: AgentInstance) => void
 }
 
 const PERIOD_OPTIONS = [
@@ -38,20 +38,36 @@ const PERIOD_OPTIONS = [
   { value: "90", label: "90 days" },
 ]
 
-export function OperationsDashboard({ agent }: OperationsDashboardProps) {
+export function OperationsDashboard({ agent, onSelectRun }: OperationsDashboardProps) {
   const [period, setPeriod] = React.useState("7")
   const days = Number(period)
 
   const {
     data: analytics,
     isLoading,
+    isError,
     refetch,
   } = useAgentAnalytics(days, agent?.id)
+
+  // Previous period for trend comparison (e.g. 7d current vs 14d to derive prev 7d)
+  const { data: prevAnalytics } = useAgentAnalytics(days * 2, agent?.id)
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <p className="text-sm text-muted-foreground mb-2">Failed to load analytics</p>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RotateCw className="h-3.5 w-3.5 mr-1.5" />
+          Retry
+        </Button>
       </div>
     )
   }
@@ -65,6 +81,35 @@ export function OperationsDashboard({ agent }: OperationsDashboardProps) {
   const completedRuns = statusBreakdown.completed ?? 0
   const failedRuns = statusBreakdown.failed ?? 0
   const successRate = totalRuns > 0 ? (completedRuns / totalRuns) * 100 : 0
+
+  // Success rate icon: check for good, X for bad, dash for no data
+  const successIcon =
+    totalRuns === 0
+      ? Minus
+      : successRate >= 90
+        ? CheckCircle
+        : successRate >= 50
+          ? Activity
+          : XCircle
+
+  const successAccent =
+    totalRuns === 0
+      ? "text-muted-foreground"
+      : successRate >= 90
+        ? "text-emerald-500"
+        : successRate >= 70
+          ? "text-amber-500"
+          : "text-red-500"
+
+  // Derive previous-period values: (2x period total) - (current period) = previous period
+  const prevRuns = (prevAnalytics?.total_runs ?? 0) - totalRuns
+  const prevTokens = (prevAnalytics?.total_tokens ?? 0) - totalTokens
+  const prevCost = (prevAnalytics?.total_cost_usd ?? 0) - totalCost
+
+  function trendPct(current: number, previous: number): number | undefined {
+    if (previous <= 0 || !prevAnalytics) return undefined
+    return Math.round(((current - previous) / previous) * 100)
+  }
 
   return (
     <div className="space-y-6">
@@ -94,45 +139,41 @@ export function OperationsDashboard({ agent }: OperationsDashboardProps) {
             size="icon"
             className="h-8 w-8"
             onClick={() => refetch()}
+            aria-label="Refresh analytics"
           >
             <RotateCw className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
 
-      {/* Stat cards — clean, minimal */}
+      {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <MetricCard
           label="Total Runs"
           value={formatCompactNumber(totalRuns)}
           icon={Activity}
           accent="text-blue-500"
+          trend={trendPct(totalRuns, prevRuns)}
         />
         <MetricCard
           label="Success Rate"
           value={totalRuns > 0 ? `${successRate.toFixed(0)}%` : "--"}
-          icon={successRate >= 90 ? TrendingUp : successRate > 0 ? TrendingDown : Activity}
-          accent={
-            successRate >= 90
-              ? "text-emerald-500"
-              : successRate >= 70
-                ? "text-amber-500"
-                : totalRuns > 0
-                  ? "text-red-500"
-                  : "text-muted-foreground"
-          }
+          icon={successIcon}
+          accent={successAccent}
         />
         <MetricCard
           label="Tokens Used"
           value={formatCompactNumber(totalTokens)}
           icon={Zap}
           accent="text-violet-500"
+          trend={trendPct(totalTokens, prevTokens)}
         />
         <MetricCard
           label="Total Cost"
           value={totalCost < 0.01 && totalCost > 0 ? `$${totalCost.toFixed(4)}` : formatCurrency(totalCost)}
           icon={DollarSign}
           accent="text-emerald-500"
+          trend={trendPct(totalCost, prevCost)}
         />
       </div>
 
@@ -158,13 +199,13 @@ export function OperationsDashboard({ agent }: OperationsDashboardProps) {
           </CardContent>
         </Card>
 
-        {/* Activity feed */}
+        {/* Activity feed — wired to drill-down */}
         <Card className="lg:col-span-2">
           <CardContent className="p-5">
             <p className="text-xs font-medium text-muted-foreground mb-4">
               Recent Activity
             </p>
-            <ActivityFeed agentId={agent?.id} />
+            <ActivityFeed agentId={agent?.id} onSelectRun={onSelectRun} />
           </CardContent>
         </Card>
       </div>
@@ -188,7 +229,7 @@ export function OperationsDashboard({ agent }: OperationsDashboardProps) {
           />
           <InsightCard
             label="Failure Rate"
-            value={totalRuns > 0 ? `${((failedRuns / totalRuns) * 100).toFixed(1)}%` : "0%"}
+            value={`${((failedRuns / totalRuns) * 100).toFixed(1)}%`}
             icon={XCircle}
           />
         </div>
@@ -204,11 +245,13 @@ function MetricCard({
   value,
   icon: Icon,
   accent,
+  trend,
 }: {
   label: string
   value: string
   icon: React.ElementType
   accent: string
+  trend?: number
 }) {
   return (
     <Card>
@@ -220,6 +263,16 @@ function MetricCard({
           <Icon className={cn("h-3.5 w-3.5", accent)} />
         </div>
         <p className="text-2xl font-semibold tracking-tight">{value}</p>
+        {trend !== undefined && (
+          <p className={cn(
+            "text-[11px] mt-1 font-medium",
+            trend > 0 && "text-emerald-500",
+            trend < 0 && "text-red-500",
+            trend === 0 && "text-muted-foreground",
+          )}>
+            {trend > 0 ? "+" : ""}{trend}% vs prev period
+          </p>
+        )}
       </CardContent>
     </Card>
   )

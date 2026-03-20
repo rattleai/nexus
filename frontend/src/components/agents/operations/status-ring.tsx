@@ -24,7 +24,7 @@ export function StatusRing({ data, total, size = 120 }: StatusRingProps) {
   if (total === 0) {
     return (
       <div className="flex flex-col items-center">
-        <svg width={size} height={size} className="block">
+        <svg width={size} height={size} className="block" role="img" aria-label="No runs to display">
           <circle
             cx={center}
             cy={center}
@@ -59,7 +59,13 @@ export function StatusRing({ data, total, size = 120 }: StatusRingProps) {
 
   return (
     <div className="flex flex-col items-center">
-      <svg width={size} height={size} className="block -rotate-90">
+      <svg
+        width={size}
+        height={size}
+        className="block -rotate-90"
+        role="img"
+        aria-label={`Status breakdown: ${segments.map((s) => `${s.key} ${Math.round(s.pct * 100)}%`).join(", ")}`}
+      >
         {segments.map((seg) => {
           const dashLength = circumference * seg.pct
           const dashGap = circumference - dashLength

@@ -20,16 +20,13 @@ interface ActivityFeedProps {
   onSelectRun?: (instance: AgentInstance) => void
 }
 
-const statusMeta: Record<
-  string,
-  { icon: React.ElementType; color: string; dot: string }
-> = {
-  pending: { icon: Clock, color: "text-muted-foreground", dot: "bg-slate-400" },
-  running: { icon: Loader2, color: "text-blue-500", dot: "bg-blue-500" },
-  completed: { icon: CheckCircle, color: "text-emerald-500", dot: "bg-emerald-500" },
-  failed: { icon: XCircle, color: "text-red-500", dot: "bg-red-500" },
-  cancelled: { icon: Square, color: "text-muted-foreground", dot: "bg-gray-400" },
-  paused: { icon: Pause, color: "text-amber-500", dot: "bg-amber-500" },
+const statusDot: Record<string, string> = {
+  pending: "bg-slate-400",
+  running: "bg-blue-500",
+  completed: "bg-emerald-500",
+  failed: "bg-red-500",
+  cancelled: "bg-gray-400",
+  paused: "bg-amber-500",
 }
 
 export function ActivityFeed({
@@ -56,26 +53,39 @@ export function ActivityFeed({
     )
   }
 
+  const isInteractive = !!onSelectRun
+  const Tag = isInteractive ? "button" : "div"
+
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-0.5" role="list" aria-label="Recent agent runs">
       {instances.map((instance, i) => {
-        const meta = statusMeta[instance.status] ?? statusMeta.pending
-        const Icon = meta.icon
+        const dot = statusDot[instance.status] ?? statusDot.pending
+        const shortId = instance.id.slice(0, 8)
 
         return (
-          <button
+          <Tag
             key={instance.id}
-            onClick={() => onSelectRun?.(instance)}
+            role="listitem"
+            aria-label={`Run ${shortId}, ${instance.status}, ${instance.steps_executed} steps`}
+            {...(isInteractive
+              ? { onClick: () => onSelectRun!(instance) }
+              : {})}
             className={cn(
               "w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left",
-              "transition-colors hover:bg-accent/50",
-              onSelectRun && "cursor-pointer",
-              !onSelectRun && "cursor-default",
+              "transition-colors",
+              isInteractive && "cursor-pointer hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              !isInteractive && "cursor-default",
             )}
           >
             {/* Timeline dot */}
             <div className="flex flex-col items-center shrink-0">
-              <span className={cn("h-2 w-2 rounded-full", meta.dot)} />
+              <span
+                className={cn(
+                  "h-2 w-2 rounded-full",
+                  dot,
+                  instance.status === "running" && "animate-pulse",
+                )}
+              />
               {i < instances.length - 1 && (
                 <span className="w-px flex-1 bg-border mt-1 min-h-[12px]" />
               )}
@@ -85,7 +95,7 @@ export function ActivityFeed({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium">
-                  Run {instance.id.slice(0, 8)}
+                  Run {shortId}
                 </span>
                 <Badge
                   variant="outline"
@@ -111,11 +121,11 @@ export function ActivityFeed({
               <span className="text-[11px] text-muted-foreground">
                 {formatRelativeTime(instance.created_at)}
               </span>
-              {onSelectRun && (
+              {isInteractive && (
                 <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
               )}
             </div>
-          </button>
+          </Tag>
         )
       })}
     </div>
