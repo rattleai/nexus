@@ -474,6 +474,7 @@ class AgentRuntime:
                 context={
                     "tool_name": tc.name,
                     "instance_id": str(instance_id),
+                    "agent_id": str(self.definition.id),
                     "step_number": step_num,
                     "current_cost": result.total_cost_usd,
                 },
@@ -847,7 +848,32 @@ class AgentRuntime:
                 limit=memory_config.get("rag_limit", 5),
                 db=db,
             )
-            return rag_pipeline.format_context(results)
+            context_parts = []
+            rag_context = rag_pipeline.format_context(results)
+            if rag_context:
+                context_parts.append(rag_context)
+
+            # Retrieve definition-scoped shared memory (cross-instance knowledge)
+            if memory_config.get("shared_memory_enabled", False):
+                try:
+                    from app.agents.memory import AgentMemoryManager
+                    mem = AgentMemoryManager(db)
+                    shared_entries = await mem.list_definition_memory(
+                        definition_id=self.definition.id,
+                        tenant_id=self.tenant_id,
+                        namespace=memory_config.get("shared_namespace", "shared"),
+                        limit=memory_config.get("shared_memory_limit", 10),
+                    )
+                    if shared_entries:
+                        lines = ["[Shared agent memory (accessible by all instances of this agent):"]
+                        for entry in shared_entries:
+                            lines.append(f"- {entry.key}: {entry.value}")
+                        lines.append("]")
+                        context_parts.append("\n".join(lines))
+                except Exception:
+                    logger.debug("shared_memory_retrieval_failed", exc_info=True)
+
+            return "\n\n".join(context_parts)
         except Exception:
             logger.debug("memory_context_retrieval_failed", exc_info=True)
             return ""

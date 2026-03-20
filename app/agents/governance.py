@@ -31,6 +31,7 @@ _SPEND_RUN_KEY = "agent:gov:spend:run:{instance_id}"
 _SPEND_DAY_KEY = "agent:gov:spend:day:{tenant_id}:{agent_id}:{date}"
 _SPEND_MONTH_KEY = "agent:gov:spend:month:{tenant_id}:{agent_id}:{month}"
 _RATE_KEY = "agent:gov:rate:{tenant_id}:{instance_id}"
+_RATE_AGENT_KEY = "agent:gov:rate:agent:{tenant_id}:{agent_id}"
 
 # Redis keys for approval queue
 _APPROVAL_KEY = "agent:gov:approval:{approval_id}"
@@ -294,7 +295,7 @@ class GovernanceEngine:
         context: dict[str, Any],
         tenant_id: uuid.UUID,
     ) -> None:
-        """Check per-agent rate limits."""
+        """Check per-instance and per-agent (aggregate) rate limits."""
         max_rpm = self.policy.get("max_requests_per_minute")
         if max_rpm is None:
             return
@@ -333,6 +334,42 @@ class GovernanceEngine:
                 f"Agent rate limit exceeded ({max_rpm} requests/minute)",
                 details={"current": current, "limit": max_rpm},
             )
+
+        # Aggregate rate limit across ALL instances of the same agent definition.
+        # Prevents N parallel instances from sending N * max_rpm requests/minute
+        # to the LLM provider.
+        max_agent_rpm = self.policy.get("max_agent_requests_per_minute")
+        agent_id = context.get("agent_id", "")
+        if max_agent_rpm is not None and agent_id:
+            agent_rate_key = _RATE_AGENT_KEY.format(
+                tenant_id=tenant_id, agent_id=agent_id,
+            )
+            try:
+                pipe = redis_pool.pipeline()
+                pipe.incr(agent_rate_key)
+                pipe.expire(agent_rate_key, 60)
+                results = await pipe.execute()
+                agent_current = results[0]
+            except Exception as exc:
+                logger.error("governance_redis_unavailable", check="agent_rate_limit", exc_info=True)
+                raise GovernanceViolationError(
+                    "rate_limit",
+                    "Unable to verify agent-level rate limits (Redis unavailable). Action blocked.",
+                    details={"reason": "redis_unavailable"},
+                ) from exc
+
+            if agent_current > max_agent_rpm:
+                await self._emit_violation(
+                    tenant_id=tenant_id,
+                    context=context,
+                    violation_type="agent_rate_limit",
+                    details=f"Agent-level rate limit exceeded: {agent_current}/{max_agent_rpm} requests/minute",
+                )
+                raise GovernanceViolationError(
+                    "rate_limit",
+                    f"Agent-level aggregate rate limit exceeded ({max_agent_rpm} requests/minute across all instances)",
+                    details={"current": agent_current, "limit": max_agent_rpm, "scope": "agent"},
+                )
 
     async def _check_approval_required(
         self,

@@ -458,6 +458,112 @@ return 1
             for item in scored[:limit]
         ]
 
+    # ── Definition-Scoped Memory (PostgreSQL) ────────────────────────
+    #
+    # Shared across all instances of the same agent definition.
+    # Useful for periodic + on-demand agents that need cross-instance context.
+
+    async def get_definition_memory(
+        self,
+        definition_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        key: str,
+        namespace: str = "shared",
+    ) -> dict[str, Any] | None:
+        """Read a value from definition-scoped shared memory."""
+        from app.agents.models import AgentDefinitionMemoryEntry
+
+        stmt = select(AgentDefinitionMemoryEntry).where(
+            AgentDefinitionMemoryEntry.definition_id == definition_id,
+            AgentDefinitionMemoryEntry.tenant_id == tenant_id,
+            AgentDefinitionMemoryEntry.namespace == namespace,
+            AgentDefinitionMemoryEntry.key == key,
+            or_(AgentDefinitionMemoryEntry.expires_at.is_(None), AgentDefinitionMemoryEntry.expires_at > datetime.now(UTC)),
+        )
+        result = await self.db.execute(stmt)
+        entry = result.scalar_one_or_none()
+        return entry.value if entry else None
+
+    async def set_definition_memory(
+        self,
+        definition_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        key: str,
+        value: dict[str, Any],
+        *,
+        namespace: str = "shared",
+    ) -> Any:
+        """Write a value to definition-scoped shared memory (upsert)."""
+        from app.agents.models import AgentDefinitionMemoryEntry
+
+        insert_values = {
+            "tenant_id": tenant_id,
+            "definition_id": definition_id,
+            "namespace": namespace,
+            "key": key,
+            "value": value,
+        }
+
+        stmt = pg_insert(AgentDefinitionMemoryEntry).values(**insert_values)
+        update_set = {"value": value, "updated_at": datetime.now(UTC)}
+
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_agent_def_memory_def_ns_key",
+            set_=update_set,
+        ).returning(AgentDefinitionMemoryEntry)
+
+        result = await self.db.execute(stmt)
+        entry = result.scalar_one()
+        await self.db.flush()
+        return entry
+
+    async def list_definition_memory(
+        self,
+        definition_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        namespace: str = "shared",
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Any]:
+        """List definition-scoped shared memory entries."""
+        from app.agents.models import AgentDefinitionMemoryEntry
+
+        limit = min(limit, 50)
+        stmt = (
+            select(AgentDefinitionMemoryEntry)
+            .where(
+                AgentDefinitionMemoryEntry.definition_id == definition_id,
+                AgentDefinitionMemoryEntry.tenant_id == tenant_id,
+                AgentDefinitionMemoryEntry.namespace == namespace,
+                or_(AgentDefinitionMemoryEntry.expires_at.is_(None), AgentDefinitionMemoryEntry.expires_at > datetime.now(UTC)),
+            )
+            .order_by(AgentDefinitionMemoryEntry.updated_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def delete_definition_memory(
+        self,
+        definition_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        key: str,
+        namespace: str = "shared",
+    ) -> bool:
+        """Delete a specific definition-scoped memory entry."""
+        from app.agents.models import AgentDefinitionMemoryEntry
+
+        stmt = delete(AgentDefinitionMemoryEntry).where(
+            AgentDefinitionMemoryEntry.definition_id == definition_id,
+            AgentDefinitionMemoryEntry.tenant_id == tenant_id,
+            AgentDefinitionMemoryEntry.namespace == namespace,
+            AgentDefinitionMemoryEntry.key == key,
+        )
+        result = await self.db.execute(stmt)
+        return result.rowcount > 0
+
     # ── Shared Memory (Redis) ─────────────────────────────────────────
 
     async def get_shared(

@@ -119,6 +119,9 @@ class AgentDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Version
     # Parallel tool execution — when True, multiple tool calls are run concurrently
     parallel_tool_execution: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
+    # Maximum concurrent running instances (0 = unlimited)
+    max_concurrent_instances: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
     # Memory configuration
     memory_config: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
 
@@ -246,6 +249,42 @@ class AgentMemoryEntry(Base, TimestampMixin):
 
     # Optional vector embedding for semantic search (pgvector)
     # Stored as JSONB array; use pgvector extension for actual vector ops
+    embedding: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # TTL support
+    expires_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ── Agent Definition Memory Entry ─────────────────────────────────────
+
+
+class AgentDefinitionMemoryEntry(Base, TimestampMixin):
+    """Persistent memory entries shared across all instances of an agent definition.
+
+    Allows parallel instances of the same agent (e.g., periodic email checker
+    and on-demand call handler) to share knowledge without being tied to a
+    specific instance lifecycle.
+    """
+
+    __tablename__ = "agent_definition_memory_entries"
+    __table_args__ = (
+        UniqueConstraint("definition_id", "namespace", "key", name="uq_agent_def_memory_def_ns_key"),
+        Index("ix_agent_def_memory_tenant", "tenant_id"),
+        Index("ix_agent_def_memory_definition_ns", "definition_id", "namespace"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    definition_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agent_definitions.id"), nullable=False,
+    )
+
+    namespace: Mapped[str] = mapped_column(String(100), default="shared", server_default="shared")
+    key: Mapped[str] = mapped_column(String(500), nullable=False)
+    value: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    # Optional vector embedding for semantic search
     embedding: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
 

@@ -98,6 +98,7 @@ async def create_agent_definition(
         max_tokens_per_run=body.max_tokens_per_run,
         sandbox_enabled=body.sandbox_enabled,
         parallel_tool_execution=body.parallel_tool_execution,
+        max_concurrent_instances=body.max_concurrent_instances,
         memory_config=body.memory_config,
         governance_policy=body.governance_policy,
         metadata_=body.metadata,
@@ -210,8 +211,8 @@ async def update_agent_definition(
         "name", "slug", "description", "status", "system_prompt", "model",
         "temperature", "max_tokens", "allowed_tools", "tool_versions",
         "max_steps_per_run", "max_duration_seconds", "max_tokens_per_run",
-        "sandbox_enabled", "parallel_tool_execution", "memory_config",
-        "output_schema", "governance_policy", "metadata",
+        "sandbox_enabled", "parallel_tool_execution", "max_concurrent_instances",
+        "memory_config", "output_schema", "governance_policy", "metadata",
     }
     changes = {}
     update_data = body.model_dump(exclude_unset=True)
@@ -292,6 +293,21 @@ async def create_agent_instance(
 
     if agent.status != AgentStatus.ACTIVE:
         raise HTTPException(400, f"Agent '{agent.name}' is not active")
+
+    # Enforce max concurrent instances
+    if agent.max_concurrent_instances > 0:
+        active_count_stmt = select(func.count()).select_from(AgentInstance).where(
+            AgentInstance.tenant_id == tenant.id,
+            AgentInstance.definition_id == agent.id,
+            AgentInstance.status.in_([InstanceStatus.PENDING, InstanceStatus.RUNNING]),
+        )
+        active_count = (await db.execute(active_count_stmt)).scalar() or 0
+        if active_count >= agent.max_concurrent_instances:
+            raise HTTPException(
+                429,
+                f"Agent '{agent.name}' has reached its concurrent instance limit "
+                f"({agent.max_concurrent_instances}). Wait for running instances to complete.",
+            )
 
     # Check idempotency key for deduplication
     existing_stmt = None  # Initialize to prevent NameError in except block
@@ -481,6 +497,21 @@ async def run_agent_stream(
 
     if agent.status != AgentStatus.ACTIVE:
         raise HTTPException(400, f"Agent '{agent.name}' is not active")
+
+    # Enforce max concurrent instances
+    if agent.max_concurrent_instances > 0:
+        active_count_stmt = select(func.count()).select_from(AgentInstance).where(
+            AgentInstance.tenant_id == tenant.id,
+            AgentInstance.definition_id == agent.id,
+            AgentInstance.status.in_([InstanceStatus.PENDING, InstanceStatus.RUNNING]),
+        )
+        active_count = (await db.execute(active_count_stmt)).scalar() or 0
+        if active_count >= agent.max_concurrent_instances:
+            raise HTTPException(
+                429,
+                f"Agent '{agent.name}' has reached its concurrent instance limit "
+                f"({agent.max_concurrent_instances}). Wait for running instances to complete.",
+            )
 
     # Resolve API key for the runtime
     from app.core.encryption import decrypt
@@ -808,6 +839,98 @@ async def clear_agent_memory(
     await _verify_instance_ownership(db, instance_id, tenant.id)
     memory = AgentMemoryManager(db)
     await memory.clear_long_term(instance_id, tenant.id, namespace)
+    await db.commit()
+
+
+# ── Definition-Scoped Shared Memory ────────────────────────────────────
+
+
+@router.get(
+    "/definitions/{agent_id}/memory",
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
+async def read_definition_memory(
+    agent_id: uuid.UUID,
+    namespace: str = "shared",
+    key: str | None = None,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Read definition-scoped shared memory (accessible by all instances)."""
+    from app.agents.memory import AgentMemoryManager
+    await set_tenant_context(db, str(tenant.id))
+    await _get_agent_or_404(db, agent_id, tenant.id)
+    memory = AgentMemoryManager(db)
+
+    if key:
+        value = await memory.get_definition_memory(agent_id, tenant.id, key, namespace)
+        if value is None:
+            raise HTTPException(404, "Memory entry not found")
+        return {"namespace": namespace, "key": key, "value": value}
+    else:
+        entries = await memory.list_definition_memory(agent_id, tenant.id, namespace)
+        return [
+            {"namespace": e.namespace, "key": e.key, "value": e.value}
+            for e in entries
+        ]
+
+
+@router.put(
+    "/definitions/{agent_id}/memory",
+    dependencies=[Depends(RequireScopes("agents:write"))],
+)
+async def write_definition_memory(
+    agent_id: uuid.UUID,
+    body: MemoryWriteRequest,
+    tenant: Tenant = Depends(get_current_tenant),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
+    db: AsyncSession = Depends(get_db),
+):
+    """Write to definition-scoped shared memory (accessible by all instances)."""
+    from app.agents.memory import AgentMemoryManager
+    await set_tenant_context(db, str(tenant.id))
+    await _get_agent_or_404(db, agent_id, tenant.id)
+    memory = AgentMemoryManager(db)
+
+    entry = await memory.set_definition_memory(
+        agent_id, tenant.id, body.key, body.value, namespace=body.namespace,
+    )
+    await db.commit()
+    return {"namespace": entry.namespace, "key": entry.key, "value": entry.value}
+
+
+@router.delete(
+    "/definitions/{agent_id}/memory",
+    status_code=204,
+    dependencies=[Depends(RequireScopes("agents:admin"))],
+)
+async def clear_definition_memory(
+    agent_id: uuid.UUID,
+    namespace: str | None = None,
+    key: str | None = None,
+    tenant: Tenant = Depends(get_current_tenant),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear definition-scoped shared memory."""
+    from app.agents.memory import AgentMemoryManager
+    await set_tenant_context(db, str(tenant.id))
+    await _get_agent_or_404(db, agent_id, tenant.id)
+    memory = AgentMemoryManager(db)
+
+    if key:
+        await memory.delete_definition_memory(agent_id, tenant.id, key, namespace or "shared")
+    else:
+        # Clear all entries in namespace (or all namespaces)
+        from sqlalchemy import delete as sql_delete
+        from app.agents.models import AgentDefinitionMemoryEntry
+        conditions = [
+            AgentDefinitionMemoryEntry.definition_id == agent_id,
+            AgentDefinitionMemoryEntry.tenant_id == tenant.id,
+        ]
+        if namespace:
+            conditions.append(AgentDefinitionMemoryEntry.namespace == namespace)
+        await db.execute(sql_delete(AgentDefinitionMemoryEntry).where(*conditions))
     await db.commit()
 
 
