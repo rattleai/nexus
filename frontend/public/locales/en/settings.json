@@ -58,5 +58,12 @@
     "description": "Choose your preferred language for the interface.",
     "select_label": "Display Language",
     "save_success": "Language preference saved"
+  },
+  "connected_accounts": {
+    "title": "Connected Accounts",
+    "description": "Link your social accounts for easier sign-in.",
+    "link": "Link",
+    "unlink": "Unlink",
+    "unlink_success": "Account unlinked"
   }
 }

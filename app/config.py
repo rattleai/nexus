@@ -133,6 +133,7 @@ class Settings(BaseSettings):
     AI_QWEN_API_KEY: str = ""
     AI_QWEN_API_BASE: str = ""              # Custom base URL for Qwen (e.g. DashScope)
     AI_ALEPH_ALPHA_API_KEY: str = ""
+    AI_XAI_API_KEY: str = ""
 
     # Rate limiting for AI endpoints (per window)
     RATE_LIMIT_AI_REQUESTS: int = 60
@@ -196,6 +197,14 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @property
+    def google_oauth_configured(self) -> bool:
+        return bool(self.OAUTH_GOOGLE_CLIENT_ID and self.OAUTH_GOOGLE_CLIENT_SECRET)
+
+    @property
+    def github_oauth_configured(self) -> bool:
+        return bool(self.OAUTH_GITHUB_CLIENT_ID and self.OAUTH_GITHUB_CLIENT_SECRET)
+
+    @property
     def storage_configured(self) -> bool:
         return bool(self.S3_ENDPOINT_URL and self.S3_ACCESS_KEY_ID and self.S3_SECRET_ACCESS_KEY)
 
@@ -229,6 +238,7 @@ class Settings(BaseSettings):
             or self.AI_DEEPSEEK_API_KEY
             or self.AI_QWEN_API_KEY
             or self.AI_ALEPH_ALPHA_API_KEY
+            or self.AI_XAI_API_KEY
         )
 
 

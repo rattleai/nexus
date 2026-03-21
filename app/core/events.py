@@ -198,6 +198,13 @@ class PaymentFailed(DomainEvent):
     plan_name: str = ""
 
 
+@dataclass
+class OAuthAccountLinked(DomainEvent):
+    user_id: str = ""
+    provider: str = ""
+    email: str = ""
+
+
 def on(event_type: type) -> Callable:
     """Decorator to register an async handler for a domain event type."""
 

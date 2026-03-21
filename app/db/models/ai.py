@@ -30,6 +30,7 @@ class AIProvider(enum.StrEnum):
     DEEPSEEK = "deepseek"
     QWEN = "qwen"
     ALEPH_ALPHA = "aleph_alpha"
+    XAI = "xai"
 
 
 class TenantAIProviderKey(TimestampMixin, Base):
