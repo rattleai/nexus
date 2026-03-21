@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react"
-import { createLazyFileRoute, Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
+import { useEffect, useRef, useState } from "react"
+import { createLazyFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useTranslation } from "react-i18next"
 import { Loader2 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useAuthContext } from "@/lib/auth-context"
-import { api, setAccessToken } from "@/lib/api-client"
+
+const ALLOWED_PROVIDERS = ["google", "github"] as const
 
 export const Route = createLazyFileRoute("/auth/callback/$provider")({
   component: OAuthCallbackPage,
@@ -15,12 +16,26 @@ function OAuthCallbackPage() {
   const { provider } = useParams({ from: "/auth/callback/$provider" })
   const navigate = useNavigate()
   const { t } = useTranslation("auth")
+  const { loginWithOAuth } = useAuthContext()
   const [error, setError] = useState<string | null>(null)
+  const hasSubmitted = useRef(false)
 
   useEffect(() => {
+    if (hasSubmitted.current) return
+    hasSubmitted.current = true
+
+    // Validate provider against allowlist
+    if (!ALLOWED_PROVIDERS.includes(provider as (typeof ALLOWED_PROVIDERS)[number])) {
+      setError(t("social.callback_error"))
+      return
+    }
+
     const params = new URLSearchParams(window.location.search)
     const code = params.get("code")
     const state = params.get("state")
+
+    // Clear query params to prevent back-button resubmission
+    history.replaceState({}, "", window.location.pathname)
 
     if (!code || !state) {
       setError(t("social.callback_missing_params"))
@@ -31,17 +46,8 @@ function OAuthCallbackPage() {
 
     async function handleCallback() {
       try {
-        const res = await api
-          .post(`auth/oauth/${provider}/callback`, {
-            json: { code, state },
-            credentials: "include",
-          })
-          .json<{ access_token: string; user: Record<string, unknown> }>()
-
+        await loginWithOAuth(provider, code!, state!)
         if (cancelled) return
-
-        setAccessToken(res.access_token)
-        window.dispatchEvent(new Event("auth-change"))
         navigate({ to: "/" })
       } catch {
         if (!cancelled) {
@@ -54,7 +60,7 @@ function OAuthCallbackPage() {
     return () => {
       cancelled = true
     }
-  }, [provider, navigate, t])
+  }, [provider, navigate, t, loginWithOAuth])
 
   if (error) {
     return (

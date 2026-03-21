@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.security import create_access_token, create_refresh_token
-from app.db.models import RefreshToken, TenantMembership, User
+from app.db.models import RefreshToken, Tenant, TenantMembership, User
 
 _REFRESH_COOKIE = "refresh_token"
 _REFRESH_COOKIE_PATH = "/api/v1/auth"
@@ -67,6 +67,47 @@ async def issue_tokens_for_user(
 
     expires_in = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
     return access_token, expires_in
+
+
+async def check_mfa_required(
+    user: User,
+    db: AsyncSession,
+    role: str | None,
+    amr: list[str] | None = None,
+) -> dict | None:
+    """Check if MFA is required for the user. Returns MFA-pending response dict or None.
+
+    If MFA is required and the user has WebAuthn credentials, returns a dict
+    with {mfa_token, user} for the caller to build the response. Otherwise None.
+    """
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+    login_tenant = tenant_result.scalar_one_or_none()
+    tenant_requires_mfa = (login_tenant and login_tenant.settings or {}).get("require_mfa", False)
+
+    if not (getattr(user, "mfa_enabled", False) or tenant_requires_mfa):
+        return None
+
+    from app.db.models.mobile import WebAuthnCredential
+
+    cred_result = await db.execute(
+        select(WebAuthnCredential).where(WebAuthnCredential.user_id == user.id).limit(1)
+    )
+    has_webauthn = cred_result.scalar_one_or_none() is not None
+
+    if not has_webauthn:
+        return None
+
+    await db.commit()
+    mfa_token = create_access_token(
+        {
+            "sub": str(user.id),
+            "tenant_id": str(user.tenant_id),
+            "type": "mfa_pending",
+            "amr": amr or ["pwd"],
+        },
+        expires_delta=timedelta(minutes=5),
+    )
+    return {"mfa_token": mfa_token, "user": user, "role": role}
 
 
 async def get_user_role(user: User, tenant_id, db: AsyncSession) -> str | None:

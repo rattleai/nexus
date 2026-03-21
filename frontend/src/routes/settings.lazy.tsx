@@ -386,11 +386,14 @@ interface OAuthAccountInfo {
   created_at: string
 }
 
+const ALLOWED_PROVIDERS = ["google", "github"] as const
+
 function ConnectedAccountsSection() {
   const { t } = useTranslation("settings")
   const [accounts, setAccounts] = useState<OAuthAccountInfo[]>([])
   const [providers, setProviders] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+  const [unlinking, setUnlinking] = useState<string | null>(null)
   const { user } = useAuthContext()
 
   const fetchData = async () => {
@@ -417,6 +420,7 @@ function ConnectedAccountsSection() {
   const linkedProviders = accounts.map((a) => a.provider)
 
   const handleLink = async (provider: string) => {
+    if (!ALLOWED_PROVIDERS.includes(provider as (typeof ALLOWED_PROVIDERS)[number])) return
     try {
       const res = await api.post(`auth/oauth/${provider}/link`).json<{ url: string }>()
       window.location.href = res.url
@@ -427,6 +431,9 @@ function ConnectedAccountsSection() {
   }
 
   const handleUnlink = async (provider: string) => {
+    if (!ALLOWED_PROVIDERS.includes(provider as (typeof ALLOWED_PROVIDERS)[number])) return
+    if (unlinking) return
+    setUnlinking(provider)
     try {
       await api.delete(`auth/oauth/${provider}/unlink`)
       toast.success(t("connected_accounts.unlink_success"))
@@ -434,6 +441,8 @@ function ConnectedAccountsSection() {
     } catch (err) {
       const e = await parseApiError(err)
       toast.error(e.detail)
+    } finally {
+      setUnlinking(null)
     }
   }
 
@@ -474,7 +483,7 @@ function ConnectedAccountsSection() {
                 )}
               </div>
               {isLinked ? (
-                <Button variant="outline" size="sm" onClick={() => handleUnlink(provider)}>
+                <Button variant="outline" size="sm" onClick={() => handleUnlink(provider)} disabled={unlinking === provider}>
                   <Unlink className="mr-1 h-3 w-3" />
                   {t("connected_accounts.unlink")}
                 </Button>

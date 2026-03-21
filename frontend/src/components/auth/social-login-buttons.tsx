@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { api } from "@/lib/api-client"
 
+const ALLOWED_PROVIDERS = ["google", "github"] as const
+
 interface SocialLoginButtonsProps {
   mode: "login" | "register"
   disabled?: boolean
@@ -45,6 +47,7 @@ export function SocialLoginButtons({ mode, disabled }: SocialLoginButtonsProps) 
   if (providers.length === 0) return null
 
   const handleOAuth = async (provider: string) => {
+    if (!ALLOWED_PROVIDERS.includes(provider as (typeof ALLOWED_PROVIDERS)[number])) return
     setLoading(provider)
     try {
       const res = await api.get(`auth/oauth/${provider}/authorize`).json<{ url: string }>()

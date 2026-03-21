@@ -7,6 +7,7 @@ code-to-token exchange, and user profile fetching for Google and GitHub.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import secrets
 from dataclasses import dataclass
@@ -92,10 +93,18 @@ async def generate_authorize_url(
     state = secrets.token_urlsafe(32)
     state_hash = hashlib.sha256(state.encode()).hexdigest()
 
+    # HMAC-sign linking_user_id to prevent tampering if state leaks
+    linking_user_id_hmac = None
+    if linking_user_id:
+        linking_user_id_hmac = hmac.new(
+            settings.SECRET_KEY.encode(), linking_user_id.encode(), hashlib.sha256,
+        ).hexdigest()
+
     state_data = json.dumps({
         "provider": provider,
         "redirect_uri": redirect_uri,
         "linking_user_id": linking_user_id,
+        "linking_user_id_hmac": linking_user_id_hmac,
     })
     await redis_pool.setex(f"oauth:state:{state_hash}", _STATE_TTL_SECONDS, state_data)
 
@@ -117,6 +126,7 @@ async def generate_authorize_url(
 async def validate_state(state: str) -> dict | None:
     """Atomically retrieve and delete state from Redis to prevent replay.
 
+    Uses GETDEL (Redis 6.2+) for true atomic get-and-delete.
     Returns the stored metadata dict or None if state is invalid/expired.
     """
     from app.core.redis import redis_pool
@@ -124,13 +134,7 @@ async def validate_state(state: str) -> dict | None:
     state_hash = hashlib.sha256(state.encode()).hexdigest()
     key = f"oauth:state:{state_hash}"
 
-    # GET + DEL atomically via pipeline
-    pipe = redis_pool.pipeline()
-    pipe.get(key)
-    pipe.delete(key)
-    results = await pipe.execute()
-
-    raw = results[0]
+    raw = await redis_pool.getdel(key)
     if not raw:
         return None
     return json.loads(raw)
@@ -185,6 +189,8 @@ async def fetch_user_profile(provider: str, access_token: str) -> OAuthUserProfi
         data = resp.json()
 
     if provider == "google":
+        if not data.get("email_verified"):
+            raise ValueError("Google account email is not verified")
         return OAuthUserProfile(
             provider="google",
             provider_user_id=str(data["sub"]),
@@ -234,3 +240,15 @@ async def fetch_user_profile(provider: str, access_token: str) -> OAuthUserProfi
         )
 
     raise ValueError(f"Unsupported provider: {provider}")
+
+
+def verify_linking_user_id(state_data: dict) -> bool:
+    """Verify the HMAC on linking_user_id in state data."""
+    linking_user_id = state_data.get("linking_user_id")
+    stored_hmac = state_data.get("linking_user_id_hmac")
+    if not linking_user_id or not stored_hmac:
+        return False
+    expected = hmac.new(
+        settings.SECRET_KEY.encode(), linking_user_id.encode(), hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, stored_hmac)

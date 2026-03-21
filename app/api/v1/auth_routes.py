@@ -42,6 +42,7 @@ from app.db.models import (
 
 from app.api.v1._auth_helpers import (
     MAX_REFRESH_TOKENS_PER_USER as _MAX_REFRESH_TOKENS_PER_USER,
+    check_mfa_required,
     clear_refresh_cookie as _clear_refresh_cookie,
     set_refresh_cookie as _set_refresh_cookie,
 )
@@ -52,8 +53,6 @@ _refresh_rate_limit = RateLimiter(max_requests=30, window=60, key_prefix="rl:aut
 router = APIRouter(prefix="/auth")
 logger = structlog.stdlib.get_logger()
 
-_REFRESH_COOKIE = "refresh_token"
-_REFRESH_COOKIE_PATH = "/api/v1/auth"
 _MAX_LOGIN_ATTEMPTS = 5
 _LOGIN_LOCKOUT_SECONDS = 900  # 15 minutes
 
@@ -229,45 +228,23 @@ async def login(body: UserLogin, request: Request, response: Response, db: Async
     role = member.role.value if member else None
 
     # Check if MFA is required
-    tenant_result = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
-    login_tenant = tenant_result.scalar_one_or_none()
-    tenant_requires_mfa = (login_tenant and login_tenant.settings or {}).get("require_mfa", False)
-
-    if (getattr(user, "mfa_enabled", False) or tenant_requires_mfa):
-        # Check if user has WebAuthn credentials
-        from app.db.models.mobile import WebAuthnCredential
-        cred_result = await db.execute(
-            select(WebAuthnCredential).where(WebAuthnCredential.user_id == user.id).limit(1)
+    mfa_result = await check_mfa_required(user, db, role, amr=["pwd"])
+    if mfa_result:
+        return AuthResponse(
+            access_token=mfa_result["mfa_token"],
+            expires_in=300,
+            mfa_required=True,
+            user=UserResponse(
+                id=user.id,
+                email=user.email,
+                display_name=user.display_name,
+                email_verified=user.email_verified,
+                is_active=user.is_active,
+                tenant_id=user.tenant_id,
+                role=role,
+                created_at=user.created_at,
+            ),
         )
-        has_webauthn = cred_result.scalar_one_or_none() is not None
-
-        if has_webauthn:
-            await db.commit()
-            # Issue MFA-pending token (5 minute TTL)
-            mfa_token = create_access_token(
-                {
-                    "sub": str(user.id),
-                    "tenant_id": str(user.tenant_id),
-                    "type": "mfa_pending",
-                    "amr": ["pwd"],
-                },
-                expires_delta=timedelta(minutes=5),
-            )
-            return AuthResponse(
-                access_token=mfa_token,
-                expires_in=300,
-                mfa_required=True,
-                user=UserResponse(
-                    id=user.id,
-                    email=user.email,
-                    display_name=user.display_name,
-                    email_verified=user.email_verified,
-                    is_active=user.is_active,
-                    tenant_id=user.tenant_id,
-                    role=role,
-                    created_at=user.created_at,
-                ),
-            )
 
     # Revoke oldest tokens if exceeding limit
     existing_tokens = await db.execute(

@@ -111,33 +111,24 @@ class TestStateManagement:
 
     @pytest.mark.asyncio
     async def test_validate_state_consumes_atomically(self):
-        """State should be retrieved and deleted in one pipeline."""
+        """State should be retrieved and deleted atomically via GETDEL."""
         state_data = json.dumps({"provider": "google", "redirect_uri": "http://localhost/cb", "linking_user_id": None})
 
-        mock_pipe = AsyncMock()
-        mock_pipe.get = MagicMock(return_value=mock_pipe)
-        mock_pipe.delete = MagicMock(return_value=mock_pipe)
-        mock_pipe.execute = AsyncMock(return_value=[state_data, 1])
-
         mock_redis = AsyncMock()
-        mock_redis.pipeline = MagicMock(return_value=mock_pipe)
+        mock_redis.getdel = AsyncMock(return_value=state_data)
 
         with patch.dict("sys.modules", {"app.core.redis": MagicMock(redis_pool=mock_redis)}):
             result = await validate_state("test-state-token")
 
         assert result is not None
         assert result["provider"] == "google"
+        mock_redis.getdel.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_validate_state_replay_prevention(self):
-        """Second call with same state should return None."""
-        mock_pipe = AsyncMock()
-        mock_pipe.get = MagicMock(return_value=mock_pipe)
-        mock_pipe.delete = MagicMock(return_value=mock_pipe)
-        mock_pipe.execute = AsyncMock(return_value=[None, 0])  # Already consumed
-
+        """Second call with same state should return None (already consumed by GETDEL)."""
         mock_redis = AsyncMock()
-        mock_redis.pipeline = MagicMock(return_value=mock_pipe)
+        mock_redis.getdel = AsyncMock(return_value=None)
 
         with patch.dict("sys.modules", {"app.core.redis": MagicMock(redis_pool=mock_redis)}):
             result = await validate_state("already-used-state")
@@ -154,6 +145,7 @@ class TestProfileNormalization:
         google_response = {
             "sub": "12345",
             "email": "user@gmail.com",
+            "email_verified": True,
             "name": "Test User",
             "picture": "https://lh3.google.com/photo",
         }
@@ -189,6 +181,45 @@ class TestProfileNormalization:
             assert profile.provider_user_id == "12345"
             assert profile.email == "user@gmail.com"
             assert profile.display_name == "Test User"
+
+    @pytest.mark.asyncio
+    async def test_google_profile_unverified_email_rejected(self):
+        """Google accounts with unverified emails must be rejected."""
+        google_response = {
+            "sub": "12345",
+            "email": "user@gmail.com",
+            "email_verified": False,
+            "name": "Test User",
+            "picture": "https://lh3.google.com/photo",
+        }
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = google_response
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("app.core.oauth.httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            with patch("app.core.oauth._build_providers") as mock_build:
+                from app.core.oauth import OAuthProviderConfig
+
+                mock_build.return_value = {
+                    "google": OAuthProviderConfig(
+                        authorize_url="",
+                        token_url="",
+                        userinfo_url="https://www.googleapis.com/oauth2/v3/userinfo",
+                        client_id="id",
+                        client_secret="secret",
+                        scopes="",
+                    )
+                }
+                with pytest.raises(ValueError, match="not verified"):
+                    await fetch_user_profile("google", "access-token")
 
     @pytest.mark.asyncio
     async def test_github_profile_with_private_email(self):
