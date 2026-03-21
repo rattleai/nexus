@@ -133,6 +133,7 @@ class Settings(BaseSettings):
     AI_QWEN_API_KEY: str = ""
     AI_QWEN_API_BASE: str = ""              # Custom base URL for Qwen (e.g. DashScope)
     AI_ALEPH_ALPHA_API_KEY: str = ""
+    AI_XAI_API_KEY: str = ""
 
     # Rate limiting for AI endpoints (per window)
     RATE_LIMIT_AI_REQUESTS: int = 60
@@ -237,6 +238,7 @@ class Settings(BaseSettings):
             or self.AI_DEEPSEEK_API_KEY
             or self.AI_QWEN_API_KEY
             or self.AI_ALEPH_ALPHA_API_KEY
+            or self.AI_XAI_API_KEY
         )
 
 

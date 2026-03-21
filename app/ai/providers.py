@@ -182,6 +182,42 @@ MODEL_CATALOG: dict[str, ModelInfo] = {
         max_input_tokens=2_048,
         max_output_tokens=2_048,
     ),
+    # X.AI (Grok)
+    "grok-4": ModelInfo(
+        provider=AIProvider.XAI,
+        litellm_model="xai/grok-4",
+        display_name="Grok 4",
+        max_input_tokens=256_000,
+        max_output_tokens=16_384,
+        supports_function_calling=True,
+        supports_vision=True,
+    ),
+    "grok-4-1-fast-reasoning": ModelInfo(
+        provider=AIProvider.XAI,
+        litellm_model="xai/grok-4-1-fast-reasoning",
+        display_name="Grok 4.1 Fast (Reasoning)",
+        max_input_tokens=2_000_000,
+        max_output_tokens=16_384,
+        supports_function_calling=True,
+        supports_vision=True,
+    ),
+    "grok-4-1-fast-non-reasoning": ModelInfo(
+        provider=AIProvider.XAI,
+        litellm_model="xai/grok-4-1-fast-non-reasoning",
+        display_name="Grok 4.1 Fast",
+        max_input_tokens=2_000_000,
+        max_output_tokens=16_384,
+        supports_function_calling=True,
+        supports_vision=True,
+    ),
+    "grok-3-mini": ModelInfo(
+        provider=AIProvider.XAI,
+        litellm_model="xai/grok-3-mini",
+        display_name="Grok 3 Mini",
+        max_input_tokens=131_072,
+        max_output_tokens=8_192,
+        supports_function_calling=True,
+    ),
 }
 
 
@@ -195,6 +231,7 @@ PROVIDER_ENV_MAP: dict[AIProvider, str] = {
     AIProvider.DEEPSEEK: "AI_DEEPSEEK_API_KEY",
     AIProvider.QWEN: "AI_QWEN_API_KEY",
     AIProvider.ALEPH_ALPHA: "AI_ALEPH_ALPHA_API_KEY",
+    AIProvider.XAI: "AI_XAI_API_KEY",
 }
 
 # ── Default Fallback Chains ──────────────────────────────
@@ -208,6 +245,8 @@ DEFAULT_FALLBACK_CHAINS: dict[str, list[str]] = {
     "gemini-2.0-flash": ["gpt-4o-mini", "claude-haiku-4-5-20251001"],
     "mistral-large-latest": ["gpt-4o", "claude-sonnet-4-20250514"],
     "deepseek-chat": ["gpt-4o-mini", "mistral-small-latest"],
+    "grok-4": ["gpt-4o", "claude-sonnet-4-20250514"],
+    "grok-3-mini": ["gpt-4o-mini", "mistral-small-latest"],
 }
 
 

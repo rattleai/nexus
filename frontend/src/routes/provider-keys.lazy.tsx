@@ -57,6 +57,7 @@ const PROVIDERS = [
   { value: "deepseek", label: "DeepSeek", placeholder: "sk-..." },
   { value: "qwen", label: "Qwen", placeholder: "sk-..." },
   { value: "aleph_alpha", label: "Aleph Alpha", placeholder: "..." },
+  { value: "xai", label: "xAI (Grok)", placeholder: "xai-..." },
 ] as const
 
 function getProviderLabel(value: string) {
