@@ -16,9 +16,9 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 
 class RateLimits(BaseModel):
-    standard_requests_per_window: int
-    window_seconds: int
-    ai_requests_per_window: int
+    standard_requests_per_window: int = 100
+    window_seconds: int = 60
+    ai_requests_per_window: int = 60
 
 
 class AuthMethods(BaseModel):
@@ -88,20 +88,14 @@ async def get_agent_capabilities() -> AgentCapabilities:
             bearer_jwt=settings.AUTH_ENABLED,
             oauth_client_credentials=settings.OAUTH_CLIENT_CREDENTIALS_ENABLED,
         ),
-        rate_limits=RateLimits(
-            standard_requests_per_window=settings.RATE_LIMIT_DEFAULT,
-            window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
-            ai_requests_per_window=settings.RATE_LIMIT_AI_REQUESTS,
-        ),
+        rate_limits=RateLimits(),
         batch=BatchConfig(),
         optimizations=AgentOptimizations(
             error_hints=settings.AGENT_HINTS_ENABLED,
         ),
         recognized_agent_headers=["X-Agent-Name", "X-API-Key"],
         features={
-            "ai_gateway": settings.AI_ENABLED,
-            "mcp_server": settings.MCP_ENABLED,
-            "agent_execution": settings.AGENT_EXECUTION_ENABLED,
+            "ai_gateway": True,
             "webhooks": True,
             "batch_api": True,
         },

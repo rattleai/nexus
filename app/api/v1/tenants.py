@@ -207,11 +207,23 @@ async def create_api_key_for_tenant(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    # Default to read-only scopes (least privilege) if none specified
-    default_read_scopes = [s for s in settings.VALID_SCOPES if s.endswith(":read")]
+    # Default to read-only scopes (least privilege) if none specified.
+    # Exclude infrastructure scopes from defaults — they are UI-only.
+    default_read_scopes = [
+        s for s in settings.VALID_SCOPES
+        if s.endswith(":read") and s not in settings.INFRASTRUCTURE_SCOPES
+    ]
     key_name = body.name if body else "default"
     key_scopes = body.scopes if body and body.scopes else default_read_scopes
     key_rate_limit = body.rate_limit if body else 100
+
+    # Reject infrastructure scopes that must never be granted to API keys
+    forbidden = set(key_scopes) & settings.INFRASTRUCTURE_SCOPES
+    if forbidden:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cannot grant infrastructure scopes to API keys: {', '.join(sorted(forbidden))}",
+        )
 
     raw_key = f"sk_{secrets.token_urlsafe(32)}"
     api_key = ApiKey(

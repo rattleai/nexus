@@ -77,8 +77,8 @@ async def list_files(
         return {"items": items, "next_cursor": None, "has_more": False}
     except StorageError as exc:
         raise handle_storage_error(exc) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Storage service unavailable") from None
 
 
 @router.post(
@@ -113,8 +113,8 @@ async def upload_file(
         )
     except StorageError as exc:
         raise handle_storage_error(exc) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Storage service unavailable") from None
 
     # Track usage
     await increment_usage(tenant.id, QuotaMetric.FILE_UPLOADS_PER_DAY)
@@ -151,8 +151,8 @@ async def download_file(
         data = await storage.async_download(file_key)
     except StorageError as exc:
         raise handle_storage_error(exc) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Storage service unavailable") from None
 
     # Extract original filename from key for Content-Disposition.
     # Escape quotes to prevent header injection.
@@ -188,7 +188,7 @@ async def delete_file(
         await storage.async_delete(file_key)
     except StorageError as exc:
         raise handle_storage_error(exc) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Storage service unavailable") from None
 
     logger.info("file_deleted", tenant_id=str(tenant.id), key=file_key)

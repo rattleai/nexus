@@ -277,7 +277,7 @@ class ToolRegistry:
                 tool_name=tool_name,
                 error=str(exc),
             )
-            return {"error": f"Built-in tool '{tool_name}' failed: {exc}"}
+            return {"error": f"Built-in tool '{tool_name}' failed"}
 
     async def _invoke_sandbox(self, arguments: dict[str, Any]) -> Any:
         """Invoke the code execution sandbox.

@@ -277,6 +277,34 @@ class RequireRole:
             )
 
 
+class RequireUI:
+    """Reject API key / OAuth client auth — endpoint is only accessible via JWT.
+
+    Apply this to critical infrastructure endpoints that must never be
+    accessible programmatically (API key management, OAuth clients, audit
+    logs, etc.).  This prevents privilege-escalation attacks where an API
+    key creates new keys with broader scopes.
+
+    Usage:
+        @router.get("/api-keys", dependencies=[Depends(RequireUI())])
+        async def list_api_keys(...): ...
+    """
+
+    async def __call__(
+        self,
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        # Only JWT Bearer tokens (i.e. browser / UI sessions) are accepted
+        user = await _resolve_user_from_jwt(request, db)
+        if not user:
+            raise HTTPException(
+                status_code=403,
+                detail="This endpoint is only accessible from the application UI",
+            )
+        return user
+
+
 class RequireScopes:
     """FastAPI dependency that enforces API key scopes.
 

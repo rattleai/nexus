@@ -144,12 +144,12 @@ async def create_completion(
                 top_p=body.top_p,
                 request_id=request_id,
             )
-        except AIAuthenticationError as exc:
-            raise HTTPException(status_code=401, detail=str(exc))
-        except AIProviderUnavailableError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
-        except AIGatewayError as exc:
-            raise HTTPException(status_code=500, detail=str(exc))
+        except AIAuthenticationError:
+            raise HTTPException(status_code=401, detail="AI provider authentication failed")
+        except AIProviderUnavailableError:
+            raise HTTPException(status_code=502, detail="AI provider temporarily unavailable")
+        except AIGatewayError:
+            raise HTTPException(status_code=500, detail="AI gateway error")
 
         # Build a callback that deducts USD and logs usage after streaming completes.
         # IMPORTANT: The request-scoped DB session (`db`) may be closed by the time
@@ -245,12 +245,12 @@ async def create_completion(
             tenant_settings=tenant.settings,
             db=db,
         )
-    except AIAuthenticationError as exc:
-        raise HTTPException(status_code=401, detail=str(exc))
-    except AIProviderUnavailableError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
-    except AIGatewayError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    except AIAuthenticationError:
+        raise HTTPException(status_code=401, detail="AI provider authentication failed")
+    except AIProviderUnavailableError:
+        raise HTTPException(status_code=502, detail="AI provider temporarily unavailable")
+    except AIGatewayError:
+        raise HTTPException(status_code=500, detail="AI gateway error")
 
     # Deduct from wallet (USD)
     try:

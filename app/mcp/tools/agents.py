@@ -103,8 +103,8 @@ async def agent_run(
     from app.billing.entitlements import entitlements, EntitlementDenied
     try:
         await entitlements.require_feature(tenant.id, "agents:execute", db=db)
-    except EntitlementDenied as exc:
-        return {"error": str(exc)}
+    except EntitlementDenied:
+        return {"error": "Feature not available on your current plan"}
 
     # Audit event
     from app.core.audit import AuditAction, emit_audit_event
@@ -146,7 +146,8 @@ async def agent_run(
             "cost_usd": instance.cost_usd,
         }
     except Exception as exc:
-        return {"error": str(exc)[:500]}
+        logger.error("mcp_agent_run_failed", error=str(exc), exc_info=True)
+        return {"error": "Agent execution failed"}
 
 
 async def agent_instances(

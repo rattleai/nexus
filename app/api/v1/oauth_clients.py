@@ -1,6 +1,8 @@
 """OAuth 2.1 Client Credentials flow for machine-to-machine authentication.
 
-Provides endpoints to manage OAuth clients and exchange credentials for JWTs.
+Management endpoints (create, list, revoke, rotate) are UI-only — they must
+never be accessible via API keys or MCP to prevent privilege escalation.
+The token exchange endpoint remains open for M2M auth by design.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import RequireRole, get_current_tenant, get_db
+from app.api.deps import RequireRole, RequireUI, get_current_tenant, get_db
 from app.api.rate_limit import RateLimiter
 from app.config import settings
 from app.db.models import Tenant
@@ -112,7 +114,7 @@ async def _audit_log(
     "/clients",
     response_model=OAuthClientCreateResponse,
     status_code=201,
-    dependencies=[Depends(RequireRole("admin", "owner"))],
+    dependencies=[Depends(RequireUI()), Depends(RequireRole("admin", "owner"))],
 )
 async def create_oauth_client(
     body: OAuthClientCreate,
@@ -127,6 +129,15 @@ async def create_oauth_client(
     invalid = set(body.scopes) - set(settings.VALID_SCOPES)
     if invalid:
         raise HTTPException(status_code=422, detail=f"Invalid scopes: {', '.join(sorted(invalid))}")
+
+    # Reject infrastructure scopes — they are UI-only and must not be
+    # delegated to M2M clients.
+    forbidden = set(body.scopes) & settings.INFRASTRUCTURE_SCOPES
+    if forbidden:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cannot grant infrastructure scopes to OAuth clients: {', '.join(sorted(forbidden))}",
+        )
 
     client_id = _generate_client_id()
     client_secret = _generate_client_secret()
@@ -160,7 +171,7 @@ async def create_oauth_client(
 @router.get(
     "/clients",
     response_model=list[OAuthClientResponse],
-    dependencies=[Depends(RequireRole("admin", "owner"))],
+    dependencies=[Depends(RequireUI()), Depends(RequireRole("admin", "owner"))],
 )
 async def list_oauth_clients(
     tenant: Tenant = Depends(get_current_tenant),
@@ -190,7 +201,7 @@ async def list_oauth_clients(
 @router.delete(
     "/clients/{client_id}",
     status_code=204,
-    dependencies=[Depends(RequireRole("admin", "owner"))],
+    dependencies=[Depends(RequireUI()), Depends(RequireRole("admin", "owner"))],
 )
 async def revoke_oauth_client(
     client_id: str,
@@ -312,7 +323,7 @@ class RotateSecretResponse(BaseModel):
 @router.post(
     "/clients/{client_id}/rotate",
     response_model=RotateSecretResponse,
-    dependencies=[Depends(RequireRole("admin", "owner"))],
+    dependencies=[Depends(RequireUI()), Depends(RequireRole("admin", "owner"))],
 )
 async def rotate_client_secret(
     client_id: str,

@@ -2,15 +2,24 @@
 
 Verifies that the trigger prevents UPDATE/DELETE on audit_logs
 and that the GUC bypass works for compliance-mandated purge.
+
+Requires a real PostgreSQL database with migrations applied.
+Run with: DATABASE_URL=... pytest -m integration tests/test_audit_immutability.py
 """
 
 from __future__ import annotations
 
+import os
 import uuid
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("DATABASE_TEST_URL"),
+    reason="Requires real PostgreSQL with migrations (set DATABASE_TEST_URL)",
+)
 
 
 @pytest.mark.asyncio

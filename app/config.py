@@ -194,6 +194,15 @@ class Settings(BaseSettings):
         "agents:read", "agents:write", "agents:admin", "agents:execute",
     ]
 
+    # Scopes that must never be granted to API keys.  These control critical
+    # infrastructure (key management, audit trail) that should only be
+    # accessible from the application UI via JWT-authenticated sessions.
+    INFRASTRUCTURE_SCOPES: frozenset[str] = frozenset({
+        "api-keys:read",
+        "api-keys:write",
+        "audit:read",
+    })
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @property

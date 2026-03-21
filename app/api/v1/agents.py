@@ -285,8 +285,8 @@ async def create_agent_instance(
     from app.billing.entitlements import entitlements, EntitlementDenied
     try:
         await entitlements.require_feature(tenant.id, "agents:execute", db=db)
-    except EntitlementDenied as exc:
-        raise HTTPException(403, str(exc)) from exc
+    except EntitlementDenied:
+        raise HTTPException(403, "Feature not available on your current plan") from None
 
     agent = await _get_agent_or_404(db, agent_id, tenant.id)
 
@@ -474,8 +474,8 @@ async def run_agent_stream(
     from app.billing.entitlements import entitlements, EntitlementDenied
     try:
         await entitlements.require_feature(tenant.id, "agents:execute", db=db)
-    except EntitlementDenied as exc:
-        raise HTTPException(403, str(exc)) from exc
+    except EntitlementDenied:
+        raise HTTPException(403, "Feature not available on your current plan") from None
 
     agent = await _get_agent_or_404(db, agent_id, tenant.id)
 
@@ -542,7 +542,8 @@ async def run_agent_stream(
                 yield f"event: {event_type}\ndata: {_json.dumps(event_data, default=str)}\n\n"
         except Exception as exc:
             import json as _json2
-            yield f"event: error\ndata: {_json2.dumps({'message': str(exc)[:500]})}\n\n"
+            logger.error("agent_stream_error", error=str(exc), exc_info=True)
+            yield f"event: error\ndata: {_json2.dumps({'message': 'Agent execution failed'})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -907,8 +908,8 @@ async def run_workflow(
     from app.billing.entitlements import entitlements, EntitlementDenied
     try:
         await entitlements.require_feature(tenant.id, "agents:workflow", db=db)
-    except EntitlementDenied as exc:
-        raise HTTPException(403, str(exc)) from exc
+    except EntitlementDenied:
+        raise HTTPException(403, "Feature not available on your current plan") from None
 
     workflow = await db.get(WorkflowDefinition, workflow_id)
     if not workflow or workflow.tenant_id != tenant.id or workflow.deleted_at:

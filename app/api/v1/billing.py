@@ -240,8 +240,8 @@ async def create_checkout(
         url = await create_checkout_session(
             user.tenant_id, body.plan_id, body.return_url, db
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid checkout parameters") from None
     except Exception:
         logger.error("checkout_session_failed", exc_info=True)
         raise HTTPException(status_code=503, detail="Failed to create checkout session") from None
@@ -314,8 +314,8 @@ async def create_credit_pack_checkout(
 
     try:
         url = await stripe_checkout(user.tenant_id, body.pack_id, body.return_url, db)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid credit pack parameters") from None
     except Exception:
         logger.error("credit_pack_checkout_failed", exc_info=True)
         raise HTTPException(status_code=503, detail="Failed to create checkout session") from None
@@ -359,8 +359,8 @@ async def configure_auto_refill(
             body.refill_amount_usd,
             db,
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid auto-refill configuration") from None
 
     await emit_audit_event(
         db,
@@ -421,8 +421,8 @@ async def create_setup_intent(
 
     try:
         client_secret = await stripe_setup(user.tenant_id, db)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid setup request") from None
 
     return SetupIntentResponse(client_secret=client_secret)
 
