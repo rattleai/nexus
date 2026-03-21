@@ -105,11 +105,11 @@ async def ai_complete(
             db=db,
         )
     except AIAuthenticationError as exc:
-        raise tool_error(f"AI provider authentication failed: {exc}") from exc
+        raise tool_error("AI provider authentication failed") from exc
     except AIProviderUnavailableError as exc:
-        raise tool_error(f"AI provider unavailable: {exc}") from exc
+        raise tool_error("AI provider temporarily unavailable") from exc
     except AIGatewayError as exc:
-        raise tool_error(f"AI gateway error: {exc}") from exc
+        raise tool_error("AI gateway error") from exc
 
     # Deduct from wallet
     try:

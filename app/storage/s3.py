@@ -340,5 +340,16 @@ class S3Storage:
 
 
 def handle_storage_error(exc: StorageError) -> HTTPException:
-    """Convert a StorageError into an appropriate HTTPException."""
-    return HTTPException(status_code=exc.status_code, detail=str(exc))
+    """Convert a StorageError into an appropriate HTTPException.
+
+    Returns a safe error message without leaking S3 error codes or
+    infrastructure details.
+    """
+    _SAFE_MESSAGES = {
+        400: "Invalid storage request",
+        404: "File not found",
+        413: str(exc) if "too large" in str(exc).lower() else "File too large",
+        502: "Storage service error",
+    }
+    detail = _SAFE_MESSAGES.get(exc.status_code, "Storage operation failed")
+    return HTTPException(status_code=exc.status_code, detail=detail)
