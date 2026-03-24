@@ -164,7 +164,9 @@ async def update_member_role(
 
     # Load user info for response
     target_user = await db.execute(select(User).where(User.id == user_id))
-    u = target_user.scalar_one()
+    u = target_user.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
 
     logger.info("member_role_updated", user_id=str(user_id), new_role=body.role)
     return MemberResponse(
