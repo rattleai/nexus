@@ -113,9 +113,10 @@ async def ai_complete(
 
     # Deduct from wallet
     try:
-        await wallet_service.deduct_tokens(
+        await wallet_service.deduct(
             tenant.id,
-            result.billed_tokens,
+            result.billed_amount_usd,
+            provider_cost_usd=result.cost_usd,
             description=f"AI completion: {model}",
             reference_id=request_id,
             db=db,

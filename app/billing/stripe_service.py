@@ -798,7 +798,7 @@ async def get_usage_summary(
         )
         .where(
             UsageRecord.tenant_id == tenant_id,
-            UsageRecord.created_at >= cutoff,
+            UsageRecord.recorded_at >= cutoff,
         )
         .group_by(UsageRecord.metric)
     )

@@ -210,10 +210,16 @@ async def agent_approve(
     # Verify tenant ownership BEFORE resolving to prevent cross-tenant
     # approval resolution.
     approval_key = f"agent:gov:approval:{approval_id}"
-    raw = await redis_pool.get(approval_key)
+    try:
+        raw = await redis_pool.get(approval_key)
+    except Exception:
+        return {"error": "Service temporarily unavailable"}
     if not raw:
         return {"error": "Approval not found or expired"}
-    approval_data = json.loads(raw)
+    try:
+        approval_data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {"error": "Approval data corrupted"}
     if approval_data.get("tenant_id") != str(tenant.id):
         return {"error": "Approval not found or expired"}
 
