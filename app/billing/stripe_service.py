@@ -780,40 +780,68 @@ async def get_usage_summary(
     *,
     days: int = 30,
 ) -> dict:
-    """Get usage summary for a tenant over the specified period.
+    """Get usage summary for a tenant: current resource counts + plan limits.
 
-    Aggregates UsageRecord entries by metric type.
+    Returns {jobs, api_keys, team_members, storage_bytes} each with
+    {used: int, limit: int | None} matching the frontend UsageSummary type.
     """
-    from datetime import timedelta
-
     from sqlalchemy import func
 
-    cutoff = datetime.now(UTC) - timedelta(days=days)
+    from app.billing.entitlements import entitlements
+    from app.core.quotas import QuotaMetric, get_current_usage
+    from app.db.models import ApiKey, Job, TenantMembership
 
-    result = await db.execute(
-        select(
-            UsageRecord.metric,
-            func.sum(UsageRecord.value).label("total"),
-            func.count(UsageRecord.id).label("count"),
+    # Count resources in parallel-safe sequential queries (same session)
+    jobs_result = await db.execute(
+        select(func.count()).select_from(Job).where(
+            Job.tenant_id == tenant_id,
+            Job.deleted_at.is_(None),
         )
-        .where(
-            UsageRecord.tenant_id == tenant_id,
-            UsageRecord.recorded_at >= cutoff,
-        )
-        .group_by(UsageRecord.metric)
     )
+    jobs_count = jobs_result.scalar() or 0
 
-    metrics = {}
-    for row in result.all():
-        metrics[row[0]] = {
-            "total": float(row[1] or 0),
-            "count": row[2] or 0,
-        }
+    api_keys_result = await db.execute(
+        select(func.count()).select_from(ApiKey).where(
+            ApiKey.tenant_id == tenant_id,
+            ApiKey.active.is_(True),
+        )
+    )
+    api_keys_count = api_keys_result.scalar() or 0
+
+    members_result = await db.execute(
+        select(func.count()).select_from(TenantMembership).where(
+            TenantMembership.tenant_id == tenant_id,
+        )
+    )
+    members_count = members_result.scalar() or 0
+
+    # Storage bytes from Redis quota counter
+    storage_used = await get_current_usage(tenant_id, QuotaMetric.STORAGE_BYTES)
+
+    # Get plan limits
+    all_ent = await entitlements.get_all_entitlements(tenant_id, db=db)
+    limits = all_ent.get("limits", {})
+
+    def _limit_or_none(value: int) -> int | None:
+        return None if value == -1 else value
 
     return {
-        "tenant_id": str(tenant_id),
-        "period_days": days,
-        "metrics": metrics,
+        "jobs": {
+            "used": jobs_count,
+            "limit": _limit_or_none(limits.get("ai_requests_per_day", 0)),
+        },
+        "api_keys": {
+            "used": api_keys_count,
+            "limit": _limit_or_none(limits.get("api_keys", 0)),
+        },
+        "team_members": {
+            "used": members_count,
+            "limit": _limit_or_none(limits.get("team_members", 0)),
+        },
+        "storage_bytes": {
+            "used": storage_used,
+            "limit": _limit_or_none(limits.get("storage_bytes", 0)),
+        },
     }
 
 
