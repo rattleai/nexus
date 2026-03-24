@@ -7,6 +7,8 @@ interface StatusRingProps {
   size?: number
 }
 
+// SVG stroke requires literal color values — Tailwind classes can't be used here.
+// Hex values match the Tailwind palette; status semantics are fixed.
 const STATUS_COLORS: Record<string, string> = {
   completed: "#10b981", // emerald-500
   failed: "#ef4444",    // red-500
@@ -59,45 +61,42 @@ export function StatusRing({ data, total, size = 120 }: StatusRingProps) {
 
   return (
     <div className="flex flex-col items-center">
-      <svg
-        width={size}
-        height={size}
-        className="block -rotate-90"
-        role="img"
-        aria-label={`Status breakdown: ${segments.map((s) => `${s.key} ${Math.round(s.pct * 100)}%`).join(", ")}`}
-      >
-        {segments.map((seg) => {
-          const dashLength = circumference * seg.pct
-          const dashGap = circumference - dashLength
-          const el = (
-            <circle
-              key={seg.key}
-              cx={center}
-              cy={center}
-              r={radius}
-              fill="none"
-              stroke={seg.color}
-              strokeWidth={10}
-              strokeDasharray={`${dashLength} ${dashGap}`}
-              strokeDashoffset={-offset}
-              strokeLinecap="round"
-              className="transition-all duration-500"
-            />
-          )
-          offset += dashLength
-          return el
-        })}
-        {/* Center text */}
-      </svg>
-      {/* Overlay center text */}
-      <div
-        className="flex flex-col items-center justify-center -mt-[calc(var(--size)*0.5+0.75rem)]"
-        style={{ "--size": `${size}px`, height: `${size}px` } as React.CSSProperties}
-      >
-        <span className="text-2xl font-bold tabular-nums">{total}</span>
-        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
-          runs
-        </span>
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg
+          width={size}
+          height={size}
+          className="block -rotate-90"
+          role="img"
+          aria-label={`Status breakdown: ${segments.map((s) => `${s.key} ${Math.round(s.pct * 100)}%`).join(", ")}`}
+        >
+          {segments.map((seg) => {
+            const dashLength = circumference * seg.pct
+            const dashGap = circumference - dashLength
+            const el = (
+              <circle
+                key={seg.key}
+                cx={center}
+                cy={center}
+                r={radius}
+                fill="none"
+                stroke={seg.color}
+                strokeWidth={10}
+                strokeDasharray={`${dashLength} ${dashGap}`}
+                strokeDashoffset={-offset}
+                strokeLinecap="round"
+                className="transition-all duration-500"
+              />
+            )
+            offset += dashLength
+            return el
+          })}
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-2xl font-bold tabular-nums">{total}</span>
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+            runs
+          </span>
+        </div>
       </div>
     </div>
   )
