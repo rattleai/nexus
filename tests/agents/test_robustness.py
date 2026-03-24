@@ -149,6 +149,7 @@ async def test_tool_registry_external_records_failure_and_returns_error():
 
     with (
         patch("app.agents.tool_registry._tool_breaker", mock_breaker),
+        patch("app.core.url_validation.validate_url"),
         patch("httpx.AsyncClient") as mock_client_cls,
     ):
         mock_client = AsyncMock()

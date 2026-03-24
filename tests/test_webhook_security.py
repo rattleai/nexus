@@ -346,16 +346,20 @@ class TestWebhookDeliverySSRF:
 
     def test_deliver_webhook_allows_valid_url(self):
         """deliver_webhook should proceed when URL passes validation."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client_instance = MagicMock()
+        mock_client_instance.post = MagicMock(return_value=mock_response)
+
         with (
             patch("app.core.url_validation.validate_webhook_url", return_value=None),
+            patch("app.workers.tasks.settings") as mock_settings,
             patch("httpx.Client") as mock_client_cls,
         ):
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.raise_for_status = MagicMock()
-            mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(
-                post=MagicMock(return_value=mock_response)
-            ))
+            mock_settings.WEBHOOK_SIGNING_KEY = "test-webhook-signing-key"
+            mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client_instance)
             mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
             from app.workers.tasks import deliver_webhook

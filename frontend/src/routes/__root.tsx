@@ -12,7 +12,7 @@ import { AppCommandPalette } from "@/components/app-command-palette"
 import { useAuthContext } from "@/lib/auth-context"
 import { useAuth } from "@/hooks/use-auth"
 
-const PUBLIC_ROUTES = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/accept-invitation"]
+const PUBLIC_ROUTES = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/accept-invitation", "/auth/callback"]
 
 function RootErrorComponent({ reset }: ErrorComponentProps) {
   const { t } = useTranslation("errors")

@@ -20,6 +20,7 @@ interface AuthContextValue {
   accessToken: string | null
   isLoading: boolean
   login: (email: string, password: string) => Promise<void>
+  loginWithOAuth: (provider: string, code: string, state: string) => Promise<void>
   register: (email: string, password: string, displayName: string, tenantSlug: string) => Promise<void>
   logout: () => Promise<void>
   isAuthenticated: boolean
@@ -141,6 +142,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const loginWithOAuth = useCallback(async (provider: string, code: string, state: string) => {
+    setIsLoading(true)
+    try {
+      const res = await api
+        .post(`auth/oauth/${provider}/callback`, { json: { code, state }, credentials: "include" })
+        .json<{ access_token: string; user: AuthUser }>()
+      syncToken(res.access_token, _setAccessToken)
+      setUser(res.user)
+      if (res.user.locale) {
+        i18n.changeLanguage(res.user.locale)
+      }
+      window.dispatchEvent(new Event("auth-change"))
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
   const register = useCallback(
     async (email: string, password: string, displayName: string, tenantSlug: string) => {
       setIsLoading(true)
@@ -183,6 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accessToken,
         isLoading,
         login,
+        loginWithOAuth,
         register,
         logout,
         isAuthenticated: !!accessToken,

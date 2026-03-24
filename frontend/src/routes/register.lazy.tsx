@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAuthContext } from "@/lib/auth-context"
 import { parseApiError } from "@/lib/api-client"
+import { SocialLoginButtons } from "@/components/auth/social-login-buttons"
 
 export const Route = createLazyFileRoute("/register")({
   component: RegisterPage,
@@ -178,6 +179,7 @@ function RegisterPage() {
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? t("register.submitting") : t("register.submit")}
             </Button>
+            <SocialLoginButtons mode="register" disabled={isLoading} />
             <p className="text-sm text-center text-muted-foreground">
               {t("register.has_account")}{" "}
               <Link to="/login" className="text-primary underline">

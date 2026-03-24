@@ -1,4 +1,8 @@
-"""Tests for API key management endpoints."""
+"""Tests for API key management endpoints.
+
+API key endpoints now require JWT auth (UI-only) to prevent privilege
+escalation. Tests simulate JWT auth via _resolve_user_from_jwt.
+"""
 
 import uuid
 from datetime import UTC, datetime
@@ -7,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.api.deps import get_current_api_key, get_current_tenant, get_db
+from app.api.deps import get_current_tenant, get_db
 from app.main import create_app
 
 
@@ -25,15 +29,13 @@ def _make_tenant():
     )
 
 
-def _make_api_key(tenant):
+def _make_user(tenant):
     return MagicMock(
         id=uuid.uuid4(),
+        email="admin@example.com",
         tenant_id=tenant.id,
-        key_hash="fake_hash",
-        name="test-key",
-        scopes=["jobs:read", "jobs:write", "api-keys:read", "api-keys:write"],
-        active=True,
-        tenant=tenant,
+        is_active=True,
+        deleted_at=None,
     )
 
 
@@ -53,18 +55,20 @@ async def auth_client():
 
 
 @pytest.mark.asyncio
-async def test_create_api_key_requires_auth(auth_client):
-    """Creating an API key requires X-API-Key header."""
+async def test_create_api_key_requires_jwt_auth(auth_client):
+    """Creating an API key requires JWT auth (UI-only)."""
     client, _ = auth_client
     response = await client.post("/api/v1/api-keys", json={"name": "my-key"})
-    assert response.status_code == 401
+    # No auth at all -> 403 (RequireUI rejects)
+    assert response.status_code in (401, 403)
 
 
 @pytest.mark.asyncio
-async def test_list_api_keys_requires_auth(auth_client):
+async def test_list_api_keys_requires_jwt_auth(auth_client):
+    """Listing API keys requires JWT auth (UI-only)."""
     client, _ = auth_client
     response = await client.get("/api/v1/api-keys")
-    assert response.status_code == 401
+    assert response.status_code in (401, 403)
 
 
 @pytest.mark.asyncio
@@ -72,7 +76,7 @@ async def test_revoke_nonexistent_key(auth_client):
     """Revoking a non-existent key should return 404."""
     client, app = auth_client
     tenant = _make_tenant()
-    api_key = _make_api_key(tenant)
+    user = _make_user(tenant)
 
     mock_db = AsyncMock()
     mock_result = MagicMock()
@@ -84,11 +88,13 @@ async def test_revoke_nonexistent_key(auth_client):
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_tenant] = lambda: tenant
-    app.dependency_overrides[get_current_api_key] = lambda: api_key
 
     try:
-        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=api_key):
-            response = await client.delete(f"/api/v1/api-keys/{uuid.uuid4()}")
+        with patch("app.api.deps._resolve_user_from_jwt", new_callable=AsyncMock, return_value=user):
+            response = await client.delete(
+                f"/api/v1/api-keys/{uuid.uuid4()}",
+                headers={"Authorization": "Bearer fake_jwt"},
+            )
         assert response.status_code == 404
     finally:
         app.dependency_overrides.clear()
@@ -96,10 +102,10 @@ async def test_revoke_nonexistent_key(auth_client):
 
 @pytest.mark.asyncio
 async def test_list_api_keys_returns_paginated(auth_client):
-    """Listing API keys returns cursor-paginated response."""
+    """Listing API keys returns cursor-paginated response with JWT auth."""
     client, app = auth_client
     tenant = _make_tenant()
-    api_key = _make_api_key(tenant)
+    user = _make_user(tenant)
 
     mock_db = AsyncMock()
     mock_result = MagicMock()
@@ -111,11 +117,13 @@ async def test_list_api_keys_returns_paginated(auth_client):
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_tenant] = lambda: tenant
-    app.dependency_overrides[get_current_api_key] = lambda: api_key
 
     try:
-        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=api_key):
-            response = await client.get("/api/v1/api-keys")
+        with patch("app.api.deps._resolve_user_from_jwt", new_callable=AsyncMock, return_value=user):
+            response = await client.get(
+                "/api/v1/api-keys",
+                headers={"Authorization": "Bearer fake_jwt"},
+            )
         assert response.status_code == 200
         data = response.json()
         assert "items" in data

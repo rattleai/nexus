@@ -105,17 +105,18 @@ async def ai_complete(
             db=db,
         )
     except AIAuthenticationError as exc:
-        raise tool_error(f"AI provider authentication failed: {exc}") from exc
+        raise tool_error("AI provider authentication failed") from exc
     except AIProviderUnavailableError as exc:
-        raise tool_error(f"AI provider unavailable: {exc}") from exc
+        raise tool_error("AI provider temporarily unavailable") from exc
     except AIGatewayError as exc:
-        raise tool_error(f"AI gateway error: {exc}") from exc
+        raise tool_error("AI gateway error") from exc
 
     # Deduct from wallet
     try:
-        await wallet_service.deduct_tokens(
+        await wallet_service.deduct(
             tenant.id,
-            result.billed_tokens,
+            result.billed_amount_usd,
+            provider_cost_usd=result.cost_usd,
             description=f"AI completion: {model}",
             reference_id=request_id,
             db=db,

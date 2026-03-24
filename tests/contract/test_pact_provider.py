@@ -57,6 +57,23 @@ class TestPactVerification:
         assert output == 0, f"Pact verification failed:\n{logs}"
 
 
+def _can_reach_provider() -> bool:
+    """Check if the provider URL is reachable."""
+    try:
+        import httpx
+        httpx.get(f"{PROVIDER_URL}/api/v1/health/live", timeout=2)
+        return True
+    except Exception:
+        return False
+
+
+_provider_reachable = pytest.mark.skipif(
+    not os.environ.get("PACT_PROVIDER_URL") and not _can_reach_provider(),
+    reason=f"Provider not reachable at {PROVIDER_URL} (set PACT_PROVIDER_URL)",
+)
+
+
+@_provider_reachable
 class TestHealthContract:
     """Verify health endpoint contract (fallback without pact-python)."""
 
@@ -76,6 +93,7 @@ def _assert_error_response_shape(response):
     assert "detail" in data, f"Error response missing 'detail' field: {data}"
 
 
+@_provider_reachable
 class TestJobsContract:
     """Verify jobs API contract matches frontend expectations."""
 
@@ -97,6 +115,7 @@ class TestJobsContract:
             _assert_error_response_shape(response)
 
 
+@_provider_reachable
 class TestAgentsContract:
     """Verify agent API contract."""
 
@@ -133,6 +152,7 @@ class TestAgentsContract:
             _assert_error_response_shape(response)
 
 
+@_provider_reachable
 class TestBillingContract:
     """Verify billing API contract."""
 
@@ -153,6 +173,7 @@ class TestBillingContract:
             _assert_error_response_shape(response)
 
 
+@_provider_reachable
 class TestMCPDiscovery:
     """Verify MCP .well-known discovery endpoint."""
 

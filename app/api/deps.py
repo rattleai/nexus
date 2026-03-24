@@ -74,9 +74,17 @@ async def get_current_api_key_optional(
 
 
 async def _resolve_api_key(request: Request, db: AsyncSession) -> ApiKey | None:
-    """Try to resolve an API key from the X-API-Key header. Returns None if absent."""
+    """Try to resolve an API key from the X-API-Key header. Returns None if absent.
+
+    Results are cached on request.state to avoid redundant DB queries when
+    multiple dependencies call this within the same request.
+    """
+    if hasattr(request.state, '_resolved_api_key'):
+        return request.state._resolved_api_key
+
     x_api_key = request.headers.get("X-API-Key")
     if not x_api_key:
+        request.state._resolved_api_key = None
         return None
 
     key_hash = hash_api_key(x_api_key)
@@ -92,13 +100,22 @@ async def _resolve_api_key(request: Request, db: AsyncSession) -> ApiKey | None:
         raise HTTPException(status_code=403, detail="Tenant not found or inactive")
 
     request.state.api_key = api_key
+    request.state._resolved_api_key = api_key
     return api_key
 
 
 async def _resolve_user_from_jwt(request: Request, db: AsyncSession) -> User | None:
-    """Try to resolve a user from a JWT Bearer token. Returns None if absent."""
+    """Try to resolve a user from a JWT Bearer token. Returns None if absent.
+
+    Results are cached on request.state to avoid redundant JWT decoding and
+    DB queries when multiple dependencies call this within the same request.
+    """
+    if hasattr(request.state, '_jwt_user'):
+        return request.state._jwt_user
+
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
+        request.state._jwt_user = None
         return None
 
     from app.core.security import decode_access_token, is_token_revoked, is_user_token_revoked
@@ -138,6 +155,7 @@ async def _resolve_user_from_jwt(request: Request, db: AsyncSession) -> User | N
     if jwt_tenant_id and str(user.tenant_id) != str(jwt_tenant_id):
         raise HTTPException(status_code=401, detail="Token tenant mismatch — please re-authenticate")
 
+    request.state._jwt_user = user
     return user
 
 
@@ -150,7 +168,13 @@ async def get_current_tenant(
     Accepts either a JWT Bearer token or an X-API-Key header.
     JWT is checked first; if absent, falls back to API key.
     Also sets PostgreSQL RLS tenant context for defense-in-depth isolation.
+
+    Results are cached on request.state to avoid redundant queries when
+    multiple dependencies need the tenant within the same request.
     """
+    if hasattr(request.state, '_resolved_tenant'):
+        return request.state._resolved_tenant
+
     # Try JWT auth first (frontend users)
     user = await _resolve_user_from_jwt(request, db)
     if user:
@@ -158,20 +182,27 @@ async def get_current_tenant(
         tenant = result.scalar_one_or_none()
         if not tenant:
             raise HTTPException(status_code=403, detail="Tenant not found or inactive")
-        await set_tenant_context(db, str(tenant.id))
+        if not getattr(request.state, '_tenant_context_set', False):
+            await set_tenant_context(db, str(tenant.id))
+            request.state._tenant_context_set = True
+        request.state._resolved_tenant = tenant
         return tenant
 
     # Fall back to API key auth
     api_key = await _resolve_api_key(request, db)
     if api_key:
         tenant = api_key.tenant
-        await set_tenant_context(db, str(tenant.id))
+        if not getattr(request.state, '_tenant_context_set', False):
+            await set_tenant_context(db, str(tenant.id))
+            request.state._tenant_context_set = True
+        request.state._resolved_tenant = tenant
         return tenant
 
     raise HTTPException(status_code=401, detail="Authentication required (Bearer token or X-API-Key)")
 
 
 async def get_tenant_db(
+    request: Request,
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ) -> AsyncSession:
@@ -180,7 +211,9 @@ async def get_tenant_db(
     Use this instead of manually calling set_tenant_context() in every endpoint.
     The tenant context is guaranteed to be set before the session is returned.
     """
-    await set_tenant_context(db, str(tenant.id))
+    if not getattr(request.state, '_tenant_context_set', False):
+        await set_tenant_context(db, str(tenant.id))
+        request.state._tenant_context_set = True
     return db
 
 
@@ -193,55 +226,20 @@ async def get_current_user_from_token(
 ) -> User:
     """Extract and validate JWT Bearer token, return the authenticated user.
 
+    Delegates to _resolve_user_from_jwt (which caches on request.state) to
+    avoid redundant JWT decoding and user queries when other dependencies
+    (get_current_tenant, RequireScopes, etc.) also resolve the user.
+
     Raises 401 if the token is missing, expired, or invalid.
     """
-    from app.core.security import decode_access_token, is_token_revoked, is_user_token_revoked
-
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
+    user = await _resolve_user_from_jwt(request, db)
+    if not user:
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
 
-    token = auth_header[7:]
-    try:
-        payload = decode_access_token(token)
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired") from None
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token") from None
-
-    # Check token revocation blacklist (P0-7: JWT revocation)
-    jti = payload.get("jti")
-    if jti and await is_token_revoked(jti):
-        raise HTTPException(status_code=401, detail="Token has been revoked")
-
-    user_id_str = payload.get("sub")
-    if not user_id_str:
-        raise HTTPException(status_code=401, detail="Invalid token payload")
-
-    # Check if all user tokens were bulk-revoked (e.g. after password reset)
-    iat = payload.get("iat")
-    if user_id_str and iat and await is_user_token_revoked(user_id_str, int(iat)):
-        raise HTTPException(status_code=401, detail="Token has been revoked")
-
-    try:
-        user_id = uuid.UUID(user_id_str)
-    except (ValueError, AttributeError):
-        raise HTTPException(status_code=401, detail="Invalid token payload") from None
-
-    result = await db.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))
-    user = result.scalar_one_or_none()
-
-    if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="User not found or inactive")
-
-    # Cross-check JWT tenant_id against the user's current tenant to detect
-    # stale tokens (e.g. user was moved to a different tenant after JWT was issued).
-    jwt_tenant_id = payload.get("tenant_id")
-    if jwt_tenant_id and str(user.tenant_id) != str(jwt_tenant_id):
-        raise HTTPException(status_code=401, detail="Token tenant mismatch — please re-authenticate")
-
-    # Set RLS tenant context for defense-in-depth isolation (mirrors API key auth path)
-    await set_tenant_context(db, str(user.tenant_id))
+    # Set RLS tenant context for defense-in-depth isolation (idempotent per request)
+    if not getattr(request.state, '_tenant_context_set', False):
+        await set_tenant_context(db, str(user.tenant_id))
+        request.state._tenant_context_set = True
 
     return user
 
@@ -275,6 +273,34 @@ class RequireRole:
                 status_code=403,
                 detail="Insufficient permissions",
             )
+
+
+class RequireUI:
+    """Reject API key / OAuth client auth — endpoint is only accessible via JWT.
+
+    Apply this to critical infrastructure endpoints that must never be
+    accessible programmatically (API key management, OAuth clients, audit
+    logs, etc.).  This prevents privilege-escalation attacks where an API
+    key creates new keys with broader scopes.
+
+    Usage:
+        @router.get("/api-keys", dependencies=[Depends(RequireUI())])
+        async def list_api_keys(...): ...
+    """
+
+    async def __call__(
+        self,
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        # Only JWT Bearer tokens (i.e. browser / UI sessions) are accepted
+        user = await _resolve_user_from_jwt(request, db)
+        if not user:
+            raise HTTPException(
+                status_code=403,
+                detail="This endpoint is only accessible from the application UI",
+            )
+        return user
 
 
 class RequireScopes:

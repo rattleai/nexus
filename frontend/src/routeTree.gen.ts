@@ -28,6 +28,7 @@ import { Route as ApiKeysRouteImport } from './routes/api-keys'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthCallbackProviderRouteImport } from './routes/auth/callback/$provider'
 
 const WebhooksRoute = WebhooksRouteImport.update({
   id: '/webhooks',
@@ -130,6 +131,13 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthCallbackProviderRoute = AuthCallbackProviderRouteImport.update({
+  id: '/auth/callback/$provider',
+  path: '/auth/callback/$provider',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() =>
+  import('./routes/auth/callback/$provider.lazy').then((d) => d.Route),
+)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -151,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/team': typeof TeamRoute
   '/verify-email': typeof VerifyEmailRoute
   '/webhooks': typeof WebhooksRoute
+  '/auth/callback/$provider': typeof AuthCallbackProviderRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -172,6 +181,7 @@ export interface FileRoutesByTo {
   '/team': typeof TeamRoute
   '/verify-email': typeof VerifyEmailRoute
   '/webhooks': typeof WebhooksRoute
+  '/auth/callback/$provider': typeof AuthCallbackProviderRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -194,6 +204,7 @@ export interface FileRoutesById {
   '/team': typeof TeamRoute
   '/verify-email': typeof VerifyEmailRoute
   '/webhooks': typeof WebhooksRoute
+  '/auth/callback/$provider': typeof AuthCallbackProviderRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -217,6 +228,7 @@ export interface FileRouteTypes {
     | '/team'
     | '/verify-email'
     | '/webhooks'
+    | '/auth/callback/$provider'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -238,6 +250,7 @@ export interface FileRouteTypes {
     | '/team'
     | '/verify-email'
     | '/webhooks'
+    | '/auth/callback/$provider'
   id:
     | '__root__'
     | '/'
@@ -259,6 +272,7 @@ export interface FileRouteTypes {
     | '/team'
     | '/verify-email'
     | '/webhooks'
+    | '/auth/callback/$provider'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -281,6 +295,7 @@ export interface RootRouteChildren {
   TeamRoute: typeof TeamRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
   WebhooksRoute: typeof WebhooksRoute
+  AuthCallbackProviderRoute: typeof AuthCallbackProviderRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -418,6 +433,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/callback/$provider': {
+      id: '/auth/callback/$provider'
+      path: '/auth/callback/$provider'
+      fullPath: '/auth/callback/$provider'
+      preLoaderRoute: typeof AuthCallbackProviderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -441,6 +463,7 @@ const rootRouteChildren: RootRouteChildren = {
   TeamRoute: TeamRoute,
   VerifyEmailRoute: VerifyEmailRoute,
   WebhooksRoute: WebhooksRoute,
+  AuthCallbackProviderRoute: AuthCallbackProviderRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

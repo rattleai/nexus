@@ -204,11 +204,9 @@ def create_app() -> FastAPI:
         """MCP server capability discovery per the November 2025 spec."""
         return {
             "name": settings.MCP_SERVER_NAME,
-            "version": __version__,
-            "description": "CADPrice multi-tenant SaaS platform MCP server",
+            "description": "MCP server",
             "transport": settings.MCP_TRANSPORT,
             "url": f"{settings.APP_BASE_URL}/mcp" if settings.MCP_TRANSPORT == "http" else None,
-            "api_bridge": f"{settings.APP_BASE_URL}/mcp" if settings.MCP_EXPOSE_API_ROUTES else None,
             "authentication": {"type": "api_key", "header": "X-API-Key"},
             "capabilities": {
                 "tools": True,

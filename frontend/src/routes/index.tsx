@@ -122,38 +122,38 @@ function AuthenticatedDashboard() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             title={t("authenticated.total_jobs")}
-            value={formatCompactNumber(usage?.jobs.used ?? 0)}
+            value={formatCompactNumber(usage?.jobs?.used ?? 0)}
             icon={Briefcase}
             description={
-              usage?.jobs.limit ? tc("labels.of_limit", { limit: formatCompactNumber(usage.jobs.limit) }) : tc("status.unlimited")
+              usage?.jobs?.limit ? tc("labels.of_limit", { limit: formatCompactNumber(usage.jobs.limit) }) : tc("status.unlimited")
             }
           />
           <StatCard
             title={t("authenticated.api_keys")}
-            value={usage?.api_keys.used ?? 0}
+            value={usage?.api_keys?.used ?? 0}
             icon={Key}
             description={
-              usage?.api_keys.limit
+              usage?.api_keys?.limit
                 ? tc("labels.of_limit", { limit: usage.api_keys.limit })
                 : tc("status.unlimited")
             }
           />
           <StatCard
             title={t("authenticated.team_members")}
-            value={usage?.team_members.used ?? 0}
+            value={usage?.team_members?.used ?? 0}
             icon={Users}
             description={
-              usage?.team_members.limit
+              usage?.team_members?.limit
                 ? tc("labels.of_limit", { limit: usage.team_members.limit })
                 : tc("status.unlimited")
             }
           />
           <StatCard
             title={t("authenticated.storage")}
-            value={formatBytes(usage?.storage_bytes.used ?? 0)}
+            value={formatBytes(usage?.storage_bytes?.used ?? 0)}
             icon={HardDrive}
             description={
-              usage?.storage_bytes.limit
+              usage?.storage_bytes?.limit
                 ? tc("labels.of_limit", { limit: formatBytes(usage.storage_bytes.limit) })
                 : tc("status.unlimited")
             }
@@ -226,7 +226,7 @@ function AuthenticatedDashboard() {
                     v{health.version}
                   </span>
                 </div>
-                {Object.entries(health.services).map(([name, ok]) => (
+                {Object.entries(health.services ?? {}).map(([name, ok]) => (
                   <div key={name} className="flex items-center gap-2">
                     <div
                       className={`h-2 w-2 rounded-full ${

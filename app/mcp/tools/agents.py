@@ -103,8 +103,8 @@ async def agent_run(
     from app.billing.entitlements import entitlements, EntitlementDenied
     try:
         await entitlements.require_feature(tenant.id, "agents:execute", db=db)
-    except EntitlementDenied as exc:
-        return {"error": str(exc)}
+    except EntitlementDenied:
+        return {"error": "Feature not available on your current plan"}
 
     # Audit event
     from app.core.audit import AuditAction, emit_audit_event
@@ -146,7 +146,8 @@ async def agent_run(
             "cost_usd": instance.cost_usd,
         }
     except Exception as exc:
-        return {"error": str(exc)[:500]}
+        logger.error("mcp_agent_run_failed", error=str(exc), exc_info=True)
+        return {"error": "Agent execution failed"}
 
 
 async def agent_instances(
@@ -209,10 +210,16 @@ async def agent_approve(
     # Verify tenant ownership BEFORE resolving to prevent cross-tenant
     # approval resolution.
     approval_key = f"agent:gov:approval:{approval_id}"
-    raw = await redis_pool.get(approval_key)
+    try:
+        raw = await redis_pool.get(approval_key)
+    except Exception:
+        return {"error": "Service temporarily unavailable"}
     if not raw:
         return {"error": "Approval not found or expired"}
-    approval_data = json.loads(raw)
+    try:
+        approval_data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {"error": "Approval data corrupted"}
     if approval_data.get("tenant_id") != str(tenant.id):
         return {"error": "Approval not found or expired"}
 

@@ -27,12 +27,23 @@ from typing import Any
 
 import structlog
 
+import re as _re
+
 from app.agents.events import AgentStepCompleted
 from app.agents.models import AgentDefinition, AgentInstance
 from app.config import settings
 from app.core.events import emit
 
 logger = structlog.stdlib.get_logger()
+
+
+def _sanitize_error(exc: Exception, max_len: int = 2000) -> str:
+    """Sanitize error messages to prevent leaking sensitive data."""
+    msg = str(exc)
+    msg = _re.sub(r'(sk-|pk_|Bearer\s+)\S+', '[REDACTED]', msg)
+    msg = _re.sub(r'(/Users/|/home/|/var/)\S+', '[PATH]', msg)
+    return msg[:max_len]
+
 
 # OpenTelemetry tracing — returns a no-op context manager when OTEL is not available
 try:
@@ -283,15 +294,16 @@ class AgentRuntime:
                             exc_info=True,
                         )
                         result.finish_reason = "error"
+                        safe_msg = _sanitize_error(exc, max_len=500)
                         result.steps.append(StepResult(
                             step_number=step_num,
                             action="error",
-                            content=str(exc)[:500],
+                            content=safe_msg,
                             duration_ms=int((time.monotonic() - step_start) * 1000),
                         ))
                         if step_span:
                             step_span.set_attribute("error", True)
-                            step_span.set_attribute("agent.error", str(exc)[:200])
+                            step_span.set_attribute("agent.error", safe_msg[:200])
                         break
             else:
                 result.finish_reason = "max_steps"
@@ -665,7 +677,8 @@ class AgentRuntime:
                 yield {"event": "run_completed", "data": {"finish_reason": "error", "output": ""}}
                 return
             except Exception as exc:
-                yield {"event": "error", "data": {"message": str(exc)[:500]}}
+                logger.error("agent_stream_llm_error", error=str(exc), exc_info=True)
+                yield {"event": "error", "data": {"message": _sanitize_error(exc, max_len=500)}}
                 yield {"event": "run_completed", "data": {"finish_reason": "error", "output": ""}}
                 return
 

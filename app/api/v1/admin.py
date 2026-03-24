@@ -334,11 +334,12 @@ async def create_tenant_override(
     # Invalidate cache for this tenant
     try:
         flag_result = await db.execute(select(FeatureFlag).where(FeatureFlag.id == flag_id))
-        flag = flag_result.scalar_one()
-        from app.core.redis import redis_pool
+        flag = flag_result.scalar_one_or_none()
+        if flag:
+            from app.core.redis import redis_pool
 
-        await redis_pool.delete(f"ff:{flag.name}:{body.tenant_id}")
+            await redis_pool.delete(f"ff:{flag.name}:{body.tenant_id}")
     except Exception:
-        pass
+        logger.warning("feature_flag_cache_invalidation_failed", flag_id=str(flag_id))
 
     return {"status": "created"}

@@ -24,8 +24,11 @@ from app.config import settings
 
 logger = structlog.stdlib.get_logger()
 
-# Tags whose routes are allowed to be auto-exposed.
-# Using an allowlist (not a denylist) so new sensitive tags default to hidden.
+# SECURITY: Allowlist of tags whose routes may be auto-exposed via MCP.
+# New tags default to HIDDEN (fail-safe). Only add tags for user-relevant,
+# non-infrastructure entities here.
+# NEVER add: auth, admin, tenants, api-keys, oauth, webauthn, audit, push, sync.
+# These are critical infrastructure that must only be managed from the application UI.
 _ALLOWED_TAGS = frozenset({
     "jobs",
     "files",
@@ -33,12 +36,12 @@ _ALLOWED_TAGS = frozenset({
     "webhooks",
     "ai",
     "agents",
-    "api-keys",
     "team",
 })
 
 # Path prefixes that are allowed to be auto-exposed as MCP tools.
 # Only tenant-facing API routes under /api/v1 with known-safe segments.
+# Infrastructure paths (api-keys, oauth, auth, admin, audit) are excluded.
 _ALLOWED_PATH_PREFIXES = (
     "/api/v1/jobs",
     "/api/v1/files",
@@ -46,7 +49,6 @@ _ALLOWED_PATH_PREFIXES = (
     "/api/v1/webhooks",
     "/api/v1/ai",
     "/api/v1/agents",
-    "/api/v1/api-keys",
     "/api/v1/team",
 )
 

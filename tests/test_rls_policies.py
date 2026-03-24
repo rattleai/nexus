@@ -2,15 +2,24 @@
 
 Verifies that tenant_isolation policies correctly block cross-tenant
 INSERTs via WITH CHECK, and that FORCE ROW LEVEL SECURITY is active.
+
+Requires a real PostgreSQL database with migrations applied.
+Run with: DATABASE_TEST_URL=... pytest tests/test_rls_policies.py
 """
 
 from __future__ import annotations
 
+import os
 import uuid
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("DATABASE_TEST_URL"),
+    reason="Requires real PostgreSQL with migrations (set DATABASE_TEST_URL)",
+)
 
 
 @pytest.mark.asyncio

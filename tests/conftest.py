@@ -27,7 +27,9 @@ async def admin_client(app) -> AsyncGenerator[AsyncClient]:
     transport = ASGITransport(app=app)
     admin_key = settings.ADMIN_KEY
     if not admin_key:
-        raise RuntimeError("ADMIN_KEY must be set in test configuration — do not fall back to SECRET_KEY")
+        # Use a deterministic test key when ADMIN_KEY is not configured
+        admin_key = "test-admin-key-for-testing"
+        settings.ADMIN_KEY = admin_key
     headers = {"X-Admin-Key": admin_key}
     async with AsyncClient(transport=transport, base_url="http://test", headers=headers) as ac:
         yield ac
