@@ -142,6 +142,8 @@ class AgentInstanceResponse(BaseModel):
     error: str | None
     started_at: datetime | None
     completed_at: datetime | None
+    last_heartbeat_at: datetime | None = None
+    last_checkpoint: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 

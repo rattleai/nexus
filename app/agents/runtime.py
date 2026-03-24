@@ -107,12 +107,17 @@ class AgentRuntime:
         self.tenant_id = tenant_id
         self.api_key = api_key
         self.key_source = key_source
-        self._cancelled = False
+        self._cancel_event = asyncio.Event()
         self._tenant_tool_schemas: dict[str, dict[str, Any]] = {}
 
     def cancel(self) -> None:
         """Signal the runtime to stop after the current step."""
-        self._cancelled = True
+        self._cancel_event.set()
+
+    @property
+    def _cancelled(self) -> bool:
+        """Whether cancellation has been requested."""
+        return self._cancel_event.is_set()
 
     async def _checkpoint_progress(
         self,

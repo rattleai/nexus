@@ -168,6 +168,14 @@ export function AgentOverview({ agent }: AgentOverviewProps) {
                 {agent.memory_config?.enabled ? "Enabled" : "Disabled"}
               </Badge>
             </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Max Concurrent Instances</span>
+              <span className="font-mono text-xs">
+                {agent.max_concurrent_instances === 0
+                  ? "Unlimited"
+                  : agent.max_concurrent_instances}
+              </span>
+            </div>
             {agent.allowed_tools.length > 0 && (
               <>
                 <Separator />

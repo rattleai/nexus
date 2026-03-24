@@ -5,6 +5,7 @@ import type {
   AgentDefinition,
   AgentDefinitionCreate,
   AgentDefinitionUpdate,
+  AgentDefinitionMemoryEntry,
   AgentInstance,
   AgentPolicy,
   AgentAnalytics,
@@ -25,7 +26,12 @@ export const agentKeys = {
     all: ["agents", "instances"] as const,
     list: (agentId: string, status?: string) =>
       ["agents", "instances", "list", agentId, status] as const,
+    allActive: () => ["agents", "instances", "all-active"] as const,
     detail: (id: string) => ["agents", "instances", "detail", id] as const,
+  },
+  memory: {
+    definition: (agentId: string, namespace?: string) =>
+      ["agents", "memory", "definition", agentId, namespace] as const,
   },
   tools: {
     all: ["agents", "tools"] as const,
@@ -138,6 +144,18 @@ export function useRunAgent() {
   })
 }
 
+export function useInstanceDetail(instanceId: string | null) {
+  return useQuery({
+    queryKey: agentKeys.instances.detail(instanceId ?? ""),
+    queryFn: async ({ signal }) =>
+      api.get(`agents/instances/${instanceId}`, { signal }).json<AgentInstance>(),
+    enabled: !!instanceId,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+    meta: { suppressErrorToast: true },
+  })
+}
+
 export function useStopInstance() {
   const qc = useQueryClient()
   return useMutation({
@@ -202,5 +220,97 @@ export function usePendingApprovals() {
     refetchIntervalInBackground: false,
     // Suppress global error toast for polling — only show errors when user actively queries
     meta: { suppressErrorToast: true },
+  })
+}
+
+// ── Cross-Definition Instance Queries ────────────────────────────
+
+export function useAllActiveInstances(opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: agentKeys.instances.allActive(),
+    queryFn: async ({ signal }) =>
+      api
+        .get("agents/instances", {
+          searchParams: { status: "running,pending", page_size: "50" },
+          signal,
+        })
+        .json<PaginatedAgentResponse<AgentInstance>>(),
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+    enabled: opts?.enabled ?? true,
+    meta: { suppressErrorToast: true },
+  })
+}
+
+// ── Definition-Scoped Memory ─────────────────────────────────────
+
+export function useDefinitionMemory(agentId: string | null, namespace?: string) {
+  return useQuery({
+    queryKey: agentKeys.memory.definition(agentId ?? "", namespace),
+    queryFn: async ({ signal }) => {
+      const params: Record<string, string> = {}
+      if (namespace) params.namespace = namespace
+      return api
+        .get(`agents/definitions/${agentId}/memory`, { searchParams: params, signal })
+        .json<AgentDefinitionMemoryEntry[]>()
+    },
+    enabled: !!agentId,
+    refetchInterval: 10_000,
+    meta: { suppressErrorToast: true },
+  })
+}
+
+export function useWriteDefinitionMemory() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      agentId,
+      key,
+      value,
+      namespace,
+    }: {
+      agentId: string
+      key: string
+      value: Record<string, unknown>
+      namespace?: string
+    }) =>
+      api
+        .put(`agents/definitions/${agentId}/memory`, {
+          json: { key, value, namespace },
+        })
+        .json<AgentDefinitionMemoryEntry>(),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({
+        queryKey: agentKeys.memory.definition(vars.agentId),
+      })
+    },
+  })
+}
+
+export function useDeleteDefinitionMemory() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      agentId,
+      key,
+      namespace,
+    }: {
+      agentId: string
+      key?: string
+      namespace?: string
+    }) => {
+      const params: Record<string, string> = {}
+      if (key) params.key = key
+      if (namespace) params.namespace = namespace
+      await api.delete(`agents/definitions/${agentId}/memory`, {
+        searchParams: params,
+      })
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({
+        queryKey: agentKeys.memory.definition(vars.agentId),
+      })
+      toast.success("Memory cleared")
+    },
   })
 }

@@ -63,6 +63,57 @@ async def _log_agent_completion(data: dict) -> None:
     )
 
 
+@on_event("AgentInstanceCompleted")
+async def _broadcast_instance_status_change(data: dict) -> None:
+    """Push instance status change to connected WebSocket clients."""
+    await _ws_broadcast_instance_update(data, "completed")
+
+
+@on_event("AgentInstanceFailed")
+async def _broadcast_instance_failure(data: dict) -> None:
+    """Push instance failure to connected WebSocket clients."""
+    await _ws_broadcast_instance_update(data, "failed")
+
+
+@on_event("AgentInstanceStarted")
+async def _broadcast_instance_started(data: dict) -> None:
+    """Push instance start to connected WebSocket clients."""
+    await _ws_broadcast_instance_update(data, "running")
+
+
+@on_event("AgentInstanceStopped")
+async def _broadcast_instance_stopped(data: dict) -> None:
+    """Push instance stop to connected WebSocket clients."""
+    await _ws_broadcast_instance_update(data, "cancelled")
+
+
+async def _ws_broadcast_instance_update(data: dict, status: str) -> None:
+    """Broadcast a job_update event to the tenant's WebSocket connections."""
+    import uuid as _uuid
+
+    from app.core.websocket import ws_manager
+
+    tenant_id = data.get("tenant_id")
+    if not tenant_id:
+        return
+    try:
+        await ws_manager.broadcast_tenant(
+            _uuid.UUID(tenant_id),
+            {
+                "type": "job_update",
+                "data": {
+                    "type": "agent_instance_status_changed",
+                    "instance_id": data.get("instance_id", ""),
+                    "agent_id": data.get("agent_id", ""),
+                    "status": status,
+                    "tenant_id": tenant_id,
+                },
+            },
+        )
+    except Exception:
+        logger.debug("ws_broadcast_failed", tenant_id=tenant_id, exc_info=True)
+
+
 @on_event("AgentGovernanceViolation")
 async def _log_governance_violation(data: dict) -> None:
     """Alert on governance violations."""
@@ -95,6 +146,7 @@ async def consume_loop(
         f"{prefix}:AgentInstanceStarted",
         f"{prefix}:AgentInstanceCompleted",
         f"{prefix}:AgentInstanceFailed",
+        f"{prefix}:AgentInstanceStopped",
         f"{prefix}:AgentGovernanceViolation",
         f"{prefix}:WorkflowRunStarted",
         f"{prefix}:WorkflowRunCompleted",
