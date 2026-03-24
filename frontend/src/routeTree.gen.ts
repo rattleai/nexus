@@ -28,6 +28,8 @@ import { Route as ApiKeysRouteImport } from './routes/api-keys'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AgentsIndexRouteImport } from './routes/agents.index'
+import { Route as AgentsSessionsRouteImport } from './routes/agents.sessions'
 import { Route as AuthCallbackProviderRouteImport } from './routes/auth/callback/$provider'
 
 const WebhooksRoute = WebhooksRouteImport.update({
@@ -131,6 +133,18 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AgentsIndexRoute = AgentsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AgentsRoute,
+} as any).lazy(() => import('./routes/agents.index.lazy').then((d) => d.Route))
+const AgentsSessionsRoute = AgentsSessionsRouteImport.update({
+  id: '/sessions',
+  path: '/sessions',
+  getParentRoute: () => AgentsRoute,
+} as any).lazy(() =>
+  import('./routes/agents.sessions.lazy').then((d) => d.Route),
+)
 const AuthCallbackProviderRoute = AuthCallbackProviderRouteImport.update({
   id: '/auth/callback/$provider',
   path: '/auth/callback/$provider',
@@ -142,7 +156,7 @@ const AuthCallbackProviderRoute = AuthCallbackProviderRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
-  '/agents': typeof AgentsRoute
+  '/agents': typeof AgentsRouteWithChildren
   '/api-keys': typeof ApiKeysRoute
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
@@ -159,12 +173,13 @@ export interface FileRoutesByFullPath {
   '/team': typeof TeamRoute
   '/verify-email': typeof VerifyEmailRoute
   '/webhooks': typeof WebhooksRoute
+  '/agents/sessions': typeof AgentsSessionsRoute
+  '/agents/': typeof AgentsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
-  '/agents': typeof AgentsRoute
   '/api-keys': typeof ApiKeysRoute
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
@@ -181,13 +196,15 @@ export interface FileRoutesByTo {
   '/team': typeof TeamRoute
   '/verify-email': typeof VerifyEmailRoute
   '/webhooks': typeof WebhooksRoute
+  '/agents/sessions': typeof AgentsSessionsRoute
+  '/agents': typeof AgentsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
-  '/agents': typeof AgentsRoute
+  '/agents': typeof AgentsRouteWithChildren
   '/api-keys': typeof ApiKeysRoute
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
@@ -204,6 +221,8 @@ export interface FileRoutesById {
   '/team': typeof TeamRoute
   '/verify-email': typeof VerifyEmailRoute
   '/webhooks': typeof WebhooksRoute
+  '/agents/sessions': typeof AgentsSessionsRoute
+  '/agents/': typeof AgentsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
 }
 export interface FileRouteTypes {
@@ -228,12 +247,13 @@ export interface FileRouteTypes {
     | '/team'
     | '/verify-email'
     | '/webhooks'
+    | '/agents/sessions'
+    | '/agents/'
     | '/auth/callback/$provider'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/accept-invitation'
-    | '/agents'
     | '/api-keys'
     | '/audit-log'
     | '/billing'
@@ -250,6 +270,8 @@ export interface FileRouteTypes {
     | '/team'
     | '/verify-email'
     | '/webhooks'
+    | '/agents/sessions'
+    | '/agents'
     | '/auth/callback/$provider'
   id:
     | '__root__'
@@ -272,13 +294,15 @@ export interface FileRouteTypes {
     | '/team'
     | '/verify-email'
     | '/webhooks'
+    | '/agents/sessions'
+    | '/agents/'
     | '/auth/callback/$provider'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AcceptInvitationRoute: typeof AcceptInvitationRoute
-  AgentsRoute: typeof AgentsRoute
+  AgentsRoute: typeof AgentsRouteWithChildren
   ApiKeysRoute: typeof ApiKeysRoute
   AuditLogRoute: typeof AuditLogRoute
   BillingRoute: typeof BillingRoute
@@ -433,6 +457,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/agents/': {
+      id: '/agents/'
+      path: '/'
+      fullPath: '/agents/'
+      preLoaderRoute: typeof AgentsIndexRouteImport
+      parentRoute: typeof AgentsRoute
+    }
+    '/agents/sessions': {
+      id: '/agents/sessions'
+      path: '/sessions'
+      fullPath: '/agents/sessions'
+      preLoaderRoute: typeof AgentsSessionsRouteImport
+      parentRoute: typeof AgentsRoute
+    }
     '/auth/callback/$provider': {
       id: '/auth/callback/$provider'
       path: '/auth/callback/$provider'
@@ -443,10 +481,23 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AgentsRouteChildren {
+  AgentsSessionsRoute: typeof AgentsSessionsRoute
+  AgentsIndexRoute: typeof AgentsIndexRoute
+}
+
+const AgentsRouteChildren: AgentsRouteChildren = {
+  AgentsSessionsRoute: AgentsSessionsRoute,
+  AgentsIndexRoute: AgentsIndexRoute,
+}
+
+const AgentsRouteWithChildren =
+  AgentsRoute._addFileChildren(AgentsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcceptInvitationRoute: AcceptInvitationRoute,
-  AgentsRoute: AgentsRoute,
+  AgentsRoute: AgentsRouteWithChildren,
   ApiKeysRoute: ApiKeysRoute,
   AuditLogRoute: AuditLogRoute,
   BillingRoute: BillingRoute,

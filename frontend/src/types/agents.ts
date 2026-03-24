@@ -77,6 +77,7 @@ export interface AgentInstance {
   id: string
   tenant_id: string
   definition_id: string
+  definition_name?: string
   status: InstanceStatus
   steps_executed: number
   tokens_used: number

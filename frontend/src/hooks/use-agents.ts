@@ -242,6 +242,50 @@ export function useAllActiveInstances(opts?: { enabled?: boolean }) {
   })
 }
 
+export function useAllInstances(status?: string, page = 1, pageSize = 25) {
+  return useQuery({
+    queryKey: [...agentKeys.instances.all, "global", status, page, pageSize],
+    queryFn: async ({ signal }) => {
+      const params: Record<string, string> = {
+        page_size: String(pageSize),
+        page: String(page),
+      }
+      if (status && status !== "all") params.status = status
+      return api
+        .get("agents/instances", { searchParams: params, signal })
+        .json<PaginatedAgentResponse<AgentInstance>>()
+    },
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+    meta: { suppressErrorToast: true },
+  })
+}
+
+// ── Approvals ─────────────────────────────────────────────────────
+
+export function useResolveApproval() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      approvalId,
+      decision,
+    }: {
+      approvalId: string
+      decision: "approved" | "denied"
+    }) =>
+      api
+        .post(`agents/approvals/${approvalId}/resolve`, {
+          json: { decision },
+        })
+        .json<Record<string, unknown>>(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: agentKeys.approvals() })
+      qc.invalidateQueries({ queryKey: agentKeys.instances.all })
+      toast.success("Approval resolved")
+    },
+  })
+}
+
 // ── Definition-Scoped Memory ─────────────────────────────────────
 
 export function useDefinitionMemory(agentId: string | null, namespace?: string) {

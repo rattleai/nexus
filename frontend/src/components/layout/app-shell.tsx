@@ -14,6 +14,7 @@ import {
   Settings,
   MessageSquare,
   Bot,
+  Activity,
   Code2,
   Search,
 } from "lucide-react"
@@ -69,6 +70,7 @@ const NAV_GROUPS: NavGroup[] = [
     labelKey: "nav.platform",
     items: [
       { href: "/agents", labelKey: "nav.agents", icon: Bot },
+      { href: "/agents/sessions", labelKey: "nav.agent_sessions", icon: Activity },
       { href: "/chat", labelKey: "nav.ai_chat", icon: MessageSquare },
       { href: "/jobs", labelKey: "nav.jobs", icon: Briefcase },
       { href: "/files", labelKey: "nav.files", icon: FolderOpen },
@@ -128,7 +130,9 @@ export function AppShell({ children }: AppShellProps) {
                     const isActive =
                       item.href === "/"
                         ? currentPath === "/"
-                        : currentPath.startsWith(item.href)
+                        : item.href === "/agents"
+                          ? currentPath === "/agents" || currentPath === "/agents/"
+                          : currentPath.startsWith(item.href)
                     const label = t(item.labelKey as never) as string
                     return (
                       <SidebarMenuItem key={item.href}>

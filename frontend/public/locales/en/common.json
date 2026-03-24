@@ -8,6 +8,7 @@
     "api_keys": "API Keys",
     "provider_keys": "Provider Keys",
     "agents": "Agents",
+    "agent_sessions": "Sessions",
     "ai_chat": "AI Chat",
     "organization": "Organization",
     "billing": "Billing",
