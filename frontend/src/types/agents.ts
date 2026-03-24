@@ -21,6 +21,8 @@ export interface AgentDefinition {
   max_steps_per_run: number
   max_duration_seconds: number
   max_tokens_per_run: number
+  max_concurrent_instances: number
+  max_agent_requests_per_minute: number | null
   sandbox_enabled: boolean
   parallel_tool_execution: boolean
   memory_config: Record<string, unknown>
@@ -84,6 +86,8 @@ export interface AgentInstance {
   error: string | null
   started_at: string | null
   completed_at: string | null
+  last_heartbeat_at: string | null
+  last_checkpoint: Record<string, unknown>
   created_at: string
   updated_at: string
 }
@@ -236,4 +240,23 @@ export interface PaginatedAgentResponse<T> {
   page: number
   page_size: number
   pages: number
+}
+
+// ── Definition-Scoped Memory ─────────────────────────────────────
+
+export interface AgentDefinitionMemoryEntry {
+  namespace: string
+  key: string
+  value: Record<string, unknown>
+}
+
+// ── Multi-Stream Workspace ───────────────────────────────────────
+
+export type WorkspaceMode = "single" | "multi-stream" | "dashboard"
+
+export interface StreamPaneState {
+  paneId: string
+  instanceId: string | null
+  agentName: string
+  definitionId: string
 }

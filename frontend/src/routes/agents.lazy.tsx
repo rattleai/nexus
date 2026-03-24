@@ -1,7 +1,7 @@
 import { createLazyFileRoute } from "@tanstack/react-router"
 import { AuthGuard } from "@/components/auth/auth-guard"
 import { PageHeader } from "@/components/page-header"
-import { AgentWorkspace } from "@/components/agents/agent-workspace"
+import { AgentWorkspaceShell } from "@/components/agents/agent-workspace-shell"
 
 export const Route = createLazyFileRoute("/agents")({
   component: AgentsPage,
@@ -14,7 +14,7 @@ function AgentsPage() {
         <PageHeader
           title="Agent Workspace"
         />
-        <AgentWorkspace />
+        <AgentWorkspaceShell />
       </div>
     </AuthGuard>
   )

@@ -19,6 +19,15 @@ from sqlalchemy import text, update
 
 from app.workers.celery_app import celery as celery_app
 
+# Errors that indicate transient infrastructure issues (network, broker, DB)
+# and are safe to retry.  All other errors are treated as permanent.
+_TRANSIENT_ERRORS = (
+    ConnectionError,
+    TimeoutError,
+    asyncio.TimeoutError,
+    OSError,
+)
+
 logger = structlog.stdlib.get_logger()
 
 
@@ -59,7 +68,7 @@ def _run_async(coro):
 @celery_app.task(
     name="agents.execute_agent_run",
     bind=True,
-    max_retries=1,
+    max_retries=2,
     soft_time_limit=540,  # 9 minutes
     time_limit=600,       # 10 minutes hard kill
 )
@@ -110,21 +119,38 @@ def execute_agent_run(
             definition_id=definition_id,
             tenant_id=tenant_id,
         )
-        # Mark instance as failed due to timeout (best-effort).
-        try:
-            _run_async(_mark_instances_failed(
-                tenant_id,
-                definition_id,
-                "Agent execution timed out (soft limit reached)",
-            ))
-        except Exception:
-            logger.exception("failed_to_mark_timeout")
+        # Mark instance as failed due to timeout — retry status update once on failure
+        for attempt in range(2):
+            try:
+                _run_async(_mark_instances_failed(
+                    tenant_id,
+                    definition_id,
+                    "Agent execution timed out (soft limit reached)",
+                ))
+                break
+            except Exception:
+                if attempt == 0:
+                    import time; time.sleep(0.5)
+                else:
+                    logger.exception("failed_to_mark_timeout_after_retry")
         return {
             "instance_id": None,
             "status": "failed",
             "error": "soft_time_limit_exceeded",
         }
     except Exception as exc:
+        # Retry transient infrastructure errors with exponential backoff;
+        # permanent errors (governance, validation, etc.) fail immediately.
+        if isinstance(exc, _TRANSIENT_ERRORS) and self.request.retries < self.max_retries:
+            logger.warning(
+                "agent_task_transient_retry",
+                definition_id=definition_id,
+                tenant_id=tenant_id,
+                attempt=self.request.retries + 1,
+                error=str(exc)[:200],
+            )
+            raise self.retry(exc=exc, countdown=min(2 ** self.request.retries * 5, 60))
+
         logger.error(
             "agent_task_failed",
             definition_id=definition_id,
@@ -229,37 +255,82 @@ def execute_workflow_run(
 
 @celery_app.task(name="app.agents.tasks.cleanup_stale_instances")
 def cleanup_stale_instances() -> dict:
-    """Periodic task: mark running instances that have been stale for too long as failed.
+    """Periodic task: three-tier stale instance detection and cleanup.
 
-    This task runs without tenant context (platform-level) so it uses a
-    superuser connection that bypasses RLS by setting the role appropriately.
+    Tier 1 — PENDING too long:  task never dispatched or worker died before pickup.
+    Tier 2 — RUNNING, heartbeat stale:  heartbeat exists but has gone silent.
+    Tier 3 — RUNNING, no heartbeat (legacy):  pre-migration fallback using created_at.
+
+    Runs without tenant context (platform-level) and bypasses RLS so the
+    UPDATE sees all tenants in a single sweep.
     """
     async def _run():
         from app.agents.models import AgentInstance, InstanceStatus
+        from app.config import settings
         from app.db.session import async_session_factory
 
-        cutoff = datetime.now(UTC) - timedelta(hours=1)
+        now = datetime.now(UTC)
 
         async with async_session_factory() as db:
-            # Bypass RLS for cross-tenant cleanup.  The session factory uses
-            # the application role which has FORCE RLS.  We disable it for
-            # this single transaction so the UPDATE sees all tenants.
             await db.execute(text("SET LOCAL row_security = off"))
 
-            stmt = (
+            # Tier 1: PENDING longer than threshold — task never started
+            pending_cutoff = now - timedelta(seconds=settings.AGENT_PENDING_STALE_SECONDS)
+            r1 = await db.execute(
                 update(AgentInstance)
                 .where(
-                    AgentInstance.status == InstanceStatus.RUNNING,
-                    AgentInstance.created_at < cutoff,
+                    AgentInstance.status == InstanceStatus.PENDING,
+                    AgentInstance.created_at < pending_cutoff,
                 )
                 .values(
                     status=InstanceStatus.FAILED,
-                    error="Stale instance: no activity for over 1 hour",
-                    completed_at=datetime.now(UTC),
+                    error="Stale: stuck in PENDING (task never started)",
+                    completed_at=now,
                 )
             )
-            result = await db.execute(stmt)
+
+            # Tier 2: RUNNING with heartbeat but gone silent
+            heartbeat_cutoff = now - timedelta(seconds=settings.AGENT_HEARTBEAT_STALE_SECONDS)
+            r2 = await db.execute(
+                update(AgentInstance)
+                .where(
+                    AgentInstance.status == InstanceStatus.RUNNING,
+                    AgentInstance.last_heartbeat_at.isnot(None),
+                    AgentInstance.last_heartbeat_at < heartbeat_cutoff,
+                )
+                .values(
+                    status=InstanceStatus.FAILED,
+                    error=f"Stale: no heartbeat for >{settings.AGENT_HEARTBEAT_STALE_SECONDS}s",
+                    completed_at=now,
+                )
+            )
+
+            # Tier 3: RUNNING with no heartbeat (pre-migration instances), using created_at
+            legacy_cutoff = now - timedelta(seconds=settings.AGENT_LEGACY_STALE_SECONDS)
+            r3 = await db.execute(
+                update(AgentInstance)
+                .where(
+                    AgentInstance.status == InstanceStatus.RUNNING,
+                    AgentInstance.last_heartbeat_at.is_(None),
+                    AgentInstance.created_at < legacy_cutoff,
+                )
+                .values(
+                    status=InstanceStatus.FAILED,
+                    error="Stale: no activity for >1 hour (no heartbeat)",
+                    completed_at=now,
+                )
+            )
+
             await db.commit()
-            return {"cleaned": result.rowcount}
+
+            counts = {
+                "pending_cleaned": r1.rowcount,
+                "heartbeat_stale": r2.rowcount,
+                "legacy_stale": r3.rowcount,
+            }
+            total = sum(counts.values())
+            if total > 0:
+                logger.info("stale_instances_cleaned", **counts)
+            return counts
 
     return _run_async(_run())

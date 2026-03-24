@@ -30,7 +30,7 @@ import structlog
 import re as _re
 
 from app.agents.events import AgentStepCompleted
-from app.agents.models import AgentDefinition
+from app.agents.models import AgentDefinition, AgentInstance
 from app.config import settings
 from app.core.events import emit
 
@@ -118,12 +118,53 @@ class AgentRuntime:
         self.tenant_id = tenant_id
         self.api_key = api_key
         self.key_source = key_source
-        self._cancelled = False
+        self._cancel_event = asyncio.Event()
         self._tenant_tool_schemas: dict[str, dict[str, Any]] = {}
 
     def cancel(self) -> None:
         """Signal the runtime to stop after the current step."""
-        self._cancelled = True
+        self._cancel_event.set()
+
+    @property
+    def _cancelled(self) -> bool:
+        """Whether cancellation has been requested."""
+        return self._cancel_event.is_set()
+
+    async def _checkpoint_progress(
+        self,
+        instance_id: uuid.UUID,
+        result: RunResult,
+        step_num: int,
+        db: Any,
+    ) -> None:
+        """Persist step progress and heartbeat in one write (Temporal heartbeat pattern).
+
+        Combines liveness signal with incremental metrics persistence so that
+        partial progress survives worker crashes.  Best-effort: failures are
+        logged but never crash the run.
+        """
+        from datetime import datetime, UTC
+        from sqlalchemy import update
+
+        try:
+            await db.execute(
+                update(AgentInstance)
+                .where(AgentInstance.id == instance_id)
+                .values(
+                    last_heartbeat_at=datetime.now(UTC),
+                    steps_executed=len(result.steps),
+                    tokens_used=result.total_tokens,
+                    cost_usd=result.total_cost_usd,
+                    last_checkpoint={
+                        "step": step_num,
+                        "finish_reason": result.finish_reason,
+                        "ts": datetime.now(UTC).isoformat(),
+                    },
+                )
+            )
+            await db.flush()
+        except Exception:
+            logger.debug("checkpoint_write_failed", instance_id=str(instance_id))
 
     async def run(
         self,
@@ -219,6 +260,10 @@ class AgentRuntime:
                         )
 
                         step_duration = int((time.monotonic() - step_start) * 1000)
+
+                        # Checkpoint progress after each step (heartbeat + partial metrics)
+                        if db is not None:
+                            await self._checkpoint_progress(instance_id, result, step_num, db)
 
                         if step_result == "break":
                             break
@@ -486,6 +531,7 @@ class AgentRuntime:
                 context={
                     "tool_name": tc.name,
                     "instance_id": str(instance_id),
+                    "agent_id": str(self.definition.id),
                     "step_number": step_num,
                     "current_cost": result.total_cost_usd,
                 },
@@ -681,6 +727,10 @@ class AgentRuntime:
                     conversation.append({"role": "tool", "tool_call_id": tc.call_id, "content": str(tool_result)[:_MAX_TOOL_OUTPUT]})
 
                 yield {"event": "step_completed", "data": {"step_number": step_num, "action": "tool_call"}}
+
+                # Checkpoint progress after each step (heartbeat + partial metrics)
+                if db is not None:
+                    await self._checkpoint_progress(instance_id, result, step_num, db)
             else:
                 output_content = completion.content
                 from app.agents.validation import validate_agent_output
@@ -692,6 +742,11 @@ class AgentRuntime:
                 result.output = sanitized
                 yield {"event": "content_delta", "data": {"content": sanitized}}
                 yield {"event": "step_completed", "data": {"step_number": step_num, "action": "response"}}
+
+                # Final checkpoint before completion
+                if db is not None:
+                    await self._checkpoint_progress(instance_id, result, step_num, db)
+
                 yield {"event": "run_completed", "data": {
                     "finish_reason": "completed",
                     "output": sanitized,
@@ -860,7 +915,32 @@ class AgentRuntime:
                 limit=memory_config.get("rag_limit", 5),
                 db=db,
             )
-            return rag_pipeline.format_context(results)
+            context_parts = []
+            rag_context = rag_pipeline.format_context(results)
+            if rag_context:
+                context_parts.append(rag_context)
+
+            # Retrieve definition-scoped shared memory (cross-instance knowledge)
+            if memory_config.get("shared_memory_enabled", False):
+                try:
+                    from app.agents.memory import AgentMemoryManager
+                    mem = AgentMemoryManager(db)
+                    shared_entries = await mem.list_definition_memory(
+                        definition_id=self.definition.id,
+                        tenant_id=self.tenant_id,
+                        namespace=memory_config.get("shared_namespace", "shared"),
+                        limit=memory_config.get("shared_memory_limit", 10),
+                    )
+                    if shared_entries:
+                        lines = ["[Shared agent memory (accessible by all instances of this agent):"]
+                        for entry in shared_entries:
+                            lines.append(f"- {entry.key}: {entry.value}")
+                        lines.append("]")
+                        context_parts.append("\n".join(lines))
+                except Exception:
+                    logger.debug("shared_memory_retrieval_failed", exc_info=True)
+
+            return "\n\n".join(context_parts)
         except Exception:
             logger.debug("memory_context_retrieval_failed", exc_info=True)
             return ""

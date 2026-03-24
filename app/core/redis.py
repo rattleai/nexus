@@ -15,4 +15,6 @@ redis_pool: aioredis.Redis = aioredis.from_url(
     max_connections=20,
     socket_connect_timeout=5,
     socket_timeout=5,
+    retry_on_timeout=True,
+    health_check_interval=30,
 )

@@ -165,6 +165,11 @@ class Settings(BaseSettings):
     AGENT_TOOL_EXECUTION_TIMEOUT: int = 120  # Max seconds for individual tool execution
     AGENT_MAX_CONVERSATION_MESSAGES: int = 100  # Max messages in conversation window
 
+    # Agent Resilience — configurable stale detection thresholds
+    AGENT_HEARTBEAT_STALE_SECONDS: int = 300        # Mark RUNNING as stale if no heartbeat
+    AGENT_PENDING_STALE_SECONDS: int = 600           # Mark PENDING as failed
+    AGENT_LEGACY_STALE_SECONDS: int = 3600           # Fallback for pre-heartbeat instances
+
     # Agent Memory
     AGENT_MEMORY_SHORT_TTL_SECONDS: int = 3600
     AGENT_MEMORY_SHORT_MAX_ENTRIES: int = 100
