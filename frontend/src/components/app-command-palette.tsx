@@ -187,7 +187,7 @@ export function AppCommandPalette() {
 
   // ── Render ───────────────────────────────────────────────────────
   return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
+    <CommandDialog open={open} onOpenChange={setOpen} shouldFilter={mode === "default"}>
       {mode === "agent-task" && selectedAgent ? (
         /* ── Agent Task Input (custom, replaces CommandInput) ── */
         <div className="flex items-center border-b px-3 gap-2">
@@ -292,7 +292,62 @@ export function AppCommandPalette() {
               </div>
             </CommandEmpty>
 
-            {/* Create new */}
+            {filteredAgents ? (
+              /* Search results */
+              filteredAgents.length > 0 && (
+                <CommandGroup heading="Results">
+                  {filteredAgents.map((agent) => (
+                    <AgentItem
+                      key={agent.id}
+                      agent={agent}
+                      onSelect={() => handleAgentPick(agent)}
+                    />
+                  ))}
+                </CommandGroup>
+              )
+            ) : (
+              /* Browsing (no search text after @) */
+              <>
+                {recentAgents.length > 0 && (
+                  <CommandGroup heading="Recent">
+                    {recentAgents.slice(0, 5).map((agent) => (
+                      <AgentItem
+                        key={`r-${agent.id}`}
+                        agent={agent}
+                        onSelect={() => handleAgentPick(agent)}
+                      />
+                    ))}
+                  </CommandGroup>
+                )}
+                {activeAgents.length > 0 && (
+                  <CommandGroup heading="Active Agents">
+                    {activeAgents.map((agent) => (
+                      <AgentItem
+                        key={agent.id}
+                        agent={agent}
+                        onSelect={() => handleAgentPick(agent)}
+                      />
+                    ))}
+                  </CommandGroup>
+                )}
+                {agents.length > activeAgents.length && (
+                  <CommandGroup heading="All Agents">
+                    {agents
+                      .filter((a) => a.status !== "active")
+                      .map((agent) => (
+                        <AgentItem
+                          key={`a-${agent.id}`}
+                          agent={agent}
+                          onSelect={() => handleAgentPick(agent)}
+                        />
+                      ))}
+                  </CommandGroup>
+                )}
+              </>
+            )}
+
+            {/* Create new — at the bottom for discoverability */}
+            <CommandSeparator />
             <CommandGroup heading="Actions">
               <CommandItem
                 onSelect={() => go("/agents")}
@@ -302,72 +357,6 @@ export function AppCommandPalette() {
                 Create New Agent
               </CommandItem>
             </CommandGroup>
-
-            {filteredAgents ? (
-              /* Search results */
-              filteredAgents.length > 0 && (
-                <>
-                  <CommandSeparator />
-                  <CommandGroup heading="Results">
-                    {filteredAgents.map((agent) => (
-                      <AgentItem
-                        key={agent.id}
-                        agent={agent}
-                        onSelect={() => handleAgentPick(agent)}
-                      />
-                    ))}
-                  </CommandGroup>
-                </>
-              )
-            ) : (
-              /* Browsing (no search text after @) */
-              <>
-                {recentAgents.length > 0 && (
-                  <>
-                    <CommandSeparator />
-                    <CommandGroup heading="Recent">
-                      {recentAgents.slice(0, 5).map((agent) => (
-                        <AgentItem
-                          key={`r-${agent.id}`}
-                          agent={agent}
-                          onSelect={() => handleAgentPick(agent)}
-                        />
-                      ))}
-                    </CommandGroup>
-                  </>
-                )}
-                {activeAgents.length > 0 && (
-                  <>
-                    <CommandSeparator />
-                    <CommandGroup heading="Active Agents">
-                      {activeAgents.map((agent) => (
-                        <AgentItem
-                          key={agent.id}
-                          agent={agent}
-                          onSelect={() => handleAgentPick(agent)}
-                        />
-                      ))}
-                    </CommandGroup>
-                  </>
-                )}
-                {agents.length > activeAgents.length && (
-                  <>
-                    <CommandSeparator />
-                    <CommandGroup heading="All Agents">
-                      {agents
-                        .filter((a) => a.status !== "active")
-                        .map((agent) => (
-                          <AgentItem
-                            key={`a-${agent.id}`}
-                            agent={agent}
-                            onSelect={() => handleAgentPick(agent)}
-                          />
-                        ))}
-                    </CommandGroup>
-                  </>
-                )}
-              </>
-            )}
           </>
         ) : (
           /* ── Default Mode ─────────────────────────────── */
