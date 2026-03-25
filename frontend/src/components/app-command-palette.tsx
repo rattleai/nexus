@@ -7,15 +7,19 @@ import {
   Briefcase,
   FolderOpen,
   Key,
+  KeyRound,
   CreditCard,
   Users,
   Webhook,
   Shield,
   Settings,
+  Code2,
   Plus,
   ChevronRight,
   X,
   ArrowRight,
+  User,
+  Lock,
 } from "lucide-react"
 import {
   CommandDialog,
@@ -80,7 +84,14 @@ export function AppCommandPalette() {
     return () => document.removeEventListener("keydown", onKeyDown)
   }, [])
 
-  // Reset state when closing
+  // Focus task input when entering task mode
+  React.useEffect(() => {
+    if (mode === "agent-task" && taskInputRef.current) {
+      taskInputRef.current.focus()
+    }
+  }, [mode])
+
+  // Reset state on close
   React.useEffect(() => {
     if (!open) {
       setSearch("")
@@ -89,13 +100,6 @@ export function AppCommandPalette() {
       setTaskInput("")
     }
   }, [open])
-
-  // Auto-focus task input when entering agent-task mode
-  React.useEffect(() => {
-    if (mode === "agent-task") {
-      requestAnimationFrame(() => taskInputRef.current?.focus())
-    }
-  }, [mode])
 
   const close = () => setOpen(false)
 
@@ -148,7 +152,7 @@ export function AppCommandPalette() {
       setPendingMessage(message)
     }
     if (!currentPath.startsWith("/agents")) {
-      navigate({ to: "/agents" })
+      navigate({ to: "/agents/workspace" })
     }
     selectAgent(agent.id)
     setActiveTab(tab)
@@ -285,7 +289,7 @@ export function AppCommandPalette() {
                 </p>
                 <button
                   className="text-sm text-primary hover:underline"
-                  onClick={() => go("/agents")}
+                  onClick={() => go("/agents/workspace")}
                 >
                   Create your first agent
                 </button>
@@ -350,7 +354,7 @@ export function AppCommandPalette() {
             <CommandSeparator />
             <CommandGroup heading="Actions">
               <CommandItem
-                onSelect={() => go("/agents")}
+                onSelect={() => go("/agents/workspace")}
                 value="@ create new agent"
               >
                 <Plus className="mr-2 h-4 w-4" />
@@ -409,17 +413,21 @@ export function AppCommandPalette() {
 
             <CommandSeparator />
 
-            {/* Navigation */}
-            <CommandGroup heading="Navigation">
+            {/* Console Navigation */}
+            <CommandGroup heading="Console">
               <CommandItem onSelect={() => go("/")} value="dashboard home">
                 <LayoutDashboard className="mr-2 h-4 w-4" />
                 Dashboard
               </CommandItem>
-              <CommandItem onSelect={() => go("/agents")} value="agents workspace">
+              <CommandItem onSelect={() => go("/agents")} value="agents sessions">
+                <Bot className="mr-2 h-4 w-4" />
+                Agent Sessions
+              </CommandItem>
+              <CommandItem onSelect={() => go("/agents/workspace")} value="agent workspace">
                 <Bot className="mr-2 h-4 w-4" />
                 Agent Workspace
               </CommandItem>
-              <CommandItem onSelect={() => go("/chat")} value="ai chat">
+              <CommandItem onSelect={() => go("/agents/chat")} value="ai chat">
                 <MessageSquare className="mr-2 h-4 w-4" />
                 AI Chat
               </CommandItem>
@@ -431,34 +439,51 @@ export function AppCommandPalette() {
                 <FolderOpen className="mr-2 h-4 w-4" />
                 Files
               </CommandItem>
-              <CommandItem onSelect={() => go("/api-keys")} value="api keys">
-                <Key className="mr-2 h-4 w-4" />
-                API Keys
+              <CommandItem onSelect={() => go("/developers")} value="developers api docs">
+                <Code2 className="mr-2 h-4 w-4" />
+                Developers
               </CommandItem>
             </CommandGroup>
 
             <CommandSeparator />
 
-            <CommandGroup heading="Organization">
-              <CommandItem onSelect={() => go("/billing")} value="billing payment">
-                <CreditCard className="mr-2 h-4 w-4" />
-                Billing
+            {/* Settings Navigation */}
+            <CommandGroup heading="Settings">
+              <CommandItem onSelect={() => go("/settings/general")} value="settings profile language">
+                <User className="mr-2 h-4 w-4" />
+                Profile & Language
               </CommandItem>
-              <CommandItem onSelect={() => go("/team")} value="team members">
-                <Users className="mr-2 h-4 w-4" />
-                Team
+              <CommandItem onSelect={() => go("/settings/agents")} value="settings agent definitions config">
+                <Bot className="mr-2 h-4 w-4" />
+                Agent Definitions
               </CommandItem>
-              <CommandItem onSelect={() => go("/webhooks")} value="webhooks">
+              <CommandItem onSelect={() => go("/settings/providers")} value="settings provider keys byok">
+                <KeyRound className="mr-2 h-4 w-4" />
+                Provider Keys
+              </CommandItem>
+              <CommandItem onSelect={() => go("/settings/api-keys")} value="settings api keys">
+                <Key className="mr-2 h-4 w-4" />
+                API Keys
+              </CommandItem>
+              <CommandItem onSelect={() => go("/settings/webhooks")} value="settings webhooks">
                 <Webhook className="mr-2 h-4 w-4" />
                 Webhooks
               </CommandItem>
-              <CommandItem onSelect={() => go("/audit-log")} value="audit log">
+              <CommandItem onSelect={() => go("/settings/team")} value="settings team members">
+                <Users className="mr-2 h-4 w-4" />
+                Team
+              </CommandItem>
+              <CommandItem onSelect={() => go("/settings/billing")} value="settings billing payment">
+                <CreditCard className="mr-2 h-4 w-4" />
+                Billing
+              </CommandItem>
+              <CommandItem onSelect={() => go("/settings/audit-log")} value="settings audit log">
                 <Shield className="mr-2 h-4 w-4" />
                 Audit Log
               </CommandItem>
-              <CommandItem onSelect={() => go("/settings")} value="settings preferences">
-                <Settings className="mr-2 h-4 w-4" />
-                Settings
+              <CommandItem onSelect={() => go("/settings/security")} value="settings security password">
+                <Lock className="mr-2 h-4 w-4" />
+                Security
               </CommandItem>
             </CommandGroup>
           </>

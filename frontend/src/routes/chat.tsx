@@ -1,3 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, redirect } from "@tanstack/react-router"
 
-export const Route = createFileRoute("/chat")({})
+export const Route = createFileRoute("/chat")({
+  beforeLoad: () => {
+    throw redirect({ to: "/agents/chat" })
+  },
+})

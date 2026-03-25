@@ -1,16 +1,6 @@
 import { createLazyFileRoute } from "@tanstack/react-router"
-import { PageHeader } from "@/components/page-header"
-import { AgentWorkspaceShell } from "@/components/agents/agent-workspace-shell"
+import { AgentSessionsPage } from "@/components/agents/sessions/agent-sessions-page"
 
 export const Route = createLazyFileRoute("/agents/")({
-  component: AgentsPage,
+  component: AgentSessionsPage,
 })
-
-function AgentsPage() {
-  return (
-    <div className="flex flex-col flex-1 min-h-0 gap-4">
-      <PageHeader title="Agent Workspace" />
-      <AgentWorkspaceShell />
-    </div>
-  )
-}

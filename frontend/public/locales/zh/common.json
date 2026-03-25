@@ -19,6 +19,25 @@
     "more": "更多",
     "home": "首页"
   },
+  "settings_nav": {
+    "back_to_console": "返回控制台",
+    "general": "常规",
+    "profile_language": "个人资料与语言",
+    "agents": "智能代理",
+    "agent_definitions": "代理定义",
+    "provider_keys": "提供商密钥",
+    "integrations": "集成",
+    "api_keys": "API 密钥",
+    "webhooks": "Webhooks",
+    "organization": "组织",
+    "team": "团队",
+    "billing": "账单",
+    "audit_log": "审计日志",
+    "account_section": "账户",
+    "security": "安全",
+    "data_export": "数据导出",
+    "danger_zone": "危险区域"
+  },
   "buttons": {
     "cancel": "取消",
     "confirm": "确认",

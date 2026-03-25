@@ -43,7 +43,7 @@ import {
   useStopInstance,
   usePendingApprovals,
 } from "@/hooks/use-agents"
-import { useIsMobile } from "@/hooks/use-mobile"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import { SessionsDataTable } from "./sessions-data-table"
 import { SessionDetailPanel } from "./session-detail-panel"
 import { ApprovalsBanner } from "./approvals-banner"
@@ -251,7 +251,7 @@ function SessionMobileCard({
 // ── Main page ────────────────────────────────────────────────────
 
 export function AgentSessionsPage() {
-  const isMobile = useIsMobile()
+  const isWideDesktop = useMediaQuery("(min-width: 1280px)")
   const [statusFilter, setStatusFilter] = React.useState("all")
   const [searchQuery, setSearchQuery] = React.useState("")
   const [selectedRows, setSelectedRows] = React.useState<Set<string>>(new Set())
@@ -535,7 +535,7 @@ export function AgentSessionsPage() {
       )}
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <StatCard icon={Activity} label="Running" value={stats.running} />
         <StatCard icon={Clock} label="Pending" value={stats.pending} />
         <StatCard icon={CheckCircle2} label="Completed" value={stats.completed} />
@@ -545,8 +545,8 @@ export function AgentSessionsPage() {
       </div>
 
       {/* Filters bar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="overflow-x-auto pb-1 sm:overflow-visible">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="overflow-x-auto pb-1 lg:overflow-visible">
           <Tabs
             value={statusFilter}
             onValueChange={(v) => {
@@ -554,25 +554,25 @@ export function AgentSessionsPage() {
               setPage(1)
             }}
           >
-            <TabsList className="inline-flex w-max sm:w-auto">
+            <TabsList className="inline-flex w-max lg:w-auto">
               {STATUS_TABS.map((tab) => (
                 <TabsTrigger key={tab.value} value={tab.value} className="gap-1.5 text-xs min-w-fit" aria-label={tab.label}>
                   <tab.icon className={cn("h-3.5 w-3.5", tab.value === "running" && statusFilter === "running" && "animate-spin")} />
-                  <span className="hidden sm:inline">{tab.label}</span>
+                  <span className="hidden lg:inline">{tab.label}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
           </Tabs>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">
-          <div className="relative flex-1 sm:flex-none">
+        <div className="flex items-center gap-2 w-full lg:w-auto lg:ml-auto">
+          <div className="relative flex-1 lg:flex-none">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search agents or IDs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-10 w-full pl-8 text-sm sm:h-8 sm:w-[200px]"
+              className="h-10 w-full pl-8 text-sm lg:h-8 lg:w-[200px]"
             />
           </div>
         </div>
@@ -625,7 +625,7 @@ export function AgentSessionsPage() {
               </Button>
             </CardContent>
           </Card>
-        ) : isMobile ? (
+        ) : !isWideDesktop ? (
           <div className="space-y-2">
             {filteredInstances.map((instance) => (
               <SessionMobileCard
@@ -678,9 +678,9 @@ export function AgentSessionsPage() {
         )}
       </div>
 
-      {/* Detail panel: Drawer on mobile, Sheet on desktop */}
+      {/* Detail panel: Drawer on compact screens, Sheet on wide desktop */}
       {selectedInstanceId && (
-        isMobile ? (
+        !isWideDesktop ? (
           <Drawer open onOpenChange={(open) => !open && setSelectedInstanceId(null)}>
             <DrawerContent className="max-h-[85vh]">
               <SessionDetailPanel
