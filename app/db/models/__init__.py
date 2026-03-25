@@ -57,6 +57,37 @@ from app.db.models.mobile import (
 from app.db.models.oauth_client import (
     OAuthClient,
 )
+from app.db.models.product import (
+    CharacteristicAssignment,
+    CharacteristicGroup,
+    CharacteristicType,
+    CharacteristicValue,
+    Characteristic,
+    ConstraintGroup,
+    ConstraintRule,
+    ConstraintType,
+    Product,
+    ProductFamily,
+    ProductMedia,
+    ProductStatus,
+    ProductVersion,
+    VariantTable,
+)
+from app.db.models.bom import (
+    BOMHeader,
+    BOMItem,
+    BOMItemType,
+)
+from app.db.models.configurator import (
+    ConfigurationPricing,
+    ConfigurationSelection,
+    ConfigurationSession,
+    ConfigurationStatus,
+    ConfigurationTemplate,
+    ConfiguredBOM,
+    PricingRule,
+    PricingRuleType,
+)
 from app.db.models.operations import (
     AuditLog,
     Consent,
@@ -125,4 +156,32 @@ __all__ = [
     "WebAuthnCredential",
     "ChangeLog",
     "SyncMixin",
+    # Product Configurator
+    "ProductFamily",
+    "Product",
+    "ProductVersion",
+    "ProductStatus",
+    "CharacteristicGroup",
+    "Characteristic",
+    "CharacteristicType",
+    "CharacteristicValue",
+    "CharacteristicAssignment",
+    "ConstraintGroup",
+    "ConstraintRule",
+    "ConstraintType",
+    "VariantTable",
+    "ProductMedia",
+    # BOM
+    "BOMHeader",
+    "BOMItem",
+    "BOMItemType",
+    # Configurator
+    "ConfigurationSession",
+    "ConfigurationStatus",
+    "ConfigurationSelection",
+    "ConfigurationTemplate",
+    "ConfiguredBOM",
+    "PricingRule",
+    "PricingRuleType",
+    "ConfigurationPricing",
 ]
