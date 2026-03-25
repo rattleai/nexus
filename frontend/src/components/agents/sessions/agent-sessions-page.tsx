@@ -3,6 +3,8 @@ import { Link } from "@tanstack/react-router"
 import {
   Activity,
   Bot,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Coins,
   Footprints,
@@ -32,11 +34,16 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
+  Drawer,
+  DrawerContent,
+} from "@/components/ui/drawer"
+import {
   useAllInstances,
   useAgentDefinitions,
   useStopInstance,
   usePendingApprovals,
 } from "@/hooks/use-agents"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { SessionsDataTable } from "./sessions-data-table"
 import { SessionDetailPanel } from "./session-detail-panel"
 import { ApprovalsBanner } from "./approvals-banner"
@@ -124,9 +131,127 @@ function StatCard({
   )
 }
 
+// ── Mobile session card ──────────────────────────────────────────
+
+function SessionMobileCard({
+  instance,
+  agentDef,
+  isSelected,
+  onSelect,
+  onStop,
+  isStopPending,
+}: {
+  instance: AgentInstance
+  agentDef: AgentDefinition | undefined
+  isSelected: boolean
+  onSelect: () => void
+  onStop: () => void
+  isStopPending: boolean
+}) {
+  const status = instance.status
+  const cfg = statusBadgeConfig[status]
+  const isActive = status === "running" || status === "pending"
+
+  return (
+    <Card
+      className={cn(
+        "transition-all cursor-pointer active:scale-[0.98]",
+        isSelected && "ring-1 ring-primary/20 border-primary/30",
+        isActive && "bg-blue-500/[0.03]",
+      )}
+      onClick={onSelect}
+    >
+      <CardContent className="p-4 space-y-3">
+        {/* Top: Agent + Status */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
+              <Bot className="h-4 w-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">
+                {agentDef?.name ?? "Unknown Agent"}
+              </p>
+              <p className="text-xs text-muted-foreground font-mono">
+                {instance.id.slice(0, 8)}
+              </p>
+            </div>
+          </div>
+          <Badge variant={cfg.variant} className={cn("capitalize text-xs shrink-0", cfg.className)}>
+            {status === "running" && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+            {status}
+          </Badge>
+        </div>
+
+        {/* Middle: Metrics grid */}
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+          <div className="flex items-center gap-1.5">
+            <Footprints className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">Steps</span>
+            <span className="ml-auto font-medium">{instance.steps_executed}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">Tokens</span>
+            <span className="ml-auto font-medium">{(instance.tokens_used ?? 0).toLocaleString()}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Coins className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">Cost</span>
+            <span className="ml-auto font-medium">${(instance.cost_usd ?? 0).toFixed(4)}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">Duration</span>
+            <span className="ml-auto font-medium">
+              {formatDuration(instance.started_at, instance.completed_at)}
+            </span>
+          </div>
+        </div>
+
+        {/* Bottom: Time + Actions */}
+        <div className="flex items-center justify-between pt-1 border-t">
+          <span className="text-xs text-muted-foreground">
+            {formatRelativeTime(instance.created_at)}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 text-xs"
+              onClick={(e) => {
+                e.stopPropagation()
+                onSelect()
+              }}
+            >
+              Details
+            </Button>
+            {isActive && (
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-9 text-xs"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onStop()
+                }}
+                disabled={isStopPending}
+              >
+                <Square className="mr-1 h-3 w-3" />
+                Stop
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ── Main page ────────────────────────────────────────────────────
 
 export function AgentSessionsPage() {
+  const isMobile = useIsMobile()
   const [statusFilter, setStatusFilter] = React.useState("all")
   const [searchQuery, setSearchQuery] = React.useState("")
   const [selectedRows, setSelectedRows] = React.useState<Set<string>>(new Set())
@@ -378,7 +503,7 @@ export function AgentSessionsPage() {
   )
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-6">
+    <div className="flex flex-col flex-1 min-h-0 gap-4 sm:gap-6 overflow-hidden">
       {/* Header */}
       <PageHeader
         title="Agent Sessions"
@@ -420,32 +545,34 @@ export function AgentSessionsPage() {
       </div>
 
       {/* Filters bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-        <Tabs
-          value={statusFilter}
-          onValueChange={(v) => {
-            setStatusFilter(v)
-            setPage(1)
-          }}
-        >
-          <TabsList>
-            {STATUS_TABS.map((tab) => (
-              <TabsTrigger key={tab.value} value={tab.value} className="gap-1.5 text-xs">
-                <tab.icon className={cn("h-3.5 w-3.5", tab.value === "running" && statusFilter === "running" && "animate-spin")} />
-                {tab.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="overflow-x-auto pb-1 sm:overflow-visible">
+          <Tabs
+            value={statusFilter}
+            onValueChange={(v) => {
+              setStatusFilter(v)
+              setPage(1)
+            }}
+          >
+            <TabsList className="inline-flex w-max sm:w-auto">
+              {STATUS_TABS.map((tab) => (
+                <TabsTrigger key={tab.value} value={tab.value} className="gap-1.5 text-xs min-w-fit" aria-label={tab.label}>
+                  <tab.icon className={cn("h-3.5 w-3.5", tab.value === "running" && statusFilter === "running" && "animate-spin")} />
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
 
-        <div className="flex items-center gap-2 ml-auto">
-          <div className="relative">
+        <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">
+          <div className="relative flex-1 sm:flex-none">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search agents or IDs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-8 w-[200px] pl-8 text-sm"
+              className="h-10 w-full pl-8 text-sm sm:h-8 sm:w-[200px]"
             />
           </div>
         </div>
@@ -460,7 +587,7 @@ export function AgentSessionsPage() {
           <Button
             variant="destructive"
             size="sm"
-            className="h-7 text-xs"
+            className="h-10 text-xs sm:h-7"
             onClick={handleBulkStop}
           >
             <Square className="mr-1 h-3 w-3" />
@@ -469,7 +596,7 @@ export function AgentSessionsPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs"
+            className="h-10 text-xs sm:h-7"
             onClick={() => setSelectedRows(new Set())}
           >
             Clear Selection
@@ -477,7 +604,7 @@ export function AgentSessionsPage() {
         </div>
       )}
 
-      {/* Data table */}
+      {/* Data table / Mobile card list */}
       <div className="flex-1 min-h-0">
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
@@ -498,6 +625,46 @@ export function AgentSessionsPage() {
               </Button>
             </CardContent>
           </Card>
+        ) : isMobile ? (
+          <div className="space-y-2">
+            {filteredInstances.map((instance) => (
+              <SessionMobileCard
+                key={instance.id}
+                instance={instance}
+                agentDef={agentNameMap.get(instance.definition_id)}
+                isSelected={instance.id === selectedInstanceId}
+                onSelect={() => setSelectedInstanceId(instance.id)}
+                onStop={() => stopInstance.mutate(instance.id)}
+                isStopPending={stopInstance.isPending}
+              />
+            ))}
+            {/* Mobile pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between pt-3 pb-2">
+                <p className="text-sm text-muted-foreground">
+                  Page {page} of {totalPages}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    className="h-10 w-10"
+                    onClick={() => setPage(page - 1)}
+                    disabled={page <= 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-10 w-10"
+                    onClick={() => setPage(page + 1)}
+                    disabled={page >= totalPages}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
           <SessionsDataTable
             columns={columns}
@@ -511,13 +678,26 @@ export function AgentSessionsPage() {
         )}
       </div>
 
-      {/* Detail panel */}
+      {/* Detail panel: Drawer on mobile, Sheet on desktop */}
       {selectedInstanceId && (
-        <SessionDetailPanel
-          instanceId={selectedInstanceId}
-          agentNameMap={agentNameMap}
-          onClose={() => setSelectedInstanceId(null)}
-        />
+        isMobile ? (
+          <Drawer open onOpenChange={(open) => !open && setSelectedInstanceId(null)}>
+            <DrawerContent className="max-h-[85vh]">
+              <SessionDetailPanel
+                instanceId={selectedInstanceId}
+                agentNameMap={agentNameMap}
+                onClose={() => setSelectedInstanceId(null)}
+                renderMode="drawer"
+              />
+            </DrawerContent>
+          </Drawer>
+        ) : (
+          <SessionDetailPanel
+            instanceId={selectedInstanceId}
+            agentNameMap={agentNameMap}
+            onClose={() => setSelectedInstanceId(null)}
+          />
+        )
       )}
     </div>
   )

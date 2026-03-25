@@ -112,6 +112,7 @@ export function SessionsDataTable({
             <Button
               variant="outline"
               size="sm"
+              className="min-h-[44px] min-w-[44px]"
               onClick={() => onPageChange(page - 1)}
               disabled={page <= 1}
             >
@@ -120,6 +121,7 @@ export function SessionsDataTable({
             <Button
               variant="outline"
               size="sm"
+              className="min-h-[44px] min-w-[44px]"
               onClick={() => onPageChange(page + 1)}
               disabled={page >= totalPages}
             >

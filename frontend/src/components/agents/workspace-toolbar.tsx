@@ -22,7 +22,7 @@ export function WorkspaceToolbar() {
   const activeCount = instancesData?.items?.length ?? 0
 
   return (
-    <div className="flex items-center px-4 py-2 border-b bg-background shrink-0">
+    <div className="flex items-center px-4 py-2 border-b bg-background shrink-0 overflow-hidden">
       <Tabs
         value={workspaceMode}
         onValueChange={(v) => setWorkspaceMode(v as WorkspaceMode)}
@@ -37,7 +37,8 @@ export function WorkspaceToolbar() {
                 className="h-7 px-3 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm gap-1.5"
               >
                 <Icon className="h-3.5 w-3.5" />
-                {mode.label}
+                <span className="hidden sm:inline">{mode.label}</span>
+                <span className="sm:hidden">{mode.label === "Multi-Stream" ? "Multi" : mode.label}</span>
                 {mode.id === "multi-stream" && activeCount > 0 && (
                   <Badge
                     variant="secondary"

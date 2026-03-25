@@ -247,7 +247,7 @@ function RunCard({
           {instance.input_data && Object.keys(instance.input_data).length > 0 && (
             <div>
               <div className="text-xs font-medium mb-1">Input</div>
-              <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-h-40">
+              <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-w-full max-h-40">
                 {JSON.stringify(instance.input_data, null, 2)}
               </pre>
             </div>
@@ -255,7 +255,7 @@ function RunCard({
           {instance.output_data && Object.keys(instance.output_data).length > 0 && (
             <div>
               <div className="text-xs font-medium mb-1">Output</div>
-              <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-h-40">
+              <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-w-full max-h-40">
                 {JSON.stringify(instance.output_data, null, 2)}
               </pre>
             </div>
@@ -263,7 +263,7 @@ function RunCard({
           {instance.error && (
             <div>
               <div className="text-xs font-medium text-red-500 mb-1">Error</div>
-              <pre className="text-xs bg-red-500/10 text-red-500 rounded p-2 overflow-x-auto">
+              <pre className="text-xs bg-red-500/10 text-red-500 rounded p-2 overflow-x-auto max-w-full">
                 {instance.error}
               </pre>
             </div>

@@ -2,6 +2,7 @@ import * as React from "react"
 import {
   AlertTriangle,
   Bot,
+  ChevronLeft,
   Plus,
   Search,
   LayoutGrid,
@@ -229,8 +230,9 @@ export function AgentWorkspace() {
   const mainContent = selectedAgent ? (
     <div className="flex flex-col flex-1 min-h-0">
       {/* Tab bar */}
-      <div className="flex items-center border-b px-4 py-2 gap-4">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="border-b">
+        {/* Mobile: agent name on its own row */}
+        <div className="flex items-center gap-2 px-4 pt-2 pb-1 md:hidden">
           <div
             className={cn(
               "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
@@ -246,29 +248,74 @@ export function AgentWorkspace() {
           </span>
         </div>
 
-        <Separator orientation="vertical" className="h-5" />
+        {/* Mobile: scrollable icon + tiny label tabs */}
+        <div className="overflow-hidden md:hidden">
+        <div className="overflow-x-auto pb-1">
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => setActiveTab(v as AgentTab)}
+          >
+            <TabsList className="inline-flex w-max h-10 bg-transparent p-0 gap-0 px-4">
+              {TABS.map((tab) => {
+                const Icon = tab.icon
+                return (
+                  <TabsTrigger
+                    key={tab.id}
+                    value={tab.id}
+                    className="h-10 px-3 text-xs data-[state=active]:bg-accent data-[state=active]:shadow-none rounded-md flex flex-col items-center gap-0.5"
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="text-[10px]">{tab.label}</span>
+                  </TabsTrigger>
+                )
+              })}
+            </TabsList>
+          </Tabs>
+        </div>
+        </div>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={(v) => setActiveTab(v as AgentTab)}
-          className="flex-1"
-        >
-          <TabsList className="h-8 bg-transparent p-0 gap-0">
-            {TABS.map((tab) => {
-              const Icon = tab.icon
-              return (
-                <TabsTrigger
-                  key={tab.id}
-                  value={tab.id}
-                  className="h-8 px-3 text-xs data-[state=active]:bg-accent data-[state=active]:shadow-none rounded-md"
-                >
-                  <Icon className="mr-1.5 h-3.5 w-3.5" />
-                  {tab.label}
-                </TabsTrigger>
-              )
-            })}
-          </TabsList>
-        </Tabs>
+        {/* Desktop: agent name + separator + full tabs inline */}
+        <div className="hidden md:flex items-center px-4 py-2 gap-4">
+          <div className="flex items-center gap-2 min-w-0">
+            <div
+              className={cn(
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+                selectedAgent.status === "active"
+                  ? "bg-primary/10 text-primary"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              <Bot className="h-3.5 w-3.5" />
+            </div>
+            <span className="font-medium text-sm truncate">
+              {selectedAgent.name}
+            </span>
+          </div>
+
+          <Separator orientation="vertical" className="h-5" />
+
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => setActiveTab(v as AgentTab)}
+            className="flex-1"
+          >
+            <TabsList className="h-8 bg-transparent p-0 gap-0">
+              {TABS.map((tab) => {
+                const Icon = tab.icon
+                return (
+                  <TabsTrigger
+                    key={tab.id}
+                    value={tab.id}
+                    className="h-8 px-3 text-xs data-[state=active]:bg-accent data-[state=active]:shadow-none rounded-md"
+                  >
+                    <Icon className="mr-1.5 h-3.5 w-3.5" />
+                    {tab.label}
+                  </TabsTrigger>
+                )
+              })}
+            </TabsList>
+          </Tabs>
+        </div>
       </div>
 
       {/* Tab content — chat gets its own full-height container, other tabs use ScrollArea */}
@@ -324,11 +371,12 @@ export function AgentWorkspace() {
             <>
               <Button
                 variant="ghost"
-                size="sm"
-                className="mx-4 mt-2 self-start h-7 text-xs"
+                size="default"
+                className="mx-4 mt-2 self-start gap-1.5"
                 onClick={() => selectAgent(null)}
               >
-                Back to list
+                <ChevronLeft className="h-4 w-4" />
+                Agents
               </Button>
               {mainContent}
             </>

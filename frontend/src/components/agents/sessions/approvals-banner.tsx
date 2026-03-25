@@ -123,25 +123,23 @@ function ApprovalCard({ approval }: { approval: ApprovalItem }) {
 
   return (
     <div className="rounded-md border bg-background overflow-hidden">
-      <div className="flex items-center gap-3 px-3 py-2">
-        <Wrench className="h-4 w-4 text-muted-foreground shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">{approval.tool_name}</span>
-            <span className="text-xs text-muted-foreground font-mono">
-              {approval.instance_id.slice(0, 8)}
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs text-muted-foreground flex items-center gap-1">
+      <div className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <Wrench className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="text-sm font-medium truncate">{approval.tool_name}</span>
+          <span className="text-xs text-muted-foreground font-mono hidden sm:inline">
+            {approval.instance_id.slice(0, 8)}
+          </span>
+          <span className="text-xs text-muted-foreground flex items-center gap-1 ml-auto sm:ml-0">
             <Clock className="h-3 w-3" />
             {timeLeft}
           </span>
+        </div>
+        <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs"
+            className="h-10 text-xs flex-1 sm:flex-none sm:h-7"
             onClick={() => setShowArgs(!showArgs)}
           >
             {showArgs ? "Hide" : "Args"}
@@ -149,7 +147,7 @@ function ApprovalCard({ approval }: { approval: ApprovalItem }) {
           <Button
             variant="outline"
             size="sm"
-            className="h-7 text-xs border-red-500/30 text-red-600 hover:bg-red-500/10"
+            className="h-10 text-xs border-red-500/30 text-red-600 hover:bg-red-500/10 flex-1 sm:flex-none sm:h-7"
             onClick={() => handleResolve("denied")}
             disabled={resolveApproval.isPending}
           >
@@ -158,7 +156,7 @@ function ApprovalCard({ approval }: { approval: ApprovalItem }) {
           </Button>
           <Button
             size="sm"
-            className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+            className="h-10 text-xs bg-emerald-600 hover:bg-emerald-700 text-white flex-1 sm:flex-none sm:h-7"
             onClick={() => handleResolve("approved")}
             disabled={resolveApproval.isPending}
           >
@@ -173,7 +171,7 @@ function ApprovalCard({ approval }: { approval: ApprovalItem }) {
       </div>
       {showArgs && (
         <div className="border-t px-3 py-2 bg-muted/50">
-          <pre className="text-xs overflow-x-auto">
+          <pre className="text-xs overflow-x-auto max-w-full">
             {JSON.stringify(approval.arguments, null, 2)}
           </pre>
         </div>

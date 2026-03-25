@@ -169,7 +169,7 @@ function JsonViewer({ data, label }: { data: unknown; label: string }) {
       </button>
       {!collapsed && (
         <div className="border-t px-3 py-2">
-          <pre className="overflow-x-auto text-xs leading-relaxed max-h-48">
+          <pre className="overflow-x-auto max-w-full text-xs leading-relaxed max-h-48">
             {JSON.stringify(data, null, 2)}
           </pre>
         </div>
@@ -186,7 +186,7 @@ function ToolCallCard({ entry }: { entry: ToolCallEntry }) {
   return (
     <div className="rounded-lg border bg-card text-sm overflow-hidden">
       <button
-        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left hover:bg-muted/30 transition-colors"
+        className="flex w-full items-center gap-2.5 px-3 py-3 text-left hover:bg-muted/30 transition-colors sm:py-2.5"
         onClick={() => setExpanded(!expanded)}
       >
         <div
@@ -240,7 +240,7 @@ function ToolCallCard({ entry }: { entry: ToolCallEntry }) {
                 Input
               </span>
             </div>
-            <pre className="overflow-x-auto rounded bg-muted p-2 text-xs max-h-32">
+            <pre className="overflow-x-auto max-w-full rounded bg-muted p-2 text-xs max-h-32">
               {JSON.stringify(entry.args, null, 2)}
             </pre>
           </div>
@@ -251,7 +251,7 @@ function ToolCallCard({ entry }: { entry: ToolCallEntry }) {
               <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                 Output
               </span>
-              <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 text-xs max-h-32">
+              <pre className="mt-1 overflow-x-auto max-w-full rounded bg-muted p-2 text-xs max-h-32">
                 {typeof entry.result === "string"
                   ? entry.result
                   : JSON.stringify(entry.result, null, 2)}
@@ -265,7 +265,7 @@ function ToolCallCard({ entry }: { entry: ToolCallEntry }) {
               <span className="text-[10px] font-semibold uppercase tracking-wider text-red-500">
                 Error
               </span>
-              <pre className="mt-1 overflow-x-auto rounded bg-red-500/10 p-2 text-xs text-red-600 dark:text-red-400 max-h-32">
+              <pre className="mt-1 overflow-x-auto max-w-full rounded bg-red-500/10 p-2 text-xs text-red-600 dark:text-red-400 max-h-32">
                 {entry.error}
               </pre>
             </div>
@@ -307,21 +307,18 @@ function InlineApproval({ approval }: { approval: Record<string, unknown> }) {
 
   return (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 overflow-hidden">
-      <div className="flex items-center gap-3 px-3 py-2.5">
-        <ShieldAlert className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium">
-            Approval needed: <code className="text-xs bg-muted px-1 rounded">{approval.tool_name as string}</code>
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            The agent wants to execute this tool and is waiting for your decision.
+      <div className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <ShieldAlert className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+          <p className="text-sm font-medium truncate">
+            Approval: <code className="text-xs bg-muted px-1 rounded">{approval.tool_name as string}</code>
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
           <Button
             variant="outline"
             size="sm"
-            className="h-7 text-xs border-red-500/30 text-red-600 hover:bg-red-500/10"
+            className="h-10 text-xs border-red-500/30 text-red-600 hover:bg-red-500/10 flex-1 sm:flex-none sm:h-7"
             onClick={() => handleResolve("denied")}
             disabled={resolveApproval.isPending}
           >
@@ -329,7 +326,7 @@ function InlineApproval({ approval }: { approval: Record<string, unknown> }) {
           </Button>
           <Button
             size="sm"
-            className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+            className="h-10 text-xs bg-emerald-600 hover:bg-emerald-700 text-white flex-1 sm:flex-none sm:h-7"
             onClick={() => handleResolve("approved")}
             disabled={resolveApproval.isPending}
           >
@@ -344,7 +341,7 @@ function InlineApproval({ approval }: { approval: Record<string, unknown> }) {
       </div>
       {approval.arguments && Object.keys(approval.arguments as object).length > 0 && (
         <div className="border-t border-amber-500/20 px-3 py-2 bg-amber-500/[0.02]">
-          <pre className="text-xs overflow-x-auto max-h-24">
+          <pre className="text-xs overflow-x-auto max-w-full max-h-24">
             {JSON.stringify(approval.arguments, null, 2)}
           </pre>
         </div>
@@ -528,7 +525,7 @@ function StreamView({
               return (
                 <div
                   key={entry.id}
-                  className="text-sm whitespace-pre-wrap leading-relaxed rounded-lg bg-muted/30 px-3 py-2"
+                  className="text-sm whitespace-pre-wrap break-words leading-relaxed rounded-lg bg-muted/30 px-3 py-2"
                 >
                   {entry.text}
                 </div>
@@ -589,12 +586,14 @@ interface SessionDetailPanelProps {
   instanceId: string
   agentNameMap: Map<string, AgentDefinition>
   onClose: () => void
+  renderMode?: "sheet" | "drawer"
 }
 
 export function SessionDetailPanel({
   instanceId,
   agentNameMap,
   onClose,
+  renderMode,
 }: SessionDetailPanelProps) {
   const { data: instance, isLoading, error } = useInstanceDetail(instanceId)
   const stopInstance = useStopInstance()
@@ -607,28 +606,38 @@ export function SessionDetailPanel({
     ? Math.min(100, (instance.steps_executed / agentDef.max_steps_per_run) * 100)
     : 0
 
-  return (
-    <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent
-        side="right"
-        className="w-full sm:max-w-none sm:w-[480px] flex flex-col p-0"
-      >
+  const content = (
+    <>
         {/* Header */}
         <div className="px-5 pt-5 pb-4 border-b space-y-3">
-          <SheetHeader className="space-y-1">
+          <div className="space-y-1">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", cfg?.bg)}>
                   <Bot className={cn("h-4 w-4", cfg?.color)} />
                 </div>
                 <div className="min-w-0">
-                  <SheetTitle className="text-sm truncate">
-                    {agentDef?.name ?? "Agent Instance"}
-                  </SheetTitle>
-                  <SheetDescription className="text-xs font-mono flex items-center gap-1">
-                    {instanceId.slice(0, 12)}...
-                    <CopyButton text={instanceId} />
-                  </SheetDescription>
+                  {renderMode === "drawer" ? (
+                    <>
+                      <p className="text-sm font-semibold truncate">
+                        {agentDef?.name ?? "Agent Instance"}
+                      </p>
+                      <p className="text-xs font-mono text-muted-foreground flex items-center gap-1">
+                        {instanceId.slice(0, 12)}...
+                        <CopyButton text={instanceId} />
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <SheetTitle className="text-sm truncate">
+                        {agentDef?.name ?? "Agent Instance"}
+                      </SheetTitle>
+                      <SheetDescription className="text-xs font-mono flex items-center gap-1">
+                        {instanceId.slice(0, 12)}...
+                        <CopyButton text={instanceId} />
+                      </SheetDescription>
+                    </>
+                  )}
                 </div>
               </div>
               {cfg && (
@@ -641,7 +650,7 @@ export function SessionDetailPanel({
                 </Badge>
               )}
             </div>
-          </SheetHeader>
+          </div>
 
           {/* Quick actions */}
           <div className="flex items-center gap-2">
@@ -649,7 +658,7 @@ export function SessionDetailPanel({
               <Button
                 variant="destructive"
                 size="sm"
-                className="h-7 text-xs"
+                className="h-10 text-xs sm:h-7"
                 onClick={() => stopInstance.mutate(instanceId)}
                 disabled={stopInstance.isPending}
               >
@@ -718,9 +727,9 @@ export function SessionDetailPanel({
                 <ScrollArea className="h-full">
                   <div className="p-5 space-y-4">
                     {/* Instance ID */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-muted-foreground">ID</span>
-                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs font-medium text-muted-foreground shrink-0">ID</span>
+                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono truncate min-w-0">
                         {instance.id}
                       </code>
                       <CopyButton text={instance.id} />
@@ -768,7 +777,7 @@ export function SessionDetailPanel({
                         <span className="text-xs font-semibold text-red-500 uppercase tracking-wider">
                           Error
                         </span>
-                        <p className="text-sm text-red-600 dark:text-red-400 mt-1 whitespace-pre-wrap">
+                        <p className="text-sm text-red-600 dark:text-red-400 mt-1 whitespace-pre-wrap break-words">
                           {instance.error}
                         </p>
                       </div>
@@ -865,6 +874,20 @@ export function SessionDetailPanel({
             </Tabs>
           )}
         </div>
+    </>
+  )
+
+  if (renderMode === "drawer") {
+    return <div className="flex flex-col flex-1 min-h-0 overflow-hidden">{content}</div>
+  }
+
+  return (
+    <Sheet open onOpenChange={(open) => !open && onClose()}>
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-none sm:w-[480px] flex flex-col p-0"
+      >
+        {content}
       </SheetContent>
     </Sheet>
   )

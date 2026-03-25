@@ -99,7 +99,7 @@ function JsonViewer({ data, label }: { data: unknown; label: string }) {
       </button>
       {!collapsed && (
         <div className="border-t px-3 py-2">
-          <pre className="overflow-x-auto text-xs leading-relaxed">
+          <pre className="overflow-x-auto max-w-full text-xs leading-relaxed">
             {JSON.stringify(data, null, 2)}
           </pre>
         </div>
@@ -164,14 +164,14 @@ function DrawerToolCallCard({ entry }: { entry: ToolCallEntry }) {
         <div className="border-t px-3 py-2 space-y-2">
           <div>
             <span className="text-xs font-medium text-muted-foreground">Arguments</span>
-            <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 text-xs">
+            <pre className="mt-1 overflow-x-auto max-w-full rounded bg-muted p-2 text-xs">
               {JSON.stringify(entry.args, null, 2)}
             </pre>
           </div>
           {entry.result != null && (
             <div>
               <span className="text-xs font-medium text-muted-foreground">Result</span>
-              <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 text-xs">
+              <pre className="mt-1 overflow-x-auto max-w-full rounded bg-muted p-2 text-xs">
                 {typeof entry.result === "string"
                   ? entry.result
                   : JSON.stringify(entry.result, null, 2)}
@@ -181,7 +181,7 @@ function DrawerToolCallCard({ entry }: { entry: ToolCallEntry }) {
           {entry.error && (
             <div>
               <span className="text-xs font-medium text-red-500">Error</span>
-              <pre className="mt-1 overflow-x-auto rounded bg-red-500/10 p-2 text-xs text-red-500">
+              <pre className="mt-1 overflow-x-auto max-w-full rounded bg-red-500/10 p-2 text-xs text-red-500">
                 {entry.error}
               </pre>
             </div>
