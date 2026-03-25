@@ -416,6 +416,18 @@ class ConfiguratorEngine:
                                 domains[target_char] = {default_val}
                                 queue.add(target_char)
 
+                elif ct == ConstraintType.FORMULA:
+                    # FORMULA constraints compute a value from an expression
+                    # and set it as the target characteristic's value.
+                    # Expression format: {"target": "weight_kg", "expression": "base + extras", "value_map": {...}}
+                    target_char = expr.get("target")
+                    if target_char and target_char in domains and target_char not in selections:
+                        computed = self._evaluate_formula(expr, selections)
+                        if computed is not None:
+                            auto_set[target_char] = computed
+                            domains[target_char] = {computed}
+                            queue.add(target_char)
+
                 elif ct == ConstraintType.TABLE:
                     table_id = expr.get("table_id")
                     if table_id and table_id in variant_tables:
@@ -519,6 +531,50 @@ class ConfiguratorEngine:
                     if isinstance(sub, dict):
                         chars |= self._extract_referenced_chars(sub)
         return chars
+
+    def _evaluate_formula(
+        self, expr: dict, selections: dict[str, str | list[str]]
+    ) -> str | None:
+        """Evaluate a FORMULA constraint expression.
+
+        Supports two modes:
+        1. value_map: {"value_map": {"V8": "250", "I4": "180"}, "input": "engine"}
+           Looks up the input char's value in the map.
+        2. Simple arithmetic: {"expression": "base + delta", "variables": {"base": "engine_weight", "delta": "option_weight"}}
+           Substitutes char values and evaluates basic arithmetic.
+        """
+        # Mode 1: Value map lookup
+        value_map = expr.get("value_map")
+        input_char = expr.get("input")
+        if value_map and input_char:
+            current = selections.get(input_char)
+            if current and current in value_map:
+                return str(value_map[current])
+            return None
+
+        # Mode 2: Simple arithmetic with variable substitution
+        formula_str = expr.get("expression")
+        variables = expr.get("variables", {})
+        if formula_str and variables:
+            try:
+                local_vars = {}
+                for var_name, char_slug in variables.items():
+                    val = selections.get(char_slug)
+                    if val is None:
+                        return None
+                    try:
+                        local_vars[var_name] = float(val)
+                    except ValueError:
+                        return None
+                # Safe evaluation: only allow basic arithmetic
+                allowed = {k: v for k, v in local_vars.items()}
+                result = eval(formula_str, {"__builtins__": {}}, allowed)  # noqa: S307
+                return str(result)
+            except Exception:
+                return None
+
+        # Fallback: static value
+        return expr.get("value")
 
     def _lookup_variant_table(
         self, table: VariantTable, selections: dict[str, str | list[str]]
