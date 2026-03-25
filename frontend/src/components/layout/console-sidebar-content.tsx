@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router"
 import { useTranslation } from "react-i18next"
-import { LayoutDashboard, Bot, Code2, Settings } from "lucide-react"
+import { LayoutDashboard, Bot, Code2 } from "lucide-react"
 import { APP_NAME } from "@/lib/constants"
 import {
   SidebarContent,
@@ -27,7 +27,6 @@ interface NavItem {
 const CONSOLE_NAV_ITEMS: NavItem[] = [
   { href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
   { href: "/agents", labelKey: "nav.agents", icon: Bot },
-  { href: "/developers", labelKey: "nav.developers", icon: Code2 },
 ]
 
 interface ConsoleSidebarContentProps {
@@ -74,23 +73,19 @@ export function ConsoleSidebarContent({ currentPath }: ConsoleSidebarContentProp
         <div className="group-data-[collapsible=icon]:hidden">
           <LanguageSwitcher />
         </div>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              isActive={false}
-              tooltip={t("nav.settings" as never) as string}
-            >
-              <Link to="/settings">
-                <Settings className="h-4 w-4" />
-                <span>{t("nav.settings" as never)}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <span className="text-[10px] text-muted-foreground/60 tabular-nums px-2.5 group-data-[collapsible=icon]:hidden">
-          v{APP_VERSION}
-        </span>
+        <Link
+          to="/developers"
+          data-active={currentPath.startsWith("/developers") || undefined}
+          className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground data-[active]:bg-primary/10 data-[active]:text-primary"
+        >
+          <Code2 className="h-4 w-4 shrink-0" />
+          <span className="flex-1 group-data-[collapsible=icon]:hidden">
+            {t("nav.developers" as never)}
+          </span>
+          <span className="text-[10px] font-normal text-muted-foreground/60 tabular-nums group-data-[collapsible=icon]:hidden">
+            v{APP_VERSION}
+          </span>
+        </Link>
       </SidebarFooter>
     </>
   )

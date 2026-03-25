@@ -1,3 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, redirect } from "@tanstack/react-router"
 
-export const Route = createFileRoute("/agents/workspace")({})
+export const Route = createFileRoute("/agents/workspace")({
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/agents" })
+  },
+})

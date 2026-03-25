@@ -1,5 +1,4 @@
 import * as React from "react"
-import { Link } from "@tanstack/react-router"
 import {
   Activity,
   Bot,
@@ -17,7 +16,6 @@ import {
   XCircle,
   Pause,
   AlertTriangle,
-  ArrowLeft,
   ShieldAlert,
 } from "lucide-react"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -509,23 +507,15 @@ export function AgentSessionsPage() {
         title="Agent Sessions"
         description="Monitor and manage all agent instances across your workspace"
         actions={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/agents">
-                <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-                Agent Workspace
-              </Link>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetch()}
-              disabled={isLoading}
-            >
-              <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", isLoading && "animate-spin")} />
-              Refresh
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isLoading}
+          >
+            <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", isLoading && "animate-spin")} />
+            Refresh
+          </Button>
         }
       />
 
@@ -618,11 +608,8 @@ export function AgentSessionsPage() {
               <p className="text-sm text-muted-foreground mt-1 max-w-md">
                 {statusFilter !== "all"
                   ? `No ${statusFilter} sessions. Try a different status filter.`
-                  : "No agent sessions yet. Run an agent from the Agent Workspace to see sessions here."}
+                  : "No agent sessions yet. Configure and run an agent in Settings to see sessions here."}
               </p>
-              <Button variant="outline" size="sm" className="mt-4" asChild>
-                <Link to="/agents">Go to Agent Workspace</Link>
-              </Button>
             </CardContent>
           </Card>
         ) : !isWideDesktop ? (

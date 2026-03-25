@@ -151,8 +151,8 @@ export function AppCommandPalette() {
     if (message) {
       setPendingMessage(message)
     }
-    if (!currentPath.startsWith("/agents")) {
-      navigate({ to: "/agents/workspace" })
+    if (!currentPath.startsWith("/settings/agents")) {
+      navigate({ to: "/settings/agents" })
     }
     selectAgent(agent.id)
     setActiveTab(tab)
@@ -289,7 +289,7 @@ export function AppCommandPalette() {
                 </p>
                 <button
                   className="text-sm text-primary hover:underline"
-                  onClick={() => go("/agents/workspace")}
+                  onClick={() => go("/settings/agents")}
                 >
                   Create your first agent
                 </button>
@@ -354,7 +354,7 @@ export function AppCommandPalette() {
             <CommandSeparator />
             <CommandGroup heading="Actions">
               <CommandItem
-                onSelect={() => go("/agents/workspace")}
+                onSelect={() => go("/settings/agents")}
                 value="@ create new agent"
               >
                 <Plus className="mr-2 h-4 w-4" />
@@ -422,10 +422,6 @@ export function AppCommandPalette() {
               <CommandItem onSelect={() => go("/agents")} value="agents sessions">
                 <Bot className="mr-2 h-4 w-4" />
                 Agent Sessions
-              </CommandItem>
-              <CommandItem onSelect={() => go("/agents/workspace")} value="agent workspace">
-                <Bot className="mr-2 h-4 w-4" />
-                Agent Workspace
               </CommandItem>
               <CommandItem onSelect={() => go("/agents/chat")} value="ai chat">
                 <MessageSquare className="mr-2 h-4 w-4" />
