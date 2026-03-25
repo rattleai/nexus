@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.rate_limit import ApiKeyRateLimiter
+from app.configurator.engine import ConfiguratorEngine
+from app.core.audit import AuditAction, emit_audit_event
 from app.api.schemas_configurator import (
     ConstraintGroupCreate,
     ConstraintGroupResponse,
@@ -79,6 +81,10 @@ async def create_constraint_group(
         is_active=body.is_active,
     )
     db.add(group)
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="constraint_group",
+        resource_id=str(group.id), tenant_id=tenant.id,
+    )
     await db.commit()
     await db.refresh(group)
     return group
@@ -135,8 +141,13 @@ async def create_constraint_rule(
         effective_to=body.effective_to,
     )
     db.add(rule)
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="constraint_rule",
+        resource_id=str(rule.id), tenant_id=tenant.id,
+    )
     await db.commit()
     await db.refresh(rule)
+    ConfiguratorEngine.invalidate_product_cache(body.product_id, tenant.id)
     return rule
 
 
@@ -215,8 +226,13 @@ async def update_constraint_rule(
     for field, value in update_data.items():
         setattr(rule, field, value)
     rule.version += 1
+    await emit_audit_event(
+        db, action=AuditAction.UPDATE, resource_type="constraint_rule",
+        resource_id=str(rule.id), tenant_id=tenant.id, changes=update_data,
+    )
     await db.commit()
     await db.refresh(rule)
+    ConfiguratorEngine.invalidate_product_cache(rule.product_id, tenant.id)
     return rule
 
 
@@ -239,7 +255,12 @@ async def delete_constraint_rule(
     if not rule:
         raise HTTPException(status_code=404, detail="Constraint rule not found")
     rule.deleted_at = datetime.now(UTC)
+    await emit_audit_event(
+        db, action=AuditAction.DELETE, resource_type="constraint_rule",
+        resource_id=str(rule.id), tenant_id=tenant.id,
+    )
     await db.commit()
+    ConfiguratorEngine.invalidate_product_cache(rule.product_id, tenant.id)
 
 
 @router.post(
@@ -277,8 +298,13 @@ async def create_variant_table(
         output_columns=body.output_columns,
     )
     db.add(table)
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="variant_table",
+        resource_id=str(table.id), tenant_id=tenant.id,
+    )
     await db.commit()
     await db.refresh(table)
+    ConfiguratorEngine.invalidate_product_cache(body.product_id, tenant.id)
     return table
 
 
@@ -315,10 +341,16 @@ async def update_variant_table(
     table = result.scalar_one_or_none()
     if not table:
         raise HTTPException(status_code=404, detail="Variant table not found")
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changes = body.model_dump(exclude_unset=True)
+    for field, value in changes.items():
         setattr(table, field, value)
+    await emit_audit_event(
+        db, action=AuditAction.UPDATE, resource_type="variant_table",
+        resource_id=str(table.id), tenant_id=tenant.id, changes=changes,
+    )
     await db.commit()
     await db.refresh(table)
+    ConfiguratorEngine.invalidate_product_cache(table.product_id, tenant.id)
     return table
 
 
@@ -338,5 +370,11 @@ async def delete_variant_table(
     table = result.scalar_one_or_none()
     if not table:
         raise HTTPException(status_code=404, detail="Variant table not found")
+    product_id = table.product_id
+    await emit_audit_event(
+        db, action=AuditAction.DELETE, resource_type="variant_table",
+        resource_id=str(table.id), tenant_id=tenant.id,
+    )
     await db.delete(table)
     await db.commit()
+    ConfiguratorEngine.invalidate_product_cache(product_id, tenant.id)

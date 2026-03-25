@@ -509,10 +509,26 @@ class ConfigurationSessionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ConflictStepResponse(BaseModel):
+    rule_id: str | None = None
+    rule_name: str | None = None
+    constraint_type: str
+    target_char: str
+    removed_values: list[str]
+    triggered_by: dict[str, str] = {}
+
+
+class ConflictExplanationResponse(BaseModel):
+    characteristic: str
+    trace: list[ConflictStepResponse] = []
+    contributing_selections: dict[str, str] = {}
+
+
 class SelectionResultResponse(BaseModel):
     session: ConfigurationSessionResponse
     auto_set_values: dict[str, str] = {}
     excluded_values: dict[str, list[str]] = {}
+    conflict_explanations: list[ConflictExplanationResponse] = []
 
 
 # ── Configuration Template ───────────────────────────────

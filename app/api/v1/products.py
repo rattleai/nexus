@@ -21,6 +21,7 @@ from app.api.schemas_configurator import (
     ProductVersionCreate,
     ProductVersionResponse,
 )
+from app.core.audit import AuditAction, emit_audit_event
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
 from app.db.models import Product, ProductFamily, ProductStatus, ProductVersion, Tenant
@@ -52,6 +53,10 @@ async def create_product_family(
         metadata_=body.metadata or {},
     )
     db.add(family)
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="product_family",
+        resource_id=str(family.id), tenant_id=tenant.id,
+    )
     await db.commit()
     await db.refresh(family)
     return family
@@ -113,12 +118,17 @@ async def update_product_family(
     if not family:
         raise HTTPException(status_code=404, detail="Product family not found")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changes = body.model_dump(exclude_unset=True)
+    for field, value in changes.items():
         if field == "metadata":
             setattr(family, "metadata_", value)
         else:
             setattr(family, field, value)
     family.version += 1
+    await emit_audit_event(
+        db, action=AuditAction.UPDATE, resource_type="product_family",
+        resource_id=str(family.id), tenant_id=tenant.id, changes=changes,
+    )
     await db.commit()
     await db.refresh(family)
     return family
@@ -143,6 +153,10 @@ async def delete_product_family(
     if not family:
         raise HTTPException(status_code=404, detail="Product family not found")
     family.deleted_at = datetime.now(UTC)
+    await emit_audit_event(
+        db, action=AuditAction.DELETE, resource_type="product_family",
+        resource_id=str(family.id), tenant_id=tenant.id,
+    )
     await db.commit()
 
 
@@ -171,6 +185,10 @@ async def create_product(
         metadata_=body.metadata or {},
     )
     db.add(product)
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="product",
+        resource_id=str(product.id), tenant_id=tenant.id,
+    )
     await db.commit()
     await db.refresh(product)
     return product
@@ -238,7 +256,8 @@ async def update_product(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changes = body.model_dump(exclude_unset=True)
+    for field, value in changes.items():
         if field == "metadata":
             setattr(product, "metadata_", value)
         elif field == "status":
@@ -246,6 +265,10 @@ async def update_product(
         else:
             setattr(product, field, value)
     product.version += 1
+    await emit_audit_event(
+        db, action=AuditAction.UPDATE, resource_type="product",
+        resource_id=str(product.id), tenant_id=tenant.id, changes=changes,
+    )
     await db.commit()
     await db.refresh(product)
     return product
@@ -270,6 +293,10 @@ async def delete_product(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     product.deleted_at = datetime.now(UTC)
+    await emit_audit_event(
+        db, action=AuditAction.DELETE, resource_type="product",
+        resource_id=str(product.id), tenant_id=tenant.id,
+    )
     await db.commit()
 
 
@@ -315,6 +342,10 @@ async def publish_product_version(
         published_at=datetime.now(UTC),
     )
     db.add(version)
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="product_version",
+        resource_id=str(version.id), tenant_id=tenant.id,
+    )
     await db.commit()
     await db.refresh(version)
     return version
@@ -366,6 +397,10 @@ async def activate_product_version(
         v.is_active = False
 
     version.is_active = True
+    await emit_audit_event(
+        db, action=AuditAction.UPDATE, resource_type="product_version",
+        resource_id=str(version.id), tenant_id=tenant.id,
+    )
     await db.commit()
     await db.refresh(version)
     return version

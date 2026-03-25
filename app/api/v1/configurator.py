@@ -19,6 +19,8 @@ from app.api.schemas_configurator import (
     ConfigurationSelectionRequest,
     ConfigurationTemplateCreate,
     ConfigurationTemplateResponse,
+    ConflictExplanationResponse,
+    ConflictStepResponse,
     ConfiguredBOMResponse,
     PricingRuleCreate,
     PricingRuleResponse,
@@ -37,6 +39,7 @@ from app.configurator.events import (
     PricingResolved,
 )
 from app.configurator.validator import ConfigurationValidator
+from app.core.audit import AuditAction, emit_audit_event
 from app.core.events import emit
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
@@ -97,6 +100,10 @@ async def create_session(
         available_domains={k: sorted(v) for k, v in domains.items()},
     )
     db.add(session)
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="configuration_session",
+        resource_id=str(session.id), tenant_id=tenant.id,
+    )
     await db.commit()
     await db.refresh(session, attribute_names=["selections"])
 
@@ -222,6 +229,17 @@ async def make_selection(
         session=ConfigurationSessionResponse.model_validate(session_obj),
         auto_set_values=result.auto_set_values,
         excluded_values=result.excluded_values,
+        conflict_explanations=[
+            ConflictExplanationResponse(
+                characteristic=ce.characteristic,
+                trace=[ConflictStepResponse(
+                    rule_id=s.rule_id, rule_name=s.rule_name,
+                    constraint_type=s.constraint_type, target_char=s.target_char,
+                    removed_values=s.removed_values, triggered_by=s.triggered_by,
+                ) for s in ce.trace],
+                contributing_selections=ce.contributing_selections,
+            ) for ce in result.conflict_explanations
+        ],
     )
 
 
@@ -255,6 +273,17 @@ async def remove_selection(
         session=ConfigurationSessionResponse.model_validate(session_obj),
         auto_set_values=result.auto_set_values,
         excluded_values=result.excluded_values,
+        conflict_explanations=[
+            ConflictExplanationResponse(
+                characteristic=ce.characteristic,
+                trace=[ConflictStepResponse(
+                    rule_id=s.rule_id, rule_name=s.rule_name,
+                    constraint_type=s.constraint_type, target_char=s.target_char,
+                    removed_values=s.removed_values, triggered_by=s.triggered_by,
+                ) for s in ce.trace],
+                contributing_selections=ce.contributing_selections,
+            ) for ce in result.conflict_explanations
+        ],
     )
 
 
@@ -426,6 +455,11 @@ async def lock_session(
         raise HTTPException(status_code=400, detail="Cannot lock an incomplete or invalid configuration")
 
     session.status = ConfigurationStatus.LOCKED
+    await emit_audit_event(
+        db, action=AuditAction.UPDATE, resource_type="configuration_session",
+        resource_id=str(session.id), tenant_id=tenant.id,
+        changes={"status": "locked"},
+    )
     await db.commit()
     await db.refresh(session, attribute_names=["selections"])
 
@@ -508,6 +542,10 @@ async def create_template(
         selections=body.selections,
     )
     db.add(template)
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="configuration_template",
+        resource_id=str(template.id), tenant_id=tenant.id,
+    )
     await db.commit()
     await db.refresh(template)
     return template
@@ -559,6 +597,10 @@ async def create_pricing_rule(
         currency=body.currency,
     )
     db.add(rule)
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="pricing_rule",
+        resource_id=str(rule.id), tenant_id=tenant.id,
+    )
     await db.commit()
     await db.refresh(rule)
     return rule
@@ -623,9 +665,14 @@ async def update_pricing_rule(
     rule = result.scalar_one_or_none()
     if not rule:
         raise HTTPException(status_code=404, detail="Pricing rule not found")
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changes = body.model_dump(exclude_unset=True)
+    for field, value in changes.items():
         setattr(rule, field, value)
     rule.version += 1
+    await emit_audit_event(
+        db, action=AuditAction.UPDATE, resource_type="pricing_rule",
+        resource_id=str(rule.id), tenant_id=tenant.id, changes=changes,
+    )
     await db.commit()
     await db.refresh(rule)
     return rule
@@ -650,6 +697,10 @@ async def delete_pricing_rule(
     if not rule:
         raise HTTPException(status_code=404, detail="Pricing rule not found")
     rule.deleted_at = datetime.now(UTC)
+    await emit_audit_event(
+        db, action=AuditAction.DELETE, resource_type="pricing_rule",
+        resource_id=str(rule.id), tenant_id=tenant.id,
+    )
     await db.commit()
 
 

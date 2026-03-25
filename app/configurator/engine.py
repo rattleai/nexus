@@ -6,6 +6,9 @@ Each operation loads the current state, computes, and returns the result.
 
 from __future__ import annotations
 
+import ast
+import operator
+import time as _time
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -17,6 +20,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.metrics import (
+    CONFIGURATOR_CONSTRAINT_EVALUATIONS,
+    CONFIGURATOR_CONTRADICTIONS,
+    CONFIGURATOR_PROPAGATION_DURATION,
+    CONFIGURATOR_PROPAGATION_ITERATIONS,
+)
 from app.db.models import (
     Characteristic,
     CharacteristicAssignment,
@@ -42,13 +51,44 @@ class ValidationError:
 
 
 @dataclass
+class ConflictStep:
+    """One step in the conflict explanation trace."""
+    rule_id: str | None
+    rule_name: str | None
+    constraint_type: str
+    target_char: str
+    removed_values: list[str]
+    triggered_by: dict[str, str]  # {char_slug: selected_value} that activated the rule
+
+
+@dataclass
+class ConflictExplanation:
+    """Full explanation of why a characteristic's domain became empty."""
+    characteristic: str
+    trace: list[ConflictStep] = field(default_factory=list)
+    contributing_selections: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class SelectionResult:
     available_domains: dict[str, list[str]] = field(default_factory=dict)
     auto_set_values: dict[str, str] = field(default_factory=dict)
     excluded_values: dict[str, list[str]] = field(default_factory=dict)
     validation_errors: list[ValidationError] = field(default_factory=list)
+    conflict_explanations: list[ConflictExplanation] = field(default_factory=list)
     is_valid: bool = False
     is_complete: bool = False
+
+
+@dataclass
+class DomainPruneRecord:
+    """Records a single domain pruning event during propagation."""
+    rule_id: str | None
+    rule_name: str | None
+    constraint_type: str
+    target_char: str
+    removed_values: list[str]
+    triggered_by: dict[str, str]  # selections that caused the rule to fire
 
 
 @dataclass
@@ -57,10 +97,79 @@ class PropagationResult:
     auto_set: dict[str, str] = field(default_factory=dict)
     excluded: dict[str, list[str]] = field(default_factory=dict)
     contradictions: list[str] = field(default_factory=list)
+    prune_history: list[DomainPruneRecord] = field(default_factory=list)
+    conflict_explanations: list[ConflictExplanation] = field(default_factory=list)
+
+
+class _ProductDataCache:
+    """In-memory TTL cache for product configuration data (characteristics, constraints, tables).
+
+    Avoids 3 DB round-trips per selection for data that rarely changes.
+    Invalidate via ConfiguratorEngine.invalidate_product_cache() on CRUD operations.
+    """
+
+    def __init__(self, ttl_seconds: int = 600):
+        self._ttl = ttl_seconds
+        self._chars: dict[str, tuple[float, dict]] = {}  # key -> (timestamp, data)
+        self._constraints: dict[str, tuple[float, list]] = {}
+        self._vtables: dict[str, tuple[float, dict]] = {}
+
+    def _key(self, product_id: uuid.UUID, tenant_id: uuid.UUID) -> str:
+        return f"{product_id}:{tenant_id}"
+
+    def _is_valid(self, entry: tuple[float, object] | None) -> bool:
+        if entry is None:
+            return False
+        import time
+        return (time.monotonic() - entry[0]) < self._ttl
+
+    def get_chars(self, product_id: uuid.UUID, tenant_id: uuid.UUID):
+        entry = self._chars.get(self._key(product_id, tenant_id))
+        return entry[1] if self._is_valid(entry) else None
+
+    def set_chars(self, product_id: uuid.UUID, tenant_id: uuid.UUID, data):
+        import time
+        self._chars[self._key(product_id, tenant_id)] = (time.monotonic(), data)
+
+    def get_constraints(self, product_id: uuid.UUID, tenant_id: uuid.UUID):
+        entry = self._constraints.get(self._key(product_id, tenant_id))
+        return entry[1] if self._is_valid(entry) else None
+
+    def set_constraints(self, product_id: uuid.UUID, tenant_id: uuid.UUID, data):
+        import time
+        self._constraints[self._key(product_id, tenant_id)] = (time.monotonic(), data)
+
+    def get_vtables(self, product_id: uuid.UUID, tenant_id: uuid.UUID):
+        entry = self._vtables.get(self._key(product_id, tenant_id))
+        return entry[1] if self._is_valid(entry) else None
+
+    def set_vtables(self, product_id: uuid.UUID, tenant_id: uuid.UUID, data):
+        import time
+        self._vtables[self._key(product_id, tenant_id)] = (time.monotonic(), data)
+
+    def invalidate(self, product_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
+        key = self._key(product_id, tenant_id)
+        self._chars.pop(key, None)
+        self._constraints.pop(key, None)
+        self._vtables.pop(key, None)
+
+    def invalidate_all(self) -> None:
+        self._chars.clear()
+        self._constraints.clear()
+        self._vtables.clear()
+
+
+# Module-level singleton cache shared across engine instances
+_product_cache = _ProductDataCache(ttl_seconds=600)
 
 
 class ConfiguratorEngine:
     """Constraint evaluation and propagation engine."""
+
+    @staticmethod
+    def invalidate_product_cache(product_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
+        """Invalidate cached product data. Call on characteristic/constraint/vtable CRUD."""
+        _product_cache.invalidate(product_id, tenant_id)
 
     async def initialize_domains(
         self, db: AsyncSession, product_id: uuid.UUID, tenant_id: uuid.UUID
@@ -195,11 +304,21 @@ class ConfiguratorEngine:
                 )
                 db.add(auto_sel)
 
-        # Build validation errors from contradictions
-        errors = [
-            ValidationError(characteristic_slug=c, error_type="domain_empty", message=f"No valid values remain for '{c}'")
-            for c in result.contradictions
-        ]
+        # Build validation errors from contradictions (with explanation context)
+        errors = []
+        for explanation in result.conflict_explanations:
+            rules_involved = [s.rule_name or s.rule_id or "unknown" for s in explanation.trace]
+            detail = f"No valid values remain for '{explanation.characteristic}'"
+            if rules_involved:
+                detail += f". Caused by rules: {', '.join(rules_involved)}"
+            if explanation.contributing_selections:
+                sel_parts = [f"{k}={v}" for k, v in explanation.contributing_selections.items()]
+                detail += f". Contributing selections: {', '.join(sel_parts)}"
+            errors.append(ValidationError(
+                characteristic_slug=explanation.characteristic,
+                error_type="domain_empty",
+                message=detail,
+            ))
 
         # Check completeness
         is_complete = self._check_completeness(char_map, selections, result.auto_set)
@@ -228,6 +347,7 @@ class ConfiguratorEngine:
             auto_set_values=result.auto_set,
             excluded_values=result.excluded,
             validation_errors=errors,
+            conflict_explanations=result.conflict_explanations,
             is_valid=is_valid,
             is_complete=is_complete,
         )
@@ -280,10 +400,20 @@ class ConfiguratorEngine:
                 )
                 db.add(auto_sel)
 
-        errors = [
-            ValidationError(characteristic_slug=c, error_type="domain_empty", message=f"No valid values remain for '{c}'")
-            for c in result.contradictions
-        ]
+        errors = []
+        for explanation in result.conflict_explanations:
+            rules_involved = [s.rule_name or s.rule_id or "unknown" for s in explanation.trace]
+            detail = f"No valid values remain for '{explanation.characteristic}'"
+            if rules_involved:
+                detail += f". Caused by rules: {', '.join(rules_involved)}"
+            if explanation.contributing_selections:
+                sel_parts = [f"{k}={v}" for k, v in explanation.contributing_selections.items()]
+                detail += f". Contributing selections: {', '.join(sel_parts)}"
+            errors.append(ValidationError(
+                characteristic_slug=explanation.characteristic,
+                error_type="domain_empty",
+                message=detail,
+            ))
 
         is_complete = self._check_completeness(char_map, selections, result.auto_set)
         is_valid = len(errors) == 0
@@ -309,6 +439,7 @@ class ConfiguratorEngine:
             auto_set_values=result.auto_set,
             excluded_values=result.excluded,
             validation_errors=errors,
+            conflict_explanations=result.conflict_explanations,
             is_valid=is_valid,
             is_complete=is_complete,
         )
@@ -324,9 +455,11 @@ class ConfiguratorEngine:
         changed_chars: set[str],
     ) -> PropagationResult:
         """Run arc-consistency propagation loop. Pure function, no DB access."""
+        propagation_start = _time.monotonic()
         auto_set: dict[str, str] = {}
         excluded: dict[str, list[str]] = defaultdict(list)
         contradictions: list[str] = []
+        prune_history: list[DomainPruneRecord] = []
 
         # Set selected values as single-element domains
         for slug, val in selections.items():
@@ -360,6 +493,8 @@ class ConfiguratorEngine:
 
                 ct = constraint.constraint_type
                 expr = constraint.expression
+                rule_id = str(constraint.id) if hasattr(constraint, "id") else None
+                rule_name = constraint.name if hasattr(constraint, "name") else None
 
                 if ct == ConstraintType.REQUIRES:
                     if self._evaluate_condition(expr.get("if", {}), selections):
@@ -373,6 +508,13 @@ class ConfiguratorEngine:
                                 old = domains[target_char]
                                 new = old & set(required_values)
                                 if new != old:
+                                    removed = sorted(old - new)
+                                    prune_history.append(DomainPruneRecord(
+                                        rule_id=rule_id, rule_name=rule_name,
+                                        constraint_type="requires", target_char=target_char,
+                                        removed_values=removed,
+                                        triggered_by=self._extract_triggering_selections(expr.get("if", {}), selections),
+                                    ))
                                     domains[target_char] = new
                                     queue.add(target_char)
 
@@ -388,6 +530,13 @@ class ConfiguratorEngine:
                                 old = domains[target_char]
                                 new = old - set(excluded_values)
                                 if new != old:
+                                    removed = sorted(old - new)
+                                    prune_history.append(DomainPruneRecord(
+                                        rule_id=rule_id, rule_name=rule_name,
+                                        constraint_type="excludes", target_char=target_char,
+                                        removed_values=removed,
+                                        triggered_by=self._extract_triggering_selections(expr.get("if", {}), selections),
+                                    ))
                                     excluded[target_char].extend(excluded_values)
                                     domains[target_char] = new
                                     queue.add(target_char)
@@ -402,6 +551,12 @@ class ConfiguratorEngine:
                             old = domains[target_char]
                             new = old - {target_value}
                             if new != old:
+                                prune_history.append(DomainPruneRecord(
+                                    rule_id=rule_id, rule_name=rule_name,
+                                    constraint_type="selection_condition", target_char=target_char,
+                                    removed_values=[target_value],
+                                    triggered_by=self._extract_triggering_selections(condition, selections),
+                                ))
                                 excluded[target_char].append(target_value)
                                 domains[target_char] = new
                                 queue.add(target_char)
@@ -417,9 +572,6 @@ class ConfiguratorEngine:
                                 queue.add(target_char)
 
                 elif ct == ConstraintType.FORMULA:
-                    # FORMULA constraints compute a value from an expression
-                    # and set it as the target characteristic's value.
-                    # Expression format: {"target": "weight_kg", "expression": "base + extras", "value_map": {...}}
                     target_char = expr.get("target")
                     if target_char and target_char in domains and target_char not in selections:
                         computed = self._evaluate_formula(expr, selections)
@@ -438,23 +590,93 @@ class ConfiguratorEngine:
                                 old = domains[out_char]
                                 new = old & set(out_vals)
                                 if new != old:
+                                    removed = sorted(old - new)
+                                    prune_history.append(DomainPruneRecord(
+                                        rule_id=rule_id, rule_name=rule_name,
+                                        constraint_type="table", target_char=out_char,
+                                        removed_values=removed,
+                                        triggered_by=self._extract_triggering_selections(expr, selections),
+                                    ))
                                     domains[out_char] = new
                                     queue.add(out_char)
 
         # Post-propagation: detect contradictions and auto-set forced values
+        conflict_explanations: list[ConflictExplanation] = []
         for slug, domain in domains.items():
             if "__any__" in domain:
                 continue
             if len(domain) == 0:
                 contradictions.append(slug)
+                explanation = self._build_conflict_explanation(slug, prune_history, selections)
+                conflict_explanations.append(explanation)
             elif len(domain) == 1 and slug not in selections and slug not in auto_set:
                 auto_set[slug] = next(iter(domain))
+
+        # Record metrics
+        propagation_elapsed = _time.monotonic() - propagation_start
+        CONFIGURATOR_PROPAGATION_DURATION.observe(propagation_elapsed)
+        CONFIGURATOR_PROPAGATION_ITERATIONS.observe(iteration)
+        if contradictions:
+            CONFIGURATOR_CONTRADICTIONS.inc(len(contradictions))
 
         return PropagationResult(
             domains=domains,
             auto_set=auto_set,
             excluded=dict(excluded),
             contradictions=contradictions,
+            prune_history=prune_history,
+            conflict_explanations=conflict_explanations,
+        )
+
+    def _extract_triggering_selections(
+        self, condition: dict, selections: dict[str, str | list[str]]
+    ) -> dict[str, str]:
+        """Extract the selection values that caused a condition to fire."""
+        triggers: dict[str, str] = {}
+        if not condition:
+            return triggers
+        char_slug = condition.get("char")
+        if char_slug and char_slug in selections:
+            val = selections[char_slug]
+            triggers[char_slug] = val if isinstance(val, str) else str(val)
+        for key in ("conditions",):
+            if key in condition and isinstance(condition[key], list):
+                for sub in condition[key]:
+                    if isinstance(sub, dict):
+                        triggers.update(self._extract_triggering_selections(sub, selections))
+        for key in ("if", "condition"):
+            if key in condition and isinstance(condition[key], dict):
+                triggers.update(self._extract_triggering_selections(condition[key], selections))
+        return triggers
+
+    def _build_conflict_explanation(
+        self,
+        char_slug: str,
+        prune_history: list[DomainPruneRecord],
+        selections: dict[str, str | list[str]],
+    ) -> ConflictExplanation:
+        """Build an explanation of why a characteristic's domain became empty."""
+        # Collect all prune records that targeted this characteristic
+        trace = [
+            ConflictStep(
+                rule_id=record.rule_id,
+                rule_name=record.rule_name,
+                constraint_type=record.constraint_type,
+                target_char=record.target_char,
+                removed_values=record.removed_values,
+                triggered_by=record.triggered_by,
+            )
+            for record in prune_history
+            if record.target_char == char_slug
+        ]
+        # Collect all user selections that contributed to firing these rules
+        contributing: dict[str, str] = {}
+        for step in trace:
+            contributing.update(step.triggered_by)
+        return ConflictExplanation(
+            characteristic=char_slug,
+            trace=trace,
+            contributing_selections=contributing,
         )
 
     def _evaluate_condition(
@@ -532,6 +754,46 @@ class ConfiguratorEngine:
                         chars |= self._extract_referenced_chars(sub)
         return chars
 
+    # Allowed operators for safe arithmetic evaluation
+    _SAFE_OPS: dict[type, object] = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.Pow: operator.pow,
+        ast.Mod: operator.mod,
+        ast.FloorDiv: operator.floordiv,
+        ast.USub: operator.neg,
+        ast.UAdd: operator.pos,
+    }
+
+    def _safe_eval_ast(self, node: ast.AST, variables: dict[str, float]) -> float:
+        """Walk a Python AST allowing only arithmetic on known variables.
+
+        Raises ValueError for any disallowed node type.
+        """
+        if isinstance(node, ast.Expression):
+            return self._safe_eval_ast(node.body, variables)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return float(node.value)
+        if isinstance(node, ast.Name):
+            if node.id not in variables:
+                raise ValueError(f"Unknown variable: {node.id}")
+            return variables[node.id]
+        if isinstance(node, ast.BinOp):
+            op_func = self._SAFE_OPS.get(type(node.op))
+            if op_func is None:
+                raise ValueError(f"Disallowed operator: {type(node.op).__name__}")
+            left = self._safe_eval_ast(node.left, variables)
+            right = self._safe_eval_ast(node.right, variables)
+            return op_func(left, right)
+        if isinstance(node, ast.UnaryOp):
+            op_func = self._SAFE_OPS.get(type(node.op))
+            if op_func is None:
+                raise ValueError(f"Disallowed unary operator: {type(node.op).__name__}")
+            return op_func(self._safe_eval_ast(node.operand, variables))
+        raise ValueError(f"Disallowed AST node: {type(node).__name__}")
+
     def _evaluate_formula(
         self, expr: dict, selections: dict[str, str | list[str]]
     ) -> str | None:
@@ -540,8 +802,8 @@ class ConfiguratorEngine:
         Supports two modes:
         1. value_map: {"value_map": {"V8": "250", "I4": "180"}, "input": "engine"}
            Looks up the input char's value in the map.
-        2. Simple arithmetic: {"expression": "base + delta", "variables": {"base": "engine_weight", "delta": "option_weight"}}
-           Substitutes char values and evaluates basic arithmetic.
+        2. Safe arithmetic: {"expression": "base + delta", "variables": {"base": "engine_weight", "delta": "option_weight"}}
+           Parses expression as AST and evaluates only arithmetic ops on known variables.
         """
         # Mode 1: Value map lookup
         value_map = expr.get("value_map")
@@ -552,12 +814,12 @@ class ConfiguratorEngine:
                 return str(value_map[current])
             return None
 
-        # Mode 2: Simple arithmetic with variable substitution
+        # Mode 2: Safe arithmetic with AST-based evaluation
         formula_str = expr.get("expression")
         variables = expr.get("variables", {})
         if formula_str and variables:
             try:
-                local_vars = {}
+                local_vars: dict[str, float] = {}
                 for var_name, char_slug in variables.items():
                     val = selections.get(char_slug)
                     if val is None:
@@ -566,11 +828,10 @@ class ConfiguratorEngine:
                         local_vars[var_name] = float(val)
                     except ValueError:
                         return None
-                # Safe evaluation: only allow basic arithmetic
-                allowed = {k: v for k, v in local_vars.items()}
-                result = eval(formula_str, {"__builtins__": {}}, allowed)  # noqa: S307
+                tree = ast.parse(formula_str, mode="eval")
+                result = self._safe_eval_ast(tree, local_vars)
                 return str(result)
-            except Exception:
+            except (ValueError, SyntaxError, TypeError, ZeroDivisionError):
                 return None
 
         # Fallback: static value
@@ -611,6 +872,9 @@ class ConfiguratorEngine:
     async def _load_characteristics(
         self, db: AsyncSession, product_id: uuid.UUID, tenant_id: uuid.UUID
     ) -> dict[str, Characteristic]:
+        cached = _product_cache.get_chars(product_id, tenant_id)
+        if cached is not None:
+            return cached
         result = await db.execute(
             select(CharacteristicAssignment)
             .where(CharacteristicAssignment.product_id == product_id, CharacteristicAssignment.tenant_id == tenant_id)
@@ -621,11 +885,15 @@ class ConfiguratorEngine:
             char = assignment.characteristic
             if char.deleted_at is None:
                 char_map[char.slug] = char
+        _product_cache.set_chars(product_id, tenant_id, char_map)
         return char_map
 
     async def _load_constraints(
         self, db: AsyncSession, product_id: uuid.UUID, tenant_id: uuid.UUID
     ) -> list[ConstraintRule]:
+        cached = _product_cache.get_constraints(product_id, tenant_id)
+        if cached is not None:
+            return cached
         result = await db.execute(
             select(ConstraintRule)
             .where(
@@ -636,17 +904,24 @@ class ConfiguratorEngine:
             )
             .order_by(ConstraintRule.priority.desc())
         )
-        return list(result.scalars().all())
+        constraints = list(result.scalars().all())
+        _product_cache.set_constraints(product_id, tenant_id, constraints)
+        return constraints
 
     async def _load_variant_tables(
         self, db: AsyncSession, product_id: uuid.UUID, tenant_id: uuid.UUID
     ) -> dict[str, VariantTable]:
+        cached = _product_cache.get_vtables(product_id, tenant_id)
+        if cached is not None:
+            return cached
         result = await db.execute(
             select(VariantTable).where(
                 VariantTable.product_id == product_id, VariantTable.tenant_id == tenant_id
             )
         )
-        return {str(t.id): t for t in result.scalars().all()}
+        vtables = {str(t.id): t for t in result.scalars().all()}
+        _product_cache.set_vtables(product_id, tenant_id, vtables)
+        return vtables
 
     def _build_selections_map(
         self, selections: list[ConfigurationSelection], char_map: dict[str, Characteristic]

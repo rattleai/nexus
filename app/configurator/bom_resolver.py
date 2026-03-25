@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.configurator.engine import ConfiguratorEngine
+from app.core.metrics import CONFIGURATOR_BOM_RESOLUTION_DURATION
 from app.db.models import (
     BOMHeader,
     BOMItem,
@@ -128,6 +129,7 @@ class BOMResolver:
 
         await db.commit()
         await db.refresh(configured_bom)
+        CONFIGURATOR_BOM_RESOLUTION_DURATION.observe(duration_ms / 1000.0)
         return configured_bom
 
     def _filter_items(

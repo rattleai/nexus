@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.rate_limit import ApiKeyRateLimiter
+from app.core.audit import AuditAction, emit_audit_event
 from app.api.schemas_configurator import (
     BOMHeaderCreate,
     BOMHeaderDetailResponse,
@@ -56,6 +57,10 @@ async def create_bom(
         effective_to=body.effective_to,
     )
     db.add(bom)
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="bom_header",
+        resource_id=str(bom.id), tenant_id=tenant.id,
+    )
     await db.commit()
     await db.refresh(bom)
     return bom
@@ -120,9 +125,14 @@ async def update_bom(
     bom = result.scalar_one_or_none()
     if not bom:
         raise HTTPException(status_code=404, detail="BOM not found")
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changes = body.model_dump(exclude_unset=True)
+    for field, value in changes.items():
         setattr(bom, field, value)
     bom.version += 1
+    await emit_audit_event(
+        db, action=AuditAction.UPDATE, resource_type="bom_header",
+        resource_id=str(bom.id), tenant_id=tenant.id, changes=changes,
+    )
     await db.commit()
     await db.refresh(bom)
     return bom
@@ -147,6 +157,10 @@ async def delete_bom(
     if not bom:
         raise HTTPException(status_code=404, detail="BOM not found")
     bom.deleted_at = datetime.now(UTC)
+    await emit_audit_event(
+        db, action=AuditAction.DELETE, resource_type="bom_header",
+        resource_id=str(bom.id), tenant_id=tenant.id,
+    )
     await db.commit()
 
 
@@ -194,6 +208,10 @@ async def add_bom_item(
         lead_time_days=body.lead_time_days,
     )
     db.add(item)
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="bom_item",
+        resource_id=str(item.id), tenant_id=tenant.id,
+    )
     await db.commit()
     await db.refresh(item)
     return item
@@ -226,6 +244,10 @@ async def update_bom_item(
         else:
             setattr(item, field, value)
     item.version += 1
+    await emit_audit_event(
+        db, action=AuditAction.UPDATE, resource_type="bom_item",
+        resource_id=str(item.id), tenant_id=tenant.id,
+    )
     await db.commit()
     await db.refresh(item)
     return item
@@ -251,6 +273,10 @@ async def delete_bom_item(
     if not item:
         raise HTTPException(status_code=404, detail="BOM item not found")
     item.deleted_at = datetime.now(UTC)
+    await emit_audit_event(
+        db, action=AuditAction.DELETE, resource_type="bom_item",
+        resource_id=str(item.id), tenant_id=tenant.id,
+    )
     await db.commit()
 
 
