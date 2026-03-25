@@ -50,6 +50,9 @@ class BOMHeader(SoftDeleteMixin, AuditMixin, VersionMixin, TimestampMixin, Base)
     effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, default=dict)
 
+    product: Mapped["Product"] = relationship(  # noqa: F821
+        back_populates="bom_headers", foreign_keys=[product_id]
+    )
     items: Mapped[list[BOMItem]] = relationship(
         back_populates="bom_header",
         cascade="all, delete-orphan",

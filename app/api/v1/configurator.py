@@ -1,6 +1,8 @@
 """Configuration session management, live configuration, and BOM resolution endpoints."""
 
 import uuid
+from datetime import UTC, datetime
+from decimal import Decimal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -26,7 +28,16 @@ from app.api.schemas_configurator import (
 )
 from app.configurator.bom_resolver import BOMResolver
 from app.configurator.engine import ConfiguratorEngine
+from app.configurator.events import (
+    BOMResolved,
+    ConfigurationCompleted,
+    ConfigurationLocked,
+    ConfigurationSelectionMade,
+    ConfigurationStarted,
+    PricingResolved,
+)
 from app.configurator.validator import ConfigurationValidator
+from app.core.events import emit
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
 from app.db.models import (
@@ -106,6 +117,9 @@ async def create_session(
                     await _engine.apply_selection(db, session.id, slug, value)
             await db.refresh(session, attribute_names=["selections"])
 
+    await emit(ConfigurationStarted(
+        session_id=str(session.id), product_id=str(body.product_id), tenant_id=str(tenant.id),
+    ))
     return session
 
 
@@ -193,6 +207,16 @@ async def make_selection(
         .options(selectinload(ConfigurationSession.selections))
     )
     session_obj = session.scalar_one()
+
+    await emit(ConfigurationSelectionMade(
+        session_id=str(session_id), characteristic_slug=char.slug,
+        value=body.value, tenant_id=str(tenant.id),
+    ))
+    if session_obj.status == ConfigurationStatus.COMPLETE:
+        await emit(ConfigurationCompleted(
+            session_id=str(session_id), product_id=str(session_obj.product_id),
+            tenant_id=str(tenant.id),
+        ))
 
     return SelectionResultResponse(
         session=ConfigurationSessionResponse.model_validate(session_obj),
@@ -317,6 +341,25 @@ async def resolve_bom(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    await emit(BOMResolved(
+        session_id=str(session_id), configured_bom_id=str(configured_bom.id),
+        total_components=configured_bom.total_components,
+        total_cost=str(configured_bom.total_cost) if configured_bom.total_cost else "0",
+        tenant_id=str(tenant.id),
+    ))
+
+    # Emit pricing event if pricing was resolved
+    pricing_result = await db.execute(
+        select(ConfigurationPricing).where(ConfigurationPricing.session_id == session_id)
+    )
+    pricing = pricing_result.scalar_one_or_none()
+    if pricing:
+        await emit(PricingResolved(
+            session_id=str(session_id), final_price=str(pricing.final_price),
+            margin_percentage=str(pricing.margin_percentage),
+            is_profitable=pricing.is_profitable, tenant_id=str(tenant.id),
+        ))
+
     return configured_bom
 
 
@@ -385,6 +428,11 @@ async def lock_session(
     session.status = ConfigurationStatus.LOCKED
     await db.commit()
     await db.refresh(session, attribute_names=["selections"])
+
+    await emit(ConfigurationLocked(
+        session_id=str(session_id), product_id=str(session.product_id),
+        tenant_id=str(tenant.id),
+    ))
     return session
 
 
@@ -593,8 +641,6 @@ async def delete_pricing_rule(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    from datetime import UTC, datetime
-
     result = await db.execute(
         tenant_query(select(PricingRule), tenant).where(
             PricingRule.id == rule_id, PricingRule.deleted_at.is_(None)
@@ -605,3 +651,90 @@ async def delete_pricing_rule(
         raise HTTPException(status_code=404, detail="Pricing rule not found")
     rule.deleted_at = datetime.now(UTC)
     await db.commit()
+
+
+# ── Pricing Simulation ───────────────────────────────────
+
+
+@router.post(
+    "/pricing/simulate",
+    response_model=ConfigurationPricingResponse,
+    dependencies=[Depends(RequireScopes("configurator:read"))],
+)
+async def simulate_pricing(
+    body: PricingSimulateRequest,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Simulate pricing for a set of selections without creating a session."""
+    # Load pricing rules for the product
+    rules_result = await db.execute(
+        tenant_query(select(PricingRule), tenant).where(
+            PricingRule.product_id == body.product_id,
+            PricingRule.deleted_at.is_(None),
+            PricingRule.is_active.is_(True),
+        ).order_by(PricingRule.priority.desc())
+    )
+    rules = list(rules_result.scalars().all())
+
+    base_price = Decimal("0")
+    total_adjustments = Decimal("0")
+    breakdown: list[dict] = []
+    min_margin_pct = Decimal("0")
+    now = datetime.now(UTC)
+
+    for rule in rules:
+        if rule.effective_from and now < rule.effective_from:
+            continue
+        if rule.effective_to and now > rule.effective_to:
+            continue
+
+        expr = rule.expression
+        rt = rule.rule_type.value
+
+        if rt == "base_price":
+            amount = Decimal(str(expr.get("amount", 0)))
+            base_price += amount
+            breakdown.append({"rule": rule.name, "type": rt, "amount": str(amount)})
+        elif rt == "option_surcharge":
+            condition = expr.get("condition", {})
+            if _engine._evaluate_condition(condition, body.selections):
+                amount = Decimal(str(expr.get("amount", 0)))
+                total_adjustments += amount
+                breakdown.append({"rule": rule.name, "type": rt, "amount": str(amount)})
+        elif rt == "conditional":
+            condition = expr.get("condition", {})
+            if _engine._evaluate_condition(condition, body.selections):
+                adj_type = expr.get("adjustment_type", "fixed")
+                amount = Decimal(str(expr.get("amount", 0)))
+                actual = base_price * amount / Decimal("100") if adj_type == "percentage" else amount
+                total_adjustments += actual
+                breakdown.append({"rule": rule.name, "type": rt, "amount": str(actual)})
+        elif rt == "margin":
+            min_margin_pct = Decimal(str(expr.get("min_margin_pct", 0)))
+        else:
+            amount = Decimal(str(expr.get("amount", 0)))
+            total_adjustments += amount
+            breakdown.append({"rule": rule.name, "type": rt, "amount": str(amount)})
+
+    final_price = base_price + total_adjustments
+    # Cost is unknown in simulation (no BOM resolved), use 0
+    total_cost = Decimal("0")
+    margin_amount = final_price - total_cost
+    margin_pct = (margin_amount / final_price * 100) if final_price > 0 else Decimal("0")
+
+    import uuid as _uuid
+    return ConfigurationPricingResponse(
+        id=_uuid.uuid4(),
+        session_id=_uuid.UUID(int=0),
+        currency="EUR",
+        base_price=base_price,
+        total_adjustments=total_adjustments,
+        final_price=final_price,
+        total_cost=total_cost,
+        margin_amount=margin_amount,
+        margin_percentage=margin_pct,
+        price_breakdown=breakdown,
+        is_profitable=margin_pct >= min_margin_pct,
+        resolved_at=now,
+    )

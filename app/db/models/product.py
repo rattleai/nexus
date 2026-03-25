@@ -108,6 +108,15 @@ class Product(SoftDeleteMixin, AuditMixin, VersionMixin, TimestampMixin, Base):
     variant_tables: Mapped[list[VariantTable]] = relationship(
         back_populates="product", cascade="all, delete-orphan"
     )
+    # Cross-module relationships (lazy string references)
+    bom_headers: Mapped[list["BOMHeader"]] = relationship(  # noqa: F821
+        back_populates="product", cascade="all, delete-orphan",
+        foreign_keys="[BOMHeader.product_id]",
+    )
+    pricing_rules: Mapped[list["PricingRule"]] = relationship(  # noqa: F821
+        cascade="all, delete-orphan",
+        foreign_keys="[PricingRule.product_id]",
+    )
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "slug", name="uq_product_slug"),
