@@ -245,7 +245,7 @@ async def add_bom_item(
         resource_id=str(item.id), tenant_id=tenant.id,
     )
     await db.commit()
-    await db.refresh(item)
+    await db.refresh(item, attribute_names=["children"])
     return item
 
 
@@ -285,7 +285,7 @@ async def update_bom_item(
         resource_id=str(item.id), tenant_id=tenant.id,
     )
     await db.commit()
-    await db.refresh(item)
+    await db.refresh(item, attribute_names=["children"])
     return item
 
 
