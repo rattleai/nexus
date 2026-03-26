@@ -33,6 +33,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { useAgentDefinitions } from "@/hooks/use-agents"
 import { useAgentStore } from "@/stores/agent-store"
+import { startRun } from "@/lib/agent-stream-registry"
 import { cn } from "@/lib/utils"
 import type { AgentDefinition } from "@/types/agents"
 
@@ -60,13 +61,8 @@ export function AppCommandPalette() {
 
   // Agent data
   const { data: agentData } = useAgentDefinitions()
-  const {
-    selectAgent,
-    setActiveTab,
-    recentAgentIds,
-    addRecentAgent,
-    setPendingMessage,
-  } = useAgentStore()
+  const { recentAgentIds, addRecentAgent } = useAgentStore()
+  const [isSubmitting, setIsSubmitting] = React.useState(false)
 
   // Derive agent search text from input (everything after "@")
   const agentSearch =
@@ -142,36 +138,28 @@ export function AppCommandPalette() {
     setTaskInput("")
   }
 
-  // Navigate to agent and optionally send a task
-  const handleAgentSelect = (
-    agent: AgentDefinition,
-    tab: "chat" | "overview" | "config" = "chat",
-    message?: string,
-  ) => {
-    if (message) {
-      setPendingMessage(message)
-    }
-    if (!currentPath.startsWith("/settings/agents")) {
-      navigate({ to: "/settings/agents" })
-    }
-    selectAgent(agent.id)
-    setActiveTab(tab)
-    addRecentAgent(agent.id)
-    close()
-  }
-
-  // Submit the task for the locked-in agent
-  const handleTaskSubmit = () => {
+  // Submit the task for the locked-in agent — starts a run and navigates to sessions
+  const handleTaskSubmit = async () => {
     const trimmed = taskInput.trim()
-    if (!trimmed || !selectedAgent) return
-    handleAgentSelect(selectedAgent, "chat", trimmed)
+    if (!trimmed || !selectedAgent || isSubmitting) return
+    setIsSubmitting(true)
+    try {
+      addRecentAgent(selectedAgent.id)
+      const instanceId = await startRun(selectedAgent.id, trimmed)
+      navigate({ to: "/agents/$instanceId", params: { instanceId } })
+      close()
+    } catch {
+      // Error is shown via toast from the API layer
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   // Handle keyboard in agent-task mode
   const handleTaskKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault()
-      handleTaskSubmit()
+      void handleTaskSubmit()
     } else if (e.key === "Backspace" && taskInput === "") {
       // Go back to browse mode
       setMode("agent-browse")
@@ -214,10 +202,11 @@ export function AppCommandPalette() {
           />
           {taskInput.trim() && (
             <button
-              onClick={handleTaskSubmit}
-              className="shrink-0 flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium"
+              onClick={() => void handleTaskSubmit()}
+              disabled={isSubmitting}
+              className="shrink-0 flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium disabled:opacity-50"
             >
-              Send
+              {isSubmitting ? "Starting..." : "Send"}
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           )}
@@ -385,7 +374,7 @@ export function AppCommandPalette() {
               {activeAgents.slice(0, 3).map((agent) => (
                 <CommandItem
                   key={agent.id}
-                  onSelect={() => handleAgentSelect(agent, "chat")}
+                  onSelect={() => handleAgentPick(agent)}
                   value={`agent ${agent.name} ${agent.slug} chat`}
                 >
                   <div className="mr-2 flex h-5 w-5 items-center justify-center rounded bg-primary/10">
@@ -422,10 +411,6 @@ export function AppCommandPalette() {
               <CommandItem onSelect={() => go("/agents")} value="agents sessions">
                 <Bot className="mr-2 h-4 w-4" />
                 Agent Sessions
-              </CommandItem>
-              <CommandItem onSelect={() => go("/agents/chat")} value="ai chat">
-                <MessageSquare className="mr-2 h-4 w-4" />
-                AI Chat
               </CommandItem>
               <CommandItem onSelect={() => go("/jobs")} value="jobs tasks">
                 <Briefcase className="mr-2 h-4 w-4" />

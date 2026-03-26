@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Loader2, Play } from "lucide-react"
+import { Loader2, Send } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -18,45 +18,53 @@ import {
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { useAgentDefinitions, useRunAgent } from "@/hooks/use-agents"
+import { useAgentDefinitions } from "@/hooks/use-agents"
+import { startRun } from "@/lib/agent-stream-registry"
 
 interface NewRunDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreated?: (instanceId: string) => void
+  preselectedAgentId?: string
 }
 
-export function NewRunDialog({ open, onOpenChange, onCreated }: NewRunDialogProps) {
-  const [selectedAgentId, setSelectedAgentId] = React.useState<string>("")
-  const [inputData, setInputData] = React.useState("")
+export function NewRunDialog({ open, onOpenChange, onCreated, preselectedAgentId }: NewRunDialogProps) {
+  const [selectedAgentId, setSelectedAgentId] = React.useState<string>(preselectedAgentId ?? "")
+  const [prompt, setPrompt] = React.useState("")
+  const [isSubmitting, setIsSubmitting] = React.useState(false)
   const { data: definitionsData } = useAgentDefinitions("active")
-  const runAgent = useRunAgent()
 
   const agents = definitionsData?.items ?? []
+  const selectedAgent = agents.find((a) => a.id === selectedAgentId)
 
-  const handleSubmit = () => {
-    if (!selectedAgentId) return
-
-    let parsedInput: Record<string, unknown> = {}
-    if (inputData.trim()) {
-      try {
-        parsedInput = JSON.parse(inputData)
-      } catch {
-        parsedInput = { message: inputData }
-      }
+  // Sync preselected agent when dialog opens
+  React.useEffect(() => {
+    if (open && preselectedAgentId) {
+      setSelectedAgentId(preselectedAgentId)
     }
+  }, [open, preselectedAgentId])
 
-    runAgent.mutate(
-      { agentId: selectedAgentId, input: parsedInput },
-      {
-        onSuccess: (instance) => {
-          onOpenChange(false)
-          setSelectedAgentId("")
-          setInputData("")
-          onCreated?.(instance.id)
-        },
-      },
-    )
+  const handleSubmit = async () => {
+    if (!selectedAgentId || !prompt.trim() || isSubmitting) return
+    setIsSubmitting(true)
+    try {
+      const instanceId = await startRun(selectedAgentId, prompt.trim())
+      onOpenChange(false)
+      setSelectedAgentId(preselectedAgentId ?? "")
+      setPrompt("")
+      onCreated?.(instanceId)
+    } catch {
+      // Error shown via toast
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      void handleSubmit()
+    }
   }
 
   return (
@@ -65,7 +73,7 @@ export function NewRunDialog({ open, onOpenChange, onCreated }: NewRunDialogProp
         <DialogHeader>
           <DialogTitle>New Agent Run</DialogTitle>
           <DialogDescription>
-            Select an agent and optionally provide input data.
+            Select an agent and tell it what to do.
           </DialogDescription>
         </DialogHeader>
 
@@ -99,15 +107,25 @@ export function NewRunDialog({ open, onOpenChange, onCreated }: NewRunDialogProp
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="input-data">Input (optional)</Label>
+            <Label htmlFor="prompt">
+              Message
+            </Label>
             <Textarea
-              id="input-data"
-              placeholder='JSON or plain text, e.g. {"task": "analyze data"}'
-              value={inputData}
-              onChange={(e) => setInputData(e.target.value)}
+              id="prompt"
+              placeholder={
+                selectedAgent
+                  ? `Tell ${selectedAgent.name} what to do...`
+                  : "What should the agent do?"
+              }
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
               rows={3}
-              className="font-mono text-sm"
+              className="text-sm resize-none"
             />
+            <p className="text-[11px] text-muted-foreground">
+              Shift+Enter for new line
+            </p>
           </div>
         </div>
 
@@ -119,13 +137,13 @@ export function NewRunDialog({ open, onOpenChange, onCreated }: NewRunDialogProp
             Cancel
           </Button>
           <Button
-            onClick={handleSubmit}
-            disabled={!selectedAgentId || runAgent.isPending}
+            onClick={() => void handleSubmit()}
+            disabled={!selectedAgentId || !prompt.trim() || isSubmitting}
           >
-            {runAgent.isPending ? (
+            {isSubmitting ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Play className="mr-1.5 h-3.5 w-3.5" />
+              <Send className="mr-1.5 h-3.5 w-3.5" />
             )}
             Run
           </Button>

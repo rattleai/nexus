@@ -38,7 +38,6 @@ import {
 } from "@/components/ui/alert-dialog"
 import { AgentCard } from "./agent-card"
 import { AgentOverview } from "./agent-overview"
-import { AgentChatPanel } from "./agent-chat-panel"
 import { AgentConfigPanel } from "./agent-config-panel"
 import { GovernancePanel } from "./governance-panel"
 import { AgentRunsPanel } from "./agent-runs-panel"
@@ -53,10 +52,11 @@ import { useAgentStore, type AgentTab } from "@/stores/agent-store"
 import { cn } from "@/lib/utils"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { ErrorBoundary } from "@/components/error-boundary"
+import { useNavigate } from "@tanstack/react-router"
+import { NewRunDialog } from "./sessions/new-run-dialog"
 
 const TABS: { id: AgentTab; label: string; icon: React.ElementType }[] = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
-  { id: "chat", label: "Chat", icon: MessageSquare },
   { id: "config", label: "Config", icon: Settings },
   { id: "governance", label: "Governance", icon: Shield },
   { id: "runs", label: "Runs", icon: Activity },
@@ -78,13 +78,20 @@ export function AgentWorkspace() {
   } = useAgentStore()
 
   const [createOpen, setCreateOpen] = React.useState(false)
+  const [testDialogOpen, setTestDialogOpen] = React.useState(false)
+  const [testAgentId, setTestAgentId] = React.useState<string | null>(null)
+  const agentNavigate = useNavigate()
   const [deleteId, setDeleteId] = React.useState<string | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
 
   const { data, isLoading } = useAgentDefinitions(
     statusFilter !== "all" ? statusFilter : undefined,
   )
-  const { data: selectedAgent } = useAgentDefinition(selectedAgentId)
+  const {
+    data: detailAgent,
+    isLoading: isDetailLoading,
+    isError: isDetailError,
+  } = useAgentDefinition(selectedAgentId)
   const deleteAgent = useDeleteAgent()
 
   const agents = React.useMemo(() => {
@@ -99,10 +106,46 @@ export function AgentWorkspace() {
     )
   }, [data, searchQuery])
 
+  // Derive selectedAgent: prefer detail query data, fall back to list data
+  const selectedAgent = React.useMemo(() => {
+    if (detailAgent) return detailAgent
+    if (selectedAgentId && data?.items) {
+      return data.items.find((a) => a.id === selectedAgentId) ?? null
+    }
+    return null
+  }, [detailAgent, selectedAgentId, data])
+
+  // Clear stale selection if agent no longer exists
+  React.useEffect(() => {
+    if (
+      selectedAgentId &&
+      isDetailError &&
+      !isDetailLoading &&
+      !selectedAgent
+    ) {
+      selectAgent(null)
+    }
+  }, [selectedAgentId, isDetailError, isDetailLoading, selectedAgent, selectAgent])
+
   const handleSelectAgent = (id: string) => {
     selectAgent(id)
     addRecentAgent(id)
   }
+
+  // Auto-select first agent on initial load when nothing is selected (desktop only)
+  const hasAutoSelected = React.useRef(false)
+  React.useEffect(() => {
+    if (
+      !hasAutoSelected.current &&
+      !selectedAgentId &&
+      !isLoading &&
+      agents.length > 0 &&
+      isWideEnough
+    ) {
+      hasAutoSelected.current = true
+      handleSelectAgent(agents[0].id)
+    }
+  }, [selectedAgentId, isLoading, agents, isWideEnough])
 
   const handleDelete = async () => {
     if (!deleteId || isDeleting) return
@@ -202,8 +245,8 @@ export function AgentWorkspace() {
                   isSelected={selectedAgentId === agent.id}
                   onSelect={() => handleSelectAgent(agent.id)}
                   onChat={() => {
-                    handleSelectAgent(agent.id)
-                    setActiveTab("chat")
+                    setTestAgentId(agent.id)
+                    setTestDialogOpen(true)
                   }}
                   onConfigure={() => {
                     handleSelectAgent(agent.id)
@@ -230,7 +273,7 @@ export function AgentWorkspace() {
   const mainContent = selectedAgent ? (
     <div className="flex flex-col flex-1 min-h-0">
       {/* Tab bar */}
-      <div className="border-b">
+      <div className="border-b shrink-0">
         {/* Compact: agent name on its own row */}
         <div className="flex items-center gap-2 px-4 pt-2 pb-1 lg:hidden">
           <div
@@ -318,17 +361,10 @@ export function AgentWorkspace() {
         </div>
       </div>
 
-      {/* Tab content — chat gets its own full-height container, other tabs use ScrollArea */}
-      {activeTab === "chat" ? (
-        <div className="flex-1 p-6 min-h-0">
-          <ErrorBoundary fallback={<PanelErrorFallback tab="chat" />}>
-            <AgentChatPanel agent={selectedAgent} />
-          </ErrorBoundary>
-        </div>
-      ) : (
-        <ScrollArea className="flex-1">
-          <div className="p-6">
-            {activeTab === "overview" && (
+      {/* Tab content */}
+      <ScrollArea className="flex-1">
+        <div className="p-6">
+          {activeTab === "overview" && (
               <ErrorBoundary fallback={<PanelErrorFallback tab="overview" />}>
                 <AgentOverview agent={selectedAgent} />
               </ErrorBoundary>
@@ -355,7 +391,12 @@ export function AgentWorkspace() {
             )}
           </div>
         </ScrollArea>
-      )}
+    </div>
+  ) : selectedAgentId ? (
+    // Agent selected but data still loading — show spinner instead of empty state
+    <div className="flex flex-col items-center justify-center flex-1 text-center">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <p className="text-sm text-muted-foreground mt-3">Loading agent...</p>
     </div>
   ) : (
     <EmptyState onCreateNew={() => setCreateOpen(true)} />
@@ -372,7 +413,7 @@ export function AgentWorkspace() {
               <Button
                 variant="ghost"
                 size="default"
-                className="mx-4 mt-2 self-start gap-1.5"
+                className="mx-4 mt-2 self-start gap-1.5 shrink-0"
                 onClick={() => selectAgent(null)}
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -384,10 +425,10 @@ export function AgentWorkspace() {
         </div>
       ) : (
         <div className="flex flex-1 min-h-0 rounded-xl border overflow-hidden">
-          <div className="w-72 shrink-0 border-r bg-background">
+          <div className="w-72 shrink-0 border-r bg-background overflow-hidden">
             {sidebarContent}
           </div>
-          <div className="flex-1 min-w-0 bg-background">
+          <div className="flex flex-col flex-1 min-w-0 bg-background overflow-hidden">
             {mainContent}
           </div>
         </div>
@@ -424,6 +465,16 @@ export function AgentWorkspace() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Test Agent dialog */}
+      <NewRunDialog
+        open={testDialogOpen}
+        onOpenChange={setTestDialogOpen}
+        preselectedAgentId={testAgentId ?? undefined}
+        onCreated={(instanceId) => {
+          agentNavigate({ to: "/agents/$instanceId", params: { instanceId } })
+        }}
+      />
     </>
   )
 }
