@@ -52,6 +52,94 @@ export { useVoiceInput } from "./use-voice-input"
 export { usePromptTemplates } from "./use-prompt-templates"
 export { useKeyboardShortcut } from "./use-keyboard-shortcut"
 
+// Product Configurator hooks
+export {
+  useProducts,
+  useProduct,
+  useCreateProduct,
+  useUpdateProduct,
+  useDeleteProduct,
+  useProductFamilies,
+  useProductFamily,
+  useCreateProductFamily,
+  useUpdateProductFamily,
+  useDeleteProductFamily,
+  useProductVersions,
+  usePublishVersion,
+  useActivateVersion,
+  useRecompileVersion,
+} from "./use-products"
+export {
+  useCharacteristics,
+  useCharacteristic,
+  useCreateCharacteristic,
+  useUpdateCharacteristic,
+  useDeleteCharacteristic,
+  useCharacteristicGroups,
+  useCreateCharacteristicGroup,
+  useUpdateCharacteristicGroup,
+  useDeleteCharacteristicGroup,
+  useAddCharacteristicValue,
+  useUpdateCharacteristicValue,
+  useDeleteCharacteristicValue,
+  useCharacteristicAssignments,
+  useAssignCharacteristic,
+  useRemoveAssignment,
+} from "./use-characteristics"
+export {
+  useConstraintGroups,
+  useCreateConstraintGroup,
+  useUpdateConstraintGroup,
+  useDeleteConstraintGroup,
+  useConstraintRules,
+  useConstraintRule,
+  useCreateConstraintRule,
+  useUpdateConstraintRule,
+  useDeleteConstraintRule,
+  useValidateExpression,
+  useVariantTables,
+  useCreateVariantTable,
+  useUpdateVariantTable,
+  useDeleteVariantTable,
+  useRunConstraintAnalysis,
+  useSimulateConstraints,
+  useConstraintImpact,
+} from "./use-constraints"
+export {
+  useBOMs,
+  useBOM,
+  useCreateBOM,
+  useUpdateBOM,
+  useDeleteBOM,
+  useCreateBOMItem,
+  useUpdateBOMItem,
+  useDeleteBOMItem,
+  useReorderBOMItems,
+  useWhereUsed,
+} from "./use-boms"
+export {
+  useConfiguratorSessions,
+  useConfiguratorSession,
+  useCreateSession,
+  useMakeSelection,
+  useCompleteSession,
+  useResolveBOM,
+  useResolvedPricing,
+  useResolvePricing,
+  useSimulatePricing,
+  useConfigurationTemplates,
+  useConfigurationTemplate,
+  useCreateTemplate,
+  useUpdateTemplate,
+  useDeleteTemplate,
+} from "./use-configurator"
+export {
+  usePricingRules,
+  useCreatePricingRule,
+  useUpdatePricingRule,
+  useDeletePricingRule,
+} from "./use-pricing-rules"
+
 // Mobile-first hooks
 export { useIsMobile } from "./use-mobile"
 export { useOnlineStatus } from "./use-online-status"

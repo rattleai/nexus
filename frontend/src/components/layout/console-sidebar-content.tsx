@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router"
 import { useTranslation } from "react-i18next"
-import { LayoutDashboard, Bot, Code2 } from "lucide-react"
+import { LayoutDashboard, Bot, Code2, Package } from "lucide-react"
 import { APP_NAME } from "@/lib/constants"
 import {
   SidebarContent,
@@ -27,6 +27,7 @@ interface NavItem {
 const CONSOLE_NAV_ITEMS: NavItem[] = [
   { href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
   { href: "/agents", labelKey: "nav.agents", icon: Bot },
+  { href: "/products", labelKey: "nav.products", icon: Package },
 ]
 
 interface ConsoleSidebarContentProps {

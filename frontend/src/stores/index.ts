@@ -14,3 +14,5 @@ export type {
   ParameterPreset,
   PlaygroundResponse,
 } from "@/stores/ai-playground-store"
+
+export { useConfiguratorStore } from "@/stores/configurator-store"
