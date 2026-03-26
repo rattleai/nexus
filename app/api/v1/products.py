@@ -58,8 +58,9 @@ async def create_product_family(
         db, action=AuditAction.CREATE, resource_type="product_family",
         resource_id=str(family.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(family)
+    await db.commit()
     return family
 
 
@@ -130,8 +131,9 @@ async def update_product_family(
         db, action=AuditAction.UPDATE, resource_type="product_family",
         resource_id=str(family.id), tenant_id=tenant.id, changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(family)
+    await db.commit()
     return family
 
 
@@ -190,8 +192,9 @@ async def create_product(
         db, action=AuditAction.CREATE, resource_type="product",
         resource_id=str(product.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(product)
+    await db.commit()
     return product
 
 
@@ -270,8 +273,9 @@ async def update_product(
         db, action=AuditAction.UPDATE, resource_type="product",
         resource_id=str(product.id), tenant_id=tenant.id, changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(product)
+    await db.commit()
     return product
 
 
@@ -351,8 +355,9 @@ async def publish_product_version(
         db, action=AuditAction.CREATE, resource_type="product_version",
         resource_id=str(version.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(version)
+    await db.commit()
     return version
 
 
@@ -388,8 +393,9 @@ async def recompile_product_version(
         db, action=AuditAction.UPDATE, resource_type="product_version",
         resource_id=str(version.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(version)
+    await db.commit()
     return version
 
 
@@ -443,6 +449,7 @@ async def activate_product_version(
         db, action=AuditAction.UPDATE, resource_type="product_version",
         resource_id=str(version.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(version)
+    await db.commit()
     return version

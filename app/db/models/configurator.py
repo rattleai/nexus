@@ -63,7 +63,7 @@ class ConfigurationSession(AuditMixin, VersionMixin, TimestampMixin, Base):
 
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[ConfigurationStatus] = mapped_column(
-        Enum(ConfigurationStatus, values_callable=lambda e: [m.value for m in e]),
+        Enum(ConfigurationStatus, values_callable=lambda e: [m.value for m in e], create_type=False),
         default=ConfigurationStatus.IN_PROGRESS,
     )
 
@@ -203,7 +203,7 @@ class PricingRule(SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     rule_type: Mapped[PricingRuleType] = mapped_column(
-        Enum(PricingRuleType, values_callable=lambda e: [m.value for m in e]),
+        Enum(PricingRuleType, values_callable=lambda e: [m.value for m in e], create_type=False),
         nullable=False,
     )
     expression: Mapped[dict] = mapped_column(JSONB, nullable=False)

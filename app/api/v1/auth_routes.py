@@ -143,11 +143,12 @@ async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
     db.add(verification)
 
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Email or tenant slug already taken") from None
     await db.refresh(user)
+    await db.commit()
 
     # Do NOT issue access/refresh tokens here — the user must verify their
     # email first, then log in.  Issuing tokens pre-verification allows
@@ -489,8 +490,9 @@ async def update_current_user_profile(
     for field, value in update_data.items():
         setattr(user, field, value)
 
-    await db.commit()
+    await db.flush()
     await db.refresh(user)
+    await db.commit()
 
     membership = await db.execute(
         select(TenantMembership).where(
@@ -832,8 +834,9 @@ async def accept_invitation(
     )
     db.add(rt)
 
-    await db.commit()
+    await db.flush()
     await db.refresh(user)
+    await db.commit()
 
     await emit(InvitationAccepted(
         tenant_id=str(invitation.tenant_id),

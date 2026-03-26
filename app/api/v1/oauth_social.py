@@ -312,7 +312,7 @@ async def callback(
     db.add(new_oauth)
 
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError:
         await db.rollback()
         # Race condition: another request created the user concurrently.
@@ -354,7 +354,7 @@ async def callback(
 
     await db.refresh(user)
 
-    # Issue tokens only after successful commit to avoid stale cookies on rollback
+    # Issue tokens and commit everything (user + oauth + tokens) in one transaction
     access_token, expires_in = await issue_tokens_for_user(user, tenant.id, db, response)
     await db.commit()
 

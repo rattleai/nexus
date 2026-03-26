@@ -134,11 +134,12 @@ async def create_agent_definition(
     )
     db.add(agent)
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(409, f"Agent with slug '{body.slug}' already exists") from exc
     await db.refresh(agent)
+    await db.commit()
 
     await emit(
         AgentDefinitionCreated(
@@ -257,8 +258,9 @@ async def update_agent_definition(
         changes[field] = value
 
     agent.version += 1
-    await db.commit()
+    await db.flush()
     await db.refresh(agent)
+    await db.commit()
 
     await emit(
         AgentDefinitionUpdated(
@@ -355,7 +357,7 @@ async def create_agent_instance(
     )
     db.add(instance)
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError as exc:
         await db.rollback()
         # Only handle idempotency-key conflicts; re-raise other constraint violations
@@ -366,6 +368,7 @@ async def create_agent_instance(
                 return existing_instance
         raise HTTPException(409, "Duplicate or constraint violation") from exc
     await db.refresh(instance)
+    await db.commit()
 
     # Dispatch to Celery for async execution.
     # Use instance.id as the Celery task_id so stop_agent_instance can revoke it.
@@ -602,8 +605,9 @@ async def run_agent_stream(
         input_data=body.input_data,
     )
     db.add(instance)
-    await db.commit()
+    await db.flush()
     await db.refresh(instance)
+    await db.commit()
 
     messages = body.input_data.get("messages", [{"role": "user", "content": str(body.input_data)}])
 
@@ -1070,11 +1074,12 @@ async def create_workflow(
     )
     db.add(workflow)
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(409, f"Workflow with slug '{body.slug}' already exists") from exc
     await db.refresh(workflow)
+    await db.commit()
     return workflow
 
 
@@ -1157,8 +1162,9 @@ async def run_workflow(
         input_data=body.input_data,
     )
     db.add(run)
-    await db.commit()
+    await db.flush()
     await db.refresh(run)
+    await db.commit()
 
     # Dispatch to Celery
     from app.agents.tasks import execute_workflow_run
@@ -1251,11 +1257,12 @@ async def register_tenant_tool(
     )
     db.add(tool)
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(409, f"Tool '{body.tool_name}' already exists") from exc
     await db.refresh(tool)
+    await db.commit()
     return tool
 
 
@@ -1423,11 +1430,12 @@ async def create_agent_policy(
     )
     db.add(policy)
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(409, f"Policy with name '{body.name}' already exists") from exc
     await db.refresh(policy)
+    await db.commit()
     return policy
 
 

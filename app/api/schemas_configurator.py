@@ -216,7 +216,7 @@ class CharacteristicValueResponse(BaseModel):
     description: str | None
     display_order: int
     is_default: bool
-    price_adjustment: Decimal | None
+    price_adjustment: float | None
     image_url: str | None
 
     model_config = {"from_attributes": True}
@@ -247,6 +247,21 @@ class CharacteristicAssignmentCreate(BaseModel):
     product_id: uuid.UUID
     characteristic_id: uuid.UUID
     display_order: int = 0
+    is_required: bool | None = None
+    default_value: str | None = None
+    min_select: int | None = Field(default=None, ge=0)
+    max_select: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_cardinality(self):
+        if self.min_select is not None and self.max_select is not None:
+            if self.min_select > self.max_select:
+                raise ValueError("min_select cannot exceed max_select")
+        return self
+
+
+class CharacteristicAssignmentUpdate(BaseModel):
+    display_order: int | None = None
     is_required: bool | None = None
     default_value: str | None = None
     min_select: int | None = Field(default=None, ge=0)
@@ -499,14 +514,14 @@ class BOMItemResponse(BaseModel):
     part_number: str
     part_name: str
     description: str | None
-    quantity: Decimal
+    quantity: float
     quantity_expression: dict | None
     unit_of_measure: str
     sub_product_id: uuid.UUID | None
     selection_condition: dict | None
     sort_order: int
     is_optional: bool
-    unit_cost: Decimal | None
+    unit_cost: float | None
     lead_time_days: int | None
     children: list["BOMItemResponse"] = []
 
@@ -524,7 +539,7 @@ class WhereUsedResponse(BaseModel):
     product_name: str
     item_id: uuid.UUID
     part_number: str
-    quantity: Decimal
+    quantity: float
 
     model_config = {"from_attributes": True}
 
@@ -646,7 +661,7 @@ class ConfiguredBOMResponse(BaseModel):
     bom_header_id: uuid.UUID
     resolved_items: list[dict]
     total_components: int
-    total_cost: Decimal | None
+    total_cost: float | None
     selection_snapshot: dict
     resolved_at: datetime
     resolution_duration_ms: int | None
@@ -719,12 +734,12 @@ class ConfigurationPricingResponse(BaseModel):
     id: uuid.UUID
     session_id: uuid.UUID
     currency: str
-    base_price: Decimal
-    total_adjustments: Decimal
-    final_price: Decimal
-    total_cost: Decimal
-    margin_amount: Decimal
-    margin_percentage: Decimal
+    base_price: float
+    total_adjustments: float
+    final_price: float
+    total_cost: float
+    margin_amount: float
+    margin_percentage: float
     price_breakdown: list[dict]
     is_profitable: bool
     resolved_at: datetime
@@ -807,3 +822,60 @@ class ConstraintImpactResponse(BaseModel):
     new_contradictions: list[str] = []
     new_auto_sets: dict[str, str] = {}
     total_values_pruned: int = 0
+
+
+# ── Configurations Management ────────────────────────────
+
+
+class BulkActionRequest(BaseModel):
+    session_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=50)
+    action: str = Field(..., pattern=r"^(lock|delete|resolve_bom)$")
+
+
+class BulkActionResultItem(BaseModel):
+    session_id: uuid.UUID
+    success: bool
+    error: str | None = None
+
+
+class BulkActionResponse(BaseModel):
+    total: int
+    succeeded: int
+    failed: int
+    results: list[BulkActionResultItem]
+
+
+class BOMComparisonRequest(BaseModel):
+    session_ids: list[uuid.UUID] = Field(..., min_length=2, max_length=5)
+
+
+class BOMComparisonPart(BaseModel):
+    part_number: str
+    part_name: str
+    quantities: list[float | None]
+    unit_costs: list[float | None]
+
+
+class BOMComparisonSession(BaseModel):
+    id: uuid.UUID
+    name: str | None
+    product_name: str | None
+
+
+class BOMComparisonResponse(BaseModel):
+    sessions: list[BOMComparisonSession]
+    common_parts: list[BOMComparisonPart]
+    unique_parts: list[BOMComparisonPart]
+    cost_comparison: list[dict]
+
+
+class PartFrequencyItem(BaseModel):
+    part_number: str
+    part_name: str
+    usage_count: int
+    percentage: float
+
+
+class PartFrequencyResponse(BaseModel):
+    items: list[PartFrequencyItem]
+    total_configurations: int

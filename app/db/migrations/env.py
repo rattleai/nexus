@@ -40,7 +40,10 @@ from app.db.models import (  # noqa: F401 — register models
 )
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Migrations need superuser privileges (CREATE TABLE, ALTER, ENABLE RLS).
+# Use DATABASE_MIGRATION_URL if set, otherwise fall back to DATABASE_URL.
+_migration_url = settings.DATABASE_MIGRATION_URL or settings.DATABASE_URL
+config.set_main_option("sqlalchemy.url", _migration_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

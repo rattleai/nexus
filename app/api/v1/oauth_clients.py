@@ -151,8 +151,9 @@ async def create_oauth_client(
         expires_at=body.expires_at,
     )
     db.add(client)
-    await db.commit()
+    await db.flush()
     await db.refresh(client)
+    await db.commit()
 
     logger.info("oauth_client_created", client_id=client_id, tenant_id=str(tenant.id))
     await _audit_log(db, tenant.id, "create", "oauth_client", str(client.id), client_id=client_id)

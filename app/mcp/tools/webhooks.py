@@ -90,8 +90,9 @@ async def webhook_create(
     )
     endpoint.set_secret(signing_secret)
     db.add(endpoint)
-    await db.commit()
+    await db.flush()
     await db.refresh(endpoint)
+    await db.commit()
 
     logger.info("mcp_webhook_created", endpoint_id=str(endpoint.id), tenant_id=str(tenant.id))
 

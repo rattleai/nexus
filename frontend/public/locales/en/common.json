@@ -16,6 +16,9 @@
     "webhooks": "Webhooks",
     "audit_log": "Audit Log",
     "developers": "Developers",
+    "products": "Products",
+    "configurations": "Configurations",
+    "configurator": "Configurator",
     "account": "Account",
     "settings": "Settings",
     "more": "More",
@@ -38,7 +41,9 @@
     "account_section": "Account",
     "security": "Security",
     "data_export": "Data Export",
-    "danger_zone": "Danger Zone"
+    "danger_zone": "Danger Zone",
+    "product_configuration": "Product Configuration",
+    "characteristics": "Characteristics"
   },
   "buttons": {
     "cancel": "Cancel",

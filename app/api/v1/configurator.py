@@ -12,16 +12,26 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.rate_limit import ApiKeyRateLimiter
+from app.db.session import set_tenant_context
 from app.api.schemas_configurator import (
+    BOMComparisonPart,
+    BOMComparisonRequest,
+    BOMComparisonResponse,
+    BOMComparisonSession,
+    BulkActionRequest,
+    BulkActionResponse,
+    BulkActionResultItem,
     ConfigurationPricingResponse,
     ConfigurationSessionCreate,
     ConfigurationSessionResponse,
     ConfigurationSelectionRequest,
     ConfigurationTemplateCreate,
     ConfigurationTemplateResponse,
+    ConfiguredBOMResponse,
     ConflictExplanationResponse,
     ConflictStepResponse,
-    ConfiguredBOMResponse,
+    PartFrequencyItem,
+    PartFrequencyResponse,
     PricingRuleCreate,
     PricingRuleResponse,
     PricingRuleUpdate,
@@ -105,11 +115,10 @@ async def create_session(
         db, action=AuditAction.CREATE, resource_type="configuration_session",
         resource_id=str(session.id), tenant_id=tenant.id,
     )
-    await db.commit()
-    await db.refresh(session, attribute_names=["selections"])
 
     # If created from template, apply template selections
     if body.template_id:
+        await db.flush()  # ensure session.id is assigned
         template_result = await db.execute(
             tenant_query(select(ConfigurationTemplate), tenant).where(
                 ConfigurationTemplate.id == body.template_id,
@@ -134,7 +143,17 @@ async def create_session(
                             template_id=str(template.id))
             if pairs:
                 await _engine.apply_selections_batch(db, session.id, pairs)
-            await db.refresh(session, attribute_names=["selections"])
+
+    await db.commit()
+
+    # Re-set RLS context after commit, then re-query with eager load
+    await set_tenant_context(db, str(tenant.id))
+    result = await db.execute(
+        select(ConfigurationSession)
+        .where(ConfigurationSession.id == session.id)
+        .options(selectinload(ConfigurationSession.selections))
+    )
+    session = result.scalar_one()
 
     await emit(ConfigurationStarted(
         session_id=str(session.id), product_id=str(body.product_id), tenant_id=str(tenant.id),
@@ -152,6 +171,10 @@ async def list_sessions(
     limit: int = Query(default=20, le=100),
     product_id: uuid.UUID | None = None,
     status: str | None = None,
+    search: str | None = None,
+    created_after: datetime | None = None,
+    created_before: datetime | None = None,
+    has_bom: bool | None = None,
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
@@ -163,6 +186,20 @@ async def list_sessions(
         stmt = stmt.where(ConfigurationSession.product_id == product_id)
     if status:
         stmt = stmt.where(ConfigurationSession.status == ConfigurationStatus(status))
+    if search:
+        stmt = stmt.where(ConfigurationSession.name.ilike(f"%{search}%"))
+    if created_after:
+        stmt = stmt.where(ConfigurationSession.created_at >= created_after)
+    if created_before:
+        stmt = stmt.where(ConfigurationSession.created_at <= created_before)
+    if has_bom is not None:
+        bom_exists = select(ConfiguredBOM.id).where(
+            ConfiguredBOM.session_id == ConfigurationSession.id
+        ).correlate(ConfigurationSession).exists()
+        if has_bom:
+            stmt = stmt.where(bom_exists)
+        else:
+            stmt = stmt.where(~bom_exists)
     return await paginate(db, stmt, ConfigurationSession.created_at, limit=limit, cursor=cursor, descending=True)
 
 
@@ -219,6 +256,9 @@ async def make_selection(
     if result.validation_errors and result.validation_errors[0].error_type in ("not_found", "locked"):
         raise HTTPException(status_code=400, detail=result.validation_errors[0].message)
 
+    # Re-set RLS context (engine commit clears SET LOCAL)
+    await set_tenant_context(db, str(tenant.id))
+
     # Reload session for response
     session = await db.execute(
         select(ConfigurationSession)
@@ -273,6 +313,9 @@ async def remove_selection(
         raise HTTPException(status_code=404, detail="Configuration session not found")
 
     result = await _engine.remove_selection(db, session_id, characteristic_id)
+
+    # Re-set RLS context (engine commit clears SET LOCAL)
+    await set_tenant_context(db, str(tenant.id))
 
     session = await db.execute(
         select(ConfigurationSession)
@@ -331,7 +374,15 @@ async def reset_session(
     session.status = ConfigurationStatus.IN_PROGRESS
 
     await db.commit()
-    await db.refresh(session, attribute_names=["selections"])
+
+    # Re-set RLS context after commit, then re-query with eager load
+    await set_tenant_context(db, str(tenant.id))
+    refreshed = await db.execute(
+        select(ConfigurationSession)
+        .where(ConfigurationSession.id == session_id)
+        .options(selectinload(ConfigurationSession.selections))
+    )
+    session = refreshed.scalar_one()
     return session
 
 
@@ -473,7 +524,15 @@ async def lock_session(
         changes={"status": "locked"},
     )
     await db.commit()
-    await db.refresh(session, attribute_names=["selections"])
+
+    # Re-set RLS context after commit, then re-query with eager load
+    await set_tenant_context(db, str(tenant.id))
+    refreshed = await db.execute(
+        select(ConfigurationSession)
+        .where(ConfigurationSession.id == session_id)
+        .options(selectinload(ConfigurationSession.selections))
+    )
+    session = refreshed.scalar_one()
 
     await emit(ConfigurationLocked(
         session_id=str(session_id), product_id=str(session.product_id),
@@ -526,8 +585,426 @@ async def clone_session(
         db.add(new_sel)
 
     await db.commit()
-    await db.refresh(clone, attribute_names=["selections"])
+
+    # Re-set RLS context after commit, then re-query with eager load
+    await set_tenant_context(db, str(tenant.id))
+    refreshed = await db.execute(
+        select(ConfigurationSession)
+        .where(ConfigurationSession.id == clone.id)
+        .options(selectinload(ConfigurationSession.selections))
+    )
+    clone = refreshed.scalar_one()
     return clone
+
+
+# ── Session Management ───────────────────────────────────
+
+
+@router.delete(
+    "/sessions/{session_id}",
+    status_code=204,
+    dependencies=[Depends(RequireScopes("configurator:write"))],
+)
+async def delete_session(
+    session_id: uuid.UUID,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        tenant_query(select(ConfigurationSession), tenant)
+        .where(ConfigurationSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Configuration session not found")
+
+    if session.status == ConfigurationStatus.LOCKED:
+        raise HTTPException(status_code=400, detail="Cannot delete a locked configuration")
+
+    # Delete related records first
+    from app.db.models import ConfigurationSelection
+    await db.execute(
+        select(ConfigurationSelection).where(ConfigurationSelection.session_id == session_id)
+    )
+    for sel in (await db.execute(
+        select(ConfigurationSelection).where(ConfigurationSelection.session_id == session_id)
+    )).scalars().all():
+        await db.delete(sel)
+
+    # Delete resolved BOM if present
+    bom_result = await db.execute(
+        select(ConfiguredBOM).where(ConfiguredBOM.session_id == session_id)
+    )
+    bom = bom_result.scalar_one_or_none()
+    if bom:
+        await db.delete(bom)
+
+    # Delete pricing if present
+    pricing_result = await db.execute(
+        select(ConfigurationPricing).where(ConfigurationPricing.session_id == session_id)
+    )
+    pricing = pricing_result.scalar_one_or_none()
+    if pricing:
+        await db.delete(pricing)
+
+    await db.delete(session)
+    await emit_audit_event(
+        db, action=AuditAction.DELETE, resource_type="configuration_session",
+        resource_id=str(session_id), tenant_id=tenant.id,
+    )
+    await db.commit()
+
+
+@router.post(
+    "/sessions/bulk-action",
+    response_model=BulkActionResponse,
+    dependencies=[Depends(RequireScopes("configurator:write"))],
+)
+async def bulk_action(
+    body: BulkActionRequest,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    results: list[BulkActionResultItem] = []
+    for sid in body.session_ids:
+        try:
+            result = await db.execute(
+                tenant_query(select(ConfigurationSession), tenant)
+                .where(ConfigurationSession.id == sid)
+                .options(selectinload(ConfigurationSession.selections))
+            )
+            session = result.scalar_one_or_none()
+            if not session:
+                results.append(BulkActionResultItem(session_id=sid, success=False, error="Not found"))
+                continue
+
+            if body.action == "lock":
+                if not session.is_valid or not session.is_complete:
+                    results.append(BulkActionResultItem(
+                        session_id=sid, success=False, error="Incomplete or invalid",
+                    ))
+                    continue
+                session.status = ConfigurationStatus.LOCKED
+                results.append(BulkActionResultItem(session_id=sid, success=True))
+
+            elif body.action == "delete":
+                if session.status == ConfigurationStatus.LOCKED:
+                    results.append(BulkActionResultItem(
+                        session_id=sid, success=False, error="Cannot delete locked session",
+                    ))
+                    continue
+                from app.db.models import ConfigurationSelection
+                for sel in session.selections:
+                    await db.delete(sel)
+                bom = (await db.execute(
+                    select(ConfiguredBOM).where(ConfiguredBOM.session_id == sid)
+                )).scalar_one_or_none()
+                if bom:
+                    await db.delete(bom)
+                pricing = (await db.execute(
+                    select(ConfigurationPricing).where(ConfigurationPricing.session_id == sid)
+                )).scalar_one_or_none()
+                if pricing:
+                    await db.delete(pricing)
+                await db.delete(session)
+                results.append(BulkActionResultItem(session_id=sid, success=True))
+
+            elif body.action == "resolve_bom":
+                try:
+                    await _resolver.resolve(db, sid)
+                    results.append(BulkActionResultItem(session_id=sid, success=True))
+                except ValueError as e:
+                    results.append(BulkActionResultItem(session_id=sid, success=False, error=str(e)))
+
+        except Exception as e:
+            logger.error("bulk_action_error", session_id=str(sid), error=str(e))
+            results.append(BulkActionResultItem(session_id=sid, success=False, error="Internal error"))
+
+    await db.commit()
+
+    succeeded = sum(1 for r in results if r.success)
+    return BulkActionResponse(
+        total=len(results), succeeded=succeeded, failed=len(results) - succeeded, results=results,
+    )
+
+
+# ── BOM Analysis ────────────────────────────────────────
+
+
+@router.post(
+    "/bom/compare",
+    response_model=BOMComparisonResponse,
+    dependencies=[Depends(RequireScopes("configurator:read"))],
+)
+async def compare_boms(
+    body: BOMComparisonRequest,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Compare resolved BOMs across 2-5 configuration sessions."""
+    sessions_data: list[BOMComparisonSession] = []
+    all_bom_parts: list[dict[str, dict]] = []  # per-session: {part_number: {name, qty, cost}}
+
+    for sid in body.session_ids:
+        # Load session
+        sess_result = await db.execute(
+            tenant_query(select(ConfigurationSession), tenant)
+            .where(ConfigurationSession.id == sid)
+        )
+        session = sess_result.scalar_one_or_none()
+        if not session:
+            raise HTTPException(status_code=404, detail=f"Session {sid} not found")
+
+        # Load product name
+        prod_result = await db.execute(
+            select(Product.name).where(Product.id == session.product_id)
+        )
+        product_name = prod_result.scalar_one_or_none()
+
+        sessions_data.append(BOMComparisonSession(
+            id=session.id, name=session.name, product_name=product_name,
+        ))
+
+        # Load resolved BOM
+        bom_result = await db.execute(
+            tenant_query(select(ConfiguredBOM), tenant)
+            .where(ConfiguredBOM.session_id == sid)
+        )
+        bom = bom_result.scalar_one_or_none()
+
+        part_map: dict[str, dict] = {}
+        if bom and bom.resolved_items:
+            for item in bom.resolved_items:
+                pn = item.get("part_number", "")
+                part_map[pn] = {
+                    "part_name": item.get("part_name", ""),
+                    "quantity": float(item.get("quantity", 0)),
+                    "unit_cost": float(item.get("unit_cost", 0)),
+                }
+        all_bom_parts.append(part_map)
+
+    # Find common and unique parts
+    all_part_numbers = set()
+    for pm in all_bom_parts:
+        all_part_numbers.update(pm.keys())
+
+    common_parts: list[BOMComparisonPart] = []
+    unique_parts: list[BOMComparisonPart] = []
+
+    n = len(body.session_ids)
+    for pn in sorted(all_part_numbers):
+        present_in = [pm.get(pn) for pm in all_bom_parts]
+        present_count = sum(1 for p in present_in if p is not None)
+
+        part_name = next((p["part_name"] for p in present_in if p is not None), "")
+        quantities = [p["quantity"] if p else None for p in present_in]
+        unit_costs = [p["unit_cost"] if p else None for p in present_in]
+
+        part = BOMComparisonPart(
+            part_number=pn, part_name=part_name, quantities=quantities, unit_costs=unit_costs,
+        )
+        if present_count == n:
+            common_parts.append(part)
+        else:
+            unique_parts.append(part)
+
+    # Cost comparison per session
+    cost_comparison = []
+    for i, sid in enumerate(body.session_ids):
+        total = sum(
+            p["quantity"] * p["unit_cost"]
+            for p in all_bom_parts[i].values()
+        )
+        cost_comparison.append({
+            "session_id": str(sid),
+            "total_cost": round(total, 4),
+            "total_parts": len(all_bom_parts[i]),
+        })
+
+    return BOMComparisonResponse(
+        sessions=sessions_data,
+        common_parts=common_parts,
+        unique_parts=unique_parts,
+        cost_comparison=cost_comparison,
+    )
+
+
+@router.get(
+    "/bom/part-frequency",
+    response_model=PartFrequencyResponse,
+    dependencies=[Depends(RequireScopes("configurator:read"))],
+)
+async def part_frequency(
+    product_id: uuid.UUID | None = None,
+    limit: int = Query(default=20, le=100),
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get most frequently used parts across all resolved BOMs."""
+    stmt = tenant_query(select(ConfiguredBOM), tenant)
+    if product_id:
+        stmt = stmt.join(ConfigurationSession, ConfiguredBOM.session_id == ConfigurationSession.id).where(
+            ConfigurationSession.product_id == product_id,
+        )
+
+    result = await db.execute(stmt)
+    boms = list(result.scalars().all())
+
+    total_configs = len(boms)
+    part_counts: dict[str, dict] = {}  # {part_number: {name, count}}
+
+    for bom in boms:
+        seen_parts = set()
+        for item in (bom.resolved_items or []):
+            pn = item.get("part_number", "")
+            if pn and pn not in seen_parts:
+                seen_parts.add(pn)
+                if pn not in part_counts:
+                    part_counts[pn] = {"part_name": item.get("part_name", ""), "count": 0}
+                part_counts[pn]["count"] += 1
+
+    # Sort by count descending, limit
+    sorted_parts = sorted(part_counts.items(), key=lambda x: x[1]["count"], reverse=True)[:limit]
+
+    items = [
+        PartFrequencyItem(
+            part_number=pn,
+            part_name=data["part_name"],
+            usage_count=data["count"],
+            percentage=round(data["count"] / total_configs * 100, 1) if total_configs > 0 else 0,
+        )
+        for pn, data in sorted_parts
+    ]
+
+    return PartFrequencyResponse(items=items, total_configurations=total_configs)
+
+
+@router.get(
+    "/sessions/{session_id}/export",
+    dependencies=[Depends(RequireScopes("configurator:read"))],
+)
+async def export_session(
+    session_id: uuid.UUID,
+    format: str = Query(default="csv", pattern=r"^(csv|json)$"),
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export a configuration session's BOM and pricing as CSV or JSON."""
+    from fastapi.responses import StreamingResponse
+    import csv
+    import io
+
+    # Load session
+    session_result = await db.execute(
+        tenant_query(select(ConfigurationSession), tenant)
+        .where(ConfigurationSession.id == session_id)
+        .options(selectinload(ConfigurationSession.selections))
+    )
+    session = session_result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Configuration session not found")
+
+    # Load product name
+    prod_result = await db.execute(select(Product.name).where(Product.id == session.product_id))
+    product_name = prod_result.scalar_one_or_none() or "Unknown"
+
+    # Load resolved BOM
+    bom_result = await db.execute(
+        tenant_query(select(ConfiguredBOM), tenant).where(ConfiguredBOM.session_id == session_id)
+    )
+    bom = bom_result.scalar_one_or_none()
+
+    # Load pricing
+    pricing_result = await db.execute(
+        tenant_query(select(ConfigurationPricing), tenant).where(ConfigurationPricing.session_id == session_id)
+    )
+    pricing = pricing_result.scalar_one_or_none()
+
+    if format == "json":
+        import json as json_mod
+        export_data = {
+            "session": {
+                "id": str(session.id),
+                "name": session.name,
+                "product": product_name,
+                "status": session.status.value if hasattr(session.status, "value") else str(session.status),
+                "created_at": session.created_at.isoformat(),
+            },
+            "selections": [
+                {"characteristic_id": str(s.characteristic_id), "value": s.value, "is_auto_set": s.is_auto_set}
+                for s in session.selections
+            ],
+            "bom": {
+                "resolved_items": bom.resolved_items if bom else [],
+                "total_components": bom.total_components if bom else 0,
+                "total_cost": float(bom.total_cost) if bom and bom.total_cost else None,
+            },
+            "pricing": {
+                "base_price": float(pricing.base_price) if pricing else None,
+                "total_adjustments": float(pricing.total_adjustments) if pricing else None,
+                "final_price": float(pricing.final_price) if pricing else None,
+                "margin_percentage": float(pricing.margin_percentage) if pricing else None,
+                "is_profitable": pricing.is_profitable if pricing else None,
+            },
+        }
+        content = json_mod.dumps(export_data, indent=2)
+        return StreamingResponse(
+            io.BytesIO(content.encode()),
+            media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename=config-{session_id}.json"},
+        )
+
+    # CSV format
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header info
+    writer.writerow(["Configuration Export"])
+    writer.writerow(["Session", str(session.id)])
+    writer.writerow(["Name", session.name or ""])
+    writer.writerow(["Product", product_name])
+    writer.writerow(["Status", session.status.value if hasattr(session.status, "value") else str(session.status)])
+    writer.writerow(["Created", session.created_at.isoformat()])
+    writer.writerow([])
+
+    # BOM section
+    writer.writerow(["Bill of Materials"])
+    writer.writerow(["Part Number", "Part Name", "Type", "Quantity", "UOM", "Unit Cost", "Extended Cost"])
+    if bom and bom.resolved_items:
+        for item in bom.resolved_items:
+            qty = float(item.get("quantity", 0))
+            cost = float(item.get("unit_cost", 0))
+            writer.writerow([
+                item.get("part_number", ""),
+                item.get("part_name", ""),
+                item.get("item_type", ""),
+                qty,
+                item.get("unit", "EA"),
+                f"{cost:.2f}",
+                f"{qty * cost:.2f}",
+            ])
+        writer.writerow([])
+        writer.writerow(["Total Components", bom.total_components])
+        writer.writerow(["Total Cost", f"{float(bom.total_cost):.2f}" if bom.total_cost else "N/A"])
+    writer.writerow([])
+
+    # Pricing section
+    writer.writerow(["Pricing"])
+    if pricing:
+        writer.writerow(["Base Price", f"{float(pricing.base_price):.2f}"])
+        writer.writerow(["Adjustments", f"{float(pricing.total_adjustments):.2f}"])
+        writer.writerow(["Final Price", f"{float(pricing.final_price):.2f}"])
+        writer.writerow(["Margin %", f"{float(pricing.margin_percentage):.1f}%"])
+        writer.writerow(["Profitable", "Yes" if pricing.is_profitable else "No"])
+    else:
+        writer.writerow(["No pricing resolved"])
+
+    content = output.getvalue()
+    return StreamingResponse(
+        io.BytesIO(content.encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=config-{session_id}.csv"},
+    )
 
 
 # ── Templates ────────────────────────────────────────────
@@ -558,8 +1035,9 @@ async def create_template(
         db, action=AuditAction.CREATE, resource_type="configuration_template",
         resource_id=str(template.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(template)
+    await db.commit()
     return template
 
 
@@ -645,8 +1123,9 @@ async def create_pricing_rule(
         db, action=AuditAction.CREATE, resource_type="pricing_rule",
         resource_id=str(rule.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(rule)
+    await db.commit()
     return rule
 
 
@@ -717,8 +1196,9 @@ async def update_pricing_rule(
         db, action=AuditAction.UPDATE, resource_type="pricing_rule",
         resource_id=str(rule.id), tenant_id=tenant.id, changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(rule)
+    await db.commit()
     return rule
 
 

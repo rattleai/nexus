@@ -16,6 +16,7 @@ from app.core.audit import AuditAction, emit_audit_event
 from app.api.schemas_configurator import (
     CharacteristicAssignmentCreate,
     CharacteristicAssignmentResponse,
+    CharacteristicAssignmentUpdate,
     CharacteristicCreate,
     CharacteristicGroupCreate,
     CharacteristicGroupResponse,
@@ -70,8 +71,9 @@ async def create_group(
         db, action=AuditAction.CREATE, resource_type="characteristic_group",
         resource_id=str(group.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(group)
+    await db.commit()
     return group
 
 
@@ -118,8 +120,9 @@ async def update_group(
         db, action=AuditAction.UPDATE, resource_type="characteristic_group",
         resource_id=str(group.id), tenant_id=tenant.id, changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(group)
+    await db.commit()
     return group
 
 
@@ -184,8 +187,9 @@ async def create_characteristic(
         db, action=AuditAction.CREATE, resource_type="characteristic",
         resource_id=str(char.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(char, attribute_names=["values"])
+    await db.commit()
     return char
 
 
@@ -199,6 +203,7 @@ async def list_characteristics(
     limit: int = Query(default=20, le=100),
     group_id: uuid.UUID | None = None,
     char_type: str | None = None,
+    product_id: uuid.UUID | None = None,
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
@@ -211,7 +216,154 @@ async def list_characteristics(
         stmt = stmt.where(Characteristic.group_id == group_id)
     if char_type:
         stmt = stmt.where(Characteristic.char_type == CharacteristicType(char_type))
+    if product_id:
+        stmt = stmt.where(
+            Characteristic.id.in_(
+                select(CharacteristicAssignment.characteristic_id).where(
+                    CharacteristicAssignment.product_id == product_id
+                )
+            )
+        )
     return await paginate(db, stmt, Characteristic.created_at, limit=limit, cursor=cursor, descending=True)
+
+
+# ── Assignments ──────────────────────────────────────
+# NOTE: /assign routes must be registered before /{char_id} so that
+# FastAPI does not try to parse "assign" as a UUID char_id.
+
+
+@router.post(
+    "/assign",
+    response_model=CharacteristicAssignmentResponse,
+    status_code=201,
+    dependencies=[Depends(RequireScopes("products:write"))],
+)
+async def assign_characteristic(
+    body: CharacteristicAssignmentCreate,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    # Validate product exists
+    product_result = await db.execute(
+        tenant_query(select(Product), tenant).where(
+            Product.id == body.product_id, Product.deleted_at.is_(None)
+        )
+    )
+    if not product_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Product not found")
+    # Validate characteristic exists
+    char_result = await db.execute(
+        tenant_query(select(Characteristic), tenant).where(
+            Characteristic.id == body.characteristic_id, Characteristic.deleted_at.is_(None)
+        )
+    )
+    if not char_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Characteristic not found")
+
+    assignment = CharacteristicAssignment(
+        tenant_id=tenant.id,
+        product_id=body.product_id,
+        characteristic_id=body.characteristic_id,
+        display_order=body.display_order,
+        is_required=body.is_required,
+        default_value=body.default_value,
+        min_select=body.min_select,
+        max_select=body.max_select,
+    )
+    db.add(assignment)
+    await emit_audit_event(
+        db, action=AuditAction.CREATE, resource_type="characteristic_assignment",
+        resource_id=str(assignment.id), tenant_id=tenant.id,
+    )
+    await db.flush()
+    await db.refresh(assignment)
+    await db.commit()
+    ConfiguratorEngine.invalidate_product_cache(body.product_id, tenant.id)
+    return assignment
+
+
+@router.get(
+    "/assign",
+    response_model=list[CharacteristicAssignmentResponse],
+    dependencies=[Depends(RequireScopes("products:read"))],
+)
+async def list_assignments(
+    product_id: uuid.UUID = Query(...),
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        tenant_query(select(CharacteristicAssignment), tenant).where(
+            CharacteristicAssignment.product_id == product_id
+        ).order_by(CharacteristicAssignment.display_order)
+    )
+    return result.scalars().all()
+
+
+@router.put(
+    "/assign/{assignment_id}",
+    response_model=CharacteristicAssignmentResponse,
+    dependencies=[Depends(RequireScopes("products:write"))],
+)
+async def update_assignment(
+    assignment_id: uuid.UUID,
+    body: CharacteristicAssignmentUpdate,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        tenant_query(select(CharacteristicAssignment), tenant).where(
+            CharacteristicAssignment.id == assignment_id
+        )
+    )
+    assignment = result.scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    update_data = body.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(assignment, key, value)
+
+    await emit_audit_event(
+        db, action=AuditAction.UPDATE, resource_type="characteristic_assignment",
+        resource_id=str(assignment.id), tenant_id=tenant.id,
+    )
+    await db.flush()
+    await db.refresh(assignment)
+    await db.commit()
+    ConfiguratorEngine.invalidate_product_cache(assignment.product_id, tenant.id)
+    return assignment
+
+
+@router.delete(
+    "/assign/{assignment_id}",
+    status_code=204,
+    dependencies=[Depends(RequireScopes("products:write"))],
+)
+async def remove_assignment(
+    assignment_id: uuid.UUID,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        tenant_query(select(CharacteristicAssignment), tenant).where(
+            CharacteristicAssignment.id == assignment_id
+        )
+    )
+    assignment = result.scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    product_id = assignment.product_id
+    await emit_audit_event(
+        db, action=AuditAction.DELETE, resource_type="characteristic_assignment",
+        resource_id=str(assignment.id), tenant_id=tenant.id,
+    )
+    await db.delete(assignment)
+    await db.commit()
+    ConfiguratorEngine.invalidate_product_cache(product_id, tenant.id)
+
+
+# ── Individual Characteristic ─────────────────────────
 
 
 @router.get(
@@ -262,8 +414,9 @@ async def update_characteristic(
         db, action=AuditAction.UPDATE, resource_type="characteristic",
         resource_id=str(char.id), tenant_id=tenant.id, changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(char, attribute_names=["values"])
+    await db.commit()
     return char
 
 
@@ -332,8 +485,9 @@ async def add_value(
         db, action=AuditAction.CREATE, resource_type="characteristic_value",
         resource_id=str(val.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(val)
+    await db.commit()
     return val
 
 
@@ -365,8 +519,9 @@ async def update_value(
         db, action=AuditAction.UPDATE, resource_type="characteristic_value",
         resource_id=str(val.id), tenant_id=tenant.id, changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(val)
+    await db.commit()
     return val
 
 
@@ -396,83 +551,3 @@ async def delete_value(
     )
     await db.delete(val)
     await db.commit()
-
-
-# ── Assignments ──────────────────────────────────────────
-
-
-@router.post(
-    "/assign",
-    response_model=CharacteristicAssignmentResponse,
-    status_code=201,
-    dependencies=[Depends(RequireScopes("products:write"))],
-)
-async def assign_characteristic(
-    body: CharacteristicAssignmentCreate,
-    tenant: Tenant = Depends(get_current_tenant),
-    db: AsyncSession = Depends(get_db),
-):
-    # Validate product exists
-    product_result = await db.execute(
-        tenant_query(select(Product), tenant).where(
-            Product.id == body.product_id, Product.deleted_at.is_(None)
-        )
-    )
-    if not product_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Product not found")
-    # Validate characteristic exists
-    char_result = await db.execute(
-        tenant_query(select(Characteristic), tenant).where(
-            Characteristic.id == body.characteristic_id, Characteristic.deleted_at.is_(None)
-        )
-    )
-    if not char_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Characteristic not found")
-
-    assignment = CharacteristicAssignment(
-        tenant_id=tenant.id,
-        product_id=body.product_id,
-        characteristic_id=body.characteristic_id,
-        display_order=body.display_order,
-        is_required=body.is_required,
-        default_value=body.default_value,
-        min_select=body.min_select,
-        max_select=body.max_select,
-    )
-    db.add(assignment)
-    await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="characteristic_assignment",
-        resource_id=str(assignment.id), tenant_id=tenant.id,
-    )
-    await db.commit()
-    await db.refresh(assignment)
-    ConfiguratorEngine.invalidate_product_cache(body.product_id, tenant.id)
-    return assignment
-
-
-@router.delete(
-    "/assign/{assignment_id}",
-    status_code=204,
-    dependencies=[Depends(RequireScopes("products:write"))],
-)
-async def remove_assignment(
-    assignment_id: uuid.UUID,
-    tenant: Tenant = Depends(get_current_tenant),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        tenant_query(select(CharacteristicAssignment), tenant).where(
-            CharacteristicAssignment.id == assignment_id
-        )
-    )
-    assignment = result.scalar_one_or_none()
-    if not assignment:
-        raise HTTPException(status_code=404, detail="Assignment not found")
-    product_id = assignment.product_id
-    await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="characteristic_assignment",
-        resource_id=str(assignment.id), tenant_id=tenant.id,
-    )
-    await db.delete(assignment)
-    await db.commit()
-    ConfiguratorEngine.invalidate_product_cache(product_id, tenant.id)

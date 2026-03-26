@@ -149,8 +149,9 @@ class BOMResolver:
         # Resolve pricing
         await self._resolve_pricing(db, session, selections, total_cost, resolved_items_json)
 
-        await db.commit()
+        await db.flush()
         await db.refresh(configured_bom)
+        await db.commit()
         CONFIGURATOR_BOM_RESOLUTION_DURATION.observe(duration_ms / 1000.0)
         return configured_bom
 
@@ -192,8 +193,10 @@ class BOMResolver:
                 quantity_expression=item.quantity_expression,
             ))
 
-            # Recurse into children
-            if item.children:
+            # Recurse into children (use inspect to avoid lazy load in async)
+            from sqlalchemy import inspect as sa_inspect
+            item_state = sa_inspect(item)
+            if "children" in item_state.dict and item.children:
                 child_items = self._filter_items(item.children, selections, level + 1)
                 for child in child_items:
                     child.parent_part = item.part_number

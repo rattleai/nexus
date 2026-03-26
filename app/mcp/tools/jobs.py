@@ -49,8 +49,9 @@ async def job_create(
         payload=payload or {},
     )
     db.add(job)
-    await db.commit()
+    await db.flush()
     await db.refresh(job)
+    await db.commit()
 
     logger.info("mcp_job_created", job_id=str(job.id), type=job_type)
 
