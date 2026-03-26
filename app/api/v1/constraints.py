@@ -37,13 +37,31 @@ from app.api.schemas_configurator import (
 )
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
-from app.db.models import ConstraintGroup, ConstraintRule, ConstraintType, Tenant, VariantTable
+from app.db.base import optimistic_version_bump
+from app.db.models import ConstraintGroup, ConstraintRule, ConstraintType, Product, Tenant, VariantTable
 
 _api_key_rate_limit = ApiKeyRateLimiter()
 router = APIRouter(prefix="/constraints", dependencies=[Depends(_api_key_rate_limit)])
 logger = structlog.stdlib.get_logger()
 
 VALID_OPERATORS = {"eq", "neq", "in", "not_in", "gt", "gte", "lt", "lte", "between", "and", "or", "not"}
+
+
+def _validate_operators_recursive(node: dict, errors: list[str]) -> None:
+    """Recursively validate all 'op' values in a condition tree."""
+    if not isinstance(node, dict):
+        return
+    op = node.get("op")
+    if op and op not in VALID_OPERATORS:
+        errors.append(f"Unknown operator '{op}'")
+    for sub in node.get("conditions", []):
+        _validate_operators_recursive(sub, errors)
+    if isinstance(node.get("condition"), dict):
+        _validate_operators_recursive(node["condition"], errors)
+    if isinstance(node.get("if"), dict):
+        _validate_operators_recursive(node["if"], errors)
+    if isinstance(node.get("then"), dict):
+        _validate_operators_recursive(node["then"], errors)
 
 
 def _validate_expression(expression: dict, constraint_type: str) -> list[str]:
@@ -66,6 +84,9 @@ def _validate_expression(expression: dict, constraint_type: str) -> list[str]:
     elif constraint_type == "table":
         if "table_id" not in expression:
             errors.append("'table_id' is required for table constraints")
+
+    # Validate all operators in the expression tree
+    _validate_operators_recursive(expression, errors)
     return errors
 
 
@@ -83,6 +104,15 @@ async def create_constraint_group(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
+    # Validate product exists
+    product_result = await db.execute(
+        tenant_query(select(Product), tenant).where(
+            Product.id == body.product_id, Product.deleted_at.is_(None)
+        )
+    )
+    if not product_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Product not found")
+
     group = ConstraintGroup(
         tenant_id=tenant.id,
         product_id=body.product_id,
@@ -133,6 +163,15 @@ async def create_constraint_rule(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
+    # Validate product exists
+    product_result = await db.execute(
+        tenant_query(select(Product), tenant).where(
+            Product.id == body.product_id, Product.deleted_at.is_(None)
+        )
+    )
+    if not product_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Product not found")
+
     errors = _validate_expression(body.expression, body.constraint_type)
     if errors:
         raise HTTPException(status_code=422, detail=f"Invalid expression: {'; '.join(errors)}")
@@ -235,7 +274,7 @@ async def update_constraint_rule(
 
     for field, value in update_data.items():
         setattr(rule, field, value)
-    rule.version += 1
+    await optimistic_version_bump(db, rule)
     await emit_audit_event(
         db, action=AuditAction.UPDATE, resource_type="constraint_rule",
         resource_id=str(rule.id), tenant_id=tenant.id, changes=update_data,

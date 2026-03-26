@@ -24,6 +24,7 @@ from app.api.schemas_configurator import (
 from app.core.audit import AuditAction, emit_audit_event
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
+from app.db.base import optimistic_version_bump
 from app.db.models import Product, ProductFamily, ProductStatus, ProductVersion, Tenant
 
 _api_key_rate_limit = ApiKeyRateLimiter()
@@ -124,7 +125,7 @@ async def update_product_family(
             setattr(family, "metadata_", value)
         else:
             setattr(family, field, value)
-    family.version += 1
+    await optimistic_version_bump(db, family)
     await emit_audit_event(
         db, action=AuditAction.UPDATE, resource_type="product_family",
         resource_id=str(family.id), tenant_id=tenant.id, changes=changes,
@@ -264,7 +265,7 @@ async def update_product(
             product.status = ProductStatus(value)
         else:
             setattr(product, field, value)
-    product.version += 1
+    await optimistic_version_bump(db, product)
     await emit_audit_event(
         db, action=AuditAction.UPDATE, resource_type="product",
         resource_id=str(product.id), tenant_id=tenant.id, changes=changes,

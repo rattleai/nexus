@@ -329,7 +329,7 @@ class ConfiguratorEngine:
         value: str,
     ) -> SelectionResult:
         """Apply a user selection and propagate constraints."""
-        session = await self._load_session(db, session_id)
+        session = await self._load_session(db, session_id, for_update=True)
         if not session:
             return SelectionResult(validation_errors=[ValidationError(error_type="not_found", message="Session not found")])
 
@@ -506,7 +506,7 @@ class ConfiguratorEngine:
         Used for template application and bulk imports to avoid N separate
         load-propagate-commit cycles.
         """
-        session = await self._load_session(db, session_id)
+        session = await self._load_session(db, session_id, for_update=True)
         if not session:
             return SelectionResult(validation_errors=[ValidationError(error_type="not_found", message="Session not found")])
 
@@ -535,6 +535,18 @@ class ConfiguratorEngine:
                 existing = [s for s in session.selections if s.characteristic_id == char.id and not s.is_auto_set]
                 for s in existing:
                     await db.delete(s)
+            else:
+                # Enforce max_select cardinality for multi-select
+                if char.max_select is not None:
+                    existing_count = sum(
+                        1 for s in session.selections
+                        if s.characteristic_id == char.id and not s.is_auto_set
+                    )
+                    if existing_count >= char.max_select:
+                        logger.warning("batch_apply_cardinality_exceeded",
+                                       slug=slug, max_select=char.max_select,
+                                       existing=existing_count)
+                        continue
 
             new_sel = ConfigurationSelection(
                 tenant_id=session.tenant_id,
@@ -620,7 +632,7 @@ class ConfiguratorEngine:
         characteristic_id: uuid.UUID,
     ) -> SelectionResult:
         """Remove a selection and re-propagate from scratch."""
-        session = await self._load_session(db, session_id)
+        session = await self._load_session(db, session_id, for_update=True)
         if not session:
             return SelectionResult(validation_errors=[ValidationError(error_type="not_found", message="Session not found")])
 
@@ -965,7 +977,7 @@ class ConfiguratorEngine:
         char_slug = condition.get("char")
         if char_slug and char_slug in selections:
             val = selections[char_slug]
-            triggers[char_slug] = val if isinstance(val, str) else str(val)
+            triggers[char_slug] = val if isinstance(val, str) else ",".join(val) if isinstance(val, list) else str(val)
         for key in ("conditions",):
             if key in condition and isinstance(condition[key], list):
                 for sub in condition[key]:
@@ -1033,19 +1045,31 @@ class ConfiguratorEngine:
             return False
 
         expected = condition.get("value")
+        is_multi = isinstance(current_value, list)
 
         if op == "eq":
+            if is_multi:
+                return expected in current_value
             return current_value == expected
         if op == "neq":
+            if is_multi:
+                return expected not in current_value
             return current_value != expected
         if op == "in":
             if isinstance(expected, list):
+                if is_multi:
+                    return bool(set(current_value) & set(expected))
                 return current_value in expected
             return False
         if op == "not_in":
             if isinstance(expected, list):
+                if is_multi:
+                    return not bool(set(current_value) & set(expected))
                 return current_value not in expected
             return True
+        # Numeric operators don't apply to multi-select lists
+        if is_multi:
+            return False
         if op in ("gt", "gte", "lt", "lte"):
             try:
                 cv = float(current_value) if isinstance(current_value, str) else current_value
@@ -1121,6 +1145,11 @@ class ConfiguratorEngine:
                 raise ValueError(f"Disallowed operator: {type(node.op).__name__}")
             left = self._safe_eval_ast(node.left, variables)
             right = self._safe_eval_ast(node.right, variables)
+            if isinstance(node.op, ast.Pow):
+                if abs(right) > 100:
+                    raise ValueError(f"Exponent too large: {right} (max 100)")
+                if abs(left) > 1e12:
+                    raise ValueError(f"Base too large for exponentiation: {left}")
             return op_func(left, right)
         if isinstance(node, ast.UnaryOp):
             op_func = self._SAFE_OPS.get(type(node.op))
@@ -1184,13 +1213,18 @@ class ConfiguratorEngine:
             match = True
             for col in input_cols:
                 if col in selections:
-                    if str(row.get(col)) != str(selections[col]):
+                    row_val = row.get(col)
+                    if row_val is None:
+                        match = False
+                        break
+                    if str(row_val) != str(selections[col]):
                         match = False
                         break
             if match:
                 for col in output_cols:
-                    if col in row:
-                        output_values[col].append(str(row[col]))
+                    val = row.get(col)
+                    if val is not None and col in row:
+                        output_values[col].append(str(val))
 
         return dict(output_values)
 
@@ -1306,12 +1340,17 @@ class ConfiguratorEngine:
 
     # ── Helpers ──────────────────────────────────────────
 
-    async def _load_session(self, db: AsyncSession, session_id: uuid.UUID) -> ConfigurationSession | None:
-        result = await db.execute(
+    async def _load_session(
+        self, db: AsyncSession, session_id: uuid.UUID, *, for_update: bool = False
+    ) -> ConfigurationSession | None:
+        stmt = (
             select(ConfigurationSession)
             .where(ConfigurationSession.id == session_id)
             .options(selectinload(ConfigurationSession.selections))
         )
+        if for_update:
+            stmt = stmt.with_for_update()
+        result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def _load_characteristics(

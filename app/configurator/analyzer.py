@@ -291,8 +291,13 @@ class ConstraintAnalyzer:
                         if not if2:
                             covered_values = trigger_values  # unconditional covers all
                             break
-                        if if2.get("char") == trigger_slug and if2.get("op") == "eq":
-                            covered_values.add(if2.get("value", ""))
+                        if if2.get("char") == trigger_slug:
+                            if if2.get("op") == "eq":
+                                covered_values.add(if2.get("value", ""))
+                            elif if2.get("op") == "in":
+                                in_vals = if2.get("value", [])
+                                if isinstance(in_vals, list):
+                                    covered_values.update(in_vals)
 
                     if covered_values >= trigger_values and trigger_values:
                         # Already reported above if unconditional

@@ -26,6 +26,7 @@ from app.api.schemas_configurator import (
 )
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
+from app.db.base import optimistic_version_bump
 from app.db.models import BOMHeader, BOMItem, BOMItemType, Product, Tenant
 
 _api_key_rate_limit = ApiKeyRateLimiter()
@@ -157,7 +158,7 @@ async def update_bom(
     changes = body.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(bom, field, value)
-    bom.version += 1
+    await optimistic_version_bump(db, bom)
     await emit_audit_event(
         db, action=AuditAction.UPDATE, resource_type="bom_header",
         resource_id=str(bom.id), tenant_id=tenant.id, changes=changes,
@@ -278,7 +279,7 @@ async def update_bom_item(
             item.item_type = BOMItemType(value)
         else:
             setattr(item, field, value)
-    item.version += 1
+    await optimistic_version_bump(db, item)
     await emit_audit_event(
         db, action=AuditAction.UPDATE, resource_type="bom_item",
         resource_id=str(item.id), tenant_id=tenant.id,
@@ -333,9 +334,15 @@ async def reorder_bom_items(
     )
     items_by_id = {item.id: item for item in result.scalars().all()}
 
+    unknown_ids = set(body.item_ids) - set(items_by_id.keys())
+    if unknown_ids:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Item IDs not found in this BOM: {[str(uid) for uid in unknown_ids]}",
+        )
+
     for idx, item_id in enumerate(body.item_ids):
-        if item_id in items_by_id:
-            items_by_id[item_id].sort_order = idx
+        items_by_id[item_id].sort_order = idx
     await db.commit()
 
 

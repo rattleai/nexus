@@ -28,12 +28,14 @@ from app.api.schemas_configurator import (
 )
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
+from app.db.base import optimistic_version_bump
 from app.db.models import (
     Characteristic,
     CharacteristicAssignment,
     CharacteristicGroup,
     CharacteristicType,
     CharacteristicValue,
+    Product,
     Tenant,
 )
 
@@ -255,7 +257,7 @@ async def update_characteristic(
     changes = body.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(char, field, value)
-    char.version += 1
+    await optimistic_version_bump(db, char)
     await emit_audit_event(
         db, action=AuditAction.UPDATE, resource_type="characteristic",
         resource_id=str(char.id), tenant_id=tenant.id, changes=changes,
@@ -410,6 +412,23 @@ async def assign_characteristic(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
+    # Validate product exists
+    product_result = await db.execute(
+        tenant_query(select(Product), tenant).where(
+            Product.id == body.product_id, Product.deleted_at.is_(None)
+        )
+    )
+    if not product_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Product not found")
+    # Validate characteristic exists
+    char_result = await db.execute(
+        tenant_query(select(Characteristic), tenant).where(
+            Characteristic.id == body.characteristic_id, Characteristic.deleted_at.is_(None)
+        )
+    )
+    if not char_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Characteristic not found")
+
     assignment = CharacteristicAssignment(
         tenant_id=tenant.id,
         product_id=body.product_id,

@@ -29,6 +29,15 @@ from app.db.models import (
 logger = structlog.stdlib.get_logger()
 
 
+def _safe_decimal(value, default: Decimal = Decimal("0")) -> Decimal:
+    """Convert a value to Decimal, returning default on failure."""
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        logger.warning("invalid_decimal_value", value=value)
+        return default
+
+
 def _bom_eager_load(depth: int = 5):
     """Build chained selectinload for BOM item hierarchy up to given depth."""
     load = selectinload(BOMHeader.items)
@@ -115,9 +124,10 @@ class BOMResolver:
 
         duration_ms = int((time.monotonic() - start) * 1000)
 
-        # Delete existing resolved BOM if any
+        # Delete existing resolved BOM if any (lock row to prevent concurrent race)
         existing = await db.execute(
             select(ConfiguredBOM).where(ConfiguredBOM.session_id == session_id)
+            .with_for_update(skip_locked=False)
         )
         existing_bom = existing.scalar_one_or_none()
         if existing_bom:
@@ -198,7 +208,8 @@ class BOMResolver:
 
         for item in items:
             if item.item_type == "phantom":
-                phantom_quantities[item.part_number] = item.quantity
+                parent_multiplier = phantom_quantities.get(item.parent_part, Decimal("1"))
+                phantom_quantities[item.part_number] = item.quantity * parent_multiplier
                 continue
 
             # If parent is a phantom, multiply quantity
@@ -260,7 +271,7 @@ class BOMResolver:
                 if max_qty is not None:
                     result = min(result, float(max_qty))
 
-                item.quantity = Decimal(str(result)).quantize(Decimal("0.0001"))
+                item.quantity = Decimal(str(round(result, 10))).quantize(Decimal("0.0001"))
             except (ValueError, SyntaxError, TypeError, ZeroDivisionError, ArithmeticError) as exc:
                 logger.warning(
                     "quantity_expression_eval_failed",
@@ -277,14 +288,14 @@ class BOMResolver:
     ) -> Decimal:
         """All-units: entire quantity priced at the tier it falls into."""
         for tier in tiers:
-            tier_min = Decimal(str(tier["min"]))
-            tier_max = Decimal(str(tier["max"])) if tier.get("max") is not None else None
-            tier_price = Decimal(str(tier["price"]))
+            tier_min = _safe_decimal(tier["min"])
+            tier_max = _safe_decimal(tier["max"]) if tier.get("max") is not None else None
+            tier_price = _safe_decimal(tier["price"])
             if quantity >= tier_min and (tier_max is None or quantity <= tier_max):
                 return quantity * tier_price
         # Quantity exceeds all tiers: use last tier
         if tiers:
-            return quantity * Decimal(str(tiers[-1]["price"]))
+            return quantity * _safe_decimal(tiers[-1]["price"])
         return Decimal("0")
 
     @staticmethod
@@ -297,9 +308,9 @@ class BOMResolver:
         for tier in tiers:
             if remaining <= 0:
                 break
-            tier_min = Decimal(str(tier["min"]))
-            tier_max = Decimal(str(tier["max"])) if tier.get("max") is not None else None
-            tier_price = Decimal(str(tier["price"]))
+            tier_min = _safe_decimal(tier["min"])
+            tier_max = _safe_decimal(tier["max"]) if tier.get("max") is not None else None
+            tier_price = _safe_decimal(tier["price"])
             band_size = (tier_max - tier_min + 1) if tier_max is not None else remaining
             units_in_band = min(remaining, band_size)
             total += units_in_band * tier_price
@@ -310,8 +321,8 @@ class BOMResolver:
     def _find_matching_tier(quantity: Decimal, tiers: list[dict]) -> dict | None:
         """Return the tier dict that the given quantity falls into."""
         for tier in tiers:
-            tier_min = Decimal(str(tier["min"]))
-            tier_max = Decimal(str(tier["max"])) if tier.get("max") is not None else None
+            tier_min = _safe_decimal(tier["min"])
+            tier_max = _safe_decimal(tier["max"]) if tier.get("max") is not None else None
             if quantity >= tier_min and (tier_max is None or quantity <= tier_max):
                 return {
                     "min": str(tier_min),
@@ -357,14 +368,14 @@ class BOMResolver:
             rt = rule.rule_type.value
 
             if rt == "base_price":
-                amount = Decimal(str(expr.get("amount", 0)))
+                amount = _safe_decimal(expr.get("amount", 0))
                 base_price += amount
                 breakdown.append({"rule": rule.name, "type": rt, "amount": str(amount)})
 
             elif rt == "option_surcharge":
                 condition = expr.get("condition", {})
                 if self._engine._evaluate_condition(condition, selections):
-                    amount = Decimal(str(expr.get("amount", 0)))
+                    amount = _safe_decimal(expr.get("amount", 0))
                     total_adjustments += amount
                     breakdown.append({"rule": rule.name, "type": rt, "amount": str(amount)})
 
@@ -372,7 +383,7 @@ class BOMResolver:
                 condition = expr.get("condition", {})
                 if self._engine._evaluate_condition(condition, selections):
                     adj_type = expr.get("adjustment_type", "fixed")
-                    amount = Decimal(str(expr.get("amount", 0)))
+                    amount = _safe_decimal(expr.get("amount", 0))
                     if adj_type == "percentage":
                         actual_amount = base_price * amount / Decimal("100")
                     else:
@@ -381,13 +392,13 @@ class BOMResolver:
                     breakdown.append({"rule": rule.name, "type": rt, "amount": str(actual_amount)})
 
             elif rt == "volume_discount":
-                amount = Decimal(str(expr.get("amount", 0)))
+                amount = _safe_decimal(expr.get("amount", 0))
                 total_adjustments += amount
                 breakdown.append({"rule": rule.name, "type": rt, "amount": str(amount)})
 
             elif rt == "formula":
                 # Simplified formula support — expressions with characteristic values
-                amount = Decimal(str(expr.get("amount", 0)))
+                amount = _safe_decimal(expr.get("amount", 0))
                 total_adjustments += amount
                 breakdown.append({"rule": rule.name, "type": rt, "amount": str(amount)})
 
@@ -422,7 +433,7 @@ class BOMResolver:
                 elif qty_source == "base_price":
                     quantity = base_price
 
-                base_amount = Decimal(str(expr.get("base_amount", 0)))
+                base_amount = _safe_decimal(expr.get("base_amount", 0))
                 if tier_model == "marginal":
                     amount = base_amount + self._calculate_tiered_price_marginal(quantity, tiers)
                 else:
@@ -439,16 +450,17 @@ class BOMResolver:
                 })
 
             elif rt == "margin":
-                min_margin_pct = Decimal(str(expr.get("min_margin_pct", 0)))
+                min_margin_pct = _safe_decimal(expr.get("min_margin_pct", 0))
 
         final_price = base_price + total_adjustments
         margin_amount = final_price - total_cost
         margin_percentage = (margin_amount / final_price * 100) if final_price > 0 else Decimal("0")
         is_profitable = margin_percentage >= min_margin_pct
 
-        # Delete existing pricing
+        # Delete existing pricing (lock row to prevent concurrent race)
         existing = await db.execute(
             select(ConfigurationPricing).where(ConfigurationPricing.session_id == session.id)
+            .with_for_update(skip_locked=False)
         )
         existing_pricing = existing.scalar_one_or_none()
         if existing_pricing:

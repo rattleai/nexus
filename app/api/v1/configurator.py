@@ -43,6 +43,7 @@ from app.core.audit import AuditAction, emit_audit_event
 from app.core.events import emit
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
+from app.db.base import optimistic_version_bump
 from app.db.models import (
     ConfigurationPricing,
     ConfigurationSession,
@@ -110,19 +111,27 @@ async def create_session(
     # If created from template, apply template selections
     if body.template_id:
         template_result = await db.execute(
-            select(ConfigurationTemplate).where(
+            tenant_query(select(ConfigurationTemplate), tenant).where(
                 ConfigurationTemplate.id == body.template_id,
-                ConfigurationTemplate.tenant_id == tenant.id,
             )
         )
         template = template_result.scalar_one_or_none()
         if template:
             pairs = []
+            skipped = 0
             for sel in template.selections:
                 slug = sel.get("characteristic_slug") or sel.get("slug")
                 value = sel.get("value")
                 if slug and value:
                     pairs.append((slug, value))
+                else:
+                    skipped += 1
+                    logger.warning("template_selection_skipped",
+                                   template_id=str(template.id), entry=sel)
+            if skipped:
+                logger.info("template_selections_summary",
+                            applied=len(pairs), skipped=skipped,
+                            template_id=str(template.id))
             if pairs:
                 await _engine.apply_selections_batch(db, session.id, pairs)
             await db.refresh(session, attribute_names=["selections"])
@@ -703,7 +712,7 @@ async def update_pricing_rule(
     changes = body.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(rule, field, value)
-    rule.version += 1
+    await optimistic_version_bump(db, rule)
     await emit_audit_event(
         db, action=AuditAction.UPDATE, resource_type="pricing_rule",
         resource_id=str(rule.id), tenant_id=tenant.id, changes=changes,
