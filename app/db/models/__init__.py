@@ -78,6 +78,15 @@ from app.db.models.bom import (
     BOMItem,
     BOMItemType,
 )
+from app.db.models.datasource import (
+    CloudConnection,
+    CloudProvider,
+    ConfigItemProvenance,
+    DataSource,
+    DataSourceChunk,
+    DataSourceStatus,
+    DataSourceType,
+)
 from app.db.models.configurator import (
     ConfigurationPricing,
     ConfigurationSelection,
@@ -175,6 +184,14 @@ __all__ = [
     "BOMHeader",
     "BOMItem",
     "BOMItemType",
+    # Data Sources
+    "DataSource",
+    "DataSourceType",
+    "DataSourceStatus",
+    "DataSourceChunk",
+    "CloudConnection",
+    "CloudProvider",
+    "ConfigItemProvenance",
     # Configurator
     "ConfigurationSession",
     "ConfigurationStatus",

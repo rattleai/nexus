@@ -70,6 +70,17 @@ class Settings(BaseSettings):
     PASSWORD_RESET_EXPIRE_HOURS: int = 1
     APP_BASE_URL: str = "http://localhost:3000"
 
+    # Cloud Drive OAuth
+    GOOGLE_DRIVE_CLIENT_ID: str = ""
+    GOOGLE_DRIVE_CLIENT_SECRET: str = ""
+    GOOGLE_DRIVE_REDIRECT_URI: str = ""
+    DROPBOX_APP_KEY: str = ""
+    DROPBOX_APP_SECRET: str = ""
+    DROPBOX_REDIRECT_URI: str = ""
+    ONEDRIVE_CLIENT_ID: str = ""
+    ONEDRIVE_CLIENT_SECRET: str = ""
+    ONEDRIVE_REDIRECT_URI: str = ""
+
     # Billing (Stripe)
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
@@ -185,6 +196,17 @@ class Settings(BaseSettings):
     AGENT_RATE_LIMIT_WINDOW_SECONDS: int = 60
     OAUTH_CLIENT_CREDENTIALS_ENABLED: bool = False
 
+    # Cloud Drive OAuth Integration
+    GOOGLE_DRIVE_CLIENT_ID: str = ""
+    GOOGLE_DRIVE_CLIENT_SECRET: str = ""
+    GOOGLE_DRIVE_REDIRECT_URI: str = ""
+    DROPBOX_APP_KEY: str = ""
+    DROPBOX_APP_SECRET: str = ""
+    DROPBOX_REDIRECT_URI: str = ""
+    ONEDRIVE_CLIENT_ID: str = ""
+    ONEDRIVE_CLIENT_SECRET: str = ""
+    ONEDRIVE_REDIRECT_URI: str = ""
+
     # Allowed scope values for API keys
     VALID_SCOPES: list[str] = [
         "jobs:read", "jobs:write",
@@ -197,6 +219,9 @@ class Settings(BaseSettings):
         "ai:read", "ai:write", "ai:admin",
         "mcp:read", "mcp:write",
         "agents:read", "agents:write", "agents:admin", "agents:execute",
+        "configurator:read", "configurator:write",
+        "datasources:read", "datasources:write",
+        "cloud-connections:read", "cloud-connections:write",
     ]
 
     # Scopes that must never be granted to API keys.  These control critical
