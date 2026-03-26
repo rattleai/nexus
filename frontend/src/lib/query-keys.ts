@@ -98,6 +98,7 @@ export const queryKeys = {
       list: () => ["characteristics", "groups", "list"] as const,
     },
     assignments: (productId: string) => ["characteristics", "assignments", productId] as const,
+    assignmentsRaw: (productId: string) => ["characteristics", "assignments-raw", productId] as const,
   },
 
   constraints: {

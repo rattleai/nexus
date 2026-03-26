@@ -260,6 +260,21 @@ class CharacteristicAssignmentCreate(BaseModel):
         return self
 
 
+class CharacteristicAssignmentUpdate(BaseModel):
+    display_order: int | None = None
+    is_required: bool | None = None
+    default_value: str | None = None
+    min_select: int | None = Field(default=None, ge=0)
+    max_select: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_cardinality(self):
+        if self.min_select is not None and self.max_select is not None:
+            if self.min_select > self.max_select:
+                raise ValueError("min_select cannot exceed max_select")
+        return self
+
+
 class CharacteristicAssignmentResponse(BaseModel):
     id: uuid.UUID
     product_id: uuid.UUID

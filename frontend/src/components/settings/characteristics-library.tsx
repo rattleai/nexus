@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { toast } from "sonner"
+import { Link } from "@tanstack/react-router"
 import {
   Plus,
   Search,
@@ -12,6 +13,9 @@ import {
   BookOpen,
   Check,
   Minus,
+  Layers,
+  Eye,
+  ListChecks,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -39,6 +43,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -54,6 +59,7 @@ import { LoadingState } from "@/components/loading-state"
 import { ErrorState } from "@/components/error-state"
 import { EmptyState } from "@/components/empty-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { CharacteristicGroupsPanel } from "@/components/settings/characteristic-groups-panel"
 import {
   useCharacteristics,
   useCharacteristicGroups,
@@ -118,6 +124,7 @@ export function CharacteristicsLibrary() {
   const [typeFilter, setTypeFilter] = useState<string>("all")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingChar, setEditingChar] = useState<Characteristic | null>(null)
+  const [groupsPanelOpen, setGroupsPanelOpen] = useState(false)
 
   // Build filters for the query
   const queryFilters = useMemo(
@@ -178,10 +185,16 @@ export function CharacteristicsLibrary() {
       <PageHeader
         title="Characteristics Library"
         actions={
-          <Button onClick={handleCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Characteristic
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setGroupsPanelOpen(true)}>
+              <Layers className="mr-2 h-4 w-4" />
+              Manage Groups
+            </Button>
+            <Button onClick={handleCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Characteristic
+            </Button>
+          </>
         }
       />
 
@@ -267,7 +280,15 @@ export function CharacteristicsLibrary() {
               <TableBody>
                 {characteristics.map((char) => (
                   <TableRow key={char.id}>
-                    <TableCell className="font-medium">{char.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link
+                        to="/settings/characteristics/$charId"
+                        params={{ charId: char.id }}
+                        className="hover:underline"
+                      >
+                        {char.name}
+                      </Link>
+                    </TableCell>
                     <TableCell>
                       <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
                         {char.slug}
@@ -323,6 +344,12 @@ export function CharacteristicsLibrary() {
         characteristic={editingChar}
         groups={groups}
       />
+
+      {/* Groups management panel */}
+      <CharacteristicGroupsPanel
+        open={groupsPanelOpen}
+        onOpenChange={setGroupsPanelOpen}
+      />
     </div>
   )
 }
@@ -347,6 +374,27 @@ function CharacteristicActions({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        <DropdownMenuItem asChild>
+          <Link
+            to="/settings/characteristics/$charId"
+            params={{ charId: characteristic.id }}
+          >
+            <Eye className="mr-2 h-4 w-4" />
+            View Details
+          </Link>
+        </DropdownMenuItem>
+        {characteristic.char_type === "enum" && (
+          <DropdownMenuItem asChild>
+            <Link
+              to="/settings/characteristics/$charId"
+              params={{ charId: characteristic.id }}
+            >
+              <ListChecks className="mr-2 h-4 w-4" />
+              Manage Values
+            </Link>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => onEdit(characteristic)}>
           <Pencil className="mr-2 h-4 w-4" />
           Edit

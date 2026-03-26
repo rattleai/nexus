@@ -14,6 +14,7 @@ import type {
   CharacteristicValueUpdate,
   CharacteristicAssignment,
   CharacteristicAssignmentCreate,
+  CharacteristicAssignmentUpdate,
 } from "@/types/configurator"
 import type { PaginatedResponse } from "@/types/api"
 
@@ -218,8 +219,46 @@ export function useRemoveAssignment() {
     },
     onSuccess: (productId) => {
       qc.invalidateQueries({ queryKey: queryKeys.characteristics.assignments(productId) })
+      qc.invalidateQueries({ queryKey: queryKeys.characteristics.assignmentsRaw(productId) })
       qc.invalidateQueries({ queryKey: queryKeys.products.detail(productId) })
       toast.success("Assignment removed")
+    },
+  })
+}
+
+export function useAssignmentsRaw(productId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.characteristics.assignmentsRaw(productId ?? ""),
+    queryFn: async ({ signal }) =>
+      api
+        .get("characteristics/assign", {
+          searchParams: { product_id: productId! },
+          signal,
+        })
+        .json<CharacteristicAssignment[]>(),
+    enabled: !!productId,
+  })
+}
+
+export function useUpdateAssignment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      assignmentId,
+      data,
+    }: {
+      assignmentId: string
+      productId: string
+      data: CharacteristicAssignmentUpdate
+    }) =>
+      api
+        .put(`characteristics/assign/${assignmentId}`, { json: data })
+        .json<CharacteristicAssignment>(),
+    onSuccess: (_assignment, { productId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.characteristics.assignments(productId) })
+      qc.invalidateQueries({ queryKey: queryKeys.characteristics.assignmentsRaw(productId) })
+      qc.invalidateQueries({ queryKey: queryKeys.products.detail(productId) })
+      toast.success("Assignment updated")
     },
   })
 }

@@ -51,6 +51,7 @@ import { Route as ConfiguratorProductIdRouteImport } from './routes/configurator
 import { Route as AgentsWorkspaceRouteImport } from './routes/agents.workspace'
 import { Route as AgentsSessionsRouteImport } from './routes/agents.sessions'
 import { Route as AgentsInstanceIdRouteImport } from './routes/agents.$instanceId'
+import { Route as SettingsCharacteristicsCharIdRouteImport } from './routes/settings.characteristics.$charId'
 import { Route as AuthCallbackProviderRouteImport } from './routes/auth/callback/$provider'
 
 const WebhooksRoute = WebhooksRouteImport.update({
@@ -303,6 +304,16 @@ const AgentsInstanceIdRoute = AgentsInstanceIdRouteImport.update({
 } as any).lazy(() =>
   import('./routes/agents.$instanceId.lazy').then((d) => d.Route),
 )
+const SettingsCharacteristicsCharIdRoute =
+  SettingsCharacteristicsCharIdRouteImport.update({
+    id: '/$charId',
+    path: '/$charId',
+    getParentRoute: () => SettingsCharacteristicsRoute,
+  } as any).lazy(() =>
+    import('./routes/settings.characteristics.$charId.lazy').then(
+      (d) => d.Route,
+    ),
+  )
 const AuthCallbackProviderRoute = AuthCallbackProviderRouteImport.update({
   id: '/auth/callback/$provider',
   path: '/auth/callback/$provider',
@@ -343,7 +354,7 @@ export interface FileRoutesByFullPath {
   '/settings/api-keys': typeof SettingsApiKeysRoute
   '/settings/audit-log': typeof SettingsAuditLogRoute
   '/settings/billing': typeof SettingsBillingRoute
-  '/settings/characteristics': typeof SettingsCharacteristicsRoute
+  '/settings/characteristics': typeof SettingsCharacteristicsRouteWithChildren
   '/settings/danger': typeof SettingsDangerRoute
   '/settings/data': typeof SettingsDataRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -355,6 +366,7 @@ export interface FileRoutesByFullPath {
   '/products/': typeof ProductsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
+  '/settings/characteristics/$charId': typeof SettingsCharacteristicsCharIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -385,7 +397,7 @@ export interface FileRoutesByTo {
   '/settings/api-keys': typeof SettingsApiKeysRoute
   '/settings/audit-log': typeof SettingsAuditLogRoute
   '/settings/billing': typeof SettingsBillingRoute
-  '/settings/characteristics': typeof SettingsCharacteristicsRoute
+  '/settings/characteristics': typeof SettingsCharacteristicsRouteWithChildren
   '/settings/danger': typeof SettingsDangerRoute
   '/settings/data': typeof SettingsDataRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -397,6 +409,7 @@ export interface FileRoutesByTo {
   '/products': typeof ProductsIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
+  '/settings/characteristics/$charId': typeof SettingsCharacteristicsCharIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -431,7 +444,7 @@ export interface FileRoutesById {
   '/settings/api-keys': typeof SettingsApiKeysRoute
   '/settings/audit-log': typeof SettingsAuditLogRoute
   '/settings/billing': typeof SettingsBillingRoute
-  '/settings/characteristics': typeof SettingsCharacteristicsRoute
+  '/settings/characteristics': typeof SettingsCharacteristicsRouteWithChildren
   '/settings/danger': typeof SettingsDangerRoute
   '/settings/data': typeof SettingsDataRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -443,6 +456,7 @@ export interface FileRoutesById {
   '/products/': typeof ProductsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
+  '/settings/characteristics/$charId': typeof SettingsCharacteristicsCharIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -490,6 +504,7 @@ export interface FileRouteTypes {
     | '/products/'
     | '/settings/'
     | '/auth/callback/$provider'
+    | '/settings/characteristics/$charId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -532,6 +547,7 @@ export interface FileRouteTypes {
     | '/products'
     | '/settings'
     | '/auth/callback/$provider'
+    | '/settings/characteristics/$charId'
   id:
     | '__root__'
     | '/'
@@ -577,6 +593,7 @@ export interface FileRouteTypes {
     | '/products/'
     | '/settings/'
     | '/auth/callback/$provider'
+    | '/settings/characteristics/$charId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -900,6 +917,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AgentsInstanceIdRouteImport
       parentRoute: typeof AgentsRoute
     }
+    '/settings/characteristics/$charId': {
+      id: '/settings/characteristics/$charId'
+      path: '/$charId'
+      fullPath: '/settings/characteristics/$charId'
+      preLoaderRoute: typeof SettingsCharacteristicsCharIdRouteImport
+      parentRoute: typeof SettingsCharacteristicsRoute
+    }
     '/auth/callback/$provider': {
       id: '/auth/callback/$provider'
       path: '/auth/callback/$provider'
@@ -955,12 +979,26 @@ const ProductsRouteWithChildren = ProductsRoute._addFileChildren(
   ProductsRouteChildren,
 )
 
+interface SettingsCharacteristicsRouteChildren {
+  SettingsCharacteristicsCharIdRoute: typeof SettingsCharacteristicsCharIdRoute
+}
+
+const SettingsCharacteristicsRouteChildren: SettingsCharacteristicsRouteChildren =
+  {
+    SettingsCharacteristicsCharIdRoute: SettingsCharacteristicsCharIdRoute,
+  }
+
+const SettingsCharacteristicsRouteWithChildren =
+  SettingsCharacteristicsRoute._addFileChildren(
+    SettingsCharacteristicsRouteChildren,
+  )
+
 interface SettingsRouteChildren {
   SettingsAgentsRoute: typeof SettingsAgentsRoute
   SettingsApiKeysRoute: typeof SettingsApiKeysRoute
   SettingsAuditLogRoute: typeof SettingsAuditLogRoute
   SettingsBillingRoute: typeof SettingsBillingRoute
-  SettingsCharacteristicsRoute: typeof SettingsCharacteristicsRoute
+  SettingsCharacteristicsRoute: typeof SettingsCharacteristicsRouteWithChildren
   SettingsDangerRoute: typeof SettingsDangerRoute
   SettingsDataRoute: typeof SettingsDataRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
@@ -976,7 +1014,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsApiKeysRoute: SettingsApiKeysRoute,
   SettingsAuditLogRoute: SettingsAuditLogRoute,
   SettingsBillingRoute: SettingsBillingRoute,
-  SettingsCharacteristicsRoute: SettingsCharacteristicsRoute,
+  SettingsCharacteristicsRoute: SettingsCharacteristicsRouteWithChildren,
   SettingsDangerRoute: SettingsDangerRoute,
   SettingsDataRoute: SettingsDataRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,

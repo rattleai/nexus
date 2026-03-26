@@ -16,6 +16,7 @@ from app.core.audit import AuditAction, emit_audit_event
 from app.api.schemas_configurator import (
     CharacteristicAssignmentCreate,
     CharacteristicAssignmentResponse,
+    CharacteristicAssignmentUpdate,
     CharacteristicCreate,
     CharacteristicGroupCreate,
     CharacteristicGroupResponse,
@@ -199,6 +200,7 @@ async def list_characteristics(
     limit: int = Query(default=20, le=100),
     group_id: uuid.UUID | None = None,
     char_type: str | None = None,
+    product_id: uuid.UUID | None = None,
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
@@ -211,6 +213,14 @@ async def list_characteristics(
         stmt = stmt.where(Characteristic.group_id == group_id)
     if char_type:
         stmt = stmt.where(Characteristic.char_type == CharacteristicType(char_type))
+    if product_id:
+        stmt = stmt.where(
+            Characteristic.id.in_(
+                select(CharacteristicAssignment.characteristic_id).where(
+                    CharacteristicAssignment.product_id == product_id
+                )
+            )
+        )
     return await paginate(db, stmt, Characteristic.created_at, limit=limit, cursor=cursor, descending=True)
 
 
@@ -447,6 +457,58 @@ async def assign_characteristic(
     await db.commit()
     await db.refresh(assignment)
     ConfiguratorEngine.invalidate_product_cache(body.product_id, tenant.id)
+    return assignment
+
+
+@router.get(
+    "/assign",
+    response_model=list[CharacteristicAssignmentResponse],
+    dependencies=[Depends(RequireScopes("products:read"))],
+)
+async def list_assignments(
+    product_id: uuid.UUID = Query(...),
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        tenant_query(select(CharacteristicAssignment), tenant).where(
+            CharacteristicAssignment.product_id == product_id
+        ).order_by(CharacteristicAssignment.display_order)
+    )
+    return result.scalars().all()
+
+
+@router.put(
+    "/assign/{assignment_id}",
+    response_model=CharacteristicAssignmentResponse,
+    dependencies=[Depends(RequireScopes("products:write"))],
+)
+async def update_assignment(
+    assignment_id: uuid.UUID,
+    body: CharacteristicAssignmentUpdate,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        tenant_query(select(CharacteristicAssignment), tenant).where(
+            CharacteristicAssignment.id == assignment_id
+        )
+    )
+    assignment = result.scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    update_data = body.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(assignment, key, value)
+
+    await emit_audit_event(
+        db, action=AuditAction.UPDATE, resource_type="characteristic_assignment",
+        resource_id=str(assignment.id), tenant_id=tenant.id,
+    )
+    await db.commit()
+    await db.refresh(assignment)
+    ConfiguratorEngine.invalidate_product_cache(assignment.product_id, tenant.id)
     return assignment
 
 

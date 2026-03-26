@@ -200,6 +200,14 @@ export interface CharacteristicAssignmentCreate {
   max_select?: number | null
 }
 
+export interface CharacteristicAssignmentUpdate {
+  display_order?: number
+  is_required?: boolean | null
+  default_value?: string | null
+  min_select?: number | null
+  max_select?: number | null
+}
+
 // ── Constraint ──────────────────────────────────────────
 
 export type ConstraintType =
