@@ -1,6 +1,10 @@
 import { createLazyFileRoute } from "@tanstack/react-router"
-import { AgentSessionsPage } from "@/components/agents/sessions/agent-sessions-page"
+import { SessionEmptyState } from "@/components/agents/sessions/session-empty-state"
 
 export const Route = createLazyFileRoute("/agents/")({
-  component: AgentSessionsPage,
+  component: AgentsIndexPage,
 })
+
+function AgentsIndexPage() {
+  return <SessionEmptyState />
+}

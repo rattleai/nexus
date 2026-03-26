@@ -81,6 +81,18 @@ export function formatPercent(value: number, precision = 0): string {
 
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const
 
+export function formatDuration(startedAt: string | null, completedAt: string | null): string {
+  if (!startedAt) return "--"
+  const start = new Date(startedAt).getTime()
+  const end = completedAt ? new Date(completedAt).getTime() : Date.now()
+  const ms = end - start
+  if (ms < 1000) return `${ms}ms`
+  const seconds = Math.floor(ms / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}m ${seconds % 60}s`
+}
+
 export function formatBytes(bytes: number, precision = 1): string {
   if (bytes === 0) return "0 B"
   const exponent = Math.min(

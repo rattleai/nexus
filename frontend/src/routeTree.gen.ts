@@ -44,6 +44,7 @@ import { Route as SettingsAgentsRouteImport } from './routes/settings.agents'
 import { Route as AgentsWorkspaceRouteImport } from './routes/agents.workspace'
 import { Route as AgentsSessionsRouteImport } from './routes/agents.sessions'
 import { Route as AgentsChatRouteImport } from './routes/agents.chat'
+import { Route as AgentsInstanceIdRouteImport } from './routes/agents.$instanceId'
 import { Route as AuthCallbackProviderRouteImport } from './routes/auth/callback/$provider'
 
 const WebhooksRoute = WebhooksRouteImport.update({
@@ -249,6 +250,13 @@ const AgentsChatRoute = AgentsChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => AgentsRoute,
 } as any).lazy(() => import('./routes/agents.chat.lazy').then((d) => d.Route))
+const AgentsInstanceIdRoute = AgentsInstanceIdRouteImport.update({
+  id: '/$instanceId',
+  path: '/$instanceId',
+  getParentRoute: () => AgentsRoute,
+} as any).lazy(() =>
+  import('./routes/agents.$instanceId.lazy').then((d) => d.Route),
+)
 const AuthCallbackProviderRoute = AuthCallbackProviderRouteImport.update({
   id: '/auth/callback/$provider',
   path: '/auth/callback/$provider',
@@ -277,6 +285,7 @@ export interface FileRoutesByFullPath {
   '/team': typeof TeamRoute
   '/verify-email': typeof VerifyEmailRoute
   '/webhooks': typeof WebhooksRoute
+  '/agents/$instanceId': typeof AgentsInstanceIdRoute
   '/agents/chat': typeof AgentsChatRoute
   '/agents/sessions': typeof AgentsSessionsRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
@@ -313,6 +322,7 @@ export interface FileRoutesByTo {
   '/team': typeof TeamRoute
   '/verify-email': typeof VerifyEmailRoute
   '/webhooks': typeof WebhooksRoute
+  '/agents/$instanceId': typeof AgentsInstanceIdRoute
   '/agents/chat': typeof AgentsChatRoute
   '/agents/sessions': typeof AgentsSessionsRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
@@ -352,6 +362,7 @@ export interface FileRoutesById {
   '/team': typeof TeamRoute
   '/verify-email': typeof VerifyEmailRoute
   '/webhooks': typeof WebhooksRoute
+  '/agents/$instanceId': typeof AgentsInstanceIdRoute
   '/agents/chat': typeof AgentsChatRoute
   '/agents/sessions': typeof AgentsSessionsRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
@@ -392,6 +403,7 @@ export interface FileRouteTypes {
     | '/team'
     | '/verify-email'
     | '/webhooks'
+    | '/agents/$instanceId'
     | '/agents/chat'
     | '/agents/sessions'
     | '/agents/workspace'
@@ -428,6 +440,7 @@ export interface FileRouteTypes {
     | '/team'
     | '/verify-email'
     | '/webhooks'
+    | '/agents/$instanceId'
     | '/agents/chat'
     | '/agents/sessions'
     | '/agents/workspace'
@@ -466,6 +479,7 @@ export interface FileRouteTypes {
     | '/team'
     | '/verify-email'
     | '/webhooks'
+    | '/agents/$instanceId'
     | '/agents/chat'
     | '/agents/sessions'
     | '/agents/workspace'
@@ -755,6 +769,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AgentsChatRouteImport
       parentRoute: typeof AgentsRoute
     }
+    '/agents/$instanceId': {
+      id: '/agents/$instanceId'
+      path: '/$instanceId'
+      fullPath: '/agents/$instanceId'
+      preLoaderRoute: typeof AgentsInstanceIdRouteImport
+      parentRoute: typeof AgentsRoute
+    }
     '/auth/callback/$provider': {
       id: '/auth/callback/$provider'
       path: '/auth/callback/$provider'
@@ -766,6 +787,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AgentsRouteChildren {
+  AgentsInstanceIdRoute: typeof AgentsInstanceIdRoute
   AgentsChatRoute: typeof AgentsChatRoute
   AgentsSessionsRoute: typeof AgentsSessionsRoute
   AgentsWorkspaceRoute: typeof AgentsWorkspaceRoute
@@ -773,6 +795,7 @@ interface AgentsRouteChildren {
 }
 
 const AgentsRouteChildren: AgentsRouteChildren = {
+  AgentsInstanceIdRoute: AgentsInstanceIdRoute,
   AgentsChatRoute: AgentsChatRoute,
   AgentsSessionsRoute: AgentsSessionsRoute,
   AgentsWorkspaceRoute: AgentsWorkspaceRoute,
