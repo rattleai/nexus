@@ -248,6 +248,8 @@ class CharacteristicAssignment(TimestampMixin, Base):
     display_order: Mapped[int] = mapped_column(Integer, default=0)
     is_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     default_value: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    min_select: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_select: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     product: Mapped[Product] = relationship(back_populates="characteristic_assignments")
     characteristic: Mapped[Characteristic] = relationship()

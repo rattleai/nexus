@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── Product Family ───────────────────────────────────────
@@ -209,6 +209,15 @@ class CharacteristicAssignmentCreate(BaseModel):
     display_order: int = 0
     is_required: bool | None = None
     default_value: str | None = None
+    min_select: int | None = Field(default=None, ge=0)
+    max_select: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_cardinality(self):
+        if self.min_select is not None and self.max_select is not None:
+            if self.min_select > self.max_select:
+                raise ValueError("min_select cannot exceed max_select")
+        return self
 
 
 class CharacteristicAssignmentResponse(BaseModel):
@@ -218,6 +227,8 @@ class CharacteristicAssignmentResponse(BaseModel):
     display_order: int
     is_required: bool | None
     default_value: str | None
+    min_select: int | None = None
+    max_select: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -637,3 +648,80 @@ class ConfigurationPricingResponse(BaseModel):
     resolved_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ── Constraint Analysis ─────────────────────────────────
+
+
+class ConstraintAnalysisRequest(BaseModel):
+    product_id: uuid.UUID
+
+
+class CycleInfoResponse(BaseModel):
+    path: list[str]
+    involved_rules: list[str]
+
+
+class DeadValueResponse(BaseModel):
+    characteristic: str
+    value: str
+    reason: str
+    excluding_rules: list[str]
+
+
+class CoverageGapResponse(BaseModel):
+    characteristic: str
+    is_required: bool
+    has_default: bool
+    reachable_via_constraints: bool
+    gap_description: str
+
+
+class ConstraintAnalysisResponse(BaseModel):
+    cycles: list[CycleInfoResponse] = []
+    dead_values: list[DeadValueResponse] = []
+    coverage_gaps: list[CoverageGapResponse] = []
+    is_satisfiable: bool
+    satisfiability_note: str = ""
+    analysis_duration_ms: float
+
+
+# ── Constraint Simulation ───────────────────────────────
+
+
+class ConstraintSimulationRequest(BaseModel):
+    product_id: uuid.UUID
+    selections: dict[str, str] = {}
+
+
+class ConstraintSimulationResponse(BaseModel):
+    available_domains: dict[str, Any] = {}
+    auto_set_values: dict[str, str] = {}
+    excluded_values: dict[str, list[str]] = {}
+    contradictions: list[str] = []
+    conflict_explanations: list[dict] = []
+    is_valid: bool = True
+    is_complete: bool = False
+
+
+class ConstraintImpactRequest(BaseModel):
+    product_id: uuid.UUID
+    rule_id: uuid.UUID | None = None
+    rule_expression: dict | None = None
+    rule_constraint_type: str | None = None
+    selections: dict[str, str] = {}
+
+
+class CharacteristicImpactResponse(BaseModel):
+    characteristic: str
+    values_pruned: list[str] = []
+    domain_before: Any = None
+    domain_after: Any = None
+    was_auto_set: bool = False
+
+
+class ConstraintImpactResponse(BaseModel):
+    affected_characteristics: list[CharacteristicImpactResponse] = []
+    new_contradictions: list[str] = []
+    new_auto_sets: dict[str, str] = {}
+    total_values_pruned: int = 0

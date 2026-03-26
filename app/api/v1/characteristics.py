@@ -417,6 +417,8 @@ async def assign_characteristic(
         display_order=body.display_order,
         is_required=body.is_required,
         default_value=body.default_value,
+        min_select=body.min_select,
+        max_select=body.max_select,
     )
     db.add(assignment)
     await emit_audit_event(

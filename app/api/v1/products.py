@@ -332,18 +332,59 @@ async def publish_product_version(
     )
     next_version = max_result.scalar() + 1
 
+    from app.configurator.snapshot import compile_snapshot
+    snapshot = await compile_snapshot(db, product_id, tenant.id)
+    snapshot["version_number"] = next_version
+
     version = ProductVersion(
         tenant_id=tenant.id,
         product_id=product_id,
         version_number=next_version,
         label=body.label,
-        snapshot={"product": product.name, "version": next_version},
+        snapshot=snapshot,
         is_active=False,
         published_at=datetime.now(UTC),
     )
     db.add(version)
     await emit_audit_event(
         db, action=AuditAction.CREATE, resource_type="product_version",
+        resource_id=str(version.id), tenant_id=tenant.id,
+    )
+    await db.commit()
+    await db.refresh(version)
+    return version
+
+
+@router.post(
+    "/{product_id}/versions/{version_id}/recompile",
+    response_model=ProductVersionResponse,
+    dependencies=[Depends(RequireScopes("products:write"))],
+)
+async def recompile_product_version(
+    product_id: uuid.UUID,
+    version_id: uuid.UUID,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recompile the constraint network snapshot for an existing product version."""
+    from app.configurator.snapshot import compile_snapshot
+
+    result = await db.execute(
+        tenant_query(select(ProductVersion), tenant).where(
+            ProductVersion.id == version_id,
+            ProductVersion.product_id == product_id,
+        )
+    )
+    version = result.scalar_one_or_none()
+    if not version:
+        raise HTTPException(status_code=404, detail="Product version not found")
+
+    snapshot = await compile_snapshot(db, product_id, tenant.id)
+    snapshot["version_number"] = version.version_number
+    version.snapshot = snapshot
+
+    await emit_audit_event(
+        db, action=AuditAction.UPDATE, resource_type="product_version",
         resource_id=str(version.id), tenant_id=tenant.id,
     )
     await db.commit()

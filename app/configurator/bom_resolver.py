@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -28,6 +29,15 @@ from app.db.models import (
 logger = structlog.stdlib.get_logger()
 
 
+def _bom_eager_load(depth: int = 5):
+    """Build chained selectinload for BOM item hierarchy up to given depth."""
+    load = selectinload(BOMHeader.items)
+    current = load
+    for _ in range(depth - 1):
+        current = current.selectinload(BOMItem.children)
+    return load
+
+
 @dataclass
 class ResolvedItem:
     part_number: str
@@ -39,6 +49,7 @@ class ResolvedItem:
     parent_part: str | None
     source_bom_item_id: str
     item_type: str
+    quantity_expression: dict | None = None
 
 
 class BOMResolver:
@@ -69,7 +80,7 @@ class BOMResolver:
                 BOMHeader.is_primary.is_(True),
                 BOMHeader.deleted_at.is_(None),
             )
-            .options(selectinload(BOMHeader.items).selectinload(BOMItem.children))
+            .options(_bom_eager_load(max_depth))
         )
         bom_header = bom_result.scalar_one_or_none()
         if not bom_header:
@@ -97,6 +108,7 @@ class BOMResolver:
                 "parent_part": r.parent_part,
                 "source_bom_item_id": r.source_bom_item_id,
                 "item_type": r.item_type,
+                "quantity_expression": r.quantity_expression,
             }
             for r in resolved
         ]
@@ -125,7 +137,7 @@ class BOMResolver:
         db.add(configured_bom)
 
         # Resolve pricing
-        await self._resolve_pricing(db, session, selections, total_cost)
+        await self._resolve_pricing(db, session, selections, total_cost, resolved_items_json)
 
         await db.commit()
         await db.refresh(configured_bom)
@@ -167,6 +179,7 @@ class BOMResolver:
                 parent_part=None,
                 source_bom_item_id=str(item.id),
                 item_type=item.item_type.value,
+                quantity_expression=item.quantity_expression,
             ))
 
             # Recurse into children
@@ -201,11 +214,111 @@ class BOMResolver:
     def _resolve_quantities(
         self, items: list[ResolvedItem], selections: dict[str, str]
     ) -> list[ResolvedItem]:
-        """Resolve quantity expressions (placeholder for formula evaluation)."""
-        # Quantity expressions are evaluated in the BOM item model;
-        # for now we use the fixed quantity. Full formula evaluation
-        # will parse quantity_expression JSONB in a future iteration.
+        """Evaluate quantity expressions using safe AST arithmetic.
+
+        For items with a quantity_expression of type "formula", evaluates the
+        expression against current selections. Falls back to the fixed quantity
+        on any error (missing variable, parse error, negative result, etc.).
+        """
+        for item in items:
+            if item.quantity_expression is None:
+                continue
+            expr_data = item.quantity_expression
+            if expr_data.get("type") != "formula":
+                continue
+            formula_str = expr_data.get("expression")
+            variables = expr_data.get("variables", {})
+            if not formula_str or not variables:
+                continue
+            try:
+                local_vars: dict[str, float] = {}
+                for var_name, char_slug in variables.items():
+                    val = selections.get(char_slug)
+                    if val is None:
+                        raise ValueError(
+                            f"Missing selection for variable '{var_name}' (char: '{char_slug}')"
+                        )
+                    local_vars[var_name] = float(val)
+
+                tree = ast.parse(formula_str, mode="eval")
+                result = self._engine._safe_eval_ast(tree.body, local_vars)
+
+                if result < 0:
+                    logger.warning(
+                        "quantity_expression_negative",
+                        part_number=item.part_number,
+                        result=result,
+                        expression=formula_str,
+                    )
+                    continue  # keep original fixed quantity
+
+                # Clamp to optional bounds
+                min_qty = expr_data.get("min")
+                max_qty = expr_data.get("max")
+                if min_qty is not None:
+                    result = max(result, float(min_qty))
+                if max_qty is not None:
+                    result = min(result, float(max_qty))
+
+                item.quantity = Decimal(str(result)).quantize(Decimal("0.0001"))
+            except (ValueError, SyntaxError, TypeError, ZeroDivisionError, ArithmeticError) as exc:
+                logger.warning(
+                    "quantity_expression_eval_failed",
+                    part_number=item.part_number,
+                    expression=formula_str,
+                    error=str(exc),
+                )
+                # Fallback: keep original fixed quantity
         return items
+
+    @staticmethod
+    def _calculate_tiered_price_all_units(
+        quantity: Decimal, tiers: list[dict]
+    ) -> Decimal:
+        """All-units: entire quantity priced at the tier it falls into."""
+        for tier in tiers:
+            tier_min = Decimal(str(tier["min"]))
+            tier_max = Decimal(str(tier["max"])) if tier.get("max") is not None else None
+            tier_price = Decimal(str(tier["price"]))
+            if quantity >= tier_min and (tier_max is None or quantity <= tier_max):
+                return quantity * tier_price
+        # Quantity exceeds all tiers: use last tier
+        if tiers:
+            return quantity * Decimal(str(tiers[-1]["price"]))
+        return Decimal("0")
+
+    @staticmethod
+    def _calculate_tiered_price_marginal(
+        quantity: Decimal, tiers: list[dict]
+    ) -> Decimal:
+        """Marginal (incremental): units in each band priced at that band's rate."""
+        total = Decimal("0")
+        remaining = quantity
+        for tier in tiers:
+            if remaining <= 0:
+                break
+            tier_min = Decimal(str(tier["min"]))
+            tier_max = Decimal(str(tier["max"])) if tier.get("max") is not None else None
+            tier_price = Decimal(str(tier["price"]))
+            band_size = (tier_max - tier_min + 1) if tier_max is not None else remaining
+            units_in_band = min(remaining, band_size)
+            total += units_in_band * tier_price
+            remaining -= units_in_band
+        return total
+
+    @staticmethod
+    def _find_matching_tier(quantity: Decimal, tiers: list[dict]) -> dict | None:
+        """Return the tier dict that the given quantity falls into."""
+        for tier in tiers:
+            tier_min = Decimal(str(tier["min"]))
+            tier_max = Decimal(str(tier["max"])) if tier.get("max") is not None else None
+            if quantity >= tier_min and (tier_max is None or quantity <= tier_max):
+                return {
+                    "min": str(tier_min),
+                    "max": str(tier_max) if tier_max is not None else None,
+                    "price": str(tier["price"]),
+                }
+        return None
 
     async def _resolve_pricing(
         self,
@@ -213,6 +326,7 @@ class BOMResolver:
         session: ConfigurationSession,
         selections: dict[str, str],
         total_cost: Decimal,
+        resolved_items_json: list[dict] | None = None,
     ) -> None:
         """Evaluate pricing rules and create/update ConfigurationPricing."""
         rules_result = await db.execute(
@@ -276,6 +390,53 @@ class BOMResolver:
                 amount = Decimal(str(expr.get("amount", 0)))
                 total_adjustments += amount
                 breakdown.append({"rule": rule.name, "type": rt, "amount": str(amount)})
+
+            elif rt == "tiered":
+                tiers = expr.get("tiers", [])
+                if not tiers:
+                    logger.warning("tiered_pricing_empty_tiers", rule_name=rule.name)
+                    continue
+                tier_model = expr.get("tier_model", "all_units")
+                qty_source = expr.get("quantity_source", "bom_total")
+                qty_key = expr.get("quantity_key")
+
+                # Determine quantity
+                quantity = Decimal("0")
+                if qty_source == "bom_total" and resolved_items_json:
+                    quantity = sum(
+                        (Decimal(str(item.get("quantity", 0))) for item in resolved_items_json),
+                        Decimal("0"),
+                    )
+                elif qty_source == "characteristic" and qty_key:
+                    raw = selections.get(qty_key)
+                    if raw is not None:
+                        try:
+                            quantity = Decimal(str(raw))
+                        except InvalidOperation:
+                            pass
+                elif qty_source == "fixed" and qty_key is not None:
+                    try:
+                        quantity = Decimal(str(qty_key))
+                    except InvalidOperation:
+                        pass
+                elif qty_source == "base_price":
+                    quantity = base_price
+
+                base_amount = Decimal(str(expr.get("base_amount", 0)))
+                if tier_model == "marginal":
+                    amount = base_amount + self._calculate_tiered_price_marginal(quantity, tiers)
+                else:
+                    amount = base_amount + self._calculate_tiered_price_all_units(quantity, tiers)
+
+                total_adjustments += amount
+                breakdown.append({
+                    "rule": rule.name,
+                    "type": rt,
+                    "amount": str(amount),
+                    "tier_model": tier_model,
+                    "quantity_used": str(quantity),
+                    "tier_applied": self._find_matching_tier(quantity, tiers),
+                })
 
             elif rt == "margin":
                 min_margin_pct = Decimal(str(expr.get("min_margin_pct", 0)))
