@@ -8,6 +8,8 @@ import {
   Square,
   Pause,
   RefreshCw,
+  Eye,
+  MonitorPlay,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -20,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useAgentInstances, useStopInstance } from "@/hooks/use-agents"
+import { useAgentStore } from "@/stores/agent-store"
 import { cn } from "@/lib/utils"
 import type { AgentDefinition, AgentInstance } from "@/types/agents"
 
@@ -122,6 +125,7 @@ export function AgentRunsPanel({ agent }: AgentRunsPanelProps) {
             <RunCard
               key={instance.id}
               instance={instance}
+              agent={agent}
               onStop={() => handleStop(instance.id)}
               isStopping={stoppingIds.has(instance.id)}
             />
@@ -134,14 +138,17 @@ export function AgentRunsPanel({ agent }: AgentRunsPanelProps) {
 
 function RunCard({
   instance,
+  agent,
   onStop,
   isStopping,
 }: {
   instance: AgentInstance
+  agent: AgentDefinition
   onStop: () => void
   isStopping: boolean
 }) {
   const [expanded, setExpanded] = React.useState(false)
+  const { openDrawer, addStreamPane } = useAgentStore()
   const config = statusConfig[instance.status] ?? statusConfig.pending
   const Icon = config.icon
 
@@ -192,6 +199,32 @@ function RunCard({
           <span className="text-xs text-muted-foreground">
             {new Date(instance.created_at).toLocaleString()}
           </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0"
+            title="View Details"
+            onClick={(e) => {
+              e.stopPropagation()
+              openDrawer(instance.id)
+            }}
+          >
+            <Eye className="h-3.5 w-3.5" />
+          </Button>
+          {(instance.status === "running" || instance.status === "pending") && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              title="Open in Stream"
+              onClick={(e) => {
+                e.stopPropagation()
+                addStreamPane(instance.id, agent.name, agent.id)
+              }}
+            >
+              <MonitorPlay className="h-3.5 w-3.5" />
+            </Button>
+          )}
           {instance.status === "running" && (
             <Button
               variant="destructive"
@@ -214,7 +247,7 @@ function RunCard({
           {instance.input_data && Object.keys(instance.input_data).length > 0 && (
             <div>
               <div className="text-xs font-medium mb-1">Input</div>
-              <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-h-40">
+              <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-w-full max-h-40">
                 {JSON.stringify(instance.input_data, null, 2)}
               </pre>
             </div>
@@ -222,7 +255,7 @@ function RunCard({
           {instance.output_data && Object.keys(instance.output_data).length > 0 && (
             <div>
               <div className="text-xs font-medium mb-1">Output</div>
-              <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-h-40">
+              <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-w-full max-h-40">
                 {JSON.stringify(instance.output_data, null, 2)}
               </pre>
             </div>
@@ -230,7 +263,7 @@ function RunCard({
           {instance.error && (
             <div>
               <div className="text-xs font-medium text-red-500 mb-1">Error</div>
-              <pre className="text-xs bg-red-500/10 text-red-500 rounded p-2 overflow-x-auto">
+              <pre className="text-xs bg-red-500/10 text-red-500 rounded p-2 overflow-x-auto max-w-full">
                 {instance.error}
               </pre>
             </div>

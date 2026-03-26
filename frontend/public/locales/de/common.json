@@ -19,6 +19,25 @@
     "more": "Mehr",
     "home": "Startseite"
   },
+  "settings_nav": {
+    "back_to_console": "Zurück zur Konsole",
+    "general": "Allgemein",
+    "profile_language": "Profil & Sprache",
+    "agents": "Agenten",
+    "agent_definitions": "Agent-Definitionen",
+    "provider_keys": "Anbieter-Schlüssel",
+    "integrations": "Integrationen",
+    "api_keys": "API-Schlüssel",
+    "webhooks": "Webhooks",
+    "organization": "Organisation",
+    "team": "Team",
+    "billing": "Abrechnung",
+    "audit_log": "Aktivitätsprotokoll",
+    "account_section": "Konto",
+    "security": "Sicherheit",
+    "data_export": "Datenexport",
+    "danger_zone": "Gefahrenzone"
+  },
   "buttons": {
     "cancel": "Abbrechen",
     "confirm": "Bestätigen",

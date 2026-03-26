@@ -78,9 +78,9 @@ export function AgentCard({
               {agent.description}
             </p>
           )}
-          <div className="flex items-center gap-3 mt-2 text-[11px] text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Cpu className="h-3 w-3" />
+          <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1 truncate max-w-[120px]">
+              <Cpu className="h-3 w-3 shrink-0" />
               {agent.model}
             </span>
             <span className="flex items-center gap-1">
@@ -99,10 +99,10 @@ export function AgentCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+              className="h-9 w-9 shrink-0 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
               onClick={(e) => e.stopPropagation()}
             >
-              <MoreHorizontal className="h-3.5 w-3.5" />
+              <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">

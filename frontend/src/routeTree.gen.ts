@@ -28,6 +28,23 @@ import { Route as ApiKeysRouteImport } from './routes/api-keys'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SettingsIndexRouteImport } from './routes/settings.index'
+import { Route as AgentsIndexRouteImport } from './routes/agents.index'
+import { Route as SettingsWebhooksRouteImport } from './routes/settings.webhooks'
+import { Route as SettingsTeamRouteImport } from './routes/settings.team'
+import { Route as SettingsSecurityRouteImport } from './routes/settings.security'
+import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
+import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
+import { Route as SettingsDataRouteImport } from './routes/settings.data'
+import { Route as SettingsDangerRouteImport } from './routes/settings.danger'
+import { Route as SettingsBillingRouteImport } from './routes/settings.billing'
+import { Route as SettingsAuditLogRouteImport } from './routes/settings.audit-log'
+import { Route as SettingsApiKeysRouteImport } from './routes/settings.api-keys'
+import { Route as SettingsAgentsRouteImport } from './routes/settings.agents'
+import { Route as AgentsWorkspaceRouteImport } from './routes/agents.workspace'
+import { Route as AgentsSessionsRouteImport } from './routes/agents.sessions'
+import { Route as AgentsChatRouteImport } from './routes/agents.chat'
+import { Route as AgentsInstanceIdRouteImport } from './routes/agents.$instanceId'
 import { Route as AuthCallbackProviderRouteImport } from './routes/auth/callback/$provider'
 
 const WebhooksRoute = WebhooksRouteImport.update({
@@ -131,6 +148,115 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const AgentsIndexRoute = AgentsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AgentsRoute,
+} as any).lazy(() => import('./routes/agents.index.lazy').then((d) => d.Route))
+const SettingsWebhooksRoute = SettingsWebhooksRouteImport.update({
+  id: '/webhooks',
+  path: '/webhooks',
+  getParentRoute: () => SettingsRoute,
+} as any).lazy(() =>
+  import('./routes/settings.webhooks.lazy').then((d) => d.Route),
+)
+const SettingsTeamRoute = SettingsTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => SettingsRoute,
+} as any).lazy(() => import('./routes/settings.team.lazy').then((d) => d.Route))
+const SettingsSecurityRoute = SettingsSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => SettingsRoute,
+} as any).lazy(() =>
+  import('./routes/settings.security.lazy').then((d) => d.Route),
+)
+const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
+  id: '/providers',
+  path: '/providers',
+  getParentRoute: () => SettingsRoute,
+} as any).lazy(() =>
+  import('./routes/settings.providers.lazy').then((d) => d.Route),
+)
+const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
+  id: '/general',
+  path: '/general',
+  getParentRoute: () => SettingsRoute,
+} as any).lazy(() =>
+  import('./routes/settings.general.lazy').then((d) => d.Route),
+)
+const SettingsDataRoute = SettingsDataRouteImport.update({
+  id: '/data',
+  path: '/data',
+  getParentRoute: () => SettingsRoute,
+} as any).lazy(() => import('./routes/settings.data.lazy').then((d) => d.Route))
+const SettingsDangerRoute = SettingsDangerRouteImport.update({
+  id: '/danger',
+  path: '/danger',
+  getParentRoute: () => SettingsRoute,
+} as any).lazy(() =>
+  import('./routes/settings.danger.lazy').then((d) => d.Route),
+)
+const SettingsBillingRoute = SettingsBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => SettingsRoute,
+} as any).lazy(() =>
+  import('./routes/settings.billing.lazy').then((d) => d.Route),
+)
+const SettingsAuditLogRoute = SettingsAuditLogRouteImport.update({
+  id: '/audit-log',
+  path: '/audit-log',
+  getParentRoute: () => SettingsRoute,
+} as any).lazy(() =>
+  import('./routes/settings.audit-log.lazy').then((d) => d.Route),
+)
+const SettingsApiKeysRoute = SettingsApiKeysRouteImport.update({
+  id: '/api-keys',
+  path: '/api-keys',
+  getParentRoute: () => SettingsRoute,
+} as any).lazy(() =>
+  import('./routes/settings.api-keys.lazy').then((d) => d.Route),
+)
+const SettingsAgentsRoute = SettingsAgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
+  getParentRoute: () => SettingsRoute,
+} as any).lazy(() =>
+  import('./routes/settings.agents.lazy').then((d) => d.Route),
+)
+const AgentsWorkspaceRoute = AgentsWorkspaceRouteImport.update({
+  id: '/workspace',
+  path: '/workspace',
+  getParentRoute: () => AgentsRoute,
+} as any).lazy(() =>
+  import('./routes/agents.workspace.lazy').then((d) => d.Route),
+)
+const AgentsSessionsRoute = AgentsSessionsRouteImport.update({
+  id: '/sessions',
+  path: '/sessions',
+  getParentRoute: () => AgentsRoute,
+} as any).lazy(() =>
+  import('./routes/agents.sessions.lazy').then((d) => d.Route),
+)
+const AgentsChatRoute = AgentsChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => AgentsRoute,
+} as any).lazy(() => import('./routes/agents.chat.lazy').then((d) => d.Route))
+const AgentsInstanceIdRoute = AgentsInstanceIdRouteImport.update({
+  id: '/$instanceId',
+  path: '/$instanceId',
+  getParentRoute: () => AgentsRoute,
+} as any).lazy(() =>
+  import('./routes/agents.$instanceId.lazy').then((d) => d.Route),
+)
 const AuthCallbackProviderRoute = AuthCallbackProviderRouteImport.update({
   id: '/auth/callback/$provider',
   path: '/auth/callback/$provider',
@@ -142,7 +268,7 @@ const AuthCallbackProviderRoute = AuthCallbackProviderRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
-  '/agents': typeof AgentsRoute
+  '/agents': typeof AgentsRouteWithChildren
   '/api-keys': typeof ApiKeysRoute
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
@@ -155,16 +281,32 @@ export interface FileRoutesByFullPath {
   '/provider-keys': typeof ProviderKeysRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/team': typeof TeamRoute
   '/verify-email': typeof VerifyEmailRoute
   '/webhooks': typeof WebhooksRoute
+  '/agents/$instanceId': typeof AgentsInstanceIdRoute
+  '/agents/chat': typeof AgentsChatRoute
+  '/agents/sessions': typeof AgentsSessionsRoute
+  '/agents/workspace': typeof AgentsWorkspaceRoute
+  '/settings/agents': typeof SettingsAgentsRoute
+  '/settings/api-keys': typeof SettingsApiKeysRoute
+  '/settings/audit-log': typeof SettingsAuditLogRoute
+  '/settings/billing': typeof SettingsBillingRoute
+  '/settings/danger': typeof SettingsDangerRoute
+  '/settings/data': typeof SettingsDataRoute
+  '/settings/general': typeof SettingsGeneralRoute
+  '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/security': typeof SettingsSecurityRoute
+  '/settings/team': typeof SettingsTeamRoute
+  '/settings/webhooks': typeof SettingsWebhooksRoute
+  '/agents/': typeof AgentsIndexRoute
+  '/settings/': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
-  '/agents': typeof AgentsRoute
   '/api-keys': typeof ApiKeysRoute
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
@@ -177,17 +319,33 @@ export interface FileRoutesByTo {
   '/provider-keys': typeof ProviderKeysRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/settings': typeof SettingsRoute
   '/team': typeof TeamRoute
   '/verify-email': typeof VerifyEmailRoute
   '/webhooks': typeof WebhooksRoute
+  '/agents/$instanceId': typeof AgentsInstanceIdRoute
+  '/agents/chat': typeof AgentsChatRoute
+  '/agents/sessions': typeof AgentsSessionsRoute
+  '/agents/workspace': typeof AgentsWorkspaceRoute
+  '/settings/agents': typeof SettingsAgentsRoute
+  '/settings/api-keys': typeof SettingsApiKeysRoute
+  '/settings/audit-log': typeof SettingsAuditLogRoute
+  '/settings/billing': typeof SettingsBillingRoute
+  '/settings/danger': typeof SettingsDangerRoute
+  '/settings/data': typeof SettingsDataRoute
+  '/settings/general': typeof SettingsGeneralRoute
+  '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/security': typeof SettingsSecurityRoute
+  '/settings/team': typeof SettingsTeamRoute
+  '/settings/webhooks': typeof SettingsWebhooksRoute
+  '/agents': typeof AgentsIndexRoute
+  '/settings': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
-  '/agents': typeof AgentsRoute
+  '/agents': typeof AgentsRouteWithChildren
   '/api-keys': typeof ApiKeysRoute
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
@@ -200,10 +358,27 @@ export interface FileRoutesById {
   '/provider-keys': typeof ProviderKeysRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/team': typeof TeamRoute
   '/verify-email': typeof VerifyEmailRoute
   '/webhooks': typeof WebhooksRoute
+  '/agents/$instanceId': typeof AgentsInstanceIdRoute
+  '/agents/chat': typeof AgentsChatRoute
+  '/agents/sessions': typeof AgentsSessionsRoute
+  '/agents/workspace': typeof AgentsWorkspaceRoute
+  '/settings/agents': typeof SettingsAgentsRoute
+  '/settings/api-keys': typeof SettingsApiKeysRoute
+  '/settings/audit-log': typeof SettingsAuditLogRoute
+  '/settings/billing': typeof SettingsBillingRoute
+  '/settings/danger': typeof SettingsDangerRoute
+  '/settings/data': typeof SettingsDataRoute
+  '/settings/general': typeof SettingsGeneralRoute
+  '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/security': typeof SettingsSecurityRoute
+  '/settings/team': typeof SettingsTeamRoute
+  '/settings/webhooks': typeof SettingsWebhooksRoute
+  '/agents/': typeof AgentsIndexRoute
+  '/settings/': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
 }
 export interface FileRouteTypes {
@@ -228,12 +403,28 @@ export interface FileRouteTypes {
     | '/team'
     | '/verify-email'
     | '/webhooks'
+    | '/agents/$instanceId'
+    | '/agents/chat'
+    | '/agents/sessions'
+    | '/agents/workspace'
+    | '/settings/agents'
+    | '/settings/api-keys'
+    | '/settings/audit-log'
+    | '/settings/billing'
+    | '/settings/danger'
+    | '/settings/data'
+    | '/settings/general'
+    | '/settings/providers'
+    | '/settings/security'
+    | '/settings/team'
+    | '/settings/webhooks'
+    | '/agents/'
+    | '/settings/'
     | '/auth/callback/$provider'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/accept-invitation'
-    | '/agents'
     | '/api-keys'
     | '/audit-log'
     | '/billing'
@@ -246,10 +437,26 @@ export interface FileRouteTypes {
     | '/provider-keys'
     | '/register'
     | '/reset-password'
-    | '/settings'
     | '/team'
     | '/verify-email'
     | '/webhooks'
+    | '/agents/$instanceId'
+    | '/agents/chat'
+    | '/agents/sessions'
+    | '/agents/workspace'
+    | '/settings/agents'
+    | '/settings/api-keys'
+    | '/settings/audit-log'
+    | '/settings/billing'
+    | '/settings/danger'
+    | '/settings/data'
+    | '/settings/general'
+    | '/settings/providers'
+    | '/settings/security'
+    | '/settings/team'
+    | '/settings/webhooks'
+    | '/agents'
+    | '/settings'
     | '/auth/callback/$provider'
   id:
     | '__root__'
@@ -272,13 +479,30 @@ export interface FileRouteTypes {
     | '/team'
     | '/verify-email'
     | '/webhooks'
+    | '/agents/$instanceId'
+    | '/agents/chat'
+    | '/agents/sessions'
+    | '/agents/workspace'
+    | '/settings/agents'
+    | '/settings/api-keys'
+    | '/settings/audit-log'
+    | '/settings/billing'
+    | '/settings/danger'
+    | '/settings/data'
+    | '/settings/general'
+    | '/settings/providers'
+    | '/settings/security'
+    | '/settings/team'
+    | '/settings/webhooks'
+    | '/agents/'
+    | '/settings/'
     | '/auth/callback/$provider'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AcceptInvitationRoute: typeof AcceptInvitationRoute
-  AgentsRoute: typeof AgentsRoute
+  AgentsRoute: typeof AgentsRouteWithChildren
   ApiKeysRoute: typeof ApiKeysRoute
   AuditLogRoute: typeof AuditLogRoute
   BillingRoute: typeof BillingRoute
@@ -291,7 +515,7 @@ export interface RootRouteChildren {
   ProviderKeysRoute: typeof ProviderKeysRoute
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
-  SettingsRoute: typeof SettingsRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
   TeamRoute: typeof TeamRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
   WebhooksRoute: typeof WebhooksRoute
@@ -433,6 +657,125 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/': {
+      id: '/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/agents/': {
+      id: '/agents/'
+      path: '/'
+      fullPath: '/agents/'
+      preLoaderRoute: typeof AgentsIndexRouteImport
+      parentRoute: typeof AgentsRoute
+    }
+    '/settings/webhooks': {
+      id: '/settings/webhooks'
+      path: '/webhooks'
+      fullPath: '/settings/webhooks'
+      preLoaderRoute: typeof SettingsWebhooksRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/team': {
+      id: '/settings/team'
+      path: '/team'
+      fullPath: '/settings/team'
+      preLoaderRoute: typeof SettingsTeamRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/security': {
+      id: '/settings/security'
+      path: '/security'
+      fullPath: '/settings/security'
+      preLoaderRoute: typeof SettingsSecurityRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/providers': {
+      id: '/settings/providers'
+      path: '/providers'
+      fullPath: '/settings/providers'
+      preLoaderRoute: typeof SettingsProvidersRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/general': {
+      id: '/settings/general'
+      path: '/general'
+      fullPath: '/settings/general'
+      preLoaderRoute: typeof SettingsGeneralRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/data': {
+      id: '/settings/data'
+      path: '/data'
+      fullPath: '/settings/data'
+      preLoaderRoute: typeof SettingsDataRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/danger': {
+      id: '/settings/danger'
+      path: '/danger'
+      fullPath: '/settings/danger'
+      preLoaderRoute: typeof SettingsDangerRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/billing': {
+      id: '/settings/billing'
+      path: '/billing'
+      fullPath: '/settings/billing'
+      preLoaderRoute: typeof SettingsBillingRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/audit-log': {
+      id: '/settings/audit-log'
+      path: '/audit-log'
+      fullPath: '/settings/audit-log'
+      preLoaderRoute: typeof SettingsAuditLogRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/api-keys': {
+      id: '/settings/api-keys'
+      path: '/api-keys'
+      fullPath: '/settings/api-keys'
+      preLoaderRoute: typeof SettingsApiKeysRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/agents': {
+      id: '/settings/agents'
+      path: '/agents'
+      fullPath: '/settings/agents'
+      preLoaderRoute: typeof SettingsAgentsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/agents/workspace': {
+      id: '/agents/workspace'
+      path: '/workspace'
+      fullPath: '/agents/workspace'
+      preLoaderRoute: typeof AgentsWorkspaceRouteImport
+      parentRoute: typeof AgentsRoute
+    }
+    '/agents/sessions': {
+      id: '/agents/sessions'
+      path: '/sessions'
+      fullPath: '/agents/sessions'
+      preLoaderRoute: typeof AgentsSessionsRouteImport
+      parentRoute: typeof AgentsRoute
+    }
+    '/agents/chat': {
+      id: '/agents/chat'
+      path: '/chat'
+      fullPath: '/agents/chat'
+      preLoaderRoute: typeof AgentsChatRouteImport
+      parentRoute: typeof AgentsRoute
+    }
+    '/agents/$instanceId': {
+      id: '/agents/$instanceId'
+      path: '/$instanceId'
+      fullPath: '/agents/$instanceId'
+      preLoaderRoute: typeof AgentsInstanceIdRouteImport
+      parentRoute: typeof AgentsRoute
+    }
     '/auth/callback/$provider': {
       id: '/auth/callback/$provider'
       path: '/auth/callback/$provider'
@@ -443,10 +786,63 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AgentsRouteChildren {
+  AgentsInstanceIdRoute: typeof AgentsInstanceIdRoute
+  AgentsChatRoute: typeof AgentsChatRoute
+  AgentsSessionsRoute: typeof AgentsSessionsRoute
+  AgentsWorkspaceRoute: typeof AgentsWorkspaceRoute
+  AgentsIndexRoute: typeof AgentsIndexRoute
+}
+
+const AgentsRouteChildren: AgentsRouteChildren = {
+  AgentsInstanceIdRoute: AgentsInstanceIdRoute,
+  AgentsChatRoute: AgentsChatRoute,
+  AgentsSessionsRoute: AgentsSessionsRoute,
+  AgentsWorkspaceRoute: AgentsWorkspaceRoute,
+  AgentsIndexRoute: AgentsIndexRoute,
+}
+
+const AgentsRouteWithChildren =
+  AgentsRoute._addFileChildren(AgentsRouteChildren)
+
+interface SettingsRouteChildren {
+  SettingsAgentsRoute: typeof SettingsAgentsRoute
+  SettingsApiKeysRoute: typeof SettingsApiKeysRoute
+  SettingsAuditLogRoute: typeof SettingsAuditLogRoute
+  SettingsBillingRoute: typeof SettingsBillingRoute
+  SettingsDangerRoute: typeof SettingsDangerRoute
+  SettingsDataRoute: typeof SettingsDataRoute
+  SettingsGeneralRoute: typeof SettingsGeneralRoute
+  SettingsProvidersRoute: typeof SettingsProvidersRoute
+  SettingsSecurityRoute: typeof SettingsSecurityRoute
+  SettingsTeamRoute: typeof SettingsTeamRoute
+  SettingsWebhooksRoute: typeof SettingsWebhooksRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAgentsRoute: SettingsAgentsRoute,
+  SettingsApiKeysRoute: SettingsApiKeysRoute,
+  SettingsAuditLogRoute: SettingsAuditLogRoute,
+  SettingsBillingRoute: SettingsBillingRoute,
+  SettingsDangerRoute: SettingsDangerRoute,
+  SettingsDataRoute: SettingsDataRoute,
+  SettingsGeneralRoute: SettingsGeneralRoute,
+  SettingsProvidersRoute: SettingsProvidersRoute,
+  SettingsSecurityRoute: SettingsSecurityRoute,
+  SettingsTeamRoute: SettingsTeamRoute,
+  SettingsWebhooksRoute: SettingsWebhooksRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+}
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcceptInvitationRoute: AcceptInvitationRoute,
-  AgentsRoute: AgentsRoute,
+  AgentsRoute: AgentsRouteWithChildren,
   ApiKeysRoute: ApiKeysRoute,
   AuditLogRoute: AuditLogRoute,
   BillingRoute: BillingRoute,
@@ -459,7 +855,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProviderKeysRoute: ProviderKeysRoute,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
-  SettingsRoute: SettingsRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   TeamRoute: TeamRoute,
   VerifyEmailRoute: VerifyEmailRoute,
   WebhooksRoute: WebhooksRoute,

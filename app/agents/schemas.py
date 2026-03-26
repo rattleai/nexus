@@ -48,6 +48,7 @@ class AgentDefinitionCreate(BaseModel):
     max_tokens_per_run: int = Field(100_000, ge=100, le=10_000_000)
     sandbox_enabled: bool = False
     parallel_tool_execution: bool = True
+    max_concurrent_instances: int = Field(0, ge=0, le=1000)
     memory_config: dict[str, Any] = {}
     governance_policy: dict[str, Any] = {}
     metadata: dict[str, Any] = {}
@@ -76,6 +77,7 @@ class AgentDefinitionUpdate(BaseModel):
     max_tokens_per_run: int | None = Field(None, ge=100, le=10_000_000)
     sandbox_enabled: bool | None = None
     parallel_tool_execution: bool | None = None
+    max_concurrent_instances: int | None = Field(None, ge=0, le=1000)
     memory_config: dict[str, Any] | None = None
     governance_policy: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
@@ -108,6 +110,7 @@ class AgentDefinitionResponse(BaseModel):
     max_tokens_per_run: int
     sandbox_enabled: bool
     parallel_tool_execution: bool
+    max_concurrent_instances: int
     memory_config: dict[str, Any]
     governance_policy: dict[str, Any]
     metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)
@@ -139,6 +142,8 @@ class AgentInstanceResponse(BaseModel):
     error: str | None
     started_at: datetime | None
     completed_at: datetime | None
+    last_heartbeat_at: datetime | None = None
+    last_checkpoint: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
@@ -367,6 +372,10 @@ class AgentPolicyCreate(BaseModel):
     approval_timeout_seconds: int = Field(300, ge=1, le=86400)
     approval_default_action: Literal["deny", "approve"] = "deny"
     max_requests_per_minute: int | None = Field(None, ge=1, le=10_000)
+    max_agent_requests_per_minute: int | None = Field(
+        None, ge=1, le=100_000,
+        description="Aggregate rate limit across ALL instances of the same agent definition",
+    )
     max_steps_per_run: int | None = Field(None, ge=1, le=10_000)
     rules: dict[str, Any] = {}
 
@@ -396,6 +405,7 @@ class AgentPolicyResponse(BaseModel):
     approval_timeout_seconds: int
     approval_default_action: str
     max_requests_per_minute: int | None
+    max_agent_requests_per_minute: int | None
     max_steps_per_run: int | None
     rules: dict[str, Any]
     created_at: datetime

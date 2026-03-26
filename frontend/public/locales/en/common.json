@@ -8,6 +8,7 @@
     "api_keys": "API Keys",
     "provider_keys": "Provider Keys",
     "agents": "Agents",
+    "agent_sessions": "Sessions",
     "ai_chat": "AI Chat",
     "organization": "Organization",
     "billing": "Billing",
@@ -19,6 +20,25 @@
     "settings": "Settings",
     "more": "More",
     "home": "Home"
+  },
+  "settings_nav": {
+    "back_to_console": "Back to Console",
+    "general": "General",
+    "profile_language": "Profile & Language",
+    "agents": "Agents",
+    "agent_definitions": "Agent Definitions",
+    "provider_keys": "Provider Keys",
+    "integrations": "Integrations",
+    "api_keys": "API Keys",
+    "webhooks": "Webhooks",
+    "organization": "Organization",
+    "team": "Team",
+    "billing": "Billing",
+    "audit_log": "Audit Log",
+    "account_section": "Account",
+    "security": "Security",
+    "data_export": "Data Export",
+    "danger_zone": "Danger Zone"
   },
   "buttons": {
     "cancel": "Cancel",

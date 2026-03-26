@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router"
 import { useTranslation } from "react-i18next"
-import { LogOut, Settings, User as UserIcon } from "lucide-react"
+import { LogOut, Settings, Key } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
@@ -59,8 +59,8 @@ export function UserMenu() {
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link to="/api-keys">
-            <UserIcon className="mr-2 h-4 w-4" />
+          <Link to="/settings/api-keys">
+            <Key className="mr-2 h-4 w-4" />
             {t("nav.api_keys")}
           </Link>
         </DropdownMenuItem>
