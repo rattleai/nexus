@@ -92,6 +92,7 @@ export const ConditionGroup = memo(function ConditionGroup({
         </Badge>
 
         <Button
+          type="button"
           variant="ghost"
           size="sm"
           className="h-7 px-2 text-xs text-muted-foreground"
@@ -102,6 +103,7 @@ export const ConditionGroup = memo(function ConditionGroup({
         </Button>
 
         <Button
+          type="button"
           variant="ghost"
           size="sm"
           className="h-7 px-2 text-xs text-muted-foreground"
@@ -114,6 +116,7 @@ export const ConditionGroup = memo(function ConditionGroup({
         <div className="flex-1" />
 
         <Button
+          type="button"
           variant="ghost"
           size="icon"
           className="h-7 w-7 text-muted-foreground hover:text-destructive"

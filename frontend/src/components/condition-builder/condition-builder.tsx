@@ -92,6 +92,7 @@ export function ConditionBuilder({
       {/* Empty state */}
       {value === null && (
         <Button
+          type="button"
           variant="outline"
           size="sm"
           className="h-8 text-xs border-dashed"
@@ -112,6 +113,7 @@ export function ConditionBuilder({
             onDelete={handleLeafDelete}
           />
           <Button
+            type="button"
             variant="ghost"
             size="sm"
             className="h-7 px-2 text-xs text-muted-foreground"
@@ -136,6 +138,7 @@ export function ConditionBuilder({
       {/* Clear all button */}
       {value !== null && (
         <Button
+          type="button"
           variant="ghost"
           size="sm"
           className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"

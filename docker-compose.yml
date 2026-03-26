@@ -7,7 +7,9 @@ services:
     env_file: .env
     environment:
       - PYTHONPATH=/app
-      - DATABASE_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
+      - DATABASE_URL=postgresql+asyncpg://app_user:change-me-in-production@pgbouncer:6432/app
+      # Superuser URL for migrations (CREATE TABLE, ALTER, RLS setup)
+      - DATABASE_MIGRATION_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
     volumes:
       - .:/app
     depends_on:
@@ -21,7 +23,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
-    command: sh -c "alembic upgrade head && python -m scripts.seed_dev && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "python -m scripts.ensure_app_user && alembic upgrade head && python -m scripts.seed_dev && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     stop_grace_period: 30s
     restart: unless-stopped
     deploy:
@@ -56,6 +58,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-app}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./infra/docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app"]
       interval: 5s
@@ -81,6 +84,9 @@ services:
       RESERVE_POOL_TIMEOUT: "3"
       SERVER_RESET_QUERY: "DISCARD ALL"
       AUTH_TYPE: scram-sha-256
+      # Allow both superuser (migrations) and app_user (runtime) through PgBouncer
+      AUTH_USER: app
+      AUTH_QUERY: "SELECT usename, passwd FROM pg_shadow WHERE usename=$1"
       LISTEN_PORT: "6432"
       IGNORE_STARTUP_PARAMETERS: extra_float_digits,statement_timeout,lock_timeout,idle_in_transaction_session_timeout
     ports:
@@ -89,7 +95,7 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h localhost -p 6432 -U app || exit 1"]
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 6432 || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -123,7 +129,7 @@ services:
     env_file: .env
     environment:
       - PYTHONPATH=/app
-      - DATABASE_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
+      - DATABASE_URL=postgresql+asyncpg://app_user:change-me-in-production@pgbouncer:6432/app
     volumes:
       - .:/app
     depends_on:
@@ -151,7 +157,7 @@ services:
     env_file: .env
     environment:
       - PYTHONPATH=/app
-      - DATABASE_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
+      - DATABASE_URL=postgresql+asyncpg://app_user:change-me-in-production@pgbouncer:6432/app
     volumes:
       - .:/app
     depends_on:
@@ -170,7 +176,7 @@ services:
     environment:
       - PYTHONPATH=/app
       - AGENT_EXECUTION_ENABLED=true
-      - DATABASE_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
+      - DATABASE_URL=postgresql+asyncpg://app_user:change-me-in-production@pgbouncer:6432/app
     volumes:
       - .:/app
     depends_on:
@@ -203,7 +209,7 @@ services:
       - PYTHONPATH=/app
       - MCP_ENABLED=true
       - MCP_TRANSPORT=http
-      - DATABASE_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
+      - DATABASE_URL=postgresql+asyncpg://app_user:change-me-in-production@pgbouncer:6432/app
     volumes:
       - .:/app
     depends_on:

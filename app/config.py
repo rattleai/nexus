@@ -6,6 +6,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://app:app@localhost:5432/app"
+    # Superuser URL for running Alembic migrations (CREATE TABLE, ALTER, RLS setup).
+    # Falls back to DATABASE_URL when not set (dev convenience).
+    DATABASE_MIGRATION_URL: str = ""
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
 

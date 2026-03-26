@@ -76,7 +76,19 @@ const itemTypeVariant: Record<
 // ── Helpers ─────────────────────────────────────────────
 
 function flattenItems(items: BOMItem[]): BOMItem[] {
-  return items.flatMap((item) => [item, ...flattenItems(item.children ?? [])])
+  const seen = new Set<string>()
+  const result: BOMItem[] = []
+  function walk(list: BOMItem[]) {
+    for (const item of list) {
+      if (!seen.has(item.id)) {
+        seen.add(item.id)
+        result.push(item)
+        if (item.children?.length) walk(item.children)
+      }
+    }
+  }
+  walk(items)
+  return result
 }
 
 // ── BOM Header Form Schema ──────────────────────────────

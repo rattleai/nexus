@@ -141,6 +141,7 @@ export const ConditionLeaf = memo(function ConditionLeaf({
 
       {/* Delete button */}
       <Button
+        type="button"
         variant="ghost"
         size="icon"
         className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
