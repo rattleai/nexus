@@ -91,8 +91,9 @@ async def create_bom(
         db, action=AuditAction.CREATE, resource_type="bom_header",
         resource_id=str(bom.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(bom)
+    await db.commit()
     return bom
 
 
@@ -163,8 +164,9 @@ async def update_bom(
         db, action=AuditAction.UPDATE, resource_type="bom_header",
         resource_id=str(bom.id), tenant_id=tenant.id, changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(bom)
+    await db.commit()
     return bom
 
 
@@ -244,8 +246,9 @@ async def add_bom_item(
         db, action=AuditAction.CREATE, resource_type="bom_item",
         resource_id=str(item.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(item, attribute_names=["children"])
+    await db.commit()
     return item
 
 
@@ -284,8 +287,9 @@ async def update_bom_item(
         db, action=AuditAction.UPDATE, resource_type="bom_item",
         resource_id=str(item.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(item, attribute_names=["children"])
+    await db.commit()
     return item
 
 

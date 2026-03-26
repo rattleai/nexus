@@ -101,12 +101,12 @@ async def create_session(
         available_domains=domains,
     )
     db.add(session)
-    await db.flush()  # flush to assign the id before audit log references it
     await emit_audit_event(
         db, action=AuditAction.CREATE, resource_type="configuration_session",
         resource_id=str(session.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
+    await db.refresh(session, attribute_names=["selections"])
 
     # If created from template, apply template selections
     if body.template_id:
@@ -134,15 +134,10 @@ async def create_session(
                             template_id=str(template.id))
             if pairs:
                 await _engine.apply_selections_batch(db, session.id, pairs)
-                await db.commit()
+                await db.flush()
+                await db.refresh(session, attribute_names=["selections"])
 
-    # Re-query with selections eagerly loaded — more robust than db.refresh()
-    result = await db.execute(
-        select(ConfigurationSession)
-        .where(ConfigurationSession.id == session.id)
-        .options(selectinload(ConfigurationSession.selections))
-    )
-    session = result.scalar_one()
+    await db.commit()
 
     await emit(ConfigurationStarted(
         session_id=str(session.id), product_id=str(body.product_id), tenant_id=str(tenant.id),
@@ -227,9 +222,9 @@ async def make_selection(
     if result.validation_errors and result.validation_errors[0].error_type in ("not_found", "locked"):
         raise HTTPException(status_code=400, detail=result.validation_errors[0].message)
 
-    # Reload session for response
+    # Reload session for response (use tenant_query since RLS context resets after engine commit)
     session = await db.execute(
-        select(ConfigurationSession)
+        tenant_query(select(ConfigurationSession), tenant)
         .where(ConfigurationSession.id == session_id)
         .options(selectinload(ConfigurationSession.selections))
     )
@@ -283,7 +278,7 @@ async def remove_selection(
     result = await _engine.remove_selection(db, session_id, characteristic_id)
 
     session = await db.execute(
-        select(ConfigurationSession)
+        tenant_query(select(ConfigurationSession), tenant)
         .where(ConfigurationSession.id == session_id)
         .options(selectinload(ConfigurationSession.selections))
     )
@@ -338,15 +333,9 @@ async def reset_session(
     session.validation_errors = None
     session.status = ConfigurationStatus.IN_PROGRESS
 
+    await db.flush()
+    await db.refresh(session, attribute_names=["selections"])
     await db.commit()
-
-    # Re-query with selections eagerly loaded
-    refreshed = await db.execute(
-        select(ConfigurationSession)
-        .where(ConfigurationSession.id == session_id)
-        .options(selectinload(ConfigurationSession.selections))
-    )
-    session = refreshed.scalar_one()
     return session
 
 
@@ -487,15 +476,9 @@ async def lock_session(
         resource_id=str(session.id), tenant_id=tenant.id,
         changes={"status": "locked"},
     )
+    await db.flush()
+    await db.refresh(session, attribute_names=["selections"])
     await db.commit()
-
-    # Re-query with selections eagerly loaded
-    refreshed = await db.execute(
-        select(ConfigurationSession)
-        .where(ConfigurationSession.id == session_id)
-        .options(selectinload(ConfigurationSession.selections))
-    )
-    session = refreshed.scalar_one()
 
     await emit(ConfigurationLocked(
         session_id=str(session_id), product_id=str(session.product_id),
@@ -547,15 +530,9 @@ async def clone_session(
         )
         db.add(new_sel)
 
+    await db.flush()
+    await db.refresh(clone, attribute_names=["selections"])
     await db.commit()
-
-    # Re-query with selections eagerly loaded
-    refreshed = await db.execute(
-        select(ConfigurationSession)
-        .where(ConfigurationSession.id == clone.id)
-        .options(selectinload(ConfigurationSession.selections))
-    )
-    clone = refreshed.scalar_one()
     return clone
 
 
@@ -587,8 +564,9 @@ async def create_template(
         db, action=AuditAction.CREATE, resource_type="configuration_template",
         resource_id=str(template.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(template)
+    await db.commit()
     return template
 
 
@@ -674,8 +652,9 @@ async def create_pricing_rule(
         db, action=AuditAction.CREATE, resource_type="pricing_rule",
         resource_id=str(rule.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(rule)
+    await db.commit()
     return rule
 
 
@@ -746,8 +725,9 @@ async def update_pricing_rule(
         db, action=AuditAction.UPDATE, resource_type="pricing_rule",
         resource_id=str(rule.id), tenant_id=tenant.id, changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(rule)
+    await db.commit()
     return rule
 
 

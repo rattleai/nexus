@@ -125,8 +125,9 @@ async def create_constraint_group(
         db, action=AuditAction.CREATE, resource_type="constraint_group",
         resource_id=str(group.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(group)
+    await db.commit()
     return group
 
 
@@ -194,8 +195,9 @@ async def create_constraint_rule(
         db, action=AuditAction.CREATE, resource_type="constraint_rule",
         resource_id=str(rule.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(rule)
+    await db.commit()
     ConfiguratorEngine.invalidate_product_cache(body.product_id, tenant.id)
     return rule
 
@@ -279,8 +281,9 @@ async def update_constraint_rule(
         db, action=AuditAction.UPDATE, resource_type="constraint_rule",
         resource_id=str(rule.id), tenant_id=tenant.id, changes=update_data,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(rule)
+    await db.commit()
     ConfiguratorEngine.invalidate_product_cache(rule.product_id, tenant.id)
     return rule
 
@@ -351,8 +354,9 @@ async def create_variant_table(
         db, action=AuditAction.CREATE, resource_type="variant_table",
         resource_id=str(table.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(table)
+    await db.commit()
     ConfiguratorEngine.invalidate_product_cache(body.product_id, tenant.id)
     return table
 
@@ -397,8 +401,9 @@ async def update_variant_table(
         db, action=AuditAction.UPDATE, resource_type="variant_table",
         resource_id=str(table.id), tenant_id=tenant.id, changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(table)
+    await db.commit()
     ConfiguratorEngine.invalidate_product_cache(table.product_id, tenant.id)
     return table
 

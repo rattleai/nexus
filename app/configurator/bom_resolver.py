@@ -149,8 +149,9 @@ class BOMResolver:
         # Resolve pricing
         await self._resolve_pricing(db, session, selections, total_cost, resolved_items_json)
 
-        await db.commit()
+        await db.flush()
         await db.refresh(configured_bom)
+        await db.commit()
         CONFIGURATOR_BOM_RESOLUTION_DURATION.observe(duration_ms / 1000.0)
         return configured_bom
 

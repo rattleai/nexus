@@ -365,8 +365,9 @@ async def create_async_completion(
         },
     )
     db.add(job)
-    await db.commit()
+    await db.flush()
     await db.refresh(job)
+    await db.commit()
 
     # Dispatch Celery task
     from app.ai.tasks import process_ai_completion
@@ -463,8 +464,9 @@ async def create_provider_key(
     )
     key_record.set_api_key(body.api_key)
     db.add(key_record)
-    await db.commit()
+    await db.flush()
     await db.refresh(key_record)
+    await db.commit()
 
     await emit(AIProviderKeyCreated(
         tenant_id=str(tenant.id),
@@ -629,11 +631,12 @@ async def create_prompt_template(
     )
     db.add(template)
     try:
-        await db.commit()
+        await db.flush()
     except Exception:
         await db.rollback()
         raise HTTPException(status_code=409, detail=f"Template named '{body.name}' already exists")
     await db.refresh(template)
+    await db.commit()
     return PromptTemplateResponse.model_validate(template)
 
 
@@ -685,8 +688,9 @@ async def update_prompt_template(
     for field, value in update_data.items():
         setattr(template, field, value)
 
-    await db.commit()
+    await db.flush()
     await db.refresh(template)
+    await db.commit()
     return PromptTemplateResponse.model_validate(template)
 
 

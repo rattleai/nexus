@@ -91,8 +91,9 @@ async def subscribe_push(
         )
         db.add(subscription)
 
-    await db.commit()
+    await db.flush()
     await db.refresh(subscription)
+    await db.commit()
 
     logger.info("push_subscribed", user_id=str(user.id), platform=body.platform)
 

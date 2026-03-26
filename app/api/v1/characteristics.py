@@ -71,8 +71,9 @@ async def create_group(
         db, action=AuditAction.CREATE, resource_type="characteristic_group",
         resource_id=str(group.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(group)
+    await db.commit()
     return group
 
 
@@ -119,8 +120,9 @@ async def update_group(
         db, action=AuditAction.UPDATE, resource_type="characteristic_group",
         resource_id=str(group.id), tenant_id=tenant.id, changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(group)
+    await db.commit()
     return group
 
 
@@ -185,8 +187,9 @@ async def create_characteristic(
         db, action=AuditAction.CREATE, resource_type="characteristic",
         resource_id=str(char.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(char, attribute_names=["values"])
+    await db.commit()
     return char
 
 
@@ -272,8 +275,9 @@ async def update_characteristic(
         db, action=AuditAction.UPDATE, resource_type="characteristic",
         resource_id=str(char.id), tenant_id=tenant.id, changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(char, attribute_names=["values"])
+    await db.commit()
     return char
 
 
@@ -342,8 +346,9 @@ async def add_value(
         db, action=AuditAction.CREATE, resource_type="characteristic_value",
         resource_id=str(val.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(val)
+    await db.commit()
     return val
 
 
@@ -375,8 +380,9 @@ async def update_value(
         db, action=AuditAction.UPDATE, resource_type="characteristic_value",
         resource_id=str(val.id), tenant_id=tenant.id, changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(val)
+    await db.commit()
     return val
 
 
@@ -454,8 +460,9 @@ async def assign_characteristic(
         db, action=AuditAction.CREATE, resource_type="characteristic_assignment",
         resource_id=str(assignment.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(assignment)
+    await db.commit()
     ConfiguratorEngine.invalidate_product_cache(body.product_id, tenant.id)
     return assignment
 
@@ -506,8 +513,9 @@ async def update_assignment(
         db, action=AuditAction.UPDATE, resource_type="characteristic_assignment",
         resource_id=str(assignment.id), tenant_id=tenant.id,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(assignment)
+    await db.commit()
     ConfiguratorEngine.invalidate_product_cache(assignment.product_id, tenant.id)
     return assignment
 

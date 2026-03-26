@@ -482,8 +482,9 @@ class ConfiguratorEngine:
         else:
             session.status = ConfigurationStatus.IN_PROGRESS
 
-        await db.commit()
+        await db.flush()
         await db.refresh(session, attribute_names=["selections"])
+        await db.commit()
 
         return SelectionResult(
             available_domains=self._serialize_domains(result.domains),
@@ -612,8 +613,9 @@ class ConfiguratorEngine:
         else:
             session.status = ConfigurationStatus.IN_PROGRESS
 
-        await db.commit()
+        await db.flush()
         await db.refresh(session, attribute_names=["selections"])
+        await db.commit()
 
         return SelectionResult(
             available_domains=self._serialize_domains(result.domains),
@@ -704,8 +706,9 @@ class ConfiguratorEngine:
             else ConfigurationStatus.IN_PROGRESS
         )
 
-        await db.commit()
+        await db.flush()
         await db.refresh(session, attribute_names=["selections"])
+        await db.commit()
 
         return SelectionResult(
             available_domains=self._serialize_domains(result.domains),
