@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router"
 import { useTranslation } from "react-i18next"
-import { LayoutDashboard, Bot, MessageSquare, Briefcase, Menu } from "lucide-react"
+import { LayoutDashboard, Bot, Menu } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useSidebar } from "@/components/ui/sidebar"
@@ -15,8 +15,6 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
   { href: "/agents", labelKey: "nav.agents", icon: Bot },
-  { href: "/chat", labelKey: "nav.ai_chat", icon: MessageSquare },
-  { href: "/jobs", labelKey: "nav.jobs", icon: Briefcase },
 ]
 
 export function BottomNav() {
@@ -27,7 +25,9 @@ export function BottomNav() {
   const { t } = useTranslation()
   const { isAuthenticated } = useAuth()
 
-  if (!isMobile || !isAuthenticated) return null
+  // Hide bottom nav in settings context (settings sidebar sheet provides navigation)
+  const isSettingsContext = currentPath.startsWith("/settings")
+  if (!isMobile || !isAuthenticated || isSettingsContext) return null
 
   return (
     <nav

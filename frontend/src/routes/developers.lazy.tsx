@@ -76,7 +76,7 @@ function DevelopersPage() {
             </CardHeader>
             <CardContent>
               <Button variant="outline" size="sm" asChild>
-                <Link to="/api-keys">
+                <Link to="/settings/api-keys">
                   {t("cards.api_keys.action")}
                   <ArrowRight className="ml-2 h-3.5 w-3.5" />
                 </Link>
@@ -97,7 +97,7 @@ function DevelopersPage() {
             </CardHeader>
             <CardContent>
               <Button variant="outline" size="sm" asChild>
-                <Link to="/webhooks">
+                <Link to="/settings/webhooks">
                   {t("cards.webhooks.action")}
                   <ArrowRight className="ml-2 h-3.5 w-3.5" />
                 </Link>
@@ -123,7 +123,7 @@ function DevelopersPage() {
             </CardHeader>
             <CardContent>
               <Button variant="outline" size="sm" asChild>
-                <Link to="/provider-keys">
+                <Link to="/settings/providers">
                   {t("cards.provider_keys.action")}
                   <ArrowRight className="ml-2 h-3.5 w-3.5" />
                 </Link>

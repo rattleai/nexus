@@ -51,7 +51,7 @@ import {
 } from "@/hooks/use-agents"
 import { useAgentStore, type AgentTab } from "@/stores/agent-store"
 import { cn } from "@/lib/utils"
-import { useIsMobile } from "@/hooks/use-mobile"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import { ErrorBoundary } from "@/components/error-boundary"
 
 const TABS: { id: AgentTab; label: string; icon: React.ElementType }[] = [
@@ -64,7 +64,7 @@ const TABS: { id: AgentTab; label: string; icon: React.ElementType }[] = [
 ]
 
 export function AgentWorkspace() {
-  const isMobile = useIsMobile()
+  const isWideEnough = useMediaQuery("(min-width: 1024px)")
   const {
     selectedAgentId,
     activeTab,
@@ -231,8 +231,8 @@ export function AgentWorkspace() {
     <div className="flex flex-col flex-1 min-h-0">
       {/* Tab bar */}
       <div className="border-b">
-        {/* Mobile: agent name on its own row */}
-        <div className="flex items-center gap-2 px-4 pt-2 pb-1 md:hidden">
+        {/* Compact: agent name on its own row */}
+        <div className="flex items-center gap-2 px-4 pt-2 pb-1 lg:hidden">
           <div
             className={cn(
               "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
@@ -249,7 +249,7 @@ export function AgentWorkspace() {
         </div>
 
         {/* Mobile: scrollable icon + tiny label tabs */}
-        <div className="overflow-hidden md:hidden">
+        <div className="overflow-hidden lg:hidden">
         <div className="overflow-x-auto pb-1">
           <Tabs
             value={activeTab}
@@ -275,7 +275,7 @@ export function AgentWorkspace() {
         </div>
 
         {/* Desktop: agent name + separator + full tabs inline */}
-        <div className="hidden md:flex items-center px-4 py-2 gap-4">
+        <div className="hidden lg:flex items-center px-4 py-2 gap-4">
           <div className="flex items-center gap-2 min-w-0">
             <div
               className={cn(
@@ -363,7 +363,7 @@ export function AgentWorkspace() {
 
   return (
     <>
-      {isMobile ? (
+      {!isWideEnough ? (
         <div className="flex flex-col flex-1 min-h-0">
           {!selectedAgentId ? (
             sidebarContent
