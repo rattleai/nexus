@@ -216,7 +216,7 @@ class CharacteristicValueResponse(BaseModel):
     description: str | None
     display_order: int
     is_default: bool
-    price_adjustment: Decimal | None
+    price_adjustment: float | None
     image_url: str | None
 
     model_config = {"from_attributes": True}
@@ -499,14 +499,14 @@ class BOMItemResponse(BaseModel):
     part_number: str
     part_name: str
     description: str | None
-    quantity: Decimal
+    quantity: float
     quantity_expression: dict | None
     unit_of_measure: str
     sub_product_id: uuid.UUID | None
     selection_condition: dict | None
     sort_order: int
     is_optional: bool
-    unit_cost: Decimal | None
+    unit_cost: float | None
     lead_time_days: int | None
     children: list["BOMItemResponse"] = []
 
@@ -524,7 +524,7 @@ class WhereUsedResponse(BaseModel):
     product_name: str
     item_id: uuid.UUID
     part_number: str
-    quantity: Decimal
+    quantity: float
 
     model_config = {"from_attributes": True}
 
@@ -646,7 +646,7 @@ class ConfiguredBOMResponse(BaseModel):
     bom_header_id: uuid.UUID
     resolved_items: list[dict]
     total_components: int
-    total_cost: Decimal | None
+    total_cost: float | None
     selection_snapshot: dict
     resolved_at: datetime
     resolution_duration_ms: int | None
@@ -719,12 +719,12 @@ class ConfigurationPricingResponse(BaseModel):
     id: uuid.UUID
     session_id: uuid.UUID
     currency: str
-    base_price: Decimal
-    total_adjustments: Decimal
-    final_price: Decimal
-    total_cost: Decimal
-    margin_amount: Decimal
-    margin_percentage: Decimal
+    base_price: float
+    total_adjustments: float
+    final_price: float
+    total_cost: float
+    margin_amount: float
+    margin_percentage: float
     price_breakdown: list[dict]
     is_profitable: bool
     resolved_at: datetime
