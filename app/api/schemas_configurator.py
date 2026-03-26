@@ -5,7 +5,20 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field
+import json
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+_MAX_METADATA_BYTES = 65536  # 64KB
+
+
+def _validate_metadata_size(v: dict[str, Any] | None) -> dict[str, Any] | None:
+    if v is not None:
+        size = len(json.dumps(v))
+        if size > _MAX_METADATA_BYTES:
+            raise ValueError(f"metadata exceeds maximum size of 64KB (got {size} bytes)")
+    return v
 
 
 # ── Product Family ───────────────────────────────────────
@@ -17,11 +30,15 @@ class ProductFamilyCreate(BaseModel):
     description: str | None = None
     metadata: dict[str, Any] | None = None
 
+    _validate_metadata = field_validator("metadata")(_validate_metadata_size)
+
 
 class ProductFamilyUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     metadata: dict[str, Any] | None = None
+
+    _validate_metadata = field_validator("metadata")(_validate_metadata_size)
 
 
 class ProductFamilyResponse(BaseModel):
@@ -48,6 +65,8 @@ class ProductCreate(BaseModel):
     status: str = "draft"
     metadata: dict[str, Any] | None = None
 
+    _validate_metadata = field_validator("metadata")(_validate_metadata_size)
+
 
 class ProductUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -56,6 +75,8 @@ class ProductUpdate(BaseModel):
     sku_prefix: str | None = Field(default=None, max_length=50)
     status: str | None = None
     metadata: dict[str, Any] | None = None
+
+    _validate_metadata = field_validator("metadata")(_validate_metadata_size)
 
 
 class ProductResponse(BaseModel):
@@ -134,6 +155,16 @@ class CharacteristicCreate(BaseModel):
     default_value: str | None = Field(default=None, max_length=500)
     display_order: int = 0
 
+    @model_validator(mode="after")
+    def validate_numeric_bounds(self):
+        if self.char_type == "numeric":
+            if self.numeric_min is not None and self.numeric_max is not None:
+                if self.numeric_min > self.numeric_max:
+                    raise ValueError("numeric_min must be <= numeric_max")
+            if self.numeric_step is not None and self.numeric_step <= 0:
+                raise ValueError("numeric_step must be positive")
+        return self
+
 
 class CharacteristicUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -147,6 +178,15 @@ class CharacteristicUpdate(BaseModel):
     is_multi_select: bool | None = None
     default_value: str | None = Field(default=None, max_length=500)
     display_order: int | None = None
+
+    @model_validator(mode="after")
+    def validate_numeric_bounds(self):
+        if self.numeric_min is not None and self.numeric_max is not None:
+            if self.numeric_min > self.numeric_max:
+                raise ValueError("numeric_min must be <= numeric_max")
+        if self.numeric_step is not None and self.numeric_step <= 0:
+            raise ValueError("numeric_step must be positive")
+        return self
 
 
 class CharacteristicValueCreate(BaseModel):
@@ -209,6 +249,15 @@ class CharacteristicAssignmentCreate(BaseModel):
     display_order: int = 0
     is_required: bool | None = None
     default_value: str | None = None
+    min_select: int | None = Field(default=None, ge=0)
+    max_select: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_cardinality(self):
+        if self.min_select is not None and self.max_select is not None:
+            if self.min_select > self.max_select:
+                raise ValueError("min_select cannot exceed max_select")
+        return self
 
 
 class CharacteristicAssignmentResponse(BaseModel):
@@ -218,6 +267,8 @@ class CharacteristicAssignmentResponse(BaseModel):
     display_order: int
     is_required: bool | None
     default_value: str | None
+    min_select: int | None = None
+    max_select: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -261,6 +312,12 @@ class ConstraintRuleCreate(BaseModel):
     effective_from: datetime | None = None
     effective_to: datetime | None = None
 
+    @model_validator(mode="after")
+    def validate_effective_dates(self):
+        if self.effective_from and self.effective_to and self.effective_from > self.effective_to:
+            raise ValueError("effective_from must be <= effective_to")
+        return self
+
 
 class ConstraintRuleUpdate(BaseModel):
     group_id: uuid.UUID | None = None
@@ -271,6 +328,12 @@ class ConstraintRuleUpdate(BaseModel):
     is_active: bool | None = None
     effective_from: datetime | None = None
     effective_to: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_effective_dates(self):
+        if self.effective_from and self.effective_to and self.effective_from > self.effective_to:
+            raise ValueError("effective_from must be <= effective_to")
+        return self
 
 
 class ConstraintRuleResponse(BaseModel):
@@ -348,6 +411,12 @@ class BOMHeaderCreate(BaseModel):
     effective_from: datetime | None = None
     effective_to: datetime | None = None
 
+    @model_validator(mode="after")
+    def validate_effective_dates(self):
+        if self.effective_from and self.effective_to and self.effective_from > self.effective_to:
+            raise ValueError("effective_from must be <= effective_to")
+        return self
+
 
 class BOMHeaderUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -356,6 +425,12 @@ class BOMHeaderUpdate(BaseModel):
     is_primary: bool | None = None
     effective_from: datetime | None = None
     effective_to: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_effective_dates(self):
+        if self.effective_from and self.effective_to and self.effective_from > self.effective_to:
+            raise ValueError("effective_from must be <= effective_to")
+        return self
 
 
 class BOMHeaderResponse(BaseModel):
@@ -389,6 +464,12 @@ class BOMItemCreate(BaseModel):
     is_optional: bool = False
     unit_cost: Decimal | None = None
     lead_time_days: int | None = None
+
+    @model_validator(mode="after")
+    def validate_effective_dates(self):
+        if self.effective_from and self.effective_to and self.effective_from > self.effective_to:
+            raise ValueError("effective_from must be <= effective_to")
+        return self
 
 
 class BOMItemUpdate(BaseModel):
@@ -588,6 +669,12 @@ class PricingRuleCreate(BaseModel):
     effective_to: datetime | None = None
     currency: str = "EUR"
 
+    @model_validator(mode="after")
+    def validate_effective_dates(self):
+        if self.effective_from and self.effective_to and self.effective_from > self.effective_to:
+            raise ValueError("effective_from must be <= effective_to")
+        return self
+
 
 class PricingRuleUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -598,6 +685,12 @@ class PricingRuleUpdate(BaseModel):
     effective_from: datetime | None = None
     effective_to: datetime | None = None
     currency: str | None = None
+
+    @model_validator(mode="after")
+    def validate_effective_dates(self):
+        if self.effective_from and self.effective_to and self.effective_from > self.effective_to:
+            raise ValueError("effective_from must be <= effective_to")
+        return self
 
 
 class PricingRuleResponse(BaseModel):
@@ -637,3 +730,80 @@ class ConfigurationPricingResponse(BaseModel):
     resolved_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ── Constraint Analysis ─────────────────────────────────
+
+
+class ConstraintAnalysisRequest(BaseModel):
+    product_id: uuid.UUID
+
+
+class CycleInfoResponse(BaseModel):
+    path: list[str]
+    involved_rules: list[str]
+
+
+class DeadValueResponse(BaseModel):
+    characteristic: str
+    value: str
+    reason: str
+    excluding_rules: list[str]
+
+
+class CoverageGapResponse(BaseModel):
+    characteristic: str
+    is_required: bool
+    has_default: bool
+    reachable_via_constraints: bool
+    gap_description: str
+
+
+class ConstraintAnalysisResponse(BaseModel):
+    cycles: list[CycleInfoResponse] = []
+    dead_values: list[DeadValueResponse] = []
+    coverage_gaps: list[CoverageGapResponse] = []
+    is_satisfiable: bool
+    satisfiability_note: str = ""
+    analysis_duration_ms: float
+
+
+# ── Constraint Simulation ───────────────────────────────
+
+
+class ConstraintSimulationRequest(BaseModel):
+    product_id: uuid.UUID
+    selections: dict[str, str] = {}
+
+
+class ConstraintSimulationResponse(BaseModel):
+    available_domains: dict[str, Any] = {}
+    auto_set_values: dict[str, str] = {}
+    excluded_values: dict[str, list[str]] = {}
+    contradictions: list[str] = []
+    conflict_explanations: list[dict] = []
+    is_valid: bool = True
+    is_complete: bool = False
+
+
+class ConstraintImpactRequest(BaseModel):
+    product_id: uuid.UUID
+    rule_id: uuid.UUID | None = None
+    rule_expression: dict | None = None
+    rule_constraint_type: str | None = None
+    selections: dict[str, str] = {}
+
+
+class CharacteristicImpactResponse(BaseModel):
+    characteristic: str
+    values_pruned: list[str] = []
+    domain_before: Any = None
+    domain_after: Any = None
+    was_auto_set: bool = False
+
+
+class ConstraintImpactResponse(BaseModel):
+    affected_characteristics: list[CharacteristicImpactResponse] = []
+    new_contradictions: list[str] = []
+    new_auto_sets: dict[str, str] = {}
+    total_values_pruned: int = 0

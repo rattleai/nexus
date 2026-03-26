@@ -18,6 +18,13 @@ def _make_tenant():
     )
 
 
+def _make_api_key(tenant):
+    api_key = MagicMock()
+    api_key.scopes = ["products:read", "products:write"]
+    api_key.tenant = tenant
+    return api_key
+
+
 def _make_product(tenant_id, **overrides):
     now = datetime.now(UTC)
     defaults = {
@@ -118,7 +125,8 @@ async def test_get_product_not_found(product_client):
     app.dependency_overrides[get_current_tenant] = lambda: tenant
 
     try:
-        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=None):
+        mock_key = _make_api_key(tenant)
+        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=mock_key):
             response = await client.get(f"/api/v1/products/{uuid.uuid4()}")
         assert response.status_code == 404
     finally:
@@ -142,7 +150,8 @@ async def test_get_family_not_found(product_client):
     app.dependency_overrides[get_current_tenant] = lambda: tenant
 
     try:
-        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=None):
+        mock_key = _make_api_key(tenant)
+        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=mock_key):
             response = await client.get(f"/api/v1/products/families/{uuid.uuid4()}")
         assert response.status_code == 404
     finally:

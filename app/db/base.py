@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, func
+from fastapi import HTTPException
+from sqlalchemy import DateTime, Integer, String, func, update
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -37,6 +39,23 @@ class VersionMixin:
     """
 
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+async def optimistic_version_bump(db: AsyncSession, instance: "VersionMixin") -> None:
+    """Atomically increment version with optimistic locking.
+
+    Raises 409 Conflict if the row was concurrently modified.
+    """
+    model_class = type(instance)
+    expected = instance.version
+    result = await db.execute(
+        update(model_class)
+        .where(model_class.id == instance.id, model_class.version == expected)
+        .values(version=expected + 1)
+    )
+    if result.rowcount == 0:
+        raise HTTPException(status_code=409, detail="Concurrent modification detected; please refresh and retry")
+    instance.version = expected + 1
 
 
 class AuditMixin:

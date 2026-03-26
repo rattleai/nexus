@@ -7,6 +7,7 @@ Each operation loads the current state, computes, and returns the result.
 from __future__ import annotations
 
 import ast
+import math
 import operator
 import time as _time
 import uuid
@@ -39,6 +40,125 @@ from app.db.models import (
 )
 
 logger = structlog.stdlib.get_logger()
+
+
+class CharacteristicInfo:
+    """Characteristic + product-level assignment overrides (cardinality, etc.).
+
+    Delegates attribute access to the inner Characteristic ORM object so that
+    existing code accessing .char_type, .values, .numeric_min etc. continues to
+    work without changes.
+    """
+
+    __slots__ = ("characteristic", "min_select", "max_select")
+
+    def __init__(
+        self,
+        characteristic: Characteristic,
+        min_select: int | None = None,
+        max_select: int | None = None,
+    ):
+        self.characteristic = characteristic
+        self.min_select = min_select
+        self.max_select = max_select
+
+    def __getattr__(self, name: str):
+        return getattr(self.characteristic, name)
+
+
+@dataclass(frozen=True)
+class NumericInterval:
+    """Represents a numeric domain as a bounded interval with optional step."""
+
+    min: float | None = None   # None = unbounded below
+    max: float | None = None   # None = unbounded above
+    step: float | None = None  # None = continuous
+
+    def is_empty(self) -> bool:
+        if self.min is not None and self.max is not None:
+            return self.min > self.max + 1e-9
+        return False
+
+    def is_single_point(self) -> bool:
+        if self.min is not None and self.max is not None:
+            return math.isclose(self.min, self.max, rel_tol=1e-9, abs_tol=1e-9)
+        return False
+
+    def intersect(self, other: "NumericInterval") -> "NumericInterval":
+        new_min = self.min
+        if other.min is not None:
+            new_min = other.min if new_min is None else max(new_min, other.min)
+        new_max = self.max
+        if other.max is not None:
+            new_max = other.max if new_max is None else min(new_max, other.max)
+        new_step = self.step or other.step
+        return NumericInterval(min=new_min, max=new_max, step=new_step)
+
+    def contains(self, value: float) -> bool:
+        if self.min is not None and value < self.min - 1e-9:
+            return False
+        if self.max is not None and value > self.max + 1e-9:
+            return False
+        if self.step is not None and self.min is not None:
+            remainder = (value - self.min) % self.step
+            if not (remainder < 1e-9 or abs(remainder - self.step) < 1e-9):
+                return False
+        return True
+
+    def to_dict(self) -> dict:
+        return {"type": "numeric", "min": self.min, "max": self.max, "step": self.step}
+
+
+# Type aliases for domain representation
+DomainValue = set[str] | NumericInterval
+DomainMap = dict[str, DomainValue]
+
+SNAPSHOT_SCHEMA_VERSION = 1
+
+
+class _CharTypeProxy:
+    """Mimics CharacteristicType enum for snapshot-loaded chars."""
+    __slots__ = ("value",)
+    def __init__(self, value: str):
+        self.value = value
+
+
+class _ValueProxy:
+    """Mimics CharacteristicValue for snapshot-loaded chars."""
+    __slots__ = ("value",)
+    def __init__(self, value: str):
+        self.value = value
+
+
+@dataclass
+class SnapshotCharacteristic:
+    """Lightweight characteristic from a pre-compiled snapshot."""
+    id: str
+    slug: str
+    name: str
+    char_type: _CharTypeProxy
+    values: list[_ValueProxy]
+    is_required: bool
+    is_multi_select: bool
+    numeric_min: float | None
+    numeric_max: float | None
+    numeric_step: float | None = None
+    unit: str | None = None
+    default_value: str | None = None
+    deleted_at: object = None
+
+
+@dataclass
+class SnapshotConstraint:
+    """Lightweight constraint from a pre-compiled snapshot."""
+    id: str
+    name: str
+    constraint_type: ConstraintType
+    expression: dict
+    priority: int
+    is_active: bool
+    effective_from: datetime | None = None
+    effective_to: datetime | None = None
 
 
 @dataclass
@@ -173,7 +293,7 @@ class ConfiguratorEngine:
 
     async def initialize_domains(
         self, db: AsyncSession, product_id: uuid.UUID, tenant_id: uuid.UUID
-    ) -> dict[str, list[str]]:
+    ) -> dict[str, list[str] | dict]:
         """Build initial (unconstrained) domains for all product characteristics."""
         assignments = await db.execute(
             select(CharacteristicAssignment)
@@ -181,7 +301,7 @@ class ConfiguratorEngine:
             .options(selectinload(CharacteristicAssignment.characteristic).selectinload(Characteristic.values))
         )
 
-        domains: dict[str, list[str]] = {}
+        domains: dict[str, list[str] | dict] = {}
         for assignment in assignments.scalars().all():
             char = assignment.characteristic
             if char.deleted_at is not None:
@@ -190,7 +310,14 @@ class ConfiguratorEngine:
                 domains[char.slug] = [v.value for v in char.values]
             elif char.char_type.value == "boolean":
                 domains[char.slug] = ["true", "false"]
-            elif char.char_type.value in ("numeric", "text"):
+            elif char.char_type.value == "numeric":
+                domains[char.slug] = {
+                    "type": "numeric",
+                    "min": char.numeric_min,
+                    "max": char.numeric_max,
+                    "step": char.numeric_step,
+                }
+            else:  # text
                 domains[char.slug] = ["__any__"]
         return domains
 
@@ -202,7 +329,7 @@ class ConfiguratorEngine:
         value: str,
     ) -> SelectionResult:
         """Apply a user selection and propagate constraints."""
-        session = await self._load_session(db, session_id)
+        session = await self._load_session(db, session_id, for_update=True)
         if not session:
             return SelectionResult(validation_errors=[ValidationError(error_type="not_found", message="Session not found")])
 
@@ -270,6 +397,22 @@ class ConfiguratorEngine:
             existing = [s for s in session.selections if s.characteristic_id == char.id and not s.is_auto_set]
             for s in existing:
                 await db.delete(s)
+        else:
+            # Enforce max_select cardinality for multi-select
+            char_info = char_map[characteristic_slug]
+            if char_info.max_select is not None:
+                existing_count = sum(
+                    1 for s in session.selections
+                    if s.characteristic_id == char.id and not s.is_auto_set
+                )
+                if existing_count >= char_info.max_select:
+                    return SelectionResult(
+                        validation_errors=[ValidationError(
+                            characteristic_slug=characteristic_slug,
+                            error_type="max_cardinality_exceeded",
+                            message=f"Maximum {char_info.max_select} selections allowed for '{characteristic_slug}', already have {existing_count}",
+                        )]
+                    )
 
         new_selection = ConfigurationSelection(
             tenant_id=session.tenant_id,
@@ -325,7 +468,7 @@ class ConfiguratorEngine:
         is_valid = len(errors) == 0
 
         # Update session state
-        session.available_domains = {k: sorted(v) for k, v in result.domains.items()}
+        session.available_domains = self._serialize_domains(result.domains)
         session.is_valid = is_valid
         session.is_complete = is_complete
         session.validation_errors = [
@@ -343,7 +486,137 @@ class ConfiguratorEngine:
         await db.refresh(session, attribute_names=["selections"])
 
         return SelectionResult(
-            available_domains={k: sorted(v) for k, v in result.domains.items()},
+            available_domains=self._serialize_domains(result.domains),
+            auto_set_values=result.auto_set,
+            excluded_values=result.excluded,
+            validation_errors=errors,
+            conflict_explanations=result.conflict_explanations,
+            is_valid=is_valid,
+            is_complete=is_complete,
+        )
+
+    async def apply_selections_batch(
+        self,
+        db: AsyncSession,
+        session_id: uuid.UUID,
+        selection_pairs: list[tuple[str, str]],
+    ) -> SelectionResult:
+        """Apply multiple selections at once, running propagation only ONCE.
+
+        Used for template application and bulk imports to avoid N separate
+        load-propagate-commit cycles.
+        """
+        session = await self._load_session(db, session_id, for_update=True)
+        if not session:
+            return SelectionResult(validation_errors=[ValidationError(error_type="not_found", message="Session not found")])
+
+        if session.status == ConfigurationStatus.LOCKED:
+            return SelectionResult(validation_errors=[ValidationError(error_type="locked", message="Session is locked")])
+
+        char_map = await self._load_characteristics(db, session.product_id, session.tenant_id)
+        constraints = await self._load_constraints(db, session.product_id, session.tenant_id)
+        variant_tables = await self._load_variant_tables(db, session.product_id, session.tenant_id)
+
+        changed_chars: set[str] = set()
+
+        for slug, value in selection_pairs:
+            if slug not in char_map:
+                continue  # skip unknown chars in template
+            char = char_map[slug]
+
+            # Validate value for enum types
+            if char.char_type.value == "enum":
+                allowed = {v.value for v in char.values}
+                if value not in allowed:
+                    continue
+
+            # Upsert selection
+            if not char.is_multi_select:
+                existing = [s for s in session.selections if s.characteristic_id == char.id and not s.is_auto_set]
+                for s in existing:
+                    await db.delete(s)
+            else:
+                # Enforce max_select cardinality for multi-select
+                if char.max_select is not None:
+                    existing_count = sum(
+                        1 for s in session.selections
+                        if s.characteristic_id == char.id and not s.is_auto_set
+                    )
+                    if existing_count >= char.max_select:
+                        logger.warning("batch_apply_cardinality_exceeded",
+                                       slug=slug, max_select=char.max_select,
+                                       existing=existing_count)
+                        continue
+
+            new_sel = ConfigurationSelection(
+                tenant_id=session.tenant_id,
+                session_id=session.id,
+                characteristic_id=char.id,
+                value=value,
+                is_auto_set=False,
+            )
+            db.add(new_sel)
+            changed_chars.add(slug)
+
+        await db.flush()
+        await db.refresh(session, attribute_names=["selections"])
+
+        # Build selections and propagate ONCE
+        selections = self._build_selections_map(session.selections, char_map)
+        domains = self._build_initial_domains(char_map)
+        result = self._propagate(domains, selections, constraints, variant_tables, changed_chars)
+
+        # Handle auto-set values
+        for slug, auto_value in result.auto_set.items():
+            if slug in char_map and slug not in selections:
+                auto_char = char_map[slug]
+                auto_sel = ConfigurationSelection(
+                    tenant_id=session.tenant_id,
+                    session_id=session.id,
+                    characteristic_id=auto_char.id,
+                    value=auto_value,
+                    is_auto_set=True,
+                )
+                db.add(auto_sel)
+
+        # Build validation errors from contradictions
+        errors = []
+        for explanation in result.conflict_explanations:
+            rules_involved = [s.rule_name or s.rule_id or "unknown" for s in explanation.trace]
+            detail = f"No valid values remain for '{explanation.characteristic}'"
+            if rules_involved:
+                detail += f". Caused by rules: {', '.join(rules_involved)}"
+            if explanation.contributing_selections:
+                sel_parts = [f"{k}={v}" for k, v in explanation.contributing_selections.items()]
+                detail += f". Contributing selections: {', '.join(sel_parts)}"
+            errors.append(ValidationError(
+                characteristic_slug=explanation.characteristic,
+                error_type="domain_empty",
+                message=detail,
+            ))
+
+        is_complete = self._check_completeness(char_map, selections, result.auto_set)
+        is_valid = len(errors) == 0
+
+        session.available_domains = self._serialize_domains(result.domains)
+        session.is_valid = is_valid
+        session.is_complete = is_complete
+        session.validation_errors = [
+            {"characteristic_slug": e.characteristic_slug, "error_type": e.error_type, "message": e.message}
+            for e in errors
+        ]
+        if is_valid and is_complete:
+            session.status = ConfigurationStatus.COMPLETE
+        elif not is_valid:
+            session.status = ConfigurationStatus.INVALID
+        else:
+            session.status = ConfigurationStatus.IN_PROGRESS
+
+        await db.commit()
+        await db.refresh(session, attribute_names=["selections"])
+
+        return SelectionResult(
+            available_domains=self._serialize_domains(result.domains),
             auto_set_values=result.auto_set,
             excluded_values=result.excluded,
             validation_errors=errors,
@@ -359,7 +632,7 @@ class ConfiguratorEngine:
         characteristic_id: uuid.UUID,
     ) -> SelectionResult:
         """Remove a selection and re-propagate from scratch."""
-        session = await self._load_session(db, session_id)
+        session = await self._load_session(db, session_id, for_update=True)
         if not session:
             return SelectionResult(validation_errors=[ValidationError(error_type="not_found", message="Session not found")])
 
@@ -418,7 +691,7 @@ class ConfiguratorEngine:
         is_complete = self._check_completeness(char_map, selections, result.auto_set)
         is_valid = len(errors) == 0
 
-        session.available_domains = {k: sorted(v) for k, v in result.domains.items()}
+        session.available_domains = self._serialize_domains(result.domains)
         session.is_valid = is_valid
         session.is_complete = is_complete
         session.validation_errors = [
@@ -435,7 +708,7 @@ class ConfiguratorEngine:
         await db.refresh(session, attribute_names=["selections"])
 
         return SelectionResult(
-            available_domains={k: sorted(v) for k, v in result.domains.items()},
+            available_domains=self._serialize_domains(result.domains),
             auto_set_values=result.auto_set,
             excluded_values=result.excluded,
             validation_errors=errors,
@@ -448,11 +721,12 @@ class ConfiguratorEngine:
 
     def _propagate(
         self,
-        domains: dict[str, set[str]],
+        domains: DomainMap,
         selections: dict[str, str | list[str]],
-        constraints: list[ConstraintRule],
-        variant_tables: dict[str, VariantTable],
+        constraints: list,
+        variant_tables: dict[str, VariantTable] | dict,
         changed_chars: set[str],
+        prebuilt_char_constraints: dict[str, list] | None = None,
     ) -> PropagationResult:
         """Run arc-consistency propagation loop. Pure function, no DB access."""
         propagation_start = _time.monotonic()
@@ -464,14 +738,24 @@ class ConfiguratorEngine:
         # Set selected values as single-element domains
         for slug, val in selections.items():
             if slug in domains and not isinstance(val, list):
-                domains[slug] = {val}
+                if isinstance(domains[slug], NumericInterval):
+                    try:
+                        fval = float(val)
+                        domains[slug] = NumericInterval(min=fval, max=fval)
+                    except (ValueError, TypeError):
+                        pass
+                else:
+                    domains[slug] = {val}
 
         # Build constraint index: char_slug -> [constraints referencing it]
-        char_constraints: dict[str, list[ConstraintRule]] = defaultdict(list)
-        for c in constraints:
-            referenced = self._extract_referenced_chars(c.expression)
-            for ref_char in referenced:
-                char_constraints[ref_char].append(c)
+        if prebuilt_char_constraints is not None:
+            char_constraints = prebuilt_char_constraints
+        else:
+            char_constraints: dict[str, list] = defaultdict(list)
+            for c in constraints:
+                referenced = self._extract_referenced_chars(c.expression)
+                for ref_char in referenced:
+                    char_constraints[ref_char].append(c)
 
         queue = set(changed_chars)
         max_iterations = len(domains) * len(constraints) + 100  # Safety bound
@@ -501,28 +785,59 @@ class ConfiguratorEngine:
                         then_clause = expr.get("then", {})
                         target_char = then_clause.get("char")
                         if target_char and target_char in domains:
-                            required_values = then_clause.get("value")
-                            if isinstance(required_values, str):
-                                required_values = [required_values]
-                            if required_values:
-                                old = domains[target_char]
-                                new = old & set(required_values)
-                                if new != old:
-                                    removed = sorted(old - new)
+                            target_domain = domains[target_char]
+                            # Numeric domain narrowing
+                            if isinstance(target_domain, NumericInterval):
+                                then_op = then_clause.get("op")
+                                then_val = then_clause.get("value")
+                                narrowed = target_domain
+                                try:
+                                    if then_op == "gte" and then_val is not None:
+                                        narrowed = target_domain.intersect(NumericInterval(min=float(then_val)))
+                                    elif then_op == "lte" and then_val is not None:
+                                        narrowed = target_domain.intersect(NumericInterval(max=float(then_val)))
+                                    elif then_op == "between" and isinstance(then_val, list) and len(then_val) == 2:
+                                        narrowed = target_domain.intersect(
+                                            NumericInterval(min=float(then_val[0]), max=float(then_val[1]))
+                                        )
+                                    elif then_op == "eq" and then_val is not None:
+                                        fv = float(then_val)
+                                        narrowed = target_domain.intersect(NumericInterval(min=fv, max=fv))
+                                except (ValueError, TypeError):
+                                    pass
+                                if narrowed != target_domain:
                                     prune_history.append(DomainPruneRecord(
                                         rule_id=rule_id, rule_name=rule_name,
                                         constraint_type="requires", target_char=target_char,
-                                        removed_values=removed,
+                                        removed_values=[f"narrowed from [{target_domain.min},{target_domain.max}] to [{narrowed.min},{narrowed.max}]"],
                                         triggered_by=self._extract_triggering_selections(expr.get("if", {}), selections),
                                     ))
-                                    domains[target_char] = new
+                                    domains[target_char] = narrowed
                                     queue.add(target_char)
+                            else:
+                                # Enum/boolean domain pruning
+                                required_values = then_clause.get("value")
+                                if isinstance(required_values, str):
+                                    required_values = [required_values]
+                                if required_values:
+                                    old = target_domain
+                                    new = old & set(required_values)
+                                    if new != old:
+                                        removed = sorted(old - new)
+                                        prune_history.append(DomainPruneRecord(
+                                            rule_id=rule_id, rule_name=rule_name,
+                                            constraint_type="requires", target_char=target_char,
+                                            removed_values=removed,
+                                            triggered_by=self._extract_triggering_selections(expr.get("if", {}), selections),
+                                        ))
+                                        domains[target_char] = new
+                                        queue.add(target_char)
 
                 elif ct == ConstraintType.EXCLUDES:
                     if self._evaluate_condition(expr.get("if", {}), selections):
                         then_clause = expr.get("then", {})
                         target_char = then_clause.get("char")
-                        if target_char and target_char in domains:
+                        if target_char and target_char in domains and isinstance(domains[target_char], set):
                             excluded_values = then_clause.get("value")
                             if isinstance(excluded_values, str):
                                 excluded_values = [excluded_values]
@@ -547,7 +862,7 @@ class ConfiguratorEngine:
                         target = expr.get("target", {})
                         target_char = target.get("char")
                         target_value = target.get("value")
-                        if target_char and target_value and target_char in domains:
+                        if target_char and target_value and target_char in domains and isinstance(domains[target_char], set):
                             old = domains[target_char]
                             new = old - {target_value}
                             if new != old:
@@ -568,7 +883,14 @@ class ConfiguratorEngine:
                         if target_char and default_val and target_char not in selections:
                             auto_set[target_char] = default_val
                             if target_char in domains:
-                                domains[target_char] = {default_val}
+                                if isinstance(domains[target_char], NumericInterval):
+                                    try:
+                                        fv = float(default_val)
+                                        domains[target_char] = NumericInterval(min=fv, max=fv)
+                                    except (ValueError, TypeError):
+                                        pass
+                                else:
+                                    domains[target_char] = {default_val}
                                 queue.add(target_char)
 
                 elif ct == ConstraintType.FORMULA:
@@ -577,7 +899,14 @@ class ConfiguratorEngine:
                         computed = self._evaluate_formula(expr, selections)
                         if computed is not None:
                             auto_set[target_char] = computed
-                            domains[target_char] = {computed}
+                            if isinstance(domains[target_char], NumericInterval):
+                                try:
+                                    fv = float(computed)
+                                    domains[target_char] = NumericInterval(min=fv, max=fv)
+                                except (ValueError, TypeError):
+                                    pass
+                            else:
+                                domains[target_char] = {computed}
                             queue.add(target_char)
 
                 elif ct == ConstraintType.TABLE:
@@ -586,7 +915,7 @@ class ConfiguratorEngine:
                         vt = variant_tables[table_id]
                         output_values = self._lookup_variant_table(vt, selections)
                         for out_char, out_vals in output_values.items():
-                            if out_char in domains:
+                            if out_char in domains and isinstance(domains[out_char], set):
                                 old = domains[out_char]
                                 new = old & set(out_vals)
                                 if new != old:
@@ -603,6 +932,16 @@ class ConfiguratorEngine:
         # Post-propagation: detect contradictions and auto-set forced values
         conflict_explanations: list[ConflictExplanation] = []
         for slug, domain in domains.items():
+            # Handle NumericInterval domains
+            if isinstance(domain, NumericInterval):
+                if domain.is_empty():
+                    contradictions.append(slug)
+                    explanation = self._build_conflict_explanation(slug, prune_history, selections)
+                    conflict_explanations.append(explanation)
+                elif domain.is_single_point() and slug not in selections and slug not in auto_set:
+                    auto_set[slug] = str(domain.min)
+                continue
+            # Handle set[str] domains
             if "__any__" in domain:
                 continue
             if len(domain) == 0:
@@ -638,7 +977,7 @@ class ConfiguratorEngine:
         char_slug = condition.get("char")
         if char_slug and char_slug in selections:
             val = selections[char_slug]
-            triggers[char_slug] = val if isinstance(val, str) else str(val)
+            triggers[char_slug] = val if isinstance(val, str) else ",".join(val) if isinstance(val, list) else str(val)
         for key in ("conditions",):
             if key in condition and isinstance(condition[key], list):
                 for sub in condition[key]:
@@ -706,19 +1045,31 @@ class ConfiguratorEngine:
             return False
 
         expected = condition.get("value")
+        is_multi = isinstance(current_value, list)
 
         if op == "eq":
+            if is_multi:
+                return expected in current_value
             return current_value == expected
         if op == "neq":
+            if is_multi:
+                return expected not in current_value
             return current_value != expected
         if op == "in":
             if isinstance(expected, list):
+                if is_multi:
+                    return bool(set(current_value) & set(expected))
                 return current_value in expected
             return False
         if op == "not_in":
             if isinstance(expected, list):
+                if is_multi:
+                    return not bool(set(current_value) & set(expected))
                 return current_value not in expected
             return True
+        # Numeric operators don't apply to multi-select lists
+        if is_multi:
+            return False
         if op in ("gt", "gte", "lt", "lte"):
             try:
                 cv = float(current_value) if isinstance(current_value, str) else current_value
@@ -733,6 +1084,14 @@ class ConfiguratorEngine:
                 return cv < ev
             if op == "lte":
                 return cv <= ev
+        if op == "between":
+            if isinstance(expected, list) and len(expected) == 2:
+                try:
+                    cv = float(current_value) if isinstance(current_value, str) else current_value
+                    return float(expected[0]) <= cv <= float(expected[1])
+                except (ValueError, TypeError):
+                    return False
+            return False
 
         return True
 
@@ -786,6 +1145,11 @@ class ConfiguratorEngine:
                 raise ValueError(f"Disallowed operator: {type(node.op).__name__}")
             left = self._safe_eval_ast(node.left, variables)
             right = self._safe_eval_ast(node.right, variables)
+            if isinstance(node.op, ast.Pow):
+                if abs(right) > 100:
+                    raise ValueError(f"Exponent too large: {right} (max 100)")
+                if abs(left) > 1e12:
+                    raise ValueError(f"Base too large for exponentiation: {left}")
             return op_func(left, right)
         if isinstance(node, ast.UnaryOp):
             op_func = self._SAFE_OPS.get(type(node.op))
@@ -849,29 +1213,149 @@ class ConfiguratorEngine:
             match = True
             for col in input_cols:
                 if col in selections:
-                    if str(row.get(col)) != str(selections[col]):
+                    row_val = row.get(col)
+                    if row_val is None:
+                        match = False
+                        break
+                    if str(row_val) != str(selections[col]):
                         match = False
                         break
             if match:
                 for col in output_cols:
-                    if col in row:
-                        output_values[col].append(str(row[col]))
+                    val = row.get(col)
+                    if val is not None and col in row:
+                        output_values[col].append(str(val))
 
         return dict(output_values)
 
+    # ── Snapshot loading ─────────────────────────────────
+
+    def _load_from_snapshot(
+        self, snapshot: dict
+    ) -> tuple[
+        dict[str, CharacteristicInfo],
+        list[SnapshotConstraint],
+        dict[str, SnapshotCharacteristic],
+        dict[str, list[SnapshotConstraint]],
+        DomainMap,
+    ] | None:
+        """Reconstruct product data from a pre-compiled snapshot.
+
+        Returns (char_map, constraints, variant_tables, prebuilt_index, initial_domains)
+        or None if the snapshot is incompatible.
+        """
+        if not snapshot or snapshot.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
+            return None
+
+        # Reconstruct characteristics
+        char_map: dict[str, CharacteristicInfo] = {}
+        for slug, cdata in snapshot.get("characteristics", {}).items():
+            values = [_ValueProxy(v) for v in cdata.get("values", [])]
+            snap_char = SnapshotCharacteristic(
+                id=cdata["id"],
+                slug=slug,
+                name=cdata.get("name", slug),
+                char_type=_CharTypeProxy(cdata["char_type"]),
+                values=values,
+                is_required=cdata.get("is_required", False),
+                is_multi_select=cdata.get("is_multi_select", False),
+                numeric_min=cdata.get("numeric_min"),
+                numeric_max=cdata.get("numeric_max"),
+                numeric_step=cdata.get("numeric_step"),
+                unit=cdata.get("unit"),
+                default_value=cdata.get("default_value"),
+            )
+            char_map[slug] = CharacteristicInfo(
+                characteristic=snap_char,
+                min_select=cdata.get("min_select"),
+                max_select=cdata.get("max_select"),
+            )
+
+        # Reconstruct constraints
+        constraints: list[SnapshotConstraint] = []
+        constraint_by_id: dict[str, SnapshotConstraint] = {}
+        for cdata in snapshot.get("constraints", []):
+            eff_from = None
+            if cdata.get("effective_from"):
+                try:
+                    eff_from = datetime.fromisoformat(cdata["effective_from"])
+                except (ValueError, TypeError):
+                    pass
+            eff_to = None
+            if cdata.get("effective_to"):
+                try:
+                    eff_to = datetime.fromisoformat(cdata["effective_to"])
+                except (ValueError, TypeError):
+                    pass
+
+            sc = SnapshotConstraint(
+                id=cdata["id"],
+                name=cdata.get("name", ""),
+                constraint_type=ConstraintType(cdata["constraint_type"]),
+                expression=cdata.get("expression", {}),
+                priority=cdata.get("priority", 0),
+                is_active=cdata.get("is_active", True),
+                effective_from=eff_from,
+                effective_to=eff_to,
+            )
+            constraints.append(sc)
+            constraint_by_id[cdata["id"]] = sc
+
+        # Reconstruct variant tables (as dicts — _lookup_variant_table uses .rows, .input_columns, .output_columns)
+        variant_tables = {}
+        for tid, tdata in snapshot.get("variant_tables", {}).items():
+            @dataclass
+            class _VTProxy:
+                rows: list
+                input_columns: list
+                output_columns: list
+            variant_tables[tid] = _VTProxy(
+                rows=tdata.get("rows", []),
+                input_columns=tdata.get("input_columns", []),
+                output_columns=tdata.get("output_columns", []),
+            )
+
+        # Reconstruct prebuilt dependency index
+        prebuilt_index: dict[str, list[SnapshotConstraint]] = defaultdict(list)
+        for char_slug, rule_ids in snapshot.get("dependency_index", {}).items():
+            for rid in rule_ids:
+                if rid in constraint_by_id:
+                    prebuilt_index[char_slug].append(constraint_by_id[rid])
+
+        # Reconstruct initial domains
+        initial_domains: DomainMap = {}
+        for slug, dom_data in snapshot.get("initial_domains", {}).items():
+            if isinstance(dom_data, dict) and dom_data.get("type") == "numeric":
+                initial_domains[slug] = NumericInterval(
+                    min=dom_data.get("min"),
+                    max=dom_data.get("max"),
+                    step=dom_data.get("step"),
+                )
+            elif isinstance(dom_data, list):
+                initial_domains[slug] = set(dom_data)
+            else:
+                initial_domains[slug] = {"__any__"}
+
+        return char_map, constraints, variant_tables, dict(prebuilt_index), initial_domains
+
     # ── Helpers ──────────────────────────────────────────
 
-    async def _load_session(self, db: AsyncSession, session_id: uuid.UUID) -> ConfigurationSession | None:
-        result = await db.execute(
+    async def _load_session(
+        self, db: AsyncSession, session_id: uuid.UUID, *, for_update: bool = False
+    ) -> ConfigurationSession | None:
+        stmt = (
             select(ConfigurationSession)
             .where(ConfigurationSession.id == session_id)
             .options(selectinload(ConfigurationSession.selections))
         )
+        if for_update:
+            stmt = stmt.with_for_update()
+        result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def _load_characteristics(
         self, db: AsyncSession, product_id: uuid.UUID, tenant_id: uuid.UUID
-    ) -> dict[str, Characteristic]:
+    ) -> dict[str, CharacteristicInfo]:
         cached = _product_cache.get_chars(product_id, tenant_id)
         if cached is not None:
             return cached
@@ -880,11 +1364,15 @@ class ConfiguratorEngine:
             .where(CharacteristicAssignment.product_id == product_id, CharacteristicAssignment.tenant_id == tenant_id)
             .options(selectinload(CharacteristicAssignment.characteristic).selectinload(Characteristic.values))
         )
-        char_map = {}
+        char_map: dict[str, CharacteristicInfo] = {}
         for assignment in result.scalars().all():
             char = assignment.characteristic
             if char.deleted_at is None:
-                char_map[char.slug] = char
+                char_map[char.slug] = CharacteristicInfo(
+                    characteristic=char,
+                    min_select=assignment.min_select,
+                    max_select=assignment.max_select,
+                )
         _product_cache.set_chars(product_id, tenant_id, char_map)
         return char_map
 
@@ -924,38 +1412,87 @@ class ConfiguratorEngine:
         return vtables
 
     def _build_selections_map(
-        self, selections: list[ConfigurationSelection], char_map: dict[str, Characteristic]
-    ) -> dict[str, str]:
-        """Build {slug: value} from DB selections."""
+        self,
+        selections: list[ConfigurationSelection],
+        char_map: dict[str, CharacteristicInfo | Characteristic],
+    ) -> dict[str, str | list[str]]:
+        """Build {slug: value} from DB selections.
+
+        For multi-select characteristics, builds {slug: [val1, val2, ...]}.
+        For single-select, builds {slug: value}.
+        """
         id_to_slug = {char.id: slug for slug, char in char_map.items()}
-        result = {}
+        result: dict[str, str | list[str]] = {}
         for sel in selections:
             slug = id_to_slug.get(sel.characteristic_id)
             if slug:
-                result[slug] = sel.value
+                char_info = char_map.get(slug)
+                if char_info and char_info.is_multi_select:
+                    if slug not in result:
+                        result[slug] = []
+                    result[slug].append(sel.value)
+                else:
+                    result[slug] = sel.value
         return result
 
-    def _build_initial_domains(self, char_map: dict[str, Characteristic]) -> dict[str, set[str]]:
+    def _build_initial_domains(self, char_map: dict[str, CharacteristicInfo | Characteristic]) -> DomainMap:
         """Build full (unconstrained) domains from characteristic definitions."""
-        domains: dict[str, set[str]] = {}
+        domains: DomainMap = {}
         for slug, char in char_map.items():
             if char.char_type.value == "enum":
                 domains[slug] = {v.value for v in char.values}
             elif char.char_type.value == "boolean":
                 domains[slug] = {"true", "false"}
-            else:
+            elif char.char_type.value == "numeric":
+                domains[slug] = NumericInterval(
+                    min=char.numeric_min,
+                    max=char.numeric_max,
+                    step=char.numeric_step,
+                )
+            else:  # text
                 domains[slug] = {"__any__"}
         return domains
 
+    @staticmethod
+    def _serialize_domains(domains: DomainMap) -> dict:
+        """Serialize domains for JSONB storage / API response.
+
+        NumericInterval -> {"type": "numeric", "min": ..., "max": ..., "step": ...}
+        set[str]        -> sorted list of strings
+        """
+        result = {}
+        for k, v in domains.items():
+            if isinstance(v, NumericInterval):
+                result[k] = v.to_dict()
+            else:
+                result[k] = sorted(v)
+        return result
+
     def _check_completeness(
         self,
-        char_map: dict[str, Characteristic],
-        selections: dict[str, str],
+        char_map: dict[str, CharacteristicInfo | Characteristic],
+        selections: dict[str, str | list[str]],
         auto_set: dict[str, str],
     ) -> bool:
-        """Check if all required characteristics have a selection."""
+        """Check if all required characteristics have a selection.
+
+        Also enforces min_select cardinality for multi-select characteristics.
+        """
         all_selected = {**selections, **auto_set}
         for slug, char in char_map.items():
             if char.is_required and slug not in all_selected:
                 return False
+            # Enforce min_select cardinality
+            if isinstance(char, CharacteristicInfo) and char.min_select is not None and char.min_select > 0:
+                val = all_selected.get(slug)
+                if val is None:
+                    if char.min_select > 0:
+                        return False
+                elif isinstance(val, list):
+                    if len(val) < char.min_select:
+                        return False
+                else:
+                    # Single value selected; min_select > 1 means incomplete
+                    if char.min_select > 1:
+                        return False
         return True

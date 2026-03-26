@@ -43,6 +43,7 @@ from app.core.audit import AuditAction, emit_audit_event
 from app.core.events import emit
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
+from app.db.base import optimistic_version_bump
 from app.db.models import (
     ConfigurationPricing,
     ConfigurationSession,
@@ -97,7 +98,7 @@ async def create_session(
         name=body.name,
         template_id=body.template_id,
         external_reference=body.external_reference,
-        available_domains={k: sorted(v) for k, v in domains.items()},
+        available_domains=domains,
     )
     db.add(session)
     await emit_audit_event(
@@ -110,18 +111,29 @@ async def create_session(
     # If created from template, apply template selections
     if body.template_id:
         template_result = await db.execute(
-            select(ConfigurationTemplate).where(
+            tenant_query(select(ConfigurationTemplate), tenant).where(
                 ConfigurationTemplate.id == body.template_id,
-                ConfigurationTemplate.tenant_id == tenant.id,
             )
         )
         template = template_result.scalar_one_or_none()
         if template:
+            pairs = []
+            skipped = 0
             for sel in template.selections:
                 slug = sel.get("characteristic_slug") or sel.get("slug")
                 value = sel.get("value")
                 if slug and value:
-                    await _engine.apply_selection(db, session.id, slug, value)
+                    pairs.append((slug, value))
+                else:
+                    skipped += 1
+                    logger.warning("template_selection_skipped",
+                                   template_id=str(template.id), entry=sel)
+            if skipped:
+                logger.info("template_selections_summary",
+                            applied=len(pairs), skipped=skipped,
+                            template_id=str(template.id))
+            if pairs:
+                await _engine.apply_selections_batch(db, session.id, pairs)
             await db.refresh(session, attribute_names=["selections"])
 
     await emit(ConfigurationStarted(
@@ -312,7 +324,7 @@ async def reset_session(
 
     # Re-initialize domains
     domains = await _engine.initialize_domains(db, session.product_id, session.tenant_id)
-    session.available_domains = {k: sorted(v) for k, v in domains.items()}
+    session.available_domains = domains
     session.is_valid = False
     session.is_complete = False
     session.validation_errors = None
@@ -583,6 +595,38 @@ async def create_pricing_rule(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
+    # Validate tiered pricing expression
+    if body.rule_type == "tiered":
+        expr = body.expression or {}
+        tiers = expr.get("tiers")
+        if not tiers or not isinstance(tiers, list):
+            raise HTTPException(status_code=422, detail="Tiered pricing requires a non-empty 'tiers' list")
+        tier_model = expr.get("tier_model", "all_units")
+        if tier_model not in ("all_units", "marginal"):
+            raise HTTPException(status_code=422, detail="tier_model must be 'all_units' or 'marginal'")
+        prev_max = None
+        for i, tier in enumerate(tiers):
+            if "min" not in tier or "price" not in tier:
+                raise HTTPException(status_code=422, detail=f"Tier {i}: must have 'min' and 'price'")
+            try:
+                t_min = float(tier["min"])
+                t_price = float(tier["price"])
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=422, detail=f"Tier {i}: 'min' and 'price' must be numeric")
+            if t_price < 0:
+                raise HTTPException(status_code=422, detail=f"Tier {i}: 'price' must be non-negative")
+            t_max = tier.get("max")
+            if t_max is not None:
+                try:
+                    t_max = float(t_max)
+                except (ValueError, TypeError):
+                    raise HTTPException(status_code=422, detail=f"Tier {i}: 'max' must be numeric or null")
+                if t_max < t_min:
+                    raise HTTPException(status_code=422, detail=f"Tier {i}: 'max' must be >= 'min'")
+            if prev_max is not None and t_min <= prev_max:
+                raise HTTPException(status_code=422, detail=f"Tier {i}: overlaps with previous tier (min={t_min}, prev_max={prev_max})")
+            prev_max = t_max
+
     rule = PricingRule(
         tenant_id=tenant.id,
         product_id=body.product_id,
@@ -668,7 +712,7 @@ async def update_pricing_rule(
     changes = body.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(rule, field, value)
-    rule.version += 1
+    await optimistic_version_bump(db, rule)
     await emit_audit_event(
         db, action=AuditAction.UPDATE, resource_type="pricing_rule",
         resource_id=str(rule.id), tenant_id=tenant.id, changes=changes,

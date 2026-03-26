@@ -16,6 +16,13 @@ def _make_tenant():
     )
 
 
+def _make_api_key(tenant):
+    api_key = MagicMock()
+    api_key.scopes = ["products:read", "products:write"]
+    api_key.tenant = tenant
+    return api_key
+
+
 @pytest.fixture
 async def bom_client():
     with (
@@ -65,7 +72,8 @@ async def test_get_bom_not_found(bom_client):
     app.dependency_overrides[get_current_tenant] = lambda: tenant
 
     try:
-        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=None):
+        mock_key = _make_api_key(tenant)
+        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=mock_key):
             response = await client.get(f"/api/v1/boms/{uuid.uuid4()}")
         assert response.status_code == 404
     finally:

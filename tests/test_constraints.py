@@ -16,6 +16,13 @@ def _make_tenant():
     )
 
 
+def _make_api_key(tenant):
+    api_key = MagicMock()
+    api_key.scopes = ["products:read", "products:write"]
+    api_key.tenant = tenant
+    return api_key
+
+
 @pytest.fixture
 async def constraint_client():
     with (
@@ -45,14 +52,15 @@ async def test_create_constraint_rule_requires_auth(constraint_client):
 
 @pytest.mark.asyncio
 async def test_validate_expression_requires(constraint_client):
-    """Validate endpoint should work without full auth for dry-run."""
+    """Validate endpoint should work with mock auth."""
     client, app = constraint_client
     tenant = _make_tenant()
 
     app.dependency_overrides[get_current_tenant] = lambda: tenant
 
     try:
-        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=None):
+        mock_key = _make_api_key(tenant)
+        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=mock_key):
             response = await client.post("/api/v1/constraints/rules/validate", json={
                 "constraint_type": "requires",
                 "expression": {
@@ -77,7 +85,8 @@ async def test_validate_expression_missing_if(constraint_client):
     app.dependency_overrides[get_current_tenant] = lambda: tenant
 
     try:
-        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=None):
+        mock_key = _make_api_key(tenant)
+        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=mock_key):
             response = await client.post("/api/v1/constraints/rules/validate", json={
                 "constraint_type": "requires",
                 "expression": {"type": "requires", "then": {"char": "x", "op": "eq", "value": "y"}},
@@ -98,7 +107,8 @@ async def test_validate_expression_excludes(constraint_client):
     app.dependency_overrides[get_current_tenant] = lambda: tenant
 
     try:
-        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=None):
+        mock_key = _make_api_key(tenant)
+        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=mock_key):
             response = await client.post("/api/v1/constraints/rules/validate", json={
                 "constraint_type": "excludes",
                 "expression": {
@@ -130,7 +140,8 @@ async def test_get_constraint_rule_not_found(constraint_client):
     app.dependency_overrides[get_current_tenant] = lambda: tenant
 
     try:
-        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=None):
+        mock_key = _make_api_key(tenant)
+        with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=mock_key):
             response = await client.get(f"/api/v1/constraints/rules/{uuid.uuid4()}")
         assert response.status_code == 404
     finally:

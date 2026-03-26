@@ -1,5 +1,6 @@
 """BOM header and item CRUD endpoints."""
 
+import ast
 import uuid
 from datetime import UTC, datetime
 
@@ -25,11 +26,40 @@ from app.api.schemas_configurator import (
 )
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
+from app.db.base import optimistic_version_bump
 from app.db.models import BOMHeader, BOMItem, BOMItemType, Product, Tenant
 
 _api_key_rate_limit = ApiKeyRateLimiter()
 router = APIRouter(prefix="/boms", dependencies=[Depends(_api_key_rate_limit)])
 logger = structlog.stdlib.get_logger()
+
+
+def _validate_quantity_expression(expr: dict | None) -> None:
+    """Validate a quantity_expression JSONB payload before persisting."""
+    if expr is None:
+        return
+    if not isinstance(expr, dict):
+        raise HTTPException(status_code=422, detail="quantity_expression must be a JSON object")
+    if expr.get("type") != "formula":
+        raise HTTPException(status_code=422, detail="quantity_expression.type must be 'formula'")
+    formula_str = expr.get("expression")
+    if not formula_str or not isinstance(formula_str, str):
+        raise HTTPException(status_code=422, detail="quantity_expression.expression is required and must be a string")
+    variables = expr.get("variables")
+    if not variables or not isinstance(variables, dict):
+        raise HTTPException(status_code=422, detail="quantity_expression.variables is required and must be an object")
+    try:
+        tree = ast.parse(formula_str, mode="eval")
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id not in variables:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Variable '{node.id}' in expression is not mapped in 'variables'",
+                )
+    except SyntaxError:
+        raise HTTPException(
+            status_code=422, detail=f"quantity_expression.expression has invalid syntax: {formula_str}"
+        )
 
 
 # ── BOM Headers ──────────────────────────────────────────
@@ -128,7 +158,7 @@ async def update_bom(
     changes = body.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(bom, field, value)
-    bom.version += 1
+    await optimistic_version_bump(db, bom)
     await emit_audit_event(
         db, action=AuditAction.UPDATE, resource_type="bom_header",
         resource_id=str(bom.id), tenant_id=tenant.id, changes=changes,
@@ -187,6 +217,8 @@ async def add_bom_item(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="BOM not found")
 
+    _validate_quantity_expression(body.quantity_expression)
+
     item = BOMItem(
         tenant_id=tenant.id,
         bom_header_id=bom_id,
@@ -238,12 +270,16 @@ async def update_bom_item(
     if not item:
         raise HTTPException(status_code=404, detail="BOM item not found")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    update_data = body.model_dump(exclude_unset=True)
+    if "quantity_expression" in update_data:
+        _validate_quantity_expression(update_data["quantity_expression"])
+
+    for field, value in update_data.items():
         if field == "item_type":
             item.item_type = BOMItemType(value)
         else:
             setattr(item, field, value)
-    item.version += 1
+    await optimistic_version_bump(db, item)
     await emit_audit_event(
         db, action=AuditAction.UPDATE, resource_type="bom_item",
         resource_id=str(item.id), tenant_id=tenant.id,
@@ -298,9 +334,15 @@ async def reorder_bom_items(
     )
     items_by_id = {item.id: item for item in result.scalars().all()}
 
+    unknown_ids = set(body.item_ids) - set(items_by_id.keys())
+    if unknown_ids:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Item IDs not found in this BOM: {[str(uid) for uid in unknown_ids]}",
+        )
+
     for idx, item_id in enumerate(body.item_ids):
-        if item_id in items_by_id:
-            items_by_id[item_id].sort_order = idx
+        items_by_id[item_id].sort_order = idx
     await db.commit()
 
 
@@ -317,15 +359,16 @@ async def where_used(
     result = await db.execute(
         tenant_query(select(BOMItem), tenant)
         .where(BOMItem.part_number == part_number, BOMItem.deleted_at.is_(None))
-        .options(selectinload(BOMItem.bom_header))
+        .options(
+            selectinload(BOMItem.bom_header).selectinload(BOMHeader.product)
+        )
     )
     items = result.scalars().all()
 
     results = []
     for item in items:
         header = item.bom_header
-        product_result = await db.execute(select(Product).where(Product.id == header.product_id))
-        product = product_result.scalar_one_or_none()
+        product = header.product
         results.append(
             WhereUsedResponse(
                 bom_header_id=header.id,
