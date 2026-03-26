@@ -178,7 +178,7 @@ class ConfigItemProvenance(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     data_source_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("data_sources.id"), nullable=False, index=True
+        ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False, index=True
     )
     entity_type: Mapped[str] = mapped_column(String(100), nullable=False)
     entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -190,6 +190,6 @@ class ConfigItemProvenance(TimestampMixin, Base):
     data_source: Mapped[DataSource] = relationship(back_populates="provenance_records")
 
     __table_args__ = (
-        Index("ix_provenance_tenant_entity", "tenant_id", "entity_type", "entity_id"),
-        Index("ix_provenance_tenant_source", "tenant_id", "data_source_id"),
+        Index("ix_config_provenance_tenant_entity", "tenant_id", "entity_type", "entity_id"),
+        Index("ix_config_provenance_tenant_source", "tenant_id", "data_source_id"),
     )

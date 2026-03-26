@@ -1,13 +1,16 @@
 """Security tests for PR #53: AI agent + configuration integration.
 
 Covers: OAuth state validation, SSRF protection, tenant isolation,
-LIKE injection, redirect URI validation, token decryption.
+LIKE injection, redirect URI validation, token decryption, cloud drive
+query injection, file-size limits, magic-byte MIME validation, and
+resource-ID validation.
 """
 
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from urllib.parse import quote
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -252,3 +255,227 @@ class TestTokenDecryptionFallback:
 
         assert "error" in result
         assert "invalid authentication" in result["error"].lower()
+
+
+# ── Cloud Drive Query Injection ─────────────────────────────────────
+
+
+class TestOneDriveQueryEscaping:
+    @pytest.mark.asyncio
+    async def test_search_query_is_url_encoded(self):
+        """Verify that special chars in OneDrive search are URL-encoded."""
+        from app.integrations.cloud_drives.onedrive import OneDriveConnector
+
+        connector = OneDriveConnector()
+        malicious_query = "test') or true or ('"
+
+        # Mock httpx to capture the URL
+        captured_urls: list[str] = []
+
+        class _FakeResp:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return {"value": []}
+
+        class _FakeClient:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+            async def get(self, url, **kw):
+                captured_urls.append(url)
+                return _FakeResp()
+
+        with patch("httpx.AsyncClient", return_value=_FakeClient()):
+            await connector.list_files("fake_token", query=malicious_query)
+
+        assert len(captured_urls) == 1
+        # The raw malicious string should NOT appear in the URL
+        assert malicious_query not in captured_urls[0]
+        # The URL-encoded version should be present
+        assert quote(malicious_query) in captured_urls[0]
+
+    def test_folder_id_rejects_path_traversal(self):
+        """Validate that folder_id with path traversal chars is rejected."""
+        from app.integrations.cloud_drives.base import validate_resource_id
+
+        with pytest.raises(ValueError, match="Invalid folder_id"):
+            validate_resource_id("../../../etc/passwd", "folder_id")
+
+    def test_folder_id_allows_valid_id(self):
+        from app.integrations.cloud_drives.base import validate_resource_id
+
+        # Should not raise
+        validate_resource_id("ABC123-def_456.78", "folder_id")
+
+    def test_folder_id_rejects_empty(self):
+        from app.integrations.cloud_drives.base import validate_resource_id
+
+        with pytest.raises(ValueError):
+            validate_resource_id("", "folder_id")
+
+
+class TestGoogleDriveQueryEscaping:
+    @pytest.mark.asyncio
+    async def test_single_quotes_escaped_in_search(self):
+        """Verify that single quotes in Google Drive search are escaped."""
+        from app.integrations.cloud_drives.google_drive import GoogleDriveConnector
+
+        connector = GoogleDriveConnector()
+        malicious_query = "file' or 1=1 or name contains '"
+
+        captured_params: list[dict] = []
+
+        class _FakeResp:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return {"files": []}
+
+        class _FakeClient:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+            async def get(self, url, headers=None, params=None):
+                if params:
+                    captured_params.append(params)
+                return _FakeResp()
+
+        with patch("httpx.AsyncClient", return_value=_FakeClient()):
+            await connector.list_files("fake_token", query=malicious_query)
+
+        assert len(captured_params) >= 1
+        q_value = captured_params[0]["q"]
+        # The raw unescaped single quote should not appear unescaped
+        assert "file' or" not in q_value
+        # The escaped version should be present
+        assert "file\\' or" in q_value
+
+
+class TestCloudDriveErrorIsolation:
+    @pytest.mark.asyncio
+    async def test_onedrive_raises_cloud_drive_error(self):
+        """Verify that httpx errors are wrapped in CloudDriveError."""
+        import httpx
+        from app.integrations.cloud_drives.base import CloudDriveError
+        from app.integrations.cloud_drives.onedrive import OneDriveConnector
+
+        connector = OneDriveConnector()
+
+        class _FakeResp:
+            status_code = 403
+            request = httpx.Request("GET", "https://graph.microsoft.com/test")
+            def raise_for_status(self):
+                raise httpx.HTTPStatusError("Forbidden", request=self.request, response=self)  # type: ignore[arg-type]
+            def json(self): return {}
+
+        class _FakeClient:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+            async def get(self, url, **kw): return _FakeResp()
+
+        with patch("httpx.AsyncClient", return_value=_FakeClient()):
+            with pytest.raises(CloudDriveError) as exc_info:
+                await connector.list_files("fake_token")
+            assert exc_info.value.status_code == 403
+            assert exc_info.value.provider == "onedrive"
+
+
+# ── Parser File Size Limits ─────────────────────────────────────────
+
+
+class TestParserFileSizeLimits:
+    @pytest.mark.asyncio
+    async def test_pdf_rejects_oversized_file(self):
+        from app.docprocessor.parsers.pdf_parser import PDFParser
+
+        parser = PDFParser()
+        huge_bytes = b"\x00" * (PDFParser.MAX_FILE_SIZE + 1)
+        result = await parser.parse(file_bytes=huge_bytes, filename="huge.pdf")
+        assert "error" in result.metadata
+        assert "too large" in result.metadata["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_excel_rejects_oversized_file(self):
+        from app.docprocessor.parsers.excel_parser import ExcelParser
+
+        parser = ExcelParser()
+        huge_bytes = b"\x00" * (ExcelParser.MAX_FILE_SIZE + 1)
+        result = await parser.parse(file_bytes=huge_bytes, filename="huge.xlsx")
+        assert "error" in result.metadata
+        assert "too large" in result.metadata["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_word_rejects_oversized_file(self):
+        from app.docprocessor.parsers.word_parser import WordParser
+
+        parser = WordParser()
+        huge_bytes = b"\x00" * (WordParser.MAX_FILE_SIZE + 1)
+        result = await parser.parse(file_bytes=huge_bytes, filename="huge.docx")
+        assert "error" in result.metadata
+        assert "too large" in result.metadata["error"].lower()
+
+
+# ── MIME Magic Byte Validation ──────────────────────────────────────
+
+
+class TestMIMEMagicValidation:
+    def test_mime_mismatch_prefers_magic_type(self):
+        import sys
+        from app.docprocessor.processor import DocumentProcessor
+
+        processor = DocumentProcessor()
+        pdf_header = b"%PDF-1.4 fake content"
+        mock_magic = MagicMock()
+        mock_magic.from_buffer = MagicMock(return_value="application/pdf")
+        with patch.dict(sys.modules, {"magic": mock_magic}):
+            result = processor._validate_mime(pdf_header, "fake.csv", "text/csv")
+        assert result == "application/pdf"
+
+    def test_mime_match_keeps_declared(self):
+        import sys
+        from app.docprocessor.processor import DocumentProcessor
+
+        processor = DocumentProcessor()
+        mock_magic = MagicMock()
+        mock_magic.from_buffer = MagicMock(return_value="application/pdf")
+        with patch.dict(sys.modules, {"magic": mock_magic}):
+            result = processor._validate_mime(b"data", "file.pdf", "application/pdf")
+        assert result == "application/pdf"
+
+    def test_magic_unavailable_falls_back(self):
+        import sys
+        from app.docprocessor.processor import DocumentProcessor
+
+        processor = DocumentProcessor()
+        # Simulate magic not being importable
+        with patch.dict(sys.modules, {"magic": None}):
+            result = processor._validate_mime(b"data", "file.csv", "text/csv")
+        assert result == "text/csv"
+
+
+# ── Tenant Chunk Deletion Filter ───────────────────────────────────
+
+
+class TestChunkDeletionTenantFilter:
+    """Verify that chunk bulk deletion includes tenant filter."""
+
+    def test_datasources_reprocess_includes_tenant_filter(self):
+        """Static check that the reprocess endpoint filters chunks by tenant."""
+        import inspect
+        from app.api.v1 import datasources
+
+        source = inspect.getsource(datasources)
+        # The delete(DataSourceChunk) call must include tenant_id
+        assert "DataSourceChunk.tenant_id == tenant.id" in source
+
+
+# ── ORM Index Naming ────────────────────────────────────────────────
+
+
+class TestORMIndexNaming:
+    """Verify ORM index names match migration index names."""
+
+    def test_provenance_index_names_match_migration(self):
+        from app.db.models.datasource import ConfigItemProvenance
+
+        index_names = {idx.name for idx in ConfigItemProvenance.__table__.indexes}
+        # These names must match what migration 0019 created
+        assert "ix_config_provenance_tenant_entity" in index_names
+        assert "ix_config_provenance_tenant_source" in index_names

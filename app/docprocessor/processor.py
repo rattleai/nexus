@@ -135,6 +135,9 @@ class DocumentProcessor:
         Returns:
             ExtractionResult with extracted content.
         """
+        # Cross-check MIME type with magic bytes when possible
+        mime_type = self._validate_mime(data, filename, mime_type)
+
         parser = self._resolve_parser(mime_type, filename)
         if parser is None:
             logger.warning("unsupported_document_type", mime_type=mime_type, filename=filename)
@@ -156,3 +159,30 @@ class DocumentProcessor:
             )
 
         return await parser.parse(file_bytes=data, filename=filename)
+
+    @staticmethod
+    def _validate_mime(data: bytes, filename: str, declared_mime: str) -> str:
+        """Cross-check declared MIME type against magic bytes.
+
+        Returns the magic-detected MIME if it differs from the declared one
+        and the magic type is supported; otherwise returns the declared type.
+        """
+        try:
+            import magic
+
+            detected = magic.from_buffer(data[:8192], mime=True)
+        except Exception:
+            return declared_mime
+
+        if detected and detected != declared_mime:
+            logger.info(
+                "mime_type_mismatch",
+                filename=filename,
+                declared=declared_mime,
+                detected=detected,
+            )
+            # Prefer the magic-detected type if we have a parser for it
+            if detected in DocumentProcessor.MIME_MAP:
+                return detected
+
+        return declared_mime

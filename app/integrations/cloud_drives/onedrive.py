@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 import structlog
 
 from app.config import settings
-from app.integrations.cloud_drives.base import CloudAuthResult, CloudDriveConnector, CloudFile
+from app.integrations.cloud_drives.base import (
+    CloudAuthResult,
+    CloudDriveConnector,
+    CloudDriveError,
+    CloudFile,
+    validate_resource_id,
+)
 
 logger = structlog.stdlib.get_logger()
 
@@ -93,16 +99,20 @@ class OneDriveConnector(CloudDriveConnector):
         files: list[CloudFile] = []
 
         if query:
-            url = f"{_GRAPH_API}/me/drive/root/search(q='{query}')"
+            url = f"{_GRAPH_API}/me/drive/root/search(q='{quote(query)}')"
         elif folder_id:
+            validate_resource_id(folder_id, "folder_id")
             url = f"{_GRAPH_API}/me/drive/items/{folder_id}/children"
         else:
             url = f"{_GRAPH_API}/me/drive/root/children"
 
         async with httpx.AsyncClient(timeout=30) as client:
             while url:
-                resp = await client.get(url, headers=headers)
-                resp.raise_for_status()
+                try:
+                    resp = await client.get(url, headers=headers)
+                    resp.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    raise CloudDriveError("onedrive", exc.response.status_code, "list_files") from exc
                 data = resp.json()
 
                 for item in data.get("value", []):
@@ -128,35 +138,43 @@ class OneDriveConnector(CloudDriveConnector):
         return files
 
     async def download_file(self, access_token: str, file_id: str) -> tuple[bytes, str]:
+        validate_resource_id(file_id, "file_id")
         headers = {"Authorization": f"Bearer {access_token}"}
         async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-            # Get metadata for the filename
-            meta_resp = await client.get(
-                f"{_GRAPH_API}/me/drive/items/{file_id}",
-                headers=headers,
-            )
-            meta_resp.raise_for_status()
-            meta = meta_resp.json()
-            filename = meta.get("name", file_id)
+            try:
+                # Get metadata for the filename
+                meta_resp = await client.get(
+                    f"{_GRAPH_API}/me/drive/items/{file_id}",
+                    headers=headers,
+                )
+                meta_resp.raise_for_status()
+                meta = meta_resp.json()
+                filename = meta.get("name", file_id)
 
-            # Download content (Graph returns a 302 redirect to the actual file)
-            resp = await client.get(
-                f"{_GRAPH_API}/me/drive/items/{file_id}/content",
-                headers=headers,
-            )
-            resp.raise_for_status()
+                # Download content (Graph returns a 302 redirect to the actual file)
+                resp = await client.get(
+                    f"{_GRAPH_API}/me/drive/items/{file_id}/content",
+                    headers=headers,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise CloudDriveError("onedrive", exc.response.status_code, "download_file") from exc
 
         logger.debug("onedrive_download", file_id=file_id, filename=filename)
         return resp.content, filename
 
     async def get_file_metadata(self, access_token: str, file_id: str) -> CloudFile:
+        validate_resource_id(file_id, "file_id")
         headers = {"Authorization": f"Bearer {access_token}"}
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{_GRAPH_API}/me/drive/items/{file_id}",
-                headers=headers,
-            )
-            resp.raise_for_status()
+            try:
+                resp = await client.get(
+                    f"{_GRAPH_API}/me/drive/items/{file_id}",
+                    headers=headers,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise CloudDriveError("onedrive", exc.response.status_code, "get_file_metadata") from exc
             item = resp.json()
 
         is_folder = "folder" in item

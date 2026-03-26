@@ -9,7 +9,12 @@ import httpx
 import structlog
 
 from app.config import settings
-from app.integrations.cloud_drives.base import CloudAuthResult, CloudDriveConnector, CloudFile
+from app.integrations.cloud_drives.base import (
+    CloudAuthResult,
+    CloudDriveConnector,
+    CloudDriveError,
+    CloudFile,
+)
 
 logger = structlog.stdlib.get_logger()
 
@@ -100,23 +105,29 @@ class DropboxConnector(CloudDriveConnector):
         body: dict[str, object] = {"path": path, "limit": 100}
 
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{_API_BASE}/files/list_folder",
-                headers=headers,
-                json=body,
-            )
-            resp.raise_for_status()
+            try:
+                resp = await client.post(
+                    f"{_API_BASE}/files/list_folder",
+                    headers=headers,
+                    json=body,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise CloudDriveError("dropbox", exc.response.status_code, "list_files") from exc
             data = resp.json()
 
             files.extend(self._parse_entries(data.get("entries", [])))
 
             while data.get("has_more"):
-                resp = await client.post(
-                    f"{_API_BASE}/files/list_folder/continue",
-                    headers=headers,
-                    json={"cursor": data["cursor"]},
-                )
-                resp.raise_for_status()
+                try:
+                    resp = await client.post(
+                        f"{_API_BASE}/files/list_folder/continue",
+                        headers=headers,
+                        json={"cursor": data["cursor"]},
+                    )
+                    resp.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    raise CloudDriveError("dropbox", exc.response.status_code, "list_files") from exc
                 data = resp.json()
                 files.extend(self._parse_entries(data.get("entries", [])))
 
@@ -130,11 +141,14 @@ class DropboxConnector(CloudDriveConnector):
             "Dropbox-API-Arg": api_arg,
         }
         async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(
-                f"{_CONTENT_BASE}/files/download",
-                headers=headers,
-            )
-            resp.raise_for_status()
+            try:
+                resp = await client.post(
+                    f"{_CONTENT_BASE}/files/download",
+                    headers=headers,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise CloudDriveError("dropbox", exc.response.status_code, "download_file") from exc
 
         # Extract filename from the Dropbox-API-Result header
         result_header = resp.headers.get("Dropbox-API-Result", "{}")
@@ -150,27 +164,34 @@ class DropboxConnector(CloudDriveConnector):
             "Content-Type": "application/json",
         }
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{_API_BASE}/files/get_metadata",
-                headers=headers,
-                json={"path": file_id},
-            )
-            resp.raise_for_status()
+            try:
+                resp = await client.post(
+                    f"{_API_BASE}/files/get_metadata",
+                    headers=headers,
+                    json={"path": file_id},
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise CloudDriveError("dropbox", exc.response.status_code, "get_file_metadata") from exc
             entry = resp.json()
 
         return self._parse_entry(entry)
 
     async def revoke_token(self, access_token: str) -> None:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                f"{_API_BASE}/auth/token/revoke",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json",
-                },
-                content="null",
-            )
-            resp.raise_for_status()
+            try:
+                resp = await client.post(
+                    f"{_API_BASE}/auth/token/revoke",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json",
+                    },
+                    content="null",
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.warning("dropbox_token_revocation_failed", status=exc.response.status_code)
+                raise CloudDriveError("dropbox", exc.response.status_code, "revoke_token") from exc
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -195,12 +216,15 @@ class DropboxConnector(CloudDriveConnector):
             "Content-Type": "application/json",
         }
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{_API_BASE}/files/search_v2",
-                headers=headers,
-                json={"query": query, "options": {"max_results": 100}},
-            )
-            resp.raise_for_status()
+            try:
+                resp = await client.post(
+                    f"{_API_BASE}/files/search_v2",
+                    headers=headers,
+                    json={"query": query, "options": {"max_results": 100}},
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise CloudDriveError("dropbox", exc.response.status_code, "search_files") from exc
             data = resp.json()
 
         entries = [

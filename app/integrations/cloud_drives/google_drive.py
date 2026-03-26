@@ -8,7 +8,13 @@ import httpx
 import structlog
 
 from app.config import settings
-from app.integrations.cloud_drives.base import CloudAuthResult, CloudDriveConnector, CloudFile
+from app.integrations.cloud_drives.base import (
+    CloudAuthResult,
+    CloudDriveConnector,
+    CloudDriveError,
+    CloudFile,
+    validate_resource_id,
+)
 
 logger = structlog.stdlib.get_logger()
 
@@ -95,9 +101,11 @@ class GoogleDriveConnector(CloudDriveConnector):
 
         q_parts: list[str] = ["trashed = false"]
         if folder_id:
+            validate_resource_id(folder_id, "folder_id")
             q_parts.append(f"'{folder_id}' in parents")
         if query:
-            q_parts.append(f"name contains '{query}'")
+            safe_query = query.replace("\\", "\\\\").replace("'", "\\'")
+            q_parts.append(f"name contains '{safe_query}'")
         q = " and ".join(q_parts)
 
         async with httpx.AsyncClient(timeout=30) as client:
@@ -110,8 +118,11 @@ class GoogleDriveConnector(CloudDriveConnector):
                 if page_token:
                     params["pageToken"] = page_token
 
-                resp = await client.get(_DRIVE_API, headers=headers, params=params)
-                resp.raise_for_status()
+                try:
+                    resp = await client.get(_DRIVE_API, headers=headers, params=params)
+                    resp.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    raise CloudDriveError("google_drive", exc.response.status_code, "list_files") from exc
                 data = resp.json()
 
                 for f in data.get("files", []):
@@ -139,38 +150,46 @@ class GoogleDriveConnector(CloudDriveConnector):
         return files
 
     async def download_file(self, access_token: str, file_id: str) -> tuple[bytes, str]:
+        validate_resource_id(file_id, "file_id")
         headers = {"Authorization": f"Bearer {access_token}"}
         async with httpx.AsyncClient(timeout=60) as client:
-            # Get metadata first for the filename
-            meta_resp = await client.get(
-                f"{_DRIVE_API}/{file_id}",
-                headers=headers,
-                params={"fields": "name,mimeType"},
-            )
-            meta_resp.raise_for_status()
-            meta = meta_resp.json()
-            filename = meta.get("name", file_id)
+            try:
+                # Get metadata first for the filename
+                meta_resp = await client.get(
+                    f"{_DRIVE_API}/{file_id}",
+                    headers=headers,
+                    params={"fields": "name,mimeType"},
+                )
+                meta_resp.raise_for_status()
+                meta = meta_resp.json()
+                filename = meta.get("name", file_id)
 
-            # Download content
-            resp = await client.get(
-                f"{_DRIVE_API}/{file_id}",
-                headers=headers,
-                params={"alt": "media"},
-            )
-            resp.raise_for_status()
+                # Download content
+                resp = await client.get(
+                    f"{_DRIVE_API}/{file_id}",
+                    headers=headers,
+                    params={"alt": "media"},
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise CloudDriveError("google_drive", exc.response.status_code, "download_file") from exc
 
         logger.debug("google_drive_download", file_id=file_id, filename=filename)
         return resp.content, filename
 
     async def get_file_metadata(self, access_token: str, file_id: str) -> CloudFile:
+        validate_resource_id(file_id, "file_id")
         headers = {"Authorization": f"Bearer {access_token}"}
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{_DRIVE_API}/{file_id}",
-                headers=headers,
-                params={"fields": "id,name,mimeType,size,parents,modifiedTime,thumbnailLink"},
-            )
-            resp.raise_for_status()
+            try:
+                resp = await client.get(
+                    f"{_DRIVE_API}/{file_id}",
+                    headers=headers,
+                    params={"fields": "id,name,mimeType,size,parents,modifiedTime,thumbnailLink"},
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise CloudDriveError("google_drive", exc.response.status_code, "get_file_metadata") from exc
             f = resp.json()
 
         is_folder = f.get("mimeType") == "application/vnd.google-apps.folder"
@@ -189,12 +208,15 @@ class GoogleDriveConnector(CloudDriveConnector):
 
     async def revoke_token(self, access_token: str) -> None:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                "https://oauth2.googleapis.com/revoke",
-                params={"token": access_token},
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-            resp.raise_for_status()
+            try:
+                resp = await client.post(
+                    "https://oauth2.googleapis.com/revoke",
+                    params={"token": access_token},
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise CloudDriveError("google_drive", exc.response.status_code, "revoke_token") from exc
 
     # ------------------------------------------------------------------
     # Internal helpers

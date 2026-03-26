@@ -16,6 +16,9 @@ logger = structlog.stdlib.get_logger()
 class WordParser:
     """Extract structured data from Word documents using python-docx."""
 
+    MAX_FILE_SIZE = 100_000_000  # 100 MB
+    MAX_TEXT_SIZE = 50_000_000  # 50 MB extracted text cap (decompression bomb guard)
+
     async def parse(
         self,
         file_path: str | None = None,
@@ -25,6 +28,11 @@ class WordParser:
         """Parse Word document and extract structured content."""
         start = time.monotonic()
         result = ExtractionResult(source_type="word", source_name=filename or file_path or "unknown.docx")
+
+        if file_bytes and len(file_bytes) > self.MAX_FILE_SIZE:
+            result.metadata["error"] = f"File too large ({len(file_bytes)} bytes, max {self.MAX_FILE_SIZE})"
+            result.extraction_duration_ms = int((time.monotonic() - start) * 1000)
+            return result
 
         try:
             import docx
@@ -48,12 +56,18 @@ class WordParser:
             tables = self._extract_tables(doc)
             result.tables = tables
 
-            # Build raw text
+            # Build raw text (cap to prevent decompression-bomb OOM)
             all_text_parts: list[str] = []
+            total_text_len = 0
             for section in sections:
                 if section.title:
                     all_text_parts.append(section.title)
+                    total_text_len += len(section.title)
                 all_text_parts.append(section.content)
+                total_text_len += len(section.content)
+                if total_text_len > self.MAX_TEXT_SIZE:
+                    logger.warning("word_text_size_limit", filename=filename, size=total_text_len)
+                    break
             result.raw_text = "\n\n".join(all_text_parts)
 
             # Metadata

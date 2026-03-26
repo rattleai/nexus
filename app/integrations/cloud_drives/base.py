@@ -2,8 +2,29 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+
+
+class CloudDriveError(Exception):
+    """Sanitised error from a cloud drive provider — safe to surface to users."""
+
+    def __init__(self, provider: str, status_code: int | None, operation: str) -> None:
+        self.provider = provider
+        self.status_code = status_code
+        self.operation = operation
+        super().__init__(f"{provider}: {operation} failed (HTTP {status_code})")
+
+
+# File/folder IDs are provider-specific but always alphanumeric + a few safe chars.
+_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9!_.\-:]+$")
+
+
+def validate_resource_id(value: str, label: str = "resource_id") -> None:
+    """Raise ValueError if *value* contains characters unsafe for URL path interpolation."""
+    if not value or not _SAFE_ID_RE.match(value):
+        raise ValueError(f"Invalid {label}: must be alphanumeric (got {value!r:.60})")
 
 
 @dataclass

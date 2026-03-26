@@ -354,9 +354,12 @@ async def reprocess_datasource(
     if not ds:
         raise HTTPException(status_code=404, detail="Data source not found")
 
-    # Bulk-delete existing chunks
+    # Bulk-delete existing chunks (tenant filter for defense-in-depth)
     await db.execute(
-        delete(DataSourceChunk).where(DataSourceChunk.data_source_id == datasource_id)
+        delete(DataSourceChunk).where(
+            DataSourceChunk.data_source_id == datasource_id,
+            DataSourceChunk.tenant_id == tenant.id,
+        )
     )
 
     # Reset extraction state

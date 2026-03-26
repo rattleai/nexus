@@ -43,6 +43,17 @@ class ContentIndexer:
         from app.agents.embeddings import EmbeddingService
         from app.db.models.datasource import DataSourceChunk
 
+        # Verify tenant ownership (defense-in-depth against mismatched IDs)
+        if hasattr(db, "get"):
+            from app.db.models.datasource import DataSource
+
+            ds = await db.get(DataSource, data_source_id)
+            if ds and str(ds.tenant_id) != str(tenant_id):
+                raise ValueError(
+                    f"Tenant mismatch: datasource {data_source_id} belongs to "
+                    f"{ds.tenant_id}, not {tenant_id}"
+                )
+
         # Build chunks from text and tables
         text_chunks = self._chunk_text(extraction.raw_text)
         table_chunks = self._chunk_tables(extraction.tables)

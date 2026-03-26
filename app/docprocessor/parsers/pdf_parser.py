@@ -17,6 +17,7 @@ class PDFParser:
     """Extract text and tables from PDF files using pdfplumber (primary) with pymupdf fallback."""
 
     MAX_PAGES = 500
+    MAX_FILE_SIZE = 100_000_000  # 100 MB
 
     async def parse(
         self,
@@ -27,6 +28,11 @@ class PDFParser:
         """Parse PDF and extract structured content."""
         start = time.monotonic()
         result = ExtractionResult(source_type="pdf", source_name=filename or file_path or "unknown.pdf")
+
+        if file_bytes and len(file_bytes) > self.MAX_FILE_SIZE:
+            result.metadata["error"] = f"File too large ({len(file_bytes)} bytes, max {self.MAX_FILE_SIZE})"
+            result.extraction_duration_ms = int((time.monotonic() - start) * 1000)
+            return result
 
         try:
             sections, tables, raw_text, metadata = self._extract_with_pdfplumber(file_path, file_bytes)

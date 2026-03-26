@@ -18,6 +18,8 @@ class ExcelParser:
 
     MAX_SHEETS = 50
     MAX_ROWS_PER_SHEET = 10_000
+    MAX_FILE_SIZE = 100_000_000  # 100 MB
+    MAX_TOTAL_CELLS = 1_000_000  # Guard against decompression bombs
 
     async def parse(
         self,
@@ -28,6 +30,11 @@ class ExcelParser:
         """Parse Excel file and extract structured content."""
         start = time.monotonic()
         result = ExtractionResult(source_type="excel", source_name=filename or file_path or "unknown.xlsx")
+
+        if file_bytes and len(file_bytes) > self.MAX_FILE_SIZE:
+            result.metadata["error"] = f"File too large ({len(file_bytes)} bytes, max {self.MAX_FILE_SIZE})"
+            result.extraction_duration_ms = int((time.monotonic() - start) * 1000)
+            return result
 
         try:
             import openpyxl
@@ -46,11 +53,14 @@ class ExcelParser:
             try:
                 result.metadata["sheet_count"] = len(wb.sheetnames)
                 all_text_parts: list[str] = []
+                cells_read: list[int] = [0]
 
                 for sheet_name in wb.sheetnames[:self.MAX_SHEETS]:
+                    if cells_read[0] >= self.MAX_TOTAL_CELLS:
+                        break
                     ws = wb[sheet_name]
                     try:
-                        section, table = self._extract_sheet(ws, sheet_name)
+                        section, table = self._extract_sheet(ws, sheet_name, cells_read)
                         if section:
                             result.sections.append(section)
                             all_text_parts.append(section.content)
@@ -74,19 +84,25 @@ class ExcelParser:
         self,
         ws: Any,
         sheet_name: str,
+        cells_read: list[int] | None = None,
     ) -> tuple[ExtractedSection | None, ExtractedTable | None]:
         """Extract content from a single worksheet."""
         rows_data: list[list[str]] = []
+        if cells_read is None:
+            cells_read = [0]
 
         row_count = 0
         for row in ws.iter_rows():
             if row_count >= self.MAX_ROWS_PER_SHEET:
                 break
+            if cells_read[0] >= self.MAX_TOTAL_CELLS:
+                logger.warning("excel_cell_limit_reached", sheet=sheet_name, cells=cells_read[0])
+                break
             row_values = []
             for cell in row:
+                cells_read[0] += 1
                 value = cell.value
                 if value is None:
-                    # Forward-fill merged cells: use empty string as placeholder
                     row_values.append("")
                 else:
                     row_values.append(str(value).strip())
