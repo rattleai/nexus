@@ -14,6 +14,7 @@ interface OptionSelectorProps {
   excludedValues: string[]
   autoSetValues: Record<string, string>
   onSelect: (characteristicId: string, charSlug: string, value: string) => void
+  disabled?: boolean
 }
 
 function hasImages(characteristic: Characteristic): boolean {
@@ -28,15 +29,17 @@ export function OptionSelector({
   excludedValues,
   autoSetValues,
   onSelect,
+  disabled,
 }: OptionSelectorProps) {
   const isAutoSet = characteristic.slug in autoSetValues
 
   const handleSelect = (value: string) => {
+    if (disabled) return
     onSelect(characteristic.id, characteristic.slug, value)
   }
 
   return (
-    <div className="space-y-3">
+    <div className={disabled ? "space-y-3 opacity-60 pointer-events-none" : "space-y-3"}>
       <div className="flex items-center gap-2">
         <Label className="text-base font-semibold">{characteristic.name}</Label>
         {characteristic.is_required && (
@@ -101,6 +104,7 @@ export function OptionSelector({
           value={selectedValue ?? ""}
           placeholder={`Enter ${characteristic.name.toLowerCase()}...`}
           onChange={(e) => handleSelect(e.target.value)}
+          disabled={disabled}
         />
       )}
     </div>

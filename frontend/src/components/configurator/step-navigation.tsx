@@ -107,7 +107,7 @@ export function StepNavigation({
                 </span>
 
                 {/* Step name */}
-                <span>{step.name}</span>
+                <span title={step.name}>{step.name}</span>
 
                 {/* Selection count badge */}
                 {!isCompleted && step.characteristicCount > 0 && (

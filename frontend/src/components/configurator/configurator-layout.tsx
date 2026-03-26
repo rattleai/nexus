@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from "react"
 import { Link } from "@tanstack/react-router"
-import { ArrowLeft, Share2, Check, Loader2 } from "lucide-react"
+import { ArrowLeft, Share2, Check, Loader2, Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -64,6 +64,7 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
   // ── Local state ───────────────────────────────────────────
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const [sessionError, setSessionError] = useState<string | null>(null)
+  const [isLocked, setIsLocked] = useState(false)
   const [missingDialogOpen, setMissingDialogOpen] = useState(false)
   const [validationErrors, setValidationErrors] = useState<ConfiguratorValidationError[]>([])
 
@@ -289,6 +290,7 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
       lockSession.mutate(store.sessionId, {
         onSuccess: () => {
           store.setSaving(false)
+          setIsLocked(true)
           toast.success("Configuration completed and locked")
         },
         onError: () => {
@@ -429,19 +431,26 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
             <Share2 className="h-3.5 w-3.5 mr-1.5" />
             Share
           </Button>
-          <Button
-            size="sm"
-            variant={completedSteps.size >= steps.length ? "default" : "outline"}
-            onClick={handleComplete}
-            disabled={store.isSaving}
-          >
-            {store.isSaving ? (
-              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-            ) : (
-              <Check className="h-3.5 w-3.5 mr-1.5" />
-            )}
-            Complete
-          </Button>
+          {isLocked ? (
+            <Button size="sm" variant="secondary" disabled>
+              <Lock className="h-3.5 w-3.5 mr-1.5" />
+              Locked
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant={completedSteps.size >= steps.length ? "default" : "outline"}
+              onClick={handleComplete}
+              disabled={store.isSaving}
+            >
+              {store.isSaving ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Check className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              Complete
+            </Button>
+          )}
         </div>
       </header>
 
@@ -490,6 +499,7 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
                     excludedValues={store.excludedValues[char.slug] || []}
                     autoSetValues={store.autoSetValues}
                     onSelect={handleSelect}
+                    disabled={isLocked}
                   />
                 ))
               )}
