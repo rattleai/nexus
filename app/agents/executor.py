@@ -63,6 +63,9 @@ def _sanitize_error(exc: Exception, max_len: int = 2000) -> str:
     """Sanitize error messages to prevent leaking sensitive data."""
     msg = str(exc)
     msg = re.sub(r'(sk-|pk_|Bearer\s+)\S+', '[REDACTED]', msg)
+    msg = re.sub(r'AKIA[A-Z0-9]{16}', '[AWS_KEY_REDACTED]', msg)
+    msg = re.sub(r'(postgresql|mysql|redis|mongodb)://\S+', '[DB_URL_REDACTED]', msg)
+    msg = re.sub(r'(?i)(password|secret|token|key)\s*[=:]\s*\S+', r'\1=[REDACTED]', msg)
     msg = re.sub(r'(/Users/|/home/|/var/)\S+', '[PATH]', msg)
     return msg[:max_len]
 

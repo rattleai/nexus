@@ -127,18 +127,36 @@ async def _get_connection(
     return conn
 
 
-async def _get_access_token(conn: CloudConnection) -> str:
-    """Return a valid access token, refreshing if expired."""
+async def _get_access_token(conn: CloudConnection, db: AsyncSession) -> str:
+    """Return a valid access token, refreshing if expired.
+
+    Persists refreshed tokens via ``db.flush()`` so changes survive the
+    current transaction regardless of the caller's commit timing.
+    """
     now = datetime.now(UTC)
     if conn.token_expires_at and conn.token_expires_at < now and conn.refresh_token_encrypted:
         connector = _get_connector(conn.provider)
         refresh_token = decrypt(conn.refresh_token_encrypted)
-        auth_result = await connector.refresh_access_token(refresh_token)
+        try:
+            auth_result = await connector.refresh_access_token(refresh_token)
+        except Exception as exc:
+            logger.error(
+                "cloud_connection_token_refresh_failed",
+                connection_id=str(conn.id),
+                error=str(exc)[:200],
+            )
+            conn.is_active = False
+            await db.flush()
+            raise HTTPException(
+                status_code=502,
+                detail="Cloud connection token refresh failed. Please re-authenticate.",
+            ) from exc
         conn.access_token_encrypted = encrypt(auth_result.access_token)
         if auth_result.refresh_token:
             conn.refresh_token_encrypted = encrypt(auth_result.refresh_token)
         if auth_result.expires_in:
             conn.token_expires_at = now + timedelta(seconds=auth_result.expires_in)
+        await db.flush()
         logger.info("cloud_connection_token_refreshed", connection_id=str(conn.id))
     return decrypt(conn.access_token_encrypted)
 
@@ -181,13 +199,29 @@ async def start_oauth_flow(
     state parameter for CSRF protection.
     """
     connector = _get_connector(provider)
-    redirect_uri = (body.redirect_uri if body and body.redirect_uri else None) or _default_redirect_uri(provider)
+
+    # Reject custom redirect URIs -- only the server-configured URI is allowed
+    # to prevent OAuth authorization code interception attacks.
+    default_uri = _default_redirect_uri(provider)
+    if body and body.redirect_uri and body.redirect_uri != default_uri:
+        raise HTTPException(
+            status_code=400,
+            detail="Custom redirect URIs are not allowed. Use the configured redirect URI.",
+        )
+    redirect_uri = default_uri
     if not redirect_uri:
         raise HTTPException(
             status_code=400,
-            detail=f"No redirect URI configured for {provider}. Set it in settings or provide one in the request.",
+            detail=f"No redirect URI configured for {provider}. Set it in settings.",
         )
+
     state = secrets.token_urlsafe(32)
+
+    # Store state in Redis for CSRF validation in the callback (10-min TTL).
+    from app.core.redis import redis_pool
+
+    await redis_pool.setex(f"oauth_state:{tenant.id}:{state}", 600, str(tenant.id))
+
     auth_url = connector.get_auth_url(redirect_uri=redirect_uri, state=state)
     logger.info("cloud_oauth_started", provider=provider, tenant_id=str(tenant.id))
     return OAuthStartResponse(auth_url=auth_url, state=state)
@@ -209,8 +243,20 @@ async def oauth_callback(
     """Handle the OAuth callback: exchange the authorization code for tokens
     and persist a new CloudConnection.
     """
+    # ── Validate OAuth state (CSRF protection) ────────────
+    from app.core.redis import redis_pool
+
+    state_key = f"oauth_state:{tenant.id}:{state}"
+    stored = await redis_pool.get(state_key)
+    if not stored or stored != str(tenant.id):
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+    await redis_pool.delete(state_key)  # one-time use
+
     connector = _get_connector(provider)
-    effective_redirect_uri = redirect_uri or _default_redirect_uri(provider)
+    # Only allow the configured redirect URI (mirrors start_oauth_flow validation)
+    effective_redirect_uri = _default_redirect_uri(provider)
+    if redirect_uri and redirect_uri != effective_redirect_uri:
+        raise HTTPException(status_code=400, detail="Custom redirect URIs are not allowed")
     if not effective_redirect_uri:
         raise HTTPException(status_code=400, detail=f"No redirect URI for {provider}")
 
@@ -264,8 +310,20 @@ async def delete_cloud_connection(
 ):
     """Soft-delete (revoke) a cloud connection."""
     conn = await _get_connection(connection_id, tenant, db)
+
+    # Best-effort: revoke the token at the provider so it cannot be reused.
+    try:
+        connector = _get_connector(conn.provider)
+        access_token = decrypt(conn.access_token_encrypted)
+        await connector.revoke_token(access_token)
+    except Exception:
+        logger.warning("cloud_token_revocation_failed", connection_id=str(connection_id))
+
     conn.deleted_at = datetime.now(UTC)
     conn.is_active = False
+    # Clear encrypted credentials as defense-in-depth.
+    conn.access_token_encrypted = ""
+    conn.refresh_token_encrypted = None
     await emit_audit_event(
         db,
         action=AuditAction.DELETE,
@@ -295,7 +353,7 @@ async def browse_files(
     """
     conn = await _get_connection(connection_id, tenant, db)
     connector = _get_connector(conn.provider)
-    access_token = await _get_access_token(conn)
+    access_token = await _get_access_token(conn, db)
 
     try:
         files = await connector.list_files(access_token, folder_id=folder_id, query=query)
@@ -307,7 +365,6 @@ async def browse_files(
         )
         raise HTTPException(status_code=502, detail="Failed to list files from cloud provider") from exc
 
-    # Persist any token refresh that happened inside _get_access_token
     await db.commit()
 
     return [
@@ -344,7 +401,7 @@ async def import_files(
     """
     conn = await _get_connection(connection_id, tenant, db)
     connector = _get_connector(conn.provider)
-    access_token = await _get_access_token(conn)
+    access_token = await _get_access_token(conn, db)
 
     results: list[FileImportResult] = []
     for file_id in body.file_ids:
@@ -361,6 +418,29 @@ async def import_files(
 
         if meta.is_folder:
             logger.info("cloud_import_skip_folder", file_id=file_id, name=meta.name)
+            continue
+
+        # Validate file size (100 MB limit)
+        _MAX_IMPORT_SIZE = 100_000_000
+        if meta.size and meta.size > _MAX_IMPORT_SIZE:
+            logger.warning("cloud_import_file_too_large", file_id=file_id, size=meta.size)
+            continue
+
+        # Validate MIME type against allowlist
+        _ALLOWED_IMPORT_MIMES = {
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "text/csv",
+            "application/json",
+            "text/plain",
+            "text/html",
+            "application/vnd.oasis.opendocument.spreadsheet",
+            "application/vnd.oasis.opendocument.text",
+        }
+        if meta.mime_type and meta.mime_type not in _ALLOWED_IMPORT_MIMES:
+            logger.warning("cloud_import_unsupported_type", file_id=file_id, mime=meta.mime_type)
             continue
 
         ds = DataSource(

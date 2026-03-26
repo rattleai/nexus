@@ -50,3 +50,8 @@ class CloudDriveConnector(ABC):
 
     @abstractmethod
     async def get_file_metadata(self, access_token: str, file_id: str) -> CloudFile: ...
+
+    @abstractmethod
+    async def revoke_token(self, access_token: str) -> None:
+        """Best-effort revocation of the access/refresh token at the provider."""
+        ...

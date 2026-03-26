@@ -86,7 +86,8 @@ class WordParser:
             "Heading 6": 6,
         }
 
-        for para in doc.paragraphs:
+        _MAX_PARAGRAPHS = 5000
+        for para in doc.paragraphs[:_MAX_PARAGRAPHS]:
             style_name = para.style.name if para.style else ""
 
             if style_name in _HEADING_LEVELS:

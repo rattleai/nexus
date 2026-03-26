@@ -196,16 +196,7 @@ class Settings(BaseSettings):
     AGENT_RATE_LIMIT_WINDOW_SECONDS: int = 60
     OAUTH_CLIENT_CREDENTIALS_ENABLED: bool = False
 
-    # Cloud Drive OAuth Integration
-    GOOGLE_DRIVE_CLIENT_ID: str = ""
-    GOOGLE_DRIVE_CLIENT_SECRET: str = ""
-    GOOGLE_DRIVE_REDIRECT_URI: str = ""
-    DROPBOX_APP_KEY: str = ""
-    DROPBOX_APP_SECRET: str = ""
-    DROPBOX_REDIRECT_URI: str = ""
-    ONEDRIVE_CLIENT_ID: str = ""
-    ONEDRIVE_CLIENT_SECRET: str = ""
-    ONEDRIVE_REDIRECT_URI: str = ""
+    # (Cloud Drive OAuth settings are defined above — do not duplicate here.)
 
     # Allowed scope values for API keys
     VALID_SCOPES: list[str] = [

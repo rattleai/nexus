@@ -46,8 +46,15 @@ class CSVParser:
 
             reader = csv.reader(io.StringIO(text_content), dialect)
             rows_data: list[list[str]] = []
+            _FORMULA_CHARS = frozenset("=+-@")
             for row in reader:
-                stripped = [cell.strip() for cell in row]
+                stripped = []
+                for cell in row:
+                    cell = cell.strip()
+                    # Sanitize formula-injection characters
+                    if cell and cell[0] in _FORMULA_CHARS:
+                        cell = f"'{cell}"
+                    stripped.append(cell)
                 if any(v for v in stripped):
                     rows_data.append(stripped)
 

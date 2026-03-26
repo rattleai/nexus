@@ -18,10 +18,23 @@ _STRIP_TAGS = {"nav", "footer", "header", "aside", "script", "style", "noscript"
 class WebParser:
     """Extract structured data from web pages using httpx + BeautifulSoup."""
 
+    # Maximum response body size (10 MB) to prevent memory exhaustion.
+    _MAX_RESPONSE_SIZE = 10_000_000
+
     async def parse_url(self, url: str) -> ExtractionResult:
         """Fetch a URL and extract structured content."""
         start = time.monotonic()
         result = ExtractionResult(source_type="url", source_name=url)
+
+        # ── SSRF protection ──────────────────────────────────
+        from app.core.url_validation import validate_webhook_url_async
+
+        ssrf_error = await validate_webhook_url_async(url)
+        if ssrf_error:
+            logger.warning("web_parser_ssrf_blocked", url=url, reason=ssrf_error)
+            result.metadata["error"] = f"URL blocked: {ssrf_error}"
+            result.extraction_duration_ms = int((time.monotonic() - start) * 1000)
+            return result
 
         try:
             import httpx
@@ -43,10 +56,23 @@ class WebParser:
             async with httpx.AsyncClient(
                 timeout=30.0,
                 follow_redirects=True,
+                max_redirects=5,
                 headers={"User-Agent": "CadPrice-DocProcessor/1.0"},
             ) as client:
                 response = await client.get(url)
                 response.raise_for_status()
+
+            # ── Content-type & size validation ────────────────
+            content_type = response.headers.get("content-type", "")
+            if not any(ct in content_type for ct in ("text/html", "application/xhtml")):
+                result.metadata["error"] = f"Unsupported content type: {content_type}"
+                result.extraction_duration_ms = int((time.monotonic() - start) * 1000)
+                return result
+
+            if len(response.content) > self._MAX_RESPONSE_SIZE:
+                result.metadata["error"] = "Response too large (>10 MB)"
+                result.extraction_duration_ms = int((time.monotonic() - start) * 1000)
+                return result
 
             html = response.text
             result.metadata["status_code"] = response.status_code

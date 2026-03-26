@@ -16,6 +16,8 @@ logger = structlog.stdlib.get_logger()
 class PDFParser:
     """Extract text and tables from PDF files using pdfplumber (primary) with pymupdf fallback."""
 
+    MAX_PAGES = 500
+
     async def parse(
         self,
         file_path: str | None = None,
@@ -73,7 +75,7 @@ class PDFParser:
                     if pdf.metadata.get(key):
                         metadata[key.lower()] = pdf.metadata[key]
 
-            for page_num, page in enumerate(pdf.pages, start=1):
+            for page_num, page in enumerate(pdf.pages[:self.MAX_PAGES], start=1):
                 # Extract tables from this page
                 page_tables = self._extract_page_tables(page, page_num)
                 tables.extend(page_tables)
@@ -151,7 +153,7 @@ class PDFParser:
                 if doc_metadata.get(key):
                     metadata[key] = doc_metadata[key]
 
-            for page_num in range(len(doc)):
+            for page_num in range(min(len(doc), self.MAX_PAGES)):
                 page = doc[page_num]
                 page_text = page.get_text()
                 if page_text.strip():

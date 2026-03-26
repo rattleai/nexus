@@ -138,13 +138,17 @@ class JSONParser:
         return ExtractedTable(headers=all_keys, rows=rows)
 
     @staticmethod
-    def _flatten_dict(d: dict[str, Any], prefix: str = "") -> dict[str, Any]:
-        """Flatten a nested dict using dot-notation keys."""
+    def _flatten_dict(d: dict[str, Any], prefix: str = "", _depth: int = 0) -> dict[str, Any]:
+        """Flatten a nested dict using dot-notation keys (max depth 20)."""
+        _MAX_DEPTH = 20
         items: dict[str, Any] = {}
         for k, v in d.items():
             new_key = f"{prefix}.{k}" if prefix else k
             if isinstance(v, dict):
-                items.update(JSONParser._flatten_dict(v, new_key))
+                if _depth >= _MAX_DEPTH:
+                    items[new_key] = json.dumps(v, default=str)
+                else:
+                    items.update(JSONParser._flatten_dict(v, new_key, _depth=_depth + 1))
             elif isinstance(v, list):
                 # Represent lists as JSON strings for table cells
                 items[new_key] = json.dumps(v, default=str)

@@ -79,6 +79,19 @@ async def create_datasource(
 
     For file uploads, use POST /datasources/upload instead.
     """
+    # Verify cloud connection belongs to this tenant (prevent cross-tenant reference)
+    if body.cloud_connection_id:
+        from app.db.models.datasource import CloudConnection
+
+        cc_result = await db.execute(
+            tenant_query(select(CloudConnection), tenant).where(
+                CloudConnection.id == body.cloud_connection_id,
+                CloudConnection.deleted_at.is_(None),
+            )
+        )
+        if not cc_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Cloud connection not found")
+
     ds = DataSource(
         tenant_id=tenant.id,
         name=body.name,
@@ -224,7 +237,9 @@ async def list_datasources(
     if status:
         stmt = stmt.where(DataSource.status == DataSourceStatus(status))
     if search:
-        stmt = stmt.where(DataSource.name.ilike(f"%{search}%"))
+        from app.core.query_utils import escape_like
+
+        stmt = stmt.where(DataSource.name.ilike(f"%{escape_like(search)}%"))
     return await paginate(db, stmt, DataSource.created_at, limit=limit, cursor=cursor, descending=True)
 
 
@@ -251,10 +266,13 @@ async def get_datasource(
     if not ds:
         raise HTTPException(status_code=404, detail="Data source not found")
 
-    # Fetch first few chunks as a preview
+    # Fetch first few chunks as a preview (explicit tenant check for defense-in-depth)
     chunks_result = await db.execute(
         select(DataSourceChunk)
-        .where(DataSourceChunk.data_source_id == datasource_id)
+        .where(
+            DataSourceChunk.data_source_id == datasource_id,
+            DataSourceChunk.tenant_id == tenant.id,
+        )
         .order_by(DataSourceChunk.chunk_index)
         .limit(5)
     )
@@ -433,7 +451,9 @@ async def search_datasources(
 
     # Fallback: basic ILIKE text search (vector search can be added when
     # an embedding service / pgvector is integrated)
-    stmt = stmt.where(DataSourceChunk.content.ilike(f"%{body.query}%"))
+    from app.core.query_utils import escape_like
+
+    stmt = stmt.where(DataSourceChunk.content.ilike(f"%{escape_like(body.query)}%"))
     stmt = stmt.limit(body.top_k)
 
     result = await db.execute(stmt)

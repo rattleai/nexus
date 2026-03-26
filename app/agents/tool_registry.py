@@ -435,6 +435,163 @@ _BUILTIN_TOOLS: dict[str, dict[str, Any]] = {
             "required": ["query"],
         },
     },
+    # ── Update / Delete Tools ──
+    "config_update_product": {
+        "description": "Update an existing product's name, description, status, or sku_prefix.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "string", "description": "Product UUID"},
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "status": {"type": "string", "enum": ["draft", "active", "deprecated", "archived"]},
+                "sku_prefix": {"type": "string"},
+            },
+            "required": ["product_id"],
+        },
+    },
+    "config_delete_product": {
+        "description": "Soft-delete a product.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"product_id": {"type": "string", "description": "Product UUID"}},
+            "required": ["product_id"],
+        },
+    },
+    "config_update_constraint_rule": {
+        "description": "Update an existing constraint rule's name, expression, priority, or active state.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "rule_id": {"type": "string"},
+                "name": {"type": "string"},
+                "expression": {"type": "object"},
+                "priority": {"type": "integer"},
+                "is_active": {"type": "boolean"},
+            },
+            "required": ["rule_id"],
+        },
+    },
+    "config_delete_constraint_rule": {
+        "description": "Soft-delete a constraint rule.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"rule_id": {"type": "string"}},
+            "required": ["rule_id"],
+        },
+    },
+    "config_update_pricing_rule": {
+        "description": "Update an existing pricing rule.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "rule_id": {"type": "string"},
+                "name": {"type": "string"},
+                "expression": {"type": "object"},
+                "priority": {"type": "integer"},
+                "is_active": {"type": "boolean"},
+            },
+            "required": ["rule_id"],
+        },
+    },
+    "config_delete_pricing_rule": {
+        "description": "Soft-delete a pricing rule.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"rule_id": {"type": "string"}},
+            "required": ["rule_id"],
+        },
+    },
+    "config_list_variant_tables": {
+        "description": "List variant tables for a product.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"product_id": {"type": "string"}},
+            "required": ["product_id"],
+        },
+    },
+    # ── Product Family Tools ──
+    "config_create_product_family": {
+        "description": "Create a product family for grouping related products.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "slug": {"type": "string"},
+                "description": {"type": "string"},
+            },
+            "required": ["name", "slug"],
+        },
+    },
+    "config_list_product_families": {
+        "description": "List product families for the tenant.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "default": 50}},
+        },
+    },
+    # ── Characteristic Group Tools ──
+    "config_create_characteristic_group": {
+        "description": "Create a characteristic group for organizing characteristics.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "display_order": {"type": "integer", "default": 0},
+            },
+            "required": ["name"],
+        },
+    },
+    "config_list_characteristic_groups": {
+        "description": "List characteristic groups.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "default": 50}},
+        },
+    },
+    # ── Configuration Session Tools ──
+    "config_create_session": {
+        "description": "Create a configuration session for a product.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "string"},
+                "product_version_id": {"type": "string"},
+            },
+            "required": ["product_id"],
+        },
+    },
+    "config_get_session": {
+        "description": "Get a configuration session with its current selections.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"session_id": {"type": "string"}},
+            "required": ["session_id"],
+        },
+    },
+    "config_make_selection": {
+        "description": "Make a selection in a configuration session.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string"},
+                "characteristic_slug": {"type": "string"},
+                "value": {"type": "string"},
+            },
+            "required": ["session_id", "characteristic_slug", "value"],
+        },
+    },
+    "config_list_sessions": {
+        "description": "List configuration sessions, optionally filtered by product.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "string"},
+                "limit": {"type": "integer", "default": 20},
+            },
+        },
+    },
 }
 
 
@@ -632,9 +789,12 @@ class ToolRegistry:
                 return {"error": f"Configuration tool '{tool_name}' has no handler"}
 
             return await handler(**arguments, tenant=tenant, db=db)
+        except (ValueError, KeyError, TypeError) as exc:
+            logger.warning("config_tool_validation_error", tool_name=tool_name, error=str(exc)[:200])
+            return {"error": f"Invalid input for '{tool_name}': {str(exc)[:200]}"}
         except Exception as exc:
-            logger.warning("config_tool_error", tool_name=tool_name, error=str(exc))
-            return {"error": f"Configuration tool '{tool_name}' failed: {exc}"}
+            logger.error("config_tool_unexpected_error", tool_name=tool_name, exc_info=True)
+            return {"error": f"Configuration tool '{tool_name}' failed unexpectedly"}
 
     async def _invoke_sandbox(self, arguments: dict[str, Any]) -> Any:
         """Invoke the code execution sandbox.
@@ -715,8 +875,9 @@ class ToolRegistry:
                     try:
                         from app.core.encryption import decrypt
                         token = decrypt(token)
-                    except (ValueError, Exception):
-                        pass  # Use as-is if not encrypted (legacy data)
+                    except Exception:
+                        logger.error("tool_auth_token_decrypt_failed", tool_name=tool.tool_name)
+                        return {"error": f"Tool '{tool.tool_name}' has invalid authentication credentials"}
                 headers["Authorization"] = f"Bearer {token}"
             elif auth_config.get("type") == "api_key":
                 header_name = auth_config.get("header", "X-API-Key")
@@ -725,8 +886,9 @@ class ToolRegistry:
                     try:
                         from app.core.encryption import decrypt
                         key = decrypt(key)
-                    except (ValueError, Exception):
-                        pass  # Use as-is if not encrypted (legacy data)
+                    except Exception:
+                        logger.error("tool_auth_key_decrypt_failed", tool_name=tool.tool_name)
+                        return {"error": f"Tool '{tool.tool_name}' has invalid authentication credentials"}
                 # Validate header name to prevent HTTP header injection
                 import re
                 _SAFE_HEADER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9\-]*$")

@@ -160,6 +160,18 @@ class DropboxConnector(CloudDriveConnector):
 
         return self._parse_entry(entry)
 
+    async def revoke_token(self, access_token: str) -> None:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{_API_BASE}/auth/token/revoke",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                content="null",
+            )
+            resp.raise_for_status()
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

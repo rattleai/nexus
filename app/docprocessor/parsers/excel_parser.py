@@ -16,6 +16,9 @@ logger = structlog.stdlib.get_logger()
 class ExcelParser:
     """Extract structured data from Excel files using openpyxl."""
 
+    MAX_SHEETS = 50
+    MAX_ROWS_PER_SHEET = 10_000
+
     async def parse(
         self,
         file_path: str | None = None,
@@ -40,23 +43,25 @@ class ExcelParser:
             else:
                 wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)  # type: ignore[arg-type]
 
-            result.metadata["sheet_count"] = len(wb.sheetnames)
-            all_text_parts: list[str] = []
+            try:
+                result.metadata["sheet_count"] = len(wb.sheetnames)
+                all_text_parts: list[str] = []
 
-            for sheet_name in wb.sheetnames:
-                ws = wb[sheet_name]
-                try:
-                    section, table = self._extract_sheet(ws, sheet_name)
-                    if section:
-                        result.sections.append(section)
-                        all_text_parts.append(section.content)
-                    if table:
-                        result.tables.append(table)
-                except Exception as exc:
-                    logger.warning("excel_sheet_extraction_failed", sheet=sheet_name, error=str(exc))
+                for sheet_name in wb.sheetnames[:self.MAX_SHEETS]:
+                    ws = wb[sheet_name]
+                    try:
+                        section, table = self._extract_sheet(ws, sheet_name)
+                        if section:
+                            result.sections.append(section)
+                            all_text_parts.append(section.content)
+                        if table:
+                            result.tables.append(table)
+                    except Exception as exc:
+                        logger.warning("excel_sheet_extraction_failed", sheet=sheet_name, error=str(exc))
 
-            wb.close()
-            result.raw_text = "\n\n".join(all_text_parts)
+                result.raw_text = "\n\n".join(all_text_parts)
+            finally:
+                wb.close()
 
         except Exception as exc:
             logger.error("excel_extraction_failed", error=str(exc), filename=filename)
@@ -73,7 +78,10 @@ class ExcelParser:
         """Extract content from a single worksheet."""
         rows_data: list[list[str]] = []
 
+        row_count = 0
         for row in ws.iter_rows():
+            if row_count >= self.MAX_ROWS_PER_SHEET:
+                break
             row_values = []
             for cell in row:
                 value = cell.value
@@ -85,6 +93,7 @@ class ExcelParser:
             # Skip completely empty rows
             if any(v for v in row_values):
                 rows_data.append(row_values)
+            row_count += 1
 
         if not rows_data:
             return None, None

@@ -187,6 +187,15 @@ class GoogleDriveConnector(CloudDriveConnector):
             thumbnail_url=f.get("thumbnailLink"),
         )
 
+    async def revoke_token(self, access_token: str) -> None:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                "https://oauth2.googleapis.com/revoke",
+                params={"token": access_token},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            resp.raise_for_status()
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

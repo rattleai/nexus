@@ -8,7 +8,7 @@ Each handler wraps the same service-layer logic used by the REST API endpoints.
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import structlog
@@ -16,7 +16,33 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.audit import AuditAction, emit_audit_event
+
 logger = structlog.stdlib.get_logger()
+
+
+# ── Shared validation helpers ─────────────────────────────────────────
+
+
+def _parse_uuid(value: str, field: str) -> uuid.UUID | dict:
+    """Parse a UUID string, returning an error dict on failure."""
+    try:
+        return uuid.UUID(value)
+    except (ValueError, AttributeError):
+        return {"error": f"Invalid {field}: must be a valid UUID"}
+
+
+def _parse_enum(value: str, enum_cls: type, field: str) -> Any | dict:
+    """Parse an enum value, returning an error dict on failure."""
+    try:
+        return enum_cls(value)
+    except (ValueError, KeyError):
+        valid = [e.value for e in enum_cls]
+        return {"error": f"Invalid {field}: must be one of {valid}"}
+
+
+def _clamp_limit(limit: int, maximum: int = 100) -> int:
+    return max(1, min(limit, maximum))
 
 
 # ── Product Tools ─────────────────────────────────────────────────────
@@ -35,16 +61,24 @@ async def config_create_product(
     """Create a new configurable product."""
     from app.db.models.product import Product, ProductStatus
 
+    if family_id:
+        fid = _parse_uuid(family_id, "family_id")
+        if isinstance(fid, dict):
+            return fid
+    else:
+        fid = None
+
     product = Product(
         tenant_id=tenant.id,
         name=name,
         slug=slug,
         description=description or "",
         sku_prefix=sku_prefix or "",
-        family_id=uuid.UUID(family_id) if family_id else None,
+        family_id=fid,
         status=ProductStatus.DRAFT,
     )
     db.add(product)
+    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="product", resource_id=str(product.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
     await db.commit()
     await db.refresh(product)
 
@@ -62,13 +96,17 @@ async def config_list_products(
     """List products for the tenant."""
     from app.db.models.product import Product, ProductStatus
 
+    limit = _clamp_limit(limit)
     stmt = select(Product).where(
         Product.tenant_id == tenant.id,
         Product.deleted_at.is_(None),
     )
     if status:
-        stmt = stmt.where(Product.status == ProductStatus(status))
-    stmt = stmt.order_by(Product.created_at.desc()).limit(min(limit, 100))
+        s = _parse_enum(status, ProductStatus, "status")
+        if isinstance(s, dict):
+            return s
+        stmt = stmt.where(Product.status == s)
+    stmt = stmt.order_by(Product.created_at.desc()).limit(limit)
 
     result = await db.execute(stmt)
     products = result.scalars().all()
@@ -96,7 +134,9 @@ async def config_get_product(
         Product,
     )
 
-    pid = uuid.UUID(product_id)
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
 
     stmt = select(Product).where(
         Product.id == pid,
@@ -195,18 +235,35 @@ async def config_create_characteristic(
     db: AsyncSession,
 ) -> dict:
     """Create a characteristic with optional values."""
-    from app.db.models.product import Characteristic, CharType, CharacteristicValue
+    from app.db.models.product import Characteristic, CharacteristicType, CharacteristicValue
+
+    ct = _parse_enum(char_type, CharacteristicType, "char_type")
+    if isinstance(ct, dict):
+        return ct
+
+    gid = None
+    if group_id:
+        gid = _parse_uuid(group_id, "group_id")
+        if isinstance(gid, dict):
+            return gid
+
+    try:
+        nmin = Decimal(str(numeric_min)) if numeric_min is not None else None
+        nmax = Decimal(str(numeric_max)) if numeric_max is not None else None
+        nstep = Decimal(str(numeric_step)) if numeric_step is not None else None
+    except InvalidOperation:
+        return {"error": "Invalid numeric value for numeric_min, numeric_max, or numeric_step"}
 
     char = Characteristic(
         tenant_id=tenant.id,
         name=name,
         slug=slug,
         description=description,
-        char_type=CharType(char_type),
-        group_id=uuid.UUID(group_id) if group_id else None,
-        numeric_min=Decimal(str(numeric_min)) if numeric_min is not None else None,
-        numeric_max=Decimal(str(numeric_max)) if numeric_max is not None else None,
-        numeric_step=Decimal(str(numeric_step)) if numeric_step is not None else None,
+        char_type=ct,
+        group_id=gid,
+        numeric_min=nmin,
+        numeric_max=nmax,
+        numeric_step=nstep,
         unit=unit,
         is_required=is_required,
         is_multi_select=is_multi_select,
@@ -232,6 +289,7 @@ async def config_create_characteristic(
             db.add(cv)
             created_values.append({"value": cv.value, "label": cv.label})
 
+    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="characteristic", resource_id=str(char.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
     await db.commit()
     await db.refresh(char)
 
@@ -255,7 +313,9 @@ async def config_create_characteristic_values(
     """Batch-create values for an enum characteristic."""
     from app.db.models.product import Characteristic, CharacteristicValue
 
-    char_id = uuid.UUID(characteristic_id)
+    char_id = _parse_uuid(characteristic_id, "characteristic_id")
+    if isinstance(char_id, dict):
+        return char_id
     char = await db.get(Characteristic, char_id)
     if not char or char.tenant_id != tenant.id:
         return {"error": f"Characteristic {characteristic_id} not found"}
@@ -301,10 +361,17 @@ async def config_assign_characteristic(
     """Assign a characteristic to a product."""
     from app.db.models.product import CharacteristicAssignment
 
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
+    cid = _parse_uuid(characteristic_id, "characteristic_id")
+    if isinstance(cid, dict):
+        return cid
+
     assignment = CharacteristicAssignment(
         tenant_id=tenant.id,
-        product_id=uuid.UUID(product_id),
-        characteristic_id=uuid.UUID(characteristic_id),
+        product_id=pid,
+        characteristic_id=cid,
         display_order=display_order,
         is_required=is_required,
         default_value=default_value,
@@ -331,6 +398,9 @@ async def config_list_characteristics(
     from app.db.models.product import Characteristic, CharacteristicAssignment, CharacteristicValue
 
     if product_id:
+        pid = _parse_uuid(product_id, "product_id")
+        if isinstance(pid, dict):
+            return pid
         # List characteristics assigned to this product
         stmt = (
             select(CharacteristicAssignment)
@@ -339,7 +409,7 @@ async def config_list_characteristics(
                 .selectinload(Characteristic.values)
             )
             .where(
-                CharacteristicAssignment.product_id == uuid.UUID(product_id),
+                CharacteristicAssignment.product_id == pid,
                 CharacteristicAssignment.tenant_id == tenant.id,
             )
             .order_by(CharacteristicAssignment.display_order)
@@ -410,13 +480,18 @@ async def config_create_constraint_group(
     """Create a constraint group."""
     from app.db.models.product import ConstraintGroup
 
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
+
     group = ConstraintGroup(
         tenant_id=tenant.id,
-        product_id=uuid.UUID(product_id),
+        product_id=pid,
         name=name,
         description=description,
     )
     db.add(group)
+    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="constraint_group", resource_id=str(group.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
     await db.commit()
     await db.refresh(group)
 
@@ -438,18 +513,31 @@ async def config_create_constraint_rule(
     """Create a constraint rule with JSONB AST expression."""
     from app.db.models.product import ConstraintRule, ConstraintType
 
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
+    ct = _parse_enum(constraint_type, ConstraintType, "constraint_type")
+    if isinstance(ct, dict):
+        return ct
+    gid = None
+    if group_id:
+        gid = _parse_uuid(group_id, "group_id")
+        if isinstance(gid, dict):
+            return gid
+
     rule = ConstraintRule(
         tenant_id=tenant.id,
-        product_id=uuid.UUID(product_id),
+        product_id=pid,
         name=name,
         description=description,
-        constraint_type=ConstraintType(constraint_type),
+        constraint_type=ct,
         expression=expression,
-        group_id=uuid.UUID(group_id) if group_id else None,
+        group_id=gid,
         priority=priority,
         is_active=True,
     )
     db.add(rule)
+    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="constraint_rule", resource_id=str(rule.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
     await db.commit()
     await db.refresh(rule)
 
@@ -472,7 +560,9 @@ async def config_validate_constraints(
     from app.configurator.analyzer import ConstraintAnalyzer
 
     analyzer = ConstraintAnalyzer(db)
-    pid = uuid.UUID(product_id)
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
 
     try:
         result = await analyzer.analyze(product_id=pid, tenant_id=tenant.id)
@@ -499,7 +589,9 @@ async def config_simulate_configuration(
     from app.configurator.engine import ConfiguratorEngine
 
     engine = ConfiguratorEngine(db)
-    pid = uuid.UUID(product_id)
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
 
     try:
         result = await engine.simulate(
@@ -530,7 +622,9 @@ async def config_analyze_constraint_impact(
     from app.configurator.analyzer import ConstraintAnalyzer
 
     analyzer = ConstraintAnalyzer(db)
-    pid = uuid.UUID(product_id)
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
 
     try:
         result = await analyzer.impact_analysis(
@@ -559,15 +653,20 @@ async def config_create_bom_header(
     """Create a 150% super BOM header."""
     from app.db.models.bom import BOMHeader
 
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
+
     bom = BOMHeader(
         tenant_id=tenant.id,
-        product_id=uuid.UUID(product_id),
+        product_id=pid,
         name=name,
         description=description,
         bom_type=bom_type,
         is_primary=is_primary,
     )
     db.add(bom)
+    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="bom_header", resource_id=str(bom.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
     await db.commit()
     await db.refresh(bom)
 
@@ -593,8 +692,21 @@ async def config_create_bom_item(
     """Add a BOM item with optional selection condition."""
     from app.db.models.bom import BOMHeader, BOMItem, BOMItemType
 
+    hid = _parse_uuid(bom_header_id, "bom_header_id")
+    if isinstance(hid, dict):
+        return hid
+    it = _parse_enum(item_type, BOMItemType, "item_type")
+    if isinstance(it, dict):
+        return it
+    if parent_item_id:
+        piid = _parse_uuid(parent_item_id, "parent_item_id")
+        if isinstance(piid, dict):
+            return piid
+    else:
+        piid = None
+
     # Verify BOM header exists and belongs to tenant
-    header = await db.get(BOMHeader, uuid.UUID(bom_header_id))
+    header = await db.get(BOMHeader, hid)
     if not header or header.tenant_id != tenant.id:
         return {"error": f"BOM header {bom_header_id} not found"}
 
@@ -612,9 +724,9 @@ async def config_create_bom_item(
         quantity=Decimal(str(quantity)),
         unit_of_measure=unit_of_measure,
         unit_cost=Decimal(str(unit_cost)) if unit_cost is not None else None,
-        item_type=BOMItemType(item_type),
+        item_type=it,
         selection_condition=selection_condition,
-        parent_item_id=uuid.UUID(parent_item_id) if parent_item_id else None,
+        parent_item_id=piid,
         sort_order=max_sort + 1,
     )
     db.add(item)
@@ -640,7 +752,11 @@ async def config_create_bom_items_batch(
     """Batch-create BOM items."""
     from app.db.models.bom import BOMHeader, BOMItem, BOMItemType
 
-    header = await db.get(BOMHeader, uuid.UUID(bom_header_id))
+    hid = _parse_uuid(bom_header_id, "bom_header_id")
+    if isinstance(hid, dict):
+        return hid
+
+    header = await db.get(BOMHeader, hid)
     if not header or header.tenant_id != tenant.id:
         return {"error": f"BOM header {bom_header_id} not found"}
 
@@ -650,25 +766,37 @@ async def config_create_bom_items_batch(
     max_sort = max((i.sort_order for i in existing), default=-1)
 
     created = []
-    for i, item_data in enumerate(items):
-        item = BOMItem(
-            tenant_id=tenant.id,
-            bom_header_id=header.id,
-            part_number=item_data["part_number"],
-            part_name=item_data["part_name"],
-            description=item_data.get("description", ""),
-            quantity=Decimal(str(item_data.get("quantity", 1.0))),
-            unit_of_measure=item_data.get("unit_of_measure", "EA"),
-            unit_cost=Decimal(str(item_data["unit_cost"])) if item_data.get("unit_cost") is not None else None,
-            item_type=BOMItemType(item_data.get("item_type", "component")),
-            selection_condition=item_data.get("selection_condition"),
-            parent_item_id=uuid.UUID(item_data["parent_item_id"]) if item_data.get("parent_item_id") else None,
-            sort_order=max_sort + 1 + i,
-        )
-        db.add(item)
-        created.append({"part_number": item.part_number, "part_name": item.part_name})
+    try:
+        for i, item_data in enumerate(items):
+            piid = None
+            if item_data.get("parent_item_id"):
+                piid = _parse_uuid(item_data["parent_item_id"], f"items[{i}].parent_item_id")
+                if isinstance(piid, dict):
+                    await db.rollback()
+                    return piid
+            item = BOMItem(
+                tenant_id=tenant.id,
+                bom_header_id=header.id,
+                part_number=item_data["part_number"],
+                part_name=item_data["part_name"],
+                description=item_data.get("description", ""),
+                quantity=Decimal(str(item_data.get("quantity", 1.0))),
+                unit_of_measure=item_data.get("unit_of_measure", "EA"),
+                unit_cost=Decimal(str(item_data["unit_cost"])) if item_data.get("unit_cost") is not None else None,
+                item_type=BOMItemType(item_data.get("item_type", "component")),
+                selection_condition=item_data.get("selection_condition"),
+                parent_item_id=piid,
+                sort_order=max_sort + 1 + i,
+            )
+            db.add(item)
+            created.append({"part_number": item.part_number, "part_name": item.part_name})
 
-    await db.commit()
+        await emit_audit_event(db, action=AuditAction.CREATE, resource_type="bom_items_batch", resource_id=str(header.id), tenant_id=tenant.id, changes={"source": "agent_tool", "count": len(created)})
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        logger.warning("config_bom_items_batch_failed", bom_id=bom_header_id, error=str(exc)[:200])
+        return {"error": f"Batch BOM creation failed at item {len(created)}: {str(exc)[:200]}"}
 
     logger.info("config_bom_items_batch", bom_id=bom_header_id, count=len(created))
     return {"bom_header_id": bom_header_id, "items_created": len(created), "items": created}
@@ -683,11 +811,15 @@ async def config_resolve_bom(
     """Resolve a configured BOM from a configuration session."""
     from app.configurator.bom_resolver import BOMResolver
 
+    sid = _parse_uuid(session_id, "session_id")
+    if isinstance(sid, dict):
+        return sid
+
     resolver = BOMResolver(db)
 
     try:
         result = await resolver.resolve(
-            session_id=uuid.UUID(session_id),
+            session_id=sid,
             tenant_id=tenant.id,
         )
         return {
@@ -717,9 +849,13 @@ async def config_create_variant_table(
     """Create a variant table for tabular constraint lookups."""
     from app.db.models.product import VariantTable
 
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
+
     table = VariantTable(
         tenant_id=tenant.id,
-        product_id=uuid.UUID(product_id),
+        product_id=pid,
         name=name,
         description=description,
         columns=columns,
@@ -728,6 +864,7 @@ async def config_create_variant_table(
         output_columns=output_columns,
     )
     db.add(table)
+    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="variant_table", resource_id=str(table.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
     await db.commit()
     await db.refresh(table)
 
@@ -795,18 +932,26 @@ async def config_create_pricing_rule(
     """Create a pricing rule."""
     from app.db.models.configurator import PricingRule, PricingRuleType
 
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
+    rt = _parse_enum(rule_type, PricingRuleType, "rule_type")
+    if isinstance(rt, dict):
+        return rt
+
     rule = PricingRule(
         tenant_id=tenant.id,
-        product_id=uuid.UUID(product_id),
+        product_id=pid,
         name=name,
         description=description,
-        rule_type=PricingRuleType(rule_type),
+        rule_type=rt,
         expression=expression,
         priority=priority,
         currency=currency,
         is_active=True,
     )
     db.add(rule)
+    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="pricing_rule", resource_id=str(rule.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
     await db.commit()
     await db.refresh(rule)
 
@@ -823,11 +968,15 @@ async def config_simulate_pricing(
     """Simulate pricing for a set of selections."""
     from app.configurator.engine import ConfiguratorEngine
 
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
+
     engine = ConfiguratorEngine(db)
 
     try:
         result = await engine.calculate_price(
-            product_id=uuid.UUID(product_id),
+            product_id=pid,
             tenant_id=tenant.id,
             selections=selections,
         )
@@ -850,7 +999,9 @@ async def config_create_version_snapshot(
     from app.configurator.snapshot import SnapshotBuilder
 
     builder = SnapshotBuilder(db)
-    pid = uuid.UUID(product_id)
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
 
     try:
         version = await builder.create_snapshot(
@@ -879,7 +1030,9 @@ async def config_extract_document(
     """Extract structured content from a data source."""
     from app.db.models.datasource import DataSource, DataSourceStatus
 
-    ds_id = uuid.UUID(data_source_id)
+    ds_id = _parse_uuid(data_source_id, "data_source_id")
+    if isinstance(ds_id, dict):
+        return ds_id
     stmt = select(DataSource).where(
         DataSource.id == ds_id,
         DataSource.tenant_id == tenant.id,
@@ -933,14 +1086,18 @@ async def config_search_datasources(
     """Search across tenant data sources using chunk content."""
     from app.db.models.datasource import DataSource, DataSourceChunk
 
+    from app.core.query_utils import escape_like
+
     # Text-based search (semantic search requires embeddings which may not be available)
+    escaped_query = escape_like(query)
     stmt = (
         select(DataSourceChunk)
         .join(DataSource, DataSourceChunk.data_source_id == DataSource.id)
         .where(
             DataSourceChunk.tenant_id == tenant.id,
+            DataSource.tenant_id == tenant.id,
             DataSource.deleted_at.is_(None),
-            DataSourceChunk.content.ilike(f"%{query}%"),
+            DataSourceChunk.content.ilike(f"%{escaped_query}%"),
         )
         .limit(min(limit, 50))
     )
@@ -960,4 +1117,458 @@ async def config_search_datasources(
             for c in chunks
         ],
         "count": len(chunks),
+    }
+
+
+# ── Update / Delete Tools ────────────────────────────────────────────
+
+
+async def config_update_product(
+    product_id: str,
+    name: str | None = None,
+    description: str | None = None,
+    status: str | None = None,
+    sku_prefix: str | None = None,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """Update an existing product."""
+    from app.db.models.product import Product, ProductStatus
+
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
+
+    stmt = select(Product).where(Product.id == pid, Product.tenant_id == tenant.id, Product.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    product = result.scalar_one_or_none()
+    if not product:
+        return {"error": f"Product {product_id} not found"}
+
+    if name is not None:
+        product.name = name
+    if description is not None:
+        product.description = description
+    if sku_prefix is not None:
+        product.sku_prefix = sku_prefix
+    if status is not None:
+        s = _parse_enum(status, ProductStatus, "status")
+        if isinstance(s, dict):
+            return s
+        product.status = s
+
+    await emit_audit_event(db, action=AuditAction.UPDATE, resource_type="product", resource_id=str(product.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await db.commit()
+    await db.refresh(product)
+    return {"id": str(product.id), "name": product.name, "status": product.status.value}
+
+
+async def config_delete_product(
+    product_id: str,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """Soft-delete a product."""
+    from datetime import UTC, datetime
+
+    from app.db.models.product import Product
+
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
+
+    stmt = select(Product).where(Product.id == pid, Product.tenant_id == tenant.id, Product.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    product = result.scalar_one_or_none()
+    if not product:
+        return {"error": f"Product {product_id} not found"}
+
+    product.deleted_at = datetime.now(UTC)
+    await emit_audit_event(db, action=AuditAction.DELETE, resource_type="product", resource_id=str(product.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await db.commit()
+    return {"deleted": True, "id": product_id}
+
+
+async def config_update_constraint_rule(
+    rule_id: str,
+    name: str | None = None,
+    expression: dict | None = None,
+    priority: int | None = None,
+    is_active: bool | None = None,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """Update an existing constraint rule."""
+    from app.db.models.product import ConstraintRule
+
+    rid = _parse_uuid(rule_id, "rule_id")
+    if isinstance(rid, dict):
+        return rid
+
+    stmt = select(ConstraintRule).where(ConstraintRule.id == rid, ConstraintRule.tenant_id == tenant.id, ConstraintRule.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    rule = result.scalar_one_or_none()
+    if not rule:
+        return {"error": f"Constraint rule {rule_id} not found"}
+
+    if name is not None:
+        rule.name = name
+    if expression is not None:
+        rule.expression = expression
+    if priority is not None:
+        rule.priority = priority
+    if is_active is not None:
+        rule.is_active = is_active
+
+    await emit_audit_event(db, action=AuditAction.UPDATE, resource_type="constraint_rule", resource_id=str(rule.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await db.commit()
+    await db.refresh(rule)
+    return {"id": str(rule.id), "name": rule.name, "priority": rule.priority, "is_active": rule.is_active}
+
+
+async def config_delete_constraint_rule(
+    rule_id: str,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """Soft-delete a constraint rule."""
+    from datetime import UTC, datetime
+
+    from app.db.models.product import ConstraintRule
+
+    rid = _parse_uuid(rule_id, "rule_id")
+    if isinstance(rid, dict):
+        return rid
+
+    stmt = select(ConstraintRule).where(ConstraintRule.id == rid, ConstraintRule.tenant_id == tenant.id, ConstraintRule.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    rule = result.scalar_one_or_none()
+    if not rule:
+        return {"error": f"Constraint rule {rule_id} not found"}
+
+    rule.deleted_at = datetime.now(UTC)
+    await emit_audit_event(db, action=AuditAction.DELETE, resource_type="constraint_rule", resource_id=str(rule.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await db.commit()
+    return {"deleted": True, "id": rule_id}
+
+
+async def config_update_pricing_rule(
+    rule_id: str,
+    name: str | None = None,
+    expression: dict | None = None,
+    priority: int | None = None,
+    is_active: bool | None = None,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """Update an existing pricing rule."""
+    from app.db.models.configurator import PricingRule
+
+    rid = _parse_uuid(rule_id, "rule_id")
+    if isinstance(rid, dict):
+        return rid
+
+    stmt = select(PricingRule).where(PricingRule.id == rid, PricingRule.tenant_id == tenant.id, PricingRule.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    rule = result.scalar_one_or_none()
+    if not rule:
+        return {"error": f"Pricing rule {rule_id} not found"}
+
+    if name is not None:
+        rule.name = name
+    if expression is not None:
+        rule.expression = expression
+    if priority is not None:
+        rule.priority = priority
+    if is_active is not None:
+        rule.is_active = is_active
+
+    await emit_audit_event(db, action=AuditAction.UPDATE, resource_type="pricing_rule", resource_id=str(rule.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await db.commit()
+    await db.refresh(rule)
+    return {"id": str(rule.id), "name": rule.name, "is_active": rule.is_active}
+
+
+async def config_delete_pricing_rule(
+    rule_id: str,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """Soft-delete a pricing rule."""
+    from datetime import UTC, datetime
+
+    from app.db.models.configurator import PricingRule
+
+    rid = _parse_uuid(rule_id, "rule_id")
+    if isinstance(rid, dict):
+        return rid
+
+    stmt = select(PricingRule).where(PricingRule.id == rid, PricingRule.tenant_id == tenant.id, PricingRule.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    rule = result.scalar_one_or_none()
+    if not rule:
+        return {"error": f"Pricing rule {rule_id} not found"}
+
+    rule.deleted_at = datetime.now(UTC)
+    await emit_audit_event(db, action=AuditAction.DELETE, resource_type="pricing_rule", resource_id=str(rule.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await db.commit()
+    return {"deleted": True, "id": rule_id}
+
+
+async def config_list_variant_tables(
+    product_id: str,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """List variant tables for a product."""
+    from app.db.models.product import VariantTable
+
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
+
+    stmt = select(VariantTable).where(
+        VariantTable.product_id == pid,
+        VariantTable.tenant_id == tenant.id,
+        VariantTable.deleted_at.is_(None),
+    ).order_by(VariantTable.created_at.desc())
+    result = await db.execute(stmt)
+    tables = result.scalars().all()
+    return {
+        "variant_tables": [
+            {"id": str(t.id), "name": t.name, "row_count": len(t.rows or []), "input_columns": t.input_columns, "output_columns": t.output_columns}
+            for t in tables
+        ],
+        "count": len(tables),
+    }
+
+
+# ── Product Family Tools ─────────────────────────────────────────────
+
+
+async def config_create_product_family(
+    name: str,
+    slug: str,
+    description: str = "",
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """Create a product family."""
+    from app.db.models.product import ProductFamily
+
+    family = ProductFamily(
+        tenant_id=tenant.id,
+        name=name,
+        slug=slug,
+        description=description,
+    )
+    db.add(family)
+    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="product_family", resource_id=str(family.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await db.commit()
+    await db.refresh(family)
+    return {"id": str(family.id), "name": family.name, "slug": family.slug}
+
+
+async def config_list_product_families(
+    limit: int = 50,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """List product families."""
+    from app.db.models.product import ProductFamily
+
+    limit = _clamp_limit(limit)
+    stmt = select(ProductFamily).where(
+        ProductFamily.tenant_id == tenant.id,
+        ProductFamily.deleted_at.is_(None),
+    ).order_by(ProductFamily.name).limit(limit)
+    result = await db.execute(stmt)
+    families = result.scalars().all()
+    return {
+        "families": [{"id": str(f.id), "name": f.name, "slug": f.slug} for f in families],
+        "count": len(families),
+    }
+
+
+# ── Characteristic Group Tools ───────────────────────────────────────
+
+
+async def config_create_characteristic_group(
+    name: str,
+    description: str = "",
+    display_order: int = 0,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """Create a characteristic group for organizing characteristics."""
+    from app.db.models.product import CharacteristicGroup
+
+    group = CharacteristicGroup(
+        tenant_id=tenant.id,
+        name=name,
+        description=description,
+        display_order=display_order,
+    )
+    db.add(group)
+    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="characteristic_group", resource_id=str(group.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await db.commit()
+    await db.refresh(group)
+    return {"id": str(group.id), "name": group.name, "display_order": group.display_order}
+
+
+async def config_list_characteristic_groups(
+    limit: int = 50,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """List characteristic groups."""
+    from app.db.models.product import CharacteristicGroup
+
+    limit = _clamp_limit(limit)
+    stmt = select(CharacteristicGroup).where(
+        CharacteristicGroup.tenant_id == tenant.id,
+        CharacteristicGroup.deleted_at.is_(None),
+    ).order_by(CharacteristicGroup.display_order).limit(limit)
+    result = await db.execute(stmt)
+    groups = result.scalars().all()
+    return {
+        "groups": [{"id": str(g.id), "name": g.name, "display_order": g.display_order} for g in groups],
+        "count": len(groups),
+    }
+
+
+# ── Configuration Session Tools ──────────────────────────────────────
+
+
+async def config_create_session(
+    product_id: str,
+    product_version_id: str | None = None,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """Create a new configuration session for a product."""
+    from app.db.models.configurator import ConfigurationSession
+
+    pid = _parse_uuid(product_id, "product_id")
+    if isinstance(pid, dict):
+        return pid
+    vid = None
+    if product_version_id:
+        vid = _parse_uuid(product_version_id, "product_version_id")
+        if isinstance(vid, dict):
+            return vid
+
+    session = ConfigurationSession(
+        tenant_id=tenant.id,
+        product_id=pid,
+        product_version_id=vid,
+    )
+    db.add(session)
+    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="configuration_session", resource_id=str(session.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await db.commit()
+    await db.refresh(session)
+    return {"id": str(session.id), "product_id": product_id, "status": session.status.value if hasattr(session.status, "value") else str(session.status)}
+
+
+async def config_get_session(
+    session_id: str,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """Get a configuration session with its selections."""
+    from app.db.models.configurator import ConfigurationSession
+
+    sid = _parse_uuid(session_id, "session_id")
+    if isinstance(sid, dict):
+        return sid
+
+    stmt = select(ConfigurationSession).where(
+        ConfigurationSession.id == sid,
+        ConfigurationSession.tenant_id == tenant.id,
+    )
+    result = await db.execute(stmt)
+    session = result.scalar_one_or_none()
+    if not session:
+        return {"error": f"Configuration session {session_id} not found"}
+
+    return {
+        "id": str(session.id),
+        "product_id": str(session.product_id),
+        "status": session.status.value if hasattr(session.status, "value") else str(session.status),
+        "selections": session.selections or {},
+        "is_valid": session.is_valid if hasattr(session, "is_valid") else None,
+    }
+
+
+async def config_make_selection(
+    session_id: str,
+    characteristic_slug: str,
+    value: str,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """Make a selection in a configuration session."""
+    from app.configurator.engine import ConfiguratorEngine
+
+    sid = _parse_uuid(session_id, "session_id")
+    if isinstance(sid, dict):
+        return sid
+
+    engine = ConfiguratorEngine(db)
+    try:
+        result = await engine.make_selection(
+            session_id=sid,
+            tenant_id=tenant.id,
+            characteristic_slug=characteristic_slug,
+            value=value,
+        )
+        return result
+    except Exception as exc:
+        return {"error": f"Selection failed: {str(exc)[:200]}"}
+
+
+async def config_list_sessions(
+    product_id: str | None = None,
+    limit: int = 20,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+) -> dict:
+    """List configuration sessions."""
+    from app.db.models.configurator import ConfigurationSession
+
+    limit = _clamp_limit(limit)
+    stmt = select(ConfigurationSession).where(ConfigurationSession.tenant_id == tenant.id)
+    if product_id:
+        pid = _parse_uuid(product_id, "product_id")
+        if isinstance(pid, dict):
+            return pid
+        stmt = stmt.where(ConfigurationSession.product_id == pid)
+    stmt = stmt.order_by(ConfigurationSession.created_at.desc()).limit(limit)
+    result = await db.execute(stmt)
+    sessions = result.scalars().all()
+    return {
+        "sessions": [
+            {
+                "id": str(s.id),
+                "product_id": str(s.product_id),
+                "status": s.status.value if hasattr(s.status, "value") else str(s.status),
+            }
+            for s in sessions
+        ],
+        "count": len(sessions),
     }

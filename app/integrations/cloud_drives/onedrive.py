@@ -173,6 +173,13 @@ class OneDriveConnector(CloudDriveConnector):
             thumbnail_url=None,
         )
 
+    async def revoke_token(self, access_token: str) -> None:
+        # Microsoft Graph does not support token revocation via a simple API call.
+        # The best option is invalidating all sign-in sessions, but that is too
+        # aggressive for our use-case.  We rely on token expiry + clearing the
+        # encrypted fields in the database.
+        pass
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
