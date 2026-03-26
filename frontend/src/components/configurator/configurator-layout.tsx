@@ -6,20 +6,23 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useProduct } from "@/hooks/use-products"
 import {
-  useCharacteristics,
+  useCharacteristicAssignments,
   useCharacteristicGroups,
 } from "@/hooks/use-characteristics"
 import {
   useCreateSession,
   useMakeSelection,
-  useCompleteSession,
+  useLockSession,
+  useValidateSession,
 } from "@/hooks/use-configurator"
+import type { ConfiguratorValidationError } from "@/hooks/use-configurator"
 import { useConfiguratorStore } from "@/stores/configurator-store"
 import { StepNavigation } from "./step-navigation"
 import { OptionSelector } from "./option-selector"
 import { ProductVisualization } from "./product-visualization"
 import { PriceSummaryBar } from "./price-summary-bar"
 import { ConstraintFeedback } from "./constraint-feedback"
+import { MissingItemsDialog } from "./missing-items-dialog"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { toast } from "sonner"
 import type {
@@ -35,6 +38,7 @@ interface Step {
   slug: string
   name: string
   characteristicCount: number
+  requiredCharacteristicCount: number
 }
 
 export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
@@ -43,14 +47,15 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
   // ── Data queries ──────────────────────────────────────────
   const { data: product, isLoading: productLoading } = useProduct(productId)
   const { data: characteristicsData, isLoading: charsLoading } =
-    useCharacteristics()
+    useCharacteristicAssignments(productId)
   const { data: groupsData, isLoading: groupsLoading } =
     useCharacteristicGroups()
 
   // ── Mutations ─────────────────────────────────────────────
   const createSession = useCreateSession()
   const makeSelection = useMakeSelection()
-  const completeSession = useCompleteSession()
+  const lockSession = useLockSession()
+  const validateSession = useValidateSession()
   // simulatePricing is used by PriceSummaryBar directly
 
   // ── Store ─────────────────────────────────────────────────
@@ -59,6 +64,8 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
   // ── Local state ───────────────────────────────────────────
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const [sessionError, setSessionError] = useState<string | null>(null)
+  const [missingDialogOpen, setMissingDialogOpen] = useState(false)
+  const [validationErrors, setValidationErrors] = useState<ConfiguratorValidationError[]>([])
 
   // ── Derived data ──────────────────────────────────────────
   const characteristics = useMemo(
@@ -100,6 +107,7 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
           slug: group.slug,
           name: group.name,
           characteristicCount: chars.length,
+          requiredCharacteristicCount: chars.filter((c) => c.is_required).length,
         })
       }
     }
@@ -111,6 +119,7 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
         slug: "_general",
         name: "General",
         characteristicCount: ungrouped.length,
+        requiredCharacteristicCount: ungrouped.filter((c) => c.is_required).length,
       })
     }
 
@@ -132,7 +141,7 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
     return charsByGroup.get(group.id) ?? []
   }, [steps, currentStepIndex, groups, charsByGroup])
 
-  // Track completed steps (a step is complete when all its characteristics have a selection)
+  // Track completed steps (a step is complete when all its required characteristics have a selection)
   const completedSteps: Set<string> = useMemo(() => {
     const completed = new Set<string>()
     for (const step of steps) {
@@ -145,12 +154,15 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
       }
       if (chars.length === 0) continue
 
-      const allSelected = chars.every(
-        (c) =>
-          store.selections[c.slug] !== undefined ||
-          store.autoSetValues[c.slug] !== undefined,
-      )
-      if (allSelected) completed.add(step.slug)
+      const requiredChars = chars.filter((c) => c.is_required)
+      const allRequiredSelected =
+        requiredChars.length === 0 ||
+        requiredChars.every(
+          (c) =>
+            store.selections[c.slug] !== undefined ||
+            store.autoSetValues[c.slug] !== undefined,
+        )
+      if (allRequiredSelected) completed.add(step.slug)
     }
     return completed
   }, [steps, groups, charsByGroup, store.selections, store.autoSetValues])
@@ -280,17 +292,48 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
     if (!store.sessionId) return
 
     store.setSaving(true)
-    completeSession.mutate(store.sessionId, {
-      onSuccess: () => {
-        store.setSaving(false)
-        toast.success("Configuration completed successfully")
-      },
-      onError: () => {
-        store.setSaving(false)
-        toast.error("Configuration is not yet complete")
-      },
-    })
-  }, [store.sessionId, completeSession, store])
+
+    if (completedSteps.size >= steps.length) {
+      // All required fields filled — try to lock the session
+      lockSession.mutate(store.sessionId, {
+        onSuccess: () => {
+          store.setSaving(false)
+          toast.success("Configuration completed and locked")
+        },
+        onError: () => {
+          // Lock failed — validate to surface the actual issues
+          validateSession.mutate(store.sessionId!, {
+            onSuccess: (result) => {
+              store.setSaving(false)
+              if (!result.is_complete || !result.is_valid) {
+                setValidationErrors(result.errors)
+                setMissingDialogOpen(true)
+              } else {
+                toast.error("Failed to lock configuration")
+              }
+            },
+            onError: () => {
+              store.setSaving(false)
+              toast.error("Failed to validate configuration")
+            },
+          })
+        },
+      })
+    } else {
+      // Not all steps complete — validate to show what's missing
+      validateSession.mutate(store.sessionId, {
+        onSuccess: (result) => {
+          store.setSaving(false)
+          setValidationErrors(result.errors)
+          setMissingDialogOpen(true)
+        },
+        onError: () => {
+          store.setSaving(false)
+          toast.error("Failed to validate configuration")
+        },
+      })
+    }
+  }, [store.sessionId, completedSteps.size, steps.length, lockSession, validateSession, store])
 
   // ── Loading state ─────────────────────────────────────────
   const isInitialLoading =
@@ -397,8 +440,9 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
           </Button>
           <Button
             size="sm"
+            variant={completedSteps.size >= steps.length ? "default" : "outline"}
             onClick={handleComplete}
-            disabled={store.isSaving || completedSteps.size < steps.length}
+            disabled={store.isSaving}
           >
             {store.isSaving ? (
               <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
@@ -509,6 +553,20 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
 
       {/* ── Bottom price bar ───────────────────────────────── */}
       <PriceSummaryBar productId={productId} selections={store.selections} />
+
+      {/* ── Missing items dialog ─────────────────────────────── */}
+      <MissingItemsDialog
+        open={missingDialogOpen}
+        onOpenChange={setMissingDialogOpen}
+        errors={validationErrors}
+        characteristics={characteristics}
+        groups={groups}
+        steps={steps}
+        onNavigateToStep={(index) => {
+          setCurrentStepIndex(index)
+          setMissingDialogOpen(false)
+        }}
+      />
     </div>
   )
 }

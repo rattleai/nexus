@@ -19,7 +19,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ClipboardList, Pencil, Save, Check } from "lucide-react"
-import { useCompleteSession, useCreateTemplate } from "@/hooks/use-configurator"
+import { useLockSession, useCreateTemplate } from "@/hooks/use-configurator"
 import { toast } from "sonner"
 import type { Characteristic, CharacteristicGroup } from "@/types/configurator"
 
@@ -60,7 +60,7 @@ export function ConfigurationSummary({
   const [templateName, setTemplateName] = useState("")
   const [templateDescription, setTemplateDescription] = useState("")
 
-  const completeSession = useCompleteSession()
+  const lockSession = useLockSession()
   const createTemplate = useCreateTemplate()
 
   // Build a map of characteristics by group
@@ -177,12 +177,13 @@ export function ConfigurationSummary({
   // ── Handlers ────────────────────────────────────────────
 
   const handleComplete = () => {
-    completeSession.mutate(sessionId, {
+    lockSession.mutate(sessionId, {
       onSuccess: () => {
         setOpen(false)
+        toast.success("Configuration completed and locked")
       },
       onError: () => {
-        toast.error("Cannot complete configuration. Please ensure all required selections are made.")
+        toast.error("Cannot lock configuration. Please ensure all required selections are made.")
       },
     })
   }
@@ -341,10 +342,10 @@ export function ConfigurationSummary({
             <Button
               className="w-full"
               onClick={handleComplete}
-              disabled={completeSession.isPending || totalSelected === 0}
+              disabled={lockSession.isPending || totalSelected === 0}
             >
               <Check className="h-4 w-4 mr-2" />
-              {completeSession.isPending ? "Completing..." : "Complete Configuration"}
+              {lockSession.isPending ? "Locking..." : "Complete Configuration"}
             </Button>
           </div>
         </SheetContent>

@@ -4,12 +4,12 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
-import { useConfiguratorStore } from "@/stores/configurator-store"
 
 interface Step {
   slug: string
   name: string
   characteristicCount: number
+  requiredCharacteristicCount: number
 }
 
 interface StepNavigationProps {
@@ -25,47 +25,15 @@ export function StepNavigation({
   onStepChange,
   completedSteps,
 }: StepNavigationProps) {
-  const store = useConfiguratorStore()
   const activeTabRef = useRef<HTMLButtonElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
-  // Count how many characteristics are selected per step
-  const stepSelectionCounts = steps.map((step) => {
-    // We count selections by checking the store
-    let selected = 0
-    // Since we don't have direct access to the characteristics list here,
-    // we use the completedSteps set and the characteristicCount
-    if (completedSteps.has(step.slug)) {
-      selected = step.characteristicCount
-    } else {
-      // Estimate based on ratio - the parent component tracks completeness
-      // For a more accurate count, we look at selections in the store
-      const allSelections = {
-        ...store.selections,
-        ...store.autoSetValues,
-      }
-      // We can't know the exact slug-to-step mapping here, so we use
-      // the completed flag as a heuristic. A partially completed step
-      // gets a proportional estimate.
-      selected = 0
-    }
-    return selected
-  })
-
-  // Overall progress
-  const totalCharacteristics = steps.reduce(
-    (acc, s) => acc + s.characteristicCount,
-    0,
-  )
-  const totalSelected = Object.keys(store.selections).length +
-    Object.keys(store.autoSetValues).length
+  // Progress tracks the fraction of steps that have all required fields filled.
+  // This is consistent with the Complete button's completedSteps.size gate
+  // and aligned with the backend's _check_completeness (required-only) logic.
   const progressPercent =
-    totalCharacteristics > 0
-      ? Math.round(
-          (Math.min(totalSelected, totalCharacteristics) /
-            totalCharacteristics) *
-            100,
-        )
+    steps.length > 0
+      ? Math.round((completedSteps.size / steps.length) * 100)
       : 0
 
   // Auto-scroll to active tab

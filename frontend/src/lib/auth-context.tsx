@@ -1,7 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import i18n from "i18next"
-import { HTTPError } from "ky"
-import { api, getAccessToken, setAccessToken as setApiClientToken } from "./api-client"
+import { api, attemptTokenRefresh, getAccessToken, setAccessToken as setApiClientToken } from "./api-client"
 
 interface AuthUser {
   id: string
@@ -28,34 +27,31 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-/**
- * Update both React state and api-client module-level token.
- * The api-client reads from its module-level variable for Bearer auth.
- */
-function syncToken(token: string | null, setter: (t: string | null) => void) {
-  setter(token)
-  setApiClientToken(token)
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [accessToken, _setAccessToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Keep api-client in sync whenever React state changes
-  useEffect(() => {
-    setApiClientToken(accessToken)
-  }, [accessToken])
+  // Ref tracks the latest token so the auth-change listener never uses a stale closure
+  const tokenRef = useRef(accessToken)
+  tokenRef.current = accessToken
+
+  /** Update React state, api-client, and the ref in one shot. */
+  const syncToken = useCallback((token: string | null) => {
+    tokenRef.current = token
+    _setAccessToken(token)
+    setApiClientToken(token)
+  }, [])
 
   // Sync React auth state when the api-client's token changes externally
-  // (e.g. when attemptTokenRefresh() fails in the afterResponse hook and
-  // clears the module-level _accessToken, or when an invalid API key is
-  // detected and cleared). Without this, React state stays "authenticated"
-  // while the actual token is null, causing persistent 401 errors.
+  // (e.g. after silent refresh via afterResponse hook, or when an invalid
+  // API key is detected and cleared). Uses a ref for comparison so the
+  // listener is registered once and never churns.
   useEffect(() => {
     const handleAuthChange = () => {
       const currentToken = getAccessToken()
-      if (currentToken !== accessToken) {
+      if (currentToken !== tokenRef.current) {
+        tokenRef.current = currentToken
         _setAccessToken(currentToken)
         if (!currentToken) {
           setUser(null)
@@ -64,58 +60,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     window.addEventListener("auth-change", handleAuthChange)
     return () => window.removeEventListener("auth-change", handleAuthChange)
-  }, [accessToken])
+  }, [])
 
-  // Attempt session restoration on mount via refresh token cookie.
-  // Distinguishes genuine "no session" (401) from transient errors and retries.
+  // Restore session on mount via refresh token cookie.
+  // Uses attemptTokenRefresh() for coalescing — if React strict mode fires
+  // this effect twice, both calls share the same in-flight refresh request.
   useEffect(() => {
     let cancelled = false
 
-    async function restoreSession(attempt = 0) {
-      try {
-        const res = await api
-          .post("auth/refresh", { credentials: "include", timeout: 15_000 })
-          .json<{ access_token: string }>()
-        if (cancelled) return
-        syncToken(res.access_token, _setAccessToken)
-        // Fetch user profile with the new token
-        try {
-          setApiClientToken(res.access_token)
-          const profile = await api.get("auth/me").json<AuthUser>()
-          if (!cancelled) {
-            setUser(profile)
-            if (profile.locale) {
-              i18n.changeLanguage(profile.locale)
-            }
-          }
-        } catch (err) {
-          console.warn("Failed to fetch user profile after token refresh:", err)
-          // Token works but profile fetch failed — still authenticated
-        }
-        if (!cancelled) setIsLoading(false)
-      } catch (err) {
-        if (cancelled) return
+    async function restoreSession() {
+      const refreshed = await attemptTokenRefresh()
+      if (cancelled) return
 
-        // 401/403 = genuinely no session (expired/missing refresh token).
-        // Anything else (network error, 5xx, timeout) = transient — retry.
-        const isAuthError =
-          err instanceof HTTPError && (err.response.status === 401 || err.response.status === 403)
-
-        if (!isAuthError && attempt < 2) {
-          const delay = 1000 * (attempt + 1)
-          console.debug(`Session restoration attempt ${attempt + 1} failed (transient), retrying in ${delay}ms`)
-          setTimeout(() => {
-            if (!cancelled) restoreSession(attempt + 1)
-          }, delay)
-          return
-        }
-
-        // Either auth error or exhausted retries
-        syncToken(null, _setAccessToken)
+      if (!refreshed) {
+        _setAccessToken(null)
         setUser(null)
-        if (!cancelled) setIsLoading(false)
-        console.debug("Session restoration failed - user not authenticated")
+        setIsLoading(false)
+        return
       }
+
+      // Token is already set in api-client — sync to React state
+      const token = getAccessToken()
+      tokenRef.current = token
+      _setAccessToken(token)
+
+      // Fetch user profile with the new token
+      try {
+        const profile = await api.get("auth/me").json<AuthUser>()
+        if (!cancelled) {
+          setUser(profile)
+          if (profile.locale) {
+            i18n.changeLanguage(profile.locale)
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch user profile after token refresh:", err)
+        // Token works but profile fetch failed — still authenticated
+      }
+      if (!cancelled) setIsLoading(false)
     }
 
     restoreSession()
@@ -131,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         access_token: string
         user: AuthUser
       }>()
-      syncToken(res.access_token, _setAccessToken)
+      syncToken(res.access_token)
       setUser(res.user)
       if (res.user.locale) {
         i18n.changeLanguage(res.user.locale)
@@ -140,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [syncToken])
 
   const loginWithOAuth = useCallback(async (provider: string, code: string, state: string) => {
     setIsLoading(true)
@@ -148,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await api
         .post(`auth/oauth/${provider}/callback`, { json: { code, state }, credentials: "include" })
         .json<{ access_token: string; user: AuthUser }>()
-      syncToken(res.access_token, _setAccessToken)
+      syncToken(res.access_token)
       setUser(res.user)
       if (res.user.locale) {
         i18n.changeLanguage(res.user.locale)
@@ -157,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [syncToken])
 
   const register = useCallback(
     async (email: string, password: string, displayName: string, tenantSlug: string) => {
@@ -172,7 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Backend may not issue tokens (email verification required).
         // Only set auth state if an access_token was actually returned.
         if (res.access_token) {
-          syncToken(res.access_token, _setAccessToken)
+          syncToken(res.access_token)
           if (res.user) setUser(res.user)
           window.dispatchEvent(new Event("auth-change"))
         }
@@ -180,7 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(false)
       }
     },
-    [],
+    [syncToken],
   )
 
   const logout = useCallback(async () => {
@@ -189,24 +171,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore logout errors
     }
-    syncToken(null, _setAccessToken)
+    syncToken(null)
     setUser(null)
     window.dispatchEvent(new Event("auth-change"))
-  }, [])
+  }, [syncToken])
+
+  const value = useMemo(
+    () => ({
+      user,
+      accessToken,
+      isLoading,
+      login,
+      loginWithOAuth,
+      register,
+      logout,
+      isAuthenticated: !!accessToken,
+    }),
+    [user, accessToken, isLoading, login, loginWithOAuth, register, logout],
+  )
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        accessToken,
-        isLoading,
-        login,
-        loginWithOAuth,
-        register,
-        logout,
-        isAuthenticated: !!accessToken,
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )

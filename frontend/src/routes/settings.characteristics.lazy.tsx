@@ -1,6 +1,9 @@
-import { createLazyFileRoute } from "@tanstack/react-router"
-import { CharacteristicsLibrary } from "@/components/settings/characteristics-library"
+import { createLazyFileRoute, Outlet } from "@tanstack/react-router"
 
 export const Route = createLazyFileRoute("/settings/characteristics")({
-  component: CharacteristicsLibrary,
+  component: CharacteristicsLayout,
 })
+
+function CharacteristicsLayout() {
+  return <Outlet />
+}

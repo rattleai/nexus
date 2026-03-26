@@ -76,18 +76,38 @@ export function useMakeSelection() {
   })
 }
 
-export function useCompleteSession() {
+export function useLockSession() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (sessionId: string) =>
       api
-        .post(`configurator/sessions/${sessionId}/complete`)
+        .post(`configurator/sessions/${sessionId}/lock`)
         .json<ConfigurationSession>(),
     onSuccess: (session) => {
       qc.invalidateQueries({ queryKey: queryKeys.configurator.sessions.all })
       qc.setQueryData(queryKeys.configurator.sessions.detail(session.id), session)
-      toast.success("Configuration completed")
     },
+  })
+}
+
+export interface ConfiguratorValidationError {
+  characteristic_slug: string
+  error_type: string
+  message: string
+}
+
+export interface ConfiguratorValidationResult {
+  is_valid: boolean
+  is_complete: boolean
+  errors: ConfiguratorValidationError[]
+}
+
+export function useValidateSession() {
+  return useMutation({
+    mutationFn: async (sessionId: string) =>
+      api
+        .get(`configurator/sessions/${sessionId}/validate`)
+        .json<ConfiguratorValidationResult>(),
   })
 }
 

@@ -51,6 +51,7 @@ import { Route as ConfiguratorProductIdRouteImport } from './routes/configurator
 import { Route as AgentsWorkspaceRouteImport } from './routes/agents.workspace'
 import { Route as AgentsSessionsRouteImport } from './routes/agents.sessions'
 import { Route as AgentsInstanceIdRouteImport } from './routes/agents.$instanceId'
+import { Route as SettingsCharacteristicsIndexRouteImport } from './routes/settings.characteristics.index'
 import { Route as SettingsCharacteristicsCharIdRouteImport } from './routes/settings.characteristics.$charId'
 import { Route as AuthCallbackProviderRouteImport } from './routes/auth/callback/$provider'
 
@@ -304,6 +305,14 @@ const AgentsInstanceIdRoute = AgentsInstanceIdRouteImport.update({
 } as any).lazy(() =>
   import('./routes/agents.$instanceId.lazy').then((d) => d.Route),
 )
+const SettingsCharacteristicsIndexRoute =
+  SettingsCharacteristicsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => SettingsCharacteristicsRoute,
+  } as any).lazy(() =>
+    import('./routes/settings.characteristics.index.lazy').then((d) => d.Route),
+  )
 const SettingsCharacteristicsCharIdRoute =
   SettingsCharacteristicsCharIdRouteImport.update({
     id: '/$charId',
@@ -367,6 +376,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
   '/settings/characteristics/$charId': typeof SettingsCharacteristicsCharIdRoute
+  '/settings/characteristics/': typeof SettingsCharacteristicsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -397,7 +407,6 @@ export interface FileRoutesByTo {
   '/settings/api-keys': typeof SettingsApiKeysRoute
   '/settings/audit-log': typeof SettingsAuditLogRoute
   '/settings/billing': typeof SettingsBillingRoute
-  '/settings/characteristics': typeof SettingsCharacteristicsRouteWithChildren
   '/settings/danger': typeof SettingsDangerRoute
   '/settings/data': typeof SettingsDataRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -410,6 +419,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
   '/settings/characteristics/$charId': typeof SettingsCharacteristicsCharIdRoute
+  '/settings/characteristics': typeof SettingsCharacteristicsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -457,6 +467,7 @@ export interface FileRoutesById {
   '/settings/': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
   '/settings/characteristics/$charId': typeof SettingsCharacteristicsCharIdRoute
+  '/settings/characteristics/': typeof SettingsCharacteristicsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -505,6 +516,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/auth/callback/$provider'
     | '/settings/characteristics/$charId'
+    | '/settings/characteristics/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -535,7 +547,6 @@ export interface FileRouteTypes {
     | '/settings/api-keys'
     | '/settings/audit-log'
     | '/settings/billing'
-    | '/settings/characteristics'
     | '/settings/danger'
     | '/settings/data'
     | '/settings/general'
@@ -548,6 +559,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/auth/callback/$provider'
     | '/settings/characteristics/$charId'
+    | '/settings/characteristics'
   id:
     | '__root__'
     | '/'
@@ -594,6 +606,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/auth/callback/$provider'
     | '/settings/characteristics/$charId'
+    | '/settings/characteristics/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -917,6 +930,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AgentsInstanceIdRouteImport
       parentRoute: typeof AgentsRoute
     }
+    '/settings/characteristics/': {
+      id: '/settings/characteristics/'
+      path: '/'
+      fullPath: '/settings/characteristics/'
+      preLoaderRoute: typeof SettingsCharacteristicsIndexRouteImport
+      parentRoute: typeof SettingsCharacteristicsRoute
+    }
     '/settings/characteristics/$charId': {
       id: '/settings/characteristics/$charId'
       path: '/$charId'
@@ -981,11 +1001,13 @@ const ProductsRouteWithChildren = ProductsRoute._addFileChildren(
 
 interface SettingsCharacteristicsRouteChildren {
   SettingsCharacteristicsCharIdRoute: typeof SettingsCharacteristicsCharIdRoute
+  SettingsCharacteristicsIndexRoute: typeof SettingsCharacteristicsIndexRoute
 }
 
 const SettingsCharacteristicsRouteChildren: SettingsCharacteristicsRouteChildren =
   {
     SettingsCharacteristicsCharIdRoute: SettingsCharacteristicsCharIdRoute,
+    SettingsCharacteristicsIndexRoute: SettingsCharacteristicsIndexRoute,
   }
 
 const SettingsCharacteristicsRouteWithChildren =
