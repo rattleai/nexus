@@ -10,6 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { usePendingApprovals } from "@/hooks/use-agents"
 import { useInstanceStream } from "@/hooks/use-instance-stream"
+import { useRegistryStream } from "@/lib/agent-stream-registry"
 import { cn } from "@/lib/utils"
 import { ToolCallCard, type ToolCallEntry } from "./tool-call-card"
 import { InlineApproval } from "./inline-approval"
@@ -52,7 +53,12 @@ interface StreamViewProps {
 
 export function StreamView({ instanceId, isActive }: StreamViewProps) {
   const bottomRef = React.useRef<HTMLDivElement>(null)
-  const [entries, setEntries] = React.useState<StreamEntry[]>([])
+
+  // Check if the stream registry has an active run-stream for this instance
+  const registry = useRegistryStream(instanceId)
+
+  // Fallback: use instance-stream (Redis Streams SSE) for Celery-dispatched runs
+  const [instanceEntries, setInstanceEntries] = React.useState<StreamEntry[]>([])
   const toolCallMapRef = React.useRef<Map<string, string>>(new Map())
   const { data: approvalsData } = usePendingApprovals()
 
@@ -64,12 +70,15 @@ export function StreamView({ instanceId, isActive }: StreamViewProps) {
     [approvalsData, instanceId],
   )
 
+  // Only use useInstanceStream if registry doesn't have this stream
+  const useInstanceStreamEnabled = isActive && !registry.hasStream
+
   const handleEvent = React.useCallback((event: AgentStreamEvent) => {
     const now = Date.now()
     switch (event.event) {
       case "content_delta": {
         if (event.data.content) {
-          setEntries((prev) => {
+          setInstanceEntries((prev) => {
             const last = prev[prev.length - 1]
             if (last && last.type === "content") {
               return [
@@ -89,7 +98,7 @@ export function StreamView({ instanceId, isActive }: StreamViewProps) {
         if (event.data.tool_name) {
           const entryId = crypto.randomUUID()
           toolCallMapRef.current.set(event.data.tool_name, entryId)
-          setEntries((prev) => [
+          setInstanceEntries((prev) => [
             ...prev,
             {
               id: entryId,
@@ -107,7 +116,7 @@ export function StreamView({ instanceId, isActive }: StreamViewProps) {
         if (event.data.tool_name) {
           const entryId = toolCallMapRef.current.get(event.data.tool_name)
           if (entryId) {
-            setEntries((prev) =>
+            setInstanceEntries((prev) =>
               prev.map((e) =>
                 e.id === entryId && e.type === "tool_call"
                   ? {
@@ -124,7 +133,7 @@ export function StreamView({ instanceId, isActive }: StreamViewProps) {
         break
       }
       case "step_completed": {
-        setEntries((prev) => [
+        setInstanceEntries((prev) => [
           ...prev,
           {
             id: crypto.randomUUID(),
@@ -140,7 +149,7 @@ export function StreamView({ instanceId, isActive }: StreamViewProps) {
       case "instance_completed":
       case "instance_failed":
       case "run_completed": {
-        setEntries((prev) => [
+        setInstanceEntries((prev) => [
           ...prev,
           {
             id: crypto.randomUUID(),
@@ -158,8 +167,13 @@ export function StreamView({ instanceId, isActive }: StreamViewProps) {
   const { isConnected } = useInstanceStream({
     instanceId,
     onEvent: handleEvent,
-    enabled: isActive,
+    enabled: useInstanceStreamEnabled,
   })
+
+  // Use registry entries if available, otherwise use instance-stream entries
+  const entries = registry.entries ?? instanceEntries
+  const isStreamActive = registry.hasStream ? registry.isActive : isActive
+  const isStreamConnected = registry.hasStream ? registry.isActive : isConnected
 
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -169,15 +183,15 @@ export function StreamView({ instanceId, isActive }: StreamViewProps) {
     <ScrollArea className="h-full">
       <div className="p-4 space-y-3">
         {/* Connection status */}
-        {isActive && (
+        {isStreamActive && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
             <Radio
               className={cn(
                 "h-3 w-3",
-                isConnected ? "text-emerald-500" : "text-muted-foreground",
+                isStreamConnected ? "text-emerald-500" : "text-muted-foreground",
               )}
             />
-            {isConnected ? "Connected to live stream" : "Connecting..."}
+            {isStreamConnected ? "Connected to live stream" : "Connecting..."}
           </div>
         )}
 
@@ -192,11 +206,11 @@ export function StreamView({ instanceId, isActive }: StreamViewProps) {
         {/* Stream entries */}
         {entries.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            {isActive ? (
+            {isStreamActive ? (
               <>
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mb-2" />
                 <p className="text-sm text-muted-foreground">
-                  {isConnected ? "Waiting for agent output..." : "Connecting to stream..."}
+                  {isStreamConnected ? "Waiting for agent output..." : "Connecting to stream..."}
                 </p>
               </>
             ) : (

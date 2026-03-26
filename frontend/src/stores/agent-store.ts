@@ -2,7 +2,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import type { WorkspaceMode, StreamPaneState } from "@/types/agents"
 
-type AgentTab = "overview" | "chat" | "config" | "governance" | "runs" | "operations"
+type AgentTab = "overview" | "config" | "governance" | "runs" | "operations"
 
 interface AgentWorkspaceState {
   selectedAgentId: string | null

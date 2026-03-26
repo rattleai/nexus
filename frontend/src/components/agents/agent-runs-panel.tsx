@@ -9,6 +9,7 @@ import {
   Pause,
   RefreshCw,
   Eye,
+  ExternalLink,
   MonitorPlay,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -23,6 +24,7 @@ import {
 } from "@/components/ui/select"
 import { useAgentInstances, useStopInstance } from "@/hooks/use-agents"
 import { useAgentStore } from "@/stores/agent-store"
+import { useNavigate } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import type { AgentDefinition, AgentInstance } from "@/types/agents"
 
@@ -149,6 +151,7 @@ function RunCard({
 }) {
   const [expanded, setExpanded] = React.useState(false)
   const { openDrawer, addStreamPane } = useAgentStore()
+  const navigate = useNavigate()
   const config = statusConfig[instance.status] ?? statusConfig.pending
   const Icon = config.icon
 
@@ -210,6 +213,18 @@ function RunCard({
             }}
           >
             <Eye className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0"
+            title="Open in Sessions"
+            onClick={(e) => {
+              e.stopPropagation()
+              navigate({ to: "/agents/$instanceId", params: { instanceId: instance.id } })
+            }}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
           </Button>
           {(instance.status === "running" || instance.status === "pending") && (
             <Button

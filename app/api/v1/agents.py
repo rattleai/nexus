@@ -613,6 +613,9 @@ async def run_agent_stream(
         _completed_normally = False
         _final_data: dict = {}
 
+        # Emit instance_id as first SSE event so frontend can navigate immediately
+        yield f"event: run_started\ndata: {_json.dumps({'instance_id': str(instance_id), 'definition_id': str(agent.id)})}\n\n"
+
         try:
             async for event in runtime.run_stream(
                 messages=messages,
@@ -665,6 +668,8 @@ async def run_agent_stream(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            "X-Instance-Id": str(instance_id),
+            "Access-Control-Expose-Headers": "X-Instance-Id",
         },
     )
 
