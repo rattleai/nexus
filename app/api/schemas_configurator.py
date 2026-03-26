@@ -822,3 +822,60 @@ class ConstraintImpactResponse(BaseModel):
     new_contradictions: list[str] = []
     new_auto_sets: dict[str, str] = {}
     total_values_pruned: int = 0
+
+
+# ── Configurations Management ────────────────────────────
+
+
+class BulkActionRequest(BaseModel):
+    session_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=50)
+    action: str = Field(..., pattern=r"^(lock|delete|resolve_bom)$")
+
+
+class BulkActionResultItem(BaseModel):
+    session_id: uuid.UUID
+    success: bool
+    error: str | None = None
+
+
+class BulkActionResponse(BaseModel):
+    total: int
+    succeeded: int
+    failed: int
+    results: list[BulkActionResultItem]
+
+
+class BOMComparisonRequest(BaseModel):
+    session_ids: list[uuid.UUID] = Field(..., min_length=2, max_length=5)
+
+
+class BOMComparisonPart(BaseModel):
+    part_number: str
+    part_name: str
+    quantities: list[float | None]
+    unit_costs: list[float | None]
+
+
+class BOMComparisonSession(BaseModel):
+    id: uuid.UUID
+    name: str | None
+    product_name: str | None
+
+
+class BOMComparisonResponse(BaseModel):
+    sessions: list[BOMComparisonSession]
+    common_parts: list[BOMComparisonPart]
+    unique_parts: list[BOMComparisonPart]
+    cost_comparison: list[dict]
+
+
+class PartFrequencyItem(BaseModel):
+    part_number: str
+    part_name: str
+    usage_count: int
+    percentage: float
+
+
+class PartFrequencyResponse(BaseModel):
+    items: list[PartFrequencyItem]
+    total_configurations: int

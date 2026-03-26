@@ -23,6 +23,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as DevelopersRouteImport } from './routes/developers'
 import { Route as ConfiguratorRouteImport } from './routes/configurator'
+import { Route as ConfigurationsRouteImport } from './routes/configurations'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as BillingRouteImport } from './routes/billing'
 import { Route as AuditLogRouteImport } from './routes/audit-log'
@@ -32,6 +33,7 @@ import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as ProductsIndexRouteImport } from './routes/products.index'
+import { Route as ConfigurationsIndexRouteImport } from './routes/configurations.index'
 import { Route as AgentsIndexRouteImport } from './routes/agents.index'
 import { Route as SettingsWebhooksRouteImport } from './routes/settings.webhooks'
 import { Route as SettingsTeamRouteImport } from './routes/settings.team'
@@ -48,6 +50,8 @@ import { Route as SettingsAgentsRouteImport } from './routes/settings.agents'
 import { Route as ProductsFamiliesRouteImport } from './routes/products.families'
 import { Route as ProductsProductIdRouteImport } from './routes/products.$productId'
 import { Route as ConfiguratorProductIdRouteImport } from './routes/configurator.$productId'
+import { Route as ConfigurationsBomAnalysisRouteImport } from './routes/configurations.bom-analysis'
+import { Route as ConfigurationsSessionIdRouteImport } from './routes/configurations.$sessionId'
 import { Route as AgentsWorkspaceRouteImport } from './routes/agents.workspace'
 import { Route as AgentsSessionsRouteImport } from './routes/agents.sessions'
 import { Route as AgentsInstanceIdRouteImport } from './routes/agents.$instanceId'
@@ -129,6 +133,13 @@ const ConfiguratorRoute = ConfiguratorRouteImport.update({
   path: '/configurator',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/configurator.lazy').then((d) => d.Route))
+const ConfigurationsRoute = ConfigurationsRouteImport.update({
+  id: '/configurations',
+  path: '/configurations',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() =>
+  import('./routes/configurations.lazy').then((d) => d.Route),
+)
 const ChatRoute = ChatRouteImport.update({
   id: '/chat',
   path: '/chat',
@@ -177,6 +188,13 @@ const ProductsIndexRoute = ProductsIndexRouteImport.update({
   getParentRoute: () => ProductsRoute,
 } as any).lazy(() =>
   import('./routes/products.index.lazy').then((d) => d.Route),
+)
+const ConfigurationsIndexRoute = ConfigurationsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ConfigurationsRoute,
+} as any).lazy(() =>
+  import('./routes/configurations.index.lazy').then((d) => d.Route),
 )
 const AgentsIndexRoute = AgentsIndexRouteImport.update({
   id: '/',
@@ -284,6 +302,21 @@ const ConfiguratorProductIdRoute = ConfiguratorProductIdRouteImport.update({
 } as any).lazy(() =>
   import('./routes/configurator.$productId.lazy').then((d) => d.Route),
 )
+const ConfigurationsBomAnalysisRoute =
+  ConfigurationsBomAnalysisRouteImport.update({
+    id: '/bom-analysis',
+    path: '/bom-analysis',
+    getParentRoute: () => ConfigurationsRoute,
+  } as any).lazy(() =>
+    import('./routes/configurations.bom-analysis.lazy').then((d) => d.Route),
+  )
+const ConfigurationsSessionIdRoute = ConfigurationsSessionIdRouteImport.update({
+  id: '/$sessionId',
+  path: '/$sessionId',
+  getParentRoute: () => ConfigurationsRoute,
+} as any).lazy(() =>
+  import('./routes/configurations.$sessionId.lazy').then((d) => d.Route),
+)
 const AgentsWorkspaceRoute = AgentsWorkspaceRouteImport.update({
   id: '/workspace',
   path: '/workspace',
@@ -339,6 +372,7 @@ export interface FileRoutesByFullPath {
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
   '/chat': typeof ChatRoute
+  '/configurations': typeof ConfigurationsRouteWithChildren
   '/configurator': typeof ConfiguratorRouteWithChildren
   '/developers': typeof DevelopersRoute
   '/files': typeof FilesRoute
@@ -356,6 +390,8 @@ export interface FileRoutesByFullPath {
   '/agents/$instanceId': typeof AgentsInstanceIdRoute
   '/agents/sessions': typeof AgentsSessionsRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
+  '/configurations/$sessionId': typeof ConfigurationsSessionIdRoute
+  '/configurations/bom-analysis': typeof ConfigurationsBomAnalysisRoute
   '/configurator/$productId': typeof ConfiguratorProductIdRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/products/families': typeof ProductsFamiliesRoute
@@ -372,6 +408,7 @@ export interface FileRoutesByFullPath {
   '/settings/team': typeof SettingsTeamRoute
   '/settings/webhooks': typeof SettingsWebhooksRoute
   '/agents/': typeof AgentsIndexRoute
+  '/configurations/': typeof ConfigurationsIndexRoute
   '/products/': typeof ProductsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
@@ -400,6 +437,8 @@ export interface FileRoutesByTo {
   '/agents/$instanceId': typeof AgentsInstanceIdRoute
   '/agents/sessions': typeof AgentsSessionsRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
+  '/configurations/$sessionId': typeof ConfigurationsSessionIdRoute
+  '/configurations/bom-analysis': typeof ConfigurationsBomAnalysisRoute
   '/configurator/$productId': typeof ConfiguratorProductIdRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/products/families': typeof ProductsFamiliesRoute
@@ -415,6 +454,7 @@ export interface FileRoutesByTo {
   '/settings/team': typeof SettingsTeamRoute
   '/settings/webhooks': typeof SettingsWebhooksRoute
   '/agents': typeof AgentsIndexRoute
+  '/configurations': typeof ConfigurationsIndexRoute
   '/products': typeof ProductsIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
@@ -430,6 +470,7 @@ export interface FileRoutesById {
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
   '/chat': typeof ChatRoute
+  '/configurations': typeof ConfigurationsRouteWithChildren
   '/configurator': typeof ConfiguratorRouteWithChildren
   '/developers': typeof DevelopersRoute
   '/files': typeof FilesRoute
@@ -447,6 +488,8 @@ export interface FileRoutesById {
   '/agents/$instanceId': typeof AgentsInstanceIdRoute
   '/agents/sessions': typeof AgentsSessionsRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
+  '/configurations/$sessionId': typeof ConfigurationsSessionIdRoute
+  '/configurations/bom-analysis': typeof ConfigurationsBomAnalysisRoute
   '/configurator/$productId': typeof ConfiguratorProductIdRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/products/families': typeof ProductsFamiliesRoute
@@ -463,6 +506,7 @@ export interface FileRoutesById {
   '/settings/team': typeof SettingsTeamRoute
   '/settings/webhooks': typeof SettingsWebhooksRoute
   '/agents/': typeof AgentsIndexRoute
+  '/configurations/': typeof ConfigurationsIndexRoute
   '/products/': typeof ProductsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
@@ -479,6 +523,7 @@ export interface FileRouteTypes {
     | '/audit-log'
     | '/billing'
     | '/chat'
+    | '/configurations'
     | '/configurator'
     | '/developers'
     | '/files'
@@ -496,6 +541,8 @@ export interface FileRouteTypes {
     | '/agents/$instanceId'
     | '/agents/sessions'
     | '/agents/workspace'
+    | '/configurations/$sessionId'
+    | '/configurations/bom-analysis'
     | '/configurator/$productId'
     | '/products/$productId'
     | '/products/families'
@@ -512,6 +559,7 @@ export interface FileRouteTypes {
     | '/settings/team'
     | '/settings/webhooks'
     | '/agents/'
+    | '/configurations/'
     | '/products/'
     | '/settings/'
     | '/auth/callback/$provider'
@@ -540,6 +588,8 @@ export interface FileRouteTypes {
     | '/agents/$instanceId'
     | '/agents/sessions'
     | '/agents/workspace'
+    | '/configurations/$sessionId'
+    | '/configurations/bom-analysis'
     | '/configurator/$productId'
     | '/products/$productId'
     | '/products/families'
@@ -555,6 +605,7 @@ export interface FileRouteTypes {
     | '/settings/team'
     | '/settings/webhooks'
     | '/agents'
+    | '/configurations'
     | '/products'
     | '/settings'
     | '/auth/callback/$provider'
@@ -569,6 +620,7 @@ export interface FileRouteTypes {
     | '/audit-log'
     | '/billing'
     | '/chat'
+    | '/configurations'
     | '/configurator'
     | '/developers'
     | '/files'
@@ -586,6 +638,8 @@ export interface FileRouteTypes {
     | '/agents/$instanceId'
     | '/agents/sessions'
     | '/agents/workspace'
+    | '/configurations/$sessionId'
+    | '/configurations/bom-analysis'
     | '/configurator/$productId'
     | '/products/$productId'
     | '/products/families'
@@ -602,6 +656,7 @@ export interface FileRouteTypes {
     | '/settings/team'
     | '/settings/webhooks'
     | '/agents/'
+    | '/configurations/'
     | '/products/'
     | '/settings/'
     | '/auth/callback/$provider'
@@ -617,6 +672,7 @@ export interface RootRouteChildren {
   AuditLogRoute: typeof AuditLogRoute
   BillingRoute: typeof BillingRoute
   ChatRoute: typeof ChatRoute
+  ConfigurationsRoute: typeof ConfigurationsRouteWithChildren
   ConfiguratorRoute: typeof ConfiguratorRouteWithChildren
   DevelopersRoute: typeof DevelopersRoute
   FilesRoute: typeof FilesRoute
@@ -734,6 +790,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfiguratorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/configurations': {
+      id: '/configurations'
+      path: '/configurations'
+      fullPath: '/configurations'
+      preLoaderRoute: typeof ConfigurationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/chat': {
       id: '/chat'
       path: '/chat'
@@ -796,6 +859,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/products/'
       preLoaderRoute: typeof ProductsIndexRouteImport
       parentRoute: typeof ProductsRoute
+    }
+    '/configurations/': {
+      id: '/configurations/'
+      path: '/'
+      fullPath: '/configurations/'
+      preLoaderRoute: typeof ConfigurationsIndexRouteImport
+      parentRoute: typeof ConfigurationsRoute
     }
     '/agents/': {
       id: '/agents/'
@@ -909,6 +979,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfiguratorProductIdRouteImport
       parentRoute: typeof ConfiguratorRoute
     }
+    '/configurations/bom-analysis': {
+      id: '/configurations/bom-analysis'
+      path: '/bom-analysis'
+      fullPath: '/configurations/bom-analysis'
+      preLoaderRoute: typeof ConfigurationsBomAnalysisRouteImport
+      parentRoute: typeof ConfigurationsRoute
+    }
+    '/configurations/$sessionId': {
+      id: '/configurations/$sessionId'
+      path: '/$sessionId'
+      fullPath: '/configurations/$sessionId'
+      preLoaderRoute: typeof ConfigurationsSessionIdRouteImport
+      parentRoute: typeof ConfigurationsRoute
+    }
     '/agents/workspace': {
       id: '/agents/workspace'
       path: '/workspace'
@@ -970,6 +1054,22 @@ const AgentsRouteChildren: AgentsRouteChildren = {
 
 const AgentsRouteWithChildren =
   AgentsRoute._addFileChildren(AgentsRouteChildren)
+
+interface ConfigurationsRouteChildren {
+  ConfigurationsSessionIdRoute: typeof ConfigurationsSessionIdRoute
+  ConfigurationsBomAnalysisRoute: typeof ConfigurationsBomAnalysisRoute
+  ConfigurationsIndexRoute: typeof ConfigurationsIndexRoute
+}
+
+const ConfigurationsRouteChildren: ConfigurationsRouteChildren = {
+  ConfigurationsSessionIdRoute: ConfigurationsSessionIdRoute,
+  ConfigurationsBomAnalysisRoute: ConfigurationsBomAnalysisRoute,
+  ConfigurationsIndexRoute: ConfigurationsIndexRoute,
+}
+
+const ConfigurationsRouteWithChildren = ConfigurationsRoute._addFileChildren(
+  ConfigurationsRouteChildren,
+)
 
 interface ConfiguratorRouteChildren {
   ConfiguratorProductIdRoute: typeof ConfiguratorProductIdRoute
@@ -1059,6 +1159,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuditLogRoute: AuditLogRoute,
   BillingRoute: BillingRoute,
   ChatRoute: ChatRoute,
+  ConfigurationsRoute: ConfigurationsRouteWithChildren,
   ConfiguratorRoute: ConfiguratorRouteWithChildren,
   DevelopersRoute: DevelopersRoute,
   FilesRoute: FilesRoute,

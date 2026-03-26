@@ -193,8 +193,10 @@ class BOMResolver:
                 quantity_expression=item.quantity_expression,
             ))
 
-            # Recurse into children
-            if item.children:
+            # Recurse into children (use inspect to avoid lazy load in async)
+            from sqlalchemy import inspect as sa_inspect
+            item_state = sa_inspect(item)
+            if "children" in item_state.dict and item.children:
                 child_items = self._filter_items(item.children, selections, level + 1)
                 for child in child_items:
                     child.parent_part = item.part_number

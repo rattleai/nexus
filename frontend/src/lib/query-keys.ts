@@ -140,6 +140,8 @@ export const queryKeys = {
     },
     bom: (sessionId: string) => ["configurator", "bom", sessionId] as const,
     pricing: (sessionId: string) => ["configurator", "pricing", sessionId] as const,
+    comparison: (ids: string[]) => ["configurator", "comparison", ...ids] as const,
+    partFrequency: (filters?: Record<string, string>) => ["configurator", "part-frequency", filters] as const,
   },
 
   pricingRules: {

@@ -656,3 +656,55 @@ export interface ConstraintImpact {
   new_auto_sets: Record<string, string>
   total_values_pruned: number
 }
+
+// ── Configurations Management ──────────────────────────
+
+export interface BulkActionRequest {
+  session_ids: string[]
+  action: "lock" | "delete" | "resolve_bom"
+}
+
+export interface BulkActionResultItem {
+  session_id: string
+  success: boolean
+  error: string | null
+}
+
+export interface BulkActionResponse {
+  total: number
+  succeeded: number
+  failed: number
+  results: BulkActionResultItem[]
+}
+
+export interface BOMComparisonSession {
+  id: string
+  name: string | null
+  product_name: string | null
+}
+
+export interface BOMComparisonPart {
+  part_number: string
+  part_name: string
+  quantities: (number | null)[]
+  unit_costs: (number | null)[]
+}
+
+export interface BOMComparisonResult {
+  sessions: BOMComparisonSession[]
+  common_parts: BOMComparisonPart[]
+  unique_parts: BOMComparisonPart[]
+  cost_comparison: { session_id: string; total_cost: number; total_parts: number }[]
+}
+
+export interface PartFrequencyItem {
+  part_number: string
+  part_name: string
+  usage_count: number
+  percentage: number
+}
+
+export interface PartFrequencyResponse {
+  items: PartFrequencyItem[]
+  total_configurations: number
+}
