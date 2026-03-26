@@ -20,11 +20,15 @@ TENANT_SETTING = "NULLIF(current_setting('app.tenant_id', true), '')::uuid"
 
 
 def _create_enum(name: str, values: list[str]) -> None:
-    val_list = ", ".join(f"'{v}'" for v in values)
-    op.execute(
-        f"DO $$ BEGIN CREATE TYPE {name} AS ENUM ({val_list}); "
-        f"EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
+    from sqlalchemy import text
+    conn = op.get_bind()
+    result = conn.execute(
+        text("SELECT 1 FROM pg_type WHERE typname = :name"),
+        {"name": name},
     )
+    if result.scalar() is None:
+        val_list = ", ".join(f"'{v}'" for v in values)
+        op.execute(f"CREATE TYPE {name} AS ENUM ({val_list})")
 
 
 def _rls(table: str, tenant_col: str = "tenant_id") -> None:
@@ -39,19 +43,22 @@ def _rls(table: str, tenant_col: str = "tenant_id") -> None:
 
 
 def upgrade() -> None:
-    # ── Enum types ───────────────────────────────────────────────────
-    _create_enum("productstatus", ["draft", "active", "deprecated", "archived"])
-    _create_enum("characteristictype", ["enum", "numeric", "boolean", "text"])
-    _create_enum("constrainttype", [
-        "requires", "excludes", "selection_condition",
-        "default_value", "formula", "table",
-    ])
-    _create_enum("bomitemtype", ["component", "sub_assembly", "phantom", "reference"])
-    _create_enum("configurationstatus", ["in_progress", "complete", "invalid", "locked"])
-    _create_enum("pricingruletype", [
-        "base_price", "option_surcharge", "volume_discount",
-        "conditional", "formula", "tiered", "margin",
-    ])
+    # NOTE: Enum types are created automatically by sa.Enum() in op.create_table()
+    # The _create_enum helper was removed because sa.Enum auto-creation handles it.
+    _noop = [  # noqa: F841 - keep for downgrade reference
+        ("productstatus", ["draft", "active", "deprecated", "archived"]),
+        ("characteristictype", ["enum", "numeric", "boolean", "text"]),
+        ("constrainttype", [
+            "requires", "excludes", "selection_condition",
+            "default_value", "formula", "table",
+        ]),
+        ("bomitemtype", ["component", "sub_assembly", "phantom", "reference"]),
+        ("configurationstatus", ["in_progress", "complete", "invalid", "locked"]),
+        ("pricingruletype", [
+            "base_price", "option_surcharge", "volume_discount",
+            "conditional", "formula", "tiered", "margin",
+        ]),
+    ]
 
     # ── product_families ─────────────────────────────────────────────
     op.create_table(
@@ -88,7 +95,7 @@ def upgrade() -> None:
         sa.Column("slug", sa.String(100), nullable=False),
         sa.Column("description", sa.Text, nullable=True),
         sa.Column("sku_prefix", sa.String(50), nullable=True),
-        sa.Column("status", sa.Enum("draft", "active", "deprecated", "archived", name="productstatus", create_type=False), nullable=False, server_default="draft"),
+        sa.Column("status", sa.Enum("draft", "active", "deprecated", "archived", name="productstatus"), nullable=False, server_default="draft"),
         sa.Column("metadata", JSONB, server_default="{}"),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_by", sa.String(255), nullable=True),
@@ -152,7 +159,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("slug", sa.String(100), nullable=False),
         sa.Column("description", sa.Text, nullable=True),
-        sa.Column("char_type", sa.Enum("enum", "numeric", "boolean", "text", name="characteristictype", create_type=False), nullable=False),
+        sa.Column("char_type", sa.Enum("enum", "numeric", "boolean", "text", name="characteristictype"), nullable=False),
         sa.Column("numeric_min", sa.Float, nullable=True),
         sa.Column("numeric_max", sa.Float, nullable=True),
         sa.Column("numeric_step", sa.Float, nullable=True),
@@ -239,7 +246,7 @@ def upgrade() -> None:
         sa.Column("group_id", UUID(as_uuid=True), sa.ForeignKey("constraint_groups.id"), nullable=True),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("description", sa.Text, nullable=True),
-        sa.Column("constraint_type", sa.Enum("requires", "excludes", "selection_condition", "default_value", "formula", "table", name="constrainttype", create_type=False), nullable=False),
+        sa.Column("constraint_type", sa.Enum("requires", "excludes", "selection_condition", "default_value", "formula", "table", name="constrainttype"), nullable=False),
         sa.Column("expression", JSONB, nullable=False),
         sa.Column("priority", sa.Integer, server_default="0"),
         sa.Column("is_active", sa.Boolean, server_default="true"),
@@ -329,7 +336,7 @@ def upgrade() -> None:
         sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
         sa.Column("bom_header_id", UUID(as_uuid=True), sa.ForeignKey("bom_headers.id"), nullable=False),
         sa.Column("parent_item_id", UUID(as_uuid=True), sa.ForeignKey("bom_items.id"), nullable=True),
-        sa.Column("item_type", sa.Enum("component", "sub_assembly", "phantom", "reference", name="bomitemtype", create_type=False), server_default="component"),
+        sa.Column("item_type", sa.Enum("component", "sub_assembly", "phantom", "reference", name="bomitemtype"), server_default="component"),
         sa.Column("part_number", sa.String(100), nullable=False),
         sa.Column("part_name", sa.String(255), nullable=False),
         sa.Column("description", sa.Text, nullable=True),
@@ -386,7 +393,7 @@ def upgrade() -> None:
         sa.Column("product_version_id", UUID(as_uuid=True), sa.ForeignKey("product_versions.id"), nullable=True),
         sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
         sa.Column("name", sa.String(255), nullable=True),
-        sa.Column("status", sa.Enum("in_progress", "complete", "invalid", "locked", name="configurationstatus", create_type=False), server_default="in_progress"),
+        sa.Column("status", sa.Enum("in_progress", "complete", "invalid", "locked", name="configurationstatus"), server_default="in_progress"),
         sa.Column("is_valid", sa.Boolean, server_default="false"),
         sa.Column("is_complete", sa.Boolean, server_default="false"),
         sa.Column("validation_errors", JSONB, nullable=True),
@@ -453,7 +460,7 @@ def upgrade() -> None:
         sa.Column("product_id", UUID(as_uuid=True), sa.ForeignKey("products.id"), nullable=False),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("description", sa.Text, nullable=True),
-        sa.Column("rule_type", sa.Enum("base_price", "option_surcharge", "volume_discount", "conditional", "formula", "tiered", "margin", name="pricingruletype", create_type=False), nullable=False),
+        sa.Column("rule_type", sa.Enum("base_price", "option_surcharge", "volume_discount", "conditional", "formula", "tiered", "margin", name="pricingruletype"), nullable=False),
         sa.Column("expression", JSONB, nullable=False),
         sa.Column("priority", sa.Integer, server_default="0"),
         sa.Column("is_active", sa.Boolean, server_default="true"),

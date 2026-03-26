@@ -85,7 +85,7 @@ class BOMItem(SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
     )
 
     item_type: Mapped[BOMItemType] = mapped_column(
-        Enum(BOMItemType, values_callable=lambda e: [m.value for m in e]),
+        Enum(BOMItemType, values_callable=lambda e: [m.value for m in e], create_type=False),
         default=BOMItemType.COMPONENT,
     )
     part_number: Mapped[str] = mapped_column(String(100), nullable=False)

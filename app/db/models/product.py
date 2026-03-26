@@ -89,7 +89,7 @@ class Product(SoftDeleteMixin, AuditMixin, VersionMixin, TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     sku_prefix: Mapped[str | None] = mapped_column(String(50), nullable=True)
     status: Mapped[ProductStatus] = mapped_column(
-        Enum(ProductStatus, values_callable=lambda e: [m.value for m in e]),
+        Enum(ProductStatus, values_callable=lambda e: [m.value for m in e], create_type=False),
         default=ProductStatus.DRAFT,
     )
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, default=dict)
@@ -181,7 +181,7 @@ class Characteristic(SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
     slug: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     char_type: Mapped[CharacteristicType] = mapped_column(
-        Enum(CharacteristicType, values_callable=lambda e: [m.value for m in e]),
+        Enum(CharacteristicType, values_callable=lambda e: [m.value for m in e], create_type=False),
         nullable=False,
     )
     numeric_min: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -306,7 +306,7 @@ class ConstraintRule(SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     constraint_type: Mapped[ConstraintType] = mapped_column(
-        Enum(ConstraintType, values_callable=lambda e: [m.value for m in e]),
+        Enum(ConstraintType, values_callable=lambda e: [m.value for m in e], create_type=False),
         nullable=False,
     )
     expression: Mapped[dict] = mapped_column(JSONB, nullable=False)
