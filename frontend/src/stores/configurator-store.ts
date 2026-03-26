@@ -40,6 +40,7 @@ interface ConfiguratorState {
   removeSelection: (charSlug: string) => void
   setAutoSetValues: (values: Record<string, string>) => void
   updateDomains: (domains: Record<string, unknown>, excluded: Record<string, string[]>) => void
+  applySelectionResult: (selections: Record<string, string>, autoSetValues: Record<string, string>, domains: Record<string, unknown>, excluded: Record<string, string[]>) => void
   setCurrentStep: (index: number) => void
   setStepSlugs: (slugs: string[]) => void
   setPriceSummary: (summary: PriceSummary | null) => void
@@ -86,6 +87,15 @@ export const useConfiguratorStore = create<ConfiguratorState>((set) => ({
 
   updateDomains: (domains, excluded) =>
     set({ availableDomains: domains, excludedValues: excluded }),
+
+  applySelectionResult: (selections, autoSetValues, domains, excluded) =>
+    set({
+      selections,
+      autoSetValues,
+      availableDomains: domains,
+      excludedValues: excluded,
+      isLoading: false,
+    }),
 
   setCurrentStep: (index) => set({ currentStepIndex: index }),
 

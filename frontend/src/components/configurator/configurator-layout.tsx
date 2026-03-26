@@ -238,9 +238,8 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
     (characteristicId: string, characteristicSlug: string, value: string) => {
       if (!store.sessionId) return
 
-      // Optimistic update
+      // Optimistic update — single state change, no loading indicator for snappy UX
       store.setSelection(characteristicSlug, value)
-      store.setLoading(true)
 
       makeSelection.mutate(
         {
@@ -249,7 +248,7 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
         },
         {
           onSuccess: (result: SelectionResult) => {
-            // Update selections from session
+            // Build all selections from server response
             const newSelections: Record<string, string> = {}
             for (const sel of result.session.selections) {
               const c = characteristics.find(
@@ -259,26 +258,18 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
                 newSelections[c.slug] = sel.value
               }
             }
-            // Apply all selections from the server
-            for (const [slug, val] of Object.entries(newSelections)) {
-              store.setSelection(slug, val)
-            }
 
-            // Update auto-set values
-            store.setAutoSetValues(result.auto_set_values)
-
-            // Update domains and excluded values
-            store.updateDomains(
+            // Batch-apply everything in a single state update (no flickering)
+            store.applySelectionResult(
+              newSelections,
+              result.auto_set_values,
               result.session.available_domains ?? {},
               result.excluded_values,
             )
-
-            store.setLoading(false)
           },
           onError: () => {
             // Revert optimistic update
             store.removeSelection(characteristicSlug)
-            store.setLoading(false)
             toast.error("Failed to apply selection")
           },
         },
@@ -486,13 +477,6 @@ export function ConfiguratorPage({ productId }: ConfiguratorPageProps) {
           {/* Options for current step */}
           <ScrollArea className="flex-1">
             <div className="p-6 space-y-6">
-              {store.isLoading && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Applying selection...
-                </div>
-              )}
-
               {currentCharacteristics.length === 0 ? (
                 <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
                   No options available for this step.
