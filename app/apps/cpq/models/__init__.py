@@ -2,6 +2,9 @@
 
 Re-exports all model classes and provides an ``ALL_MODELS`` list
 for plugin registration with the infrastructure model discovery.
+
+Infrastructure models (DataSource, CloudConnection, etc.) live in
+``app.db.models`` — only CPQ-specific models are here.
 """
 
 from app.apps.cpq.models.bom import (
@@ -20,13 +23,7 @@ from app.apps.cpq.models.configurator import (
     PricingRuleType,
 )
 from app.apps.cpq.models.datasource import (
-    CloudConnection,
-    CloudProvider,
     ConfigItemProvenance,
-    DataSource,
-    DataSourceChunk,
-    DataSourceStatus,
-    DataSourceType,
 )
 from app.apps.cpq.models.product import (
     Characteristic,
@@ -68,10 +65,7 @@ ALL_MODELS: list[type] = [
     ConfiguredBOM,
     PricingRule,
     ConfigurationPricing,
-    # Data Sources
-    DataSource,
-    DataSourceChunk,
-    CloudConnection,
+    # Data Sources (CPQ-specific only)
     ConfigItemProvenance,
 ]
 
@@ -105,12 +99,6 @@ __all__ = [
     "PricingRule",
     "PricingRuleType",
     "ConfigurationPricing",
-    # Data Sources
-    "DataSource",
-    "DataSourceType",
-    "DataSourceStatus",
-    "DataSourceChunk",
-    "CloudConnection",
-    "CloudProvider",
+    # Data Sources (CPQ-specific)
     "ConfigItemProvenance",
 ]

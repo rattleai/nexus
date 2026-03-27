@@ -63,7 +63,7 @@ async def config_create_product(
     db: AsyncSession,
 ) -> dict:
     """Create a new configurable product."""
-    from app.db.models.product import Product, ProductStatus
+    from app.apps.cpq.models.product import Product, ProductStatus
 
     if family_id:
         fid = _parse_uuid(family_id, "family_id")
@@ -98,7 +98,7 @@ async def config_list_products(
     db: AsyncSession,
 ) -> dict:
     """List products for the tenant."""
-    from app.db.models.product import Product, ProductStatus
+    from app.apps.cpq.models.product import Product, ProductStatus
 
     limit = _clamp_limit(limit)
     stmt = select(Product).where(
@@ -131,8 +131,8 @@ async def config_get_product(
     db: AsyncSession,
 ) -> dict:
     """Get product with characteristics, constraints, and BOMs."""
-    from app.db.models.bom import BOMHeader
-    from app.db.models.product import (
+    from app.apps.cpq.models.bom import BOMHeader
+    from app.apps.cpq.models.product import (
         CharacteristicAssignment,
         ConstraintRule,
         Product,
@@ -239,7 +239,7 @@ async def config_create_characteristic(
     db: AsyncSession,
 ) -> dict:
     """Create a characteristic with optional values."""
-    from app.db.models.product import Characteristic, CharacteristicType, CharacteristicValue
+    from app.apps.cpq.models.product import Characteristic, CharacteristicType, CharacteristicValue
 
     ct = _parse_enum(char_type, CharacteristicType, "char_type")
     if isinstance(ct, dict):
@@ -315,7 +315,7 @@ async def config_create_characteristic_values(
     db: AsyncSession,
 ) -> dict:
     """Batch-create values for an enum characteristic."""
-    from app.db.models.product import Characteristic, CharacteristicValue
+    from app.apps.cpq.models.product import Characteristic, CharacteristicValue
 
     char_id = _parse_uuid(characteristic_id, "characteristic_id")
     if isinstance(char_id, dict):
@@ -363,7 +363,7 @@ async def config_assign_characteristic(
     db: AsyncSession,
 ) -> dict:
     """Assign a characteristic to a product."""
-    from app.db.models.product import CharacteristicAssignment
+    from app.apps.cpq.models.product import CharacteristicAssignment
 
     pid = _parse_uuid(product_id, "product_id")
     if isinstance(pid, dict):
@@ -399,7 +399,7 @@ async def config_list_characteristics(
     db: AsyncSession,
 ) -> dict:
     """List characteristics, optionally filtered by product."""
-    from app.db.models.product import Characteristic, CharacteristicAssignment, CharacteristicValue
+    from app.apps.cpq.models.product import Characteristic, CharacteristicAssignment, CharacteristicValue
 
     if product_id:
         pid = _parse_uuid(product_id, "product_id")
@@ -482,7 +482,7 @@ async def config_create_constraint_group(
     db: AsyncSession,
 ) -> dict:
     """Create a constraint group."""
-    from app.db.models.product import ConstraintGroup
+    from app.apps.cpq.models.product import ConstraintGroup
 
     pid = _parse_uuid(product_id, "product_id")
     if isinstance(pid, dict):
@@ -515,7 +515,7 @@ async def config_create_constraint_rule(
     db: AsyncSession,
 ) -> dict:
     """Create a constraint rule with JSONB AST expression."""
-    from app.db.models.product import ConstraintRule, ConstraintType
+    from app.apps.cpq.models.product import ConstraintRule, ConstraintType
 
     pid = _parse_uuid(product_id, "product_id")
     if isinstance(pid, dict):
@@ -655,7 +655,7 @@ async def config_create_bom_header(
     db: AsyncSession,
 ) -> dict:
     """Create a 150% super BOM header."""
-    from app.db.models.bom import BOMHeader
+    from app.apps.cpq.models.bom import BOMHeader
 
     pid = _parse_uuid(product_id, "product_id")
     if isinstance(pid, dict):
@@ -694,7 +694,7 @@ async def config_create_bom_item(
     db: AsyncSession,
 ) -> dict:
     """Add a BOM item with optional selection condition."""
-    from app.db.models.bom import BOMHeader, BOMItem, BOMItemType
+    from app.apps.cpq.models.bom import BOMHeader, BOMItem, BOMItemType
 
     hid = _parse_uuid(bom_header_id, "bom_header_id")
     if isinstance(hid, dict):
@@ -754,7 +754,7 @@ async def config_create_bom_items_batch(
     db: AsyncSession,
 ) -> dict:
     """Batch-create BOM items."""
-    from app.db.models.bom import BOMHeader, BOMItem, BOMItemType
+    from app.apps.cpq.models.bom import BOMHeader, BOMItem, BOMItemType
 
     hid = _parse_uuid(bom_header_id, "bom_header_id")
     if isinstance(hid, dict):
@@ -851,7 +851,7 @@ async def config_create_variant_table(
     db: AsyncSession,
 ) -> dict:
     """Create a variant table for tabular constraint lookups."""
-    from app.db.models.product import VariantTable
+    from app.apps.cpq.models.product import VariantTable
 
     pid = _parse_uuid(product_id, "product_id")
     if isinstance(pid, dict):
@@ -934,7 +934,7 @@ async def config_create_pricing_rule(
     db: AsyncSession,
 ) -> dict:
     """Create a pricing rule."""
-    from app.db.models.configurator import PricingRule, PricingRuleType
+    from app.apps.cpq.models.configurator import PricingRule, PricingRuleType
 
     pid = _parse_uuid(product_id, "product_id")
     if isinstance(pid, dict):
@@ -1138,7 +1138,7 @@ async def config_update_product(
     db: AsyncSession,
 ) -> dict:
     """Update an existing product."""
-    from app.db.models.product import Product, ProductStatus
+    from app.apps.cpq.models.product import Product, ProductStatus
 
     pid = _parse_uuid(product_id, "product_id")
     if isinstance(pid, dict):
@@ -1177,7 +1177,7 @@ async def config_delete_product(
     """Soft-delete a product."""
     from datetime import UTC, datetime
 
-    from app.db.models.product import Product
+    from app.apps.cpq.models.product import Product
 
     pid = _parse_uuid(product_id, "product_id")
     if isinstance(pid, dict):
@@ -1206,7 +1206,7 @@ async def config_update_constraint_rule(
     db: AsyncSession,
 ) -> dict:
     """Update an existing constraint rule."""
-    from app.db.models.product import ConstraintRule
+    from app.apps.cpq.models.product import ConstraintRule
 
     rid = _parse_uuid(rule_id, "rule_id")
     if isinstance(rid, dict):
@@ -1242,7 +1242,7 @@ async def config_delete_constraint_rule(
     """Soft-delete a constraint rule."""
     from datetime import UTC, datetime
 
-    from app.db.models.product import ConstraintRule
+    from app.apps.cpq.models.product import ConstraintRule
 
     rid = _parse_uuid(rule_id, "rule_id")
     if isinstance(rid, dict):
@@ -1271,7 +1271,7 @@ async def config_update_pricing_rule(
     db: AsyncSession,
 ) -> dict:
     """Update an existing pricing rule."""
-    from app.db.models.configurator import PricingRule
+    from app.apps.cpq.models.configurator import PricingRule
 
     rid = _parse_uuid(rule_id, "rule_id")
     if isinstance(rid, dict):
@@ -1307,7 +1307,7 @@ async def config_delete_pricing_rule(
     """Soft-delete a pricing rule."""
     from datetime import UTC, datetime
 
-    from app.db.models.configurator import PricingRule
+    from app.apps.cpq.models.configurator import PricingRule
 
     rid = _parse_uuid(rule_id, "rule_id")
     if isinstance(rid, dict):
@@ -1332,7 +1332,7 @@ async def config_list_variant_tables(
     db: AsyncSession,
 ) -> dict:
     """List variant tables for a product."""
-    from app.db.models.product import VariantTable
+    from app.apps.cpq.models.product import VariantTable
 
     pid = _parse_uuid(product_id, "product_id")
     if isinstance(pid, dict):
@@ -1366,7 +1366,7 @@ async def config_create_product_family(
     db: AsyncSession,
 ) -> dict:
     """Create a product family."""
-    from app.db.models.product import ProductFamily
+    from app.apps.cpq.models.product import ProductFamily
 
     family = ProductFamily(
         tenant_id=tenant.id,
@@ -1388,7 +1388,7 @@ async def config_list_product_families(
     db: AsyncSession,
 ) -> dict:
     """List product families."""
-    from app.db.models.product import ProductFamily
+    from app.apps.cpq.models.product import ProductFamily
 
     limit = _clamp_limit(limit)
     stmt = select(ProductFamily).where(
@@ -1415,7 +1415,7 @@ async def config_create_characteristic_group(
     db: AsyncSession,
 ) -> dict:
     """Create a characteristic group for organizing characteristics."""
-    from app.db.models.product import CharacteristicGroup
+    from app.apps.cpq.models.product import CharacteristicGroup
 
     group = CharacteristicGroup(
         tenant_id=tenant.id,
@@ -1437,7 +1437,7 @@ async def config_list_characteristic_groups(
     db: AsyncSession,
 ) -> dict:
     """List characteristic groups."""
-    from app.db.models.product import CharacteristicGroup
+    from app.apps.cpq.models.product import CharacteristicGroup
 
     limit = _clamp_limit(limit)
     stmt = select(CharacteristicGroup).where(
@@ -1463,7 +1463,7 @@ async def config_create_session(
     db: AsyncSession,
 ) -> dict:
     """Create a new configuration session for a product."""
-    from app.db.models.configurator import ConfigurationSession
+    from app.apps.cpq.models.configurator import ConfigurationSession
 
     pid = _parse_uuid(product_id, "product_id")
     if isinstance(pid, dict):
@@ -1493,7 +1493,7 @@ async def config_get_session(
     db: AsyncSession,
 ) -> dict:
     """Get a configuration session with its selections."""
-    from app.db.models.configurator import ConfigurationSession
+    from app.apps.cpq.models.configurator import ConfigurationSession
 
     sid = _parse_uuid(session_id, "session_id")
     if isinstance(sid, dict):
@@ -1553,7 +1553,7 @@ async def config_list_sessions(
     db: AsyncSession,
 ) -> dict:
     """List configuration sessions."""
-    from app.db.models.configurator import ConfigurationSession
+    from app.apps.cpq.models.configurator import ConfigurationSession
 
     limit = _clamp_limit(limit)
     stmt = select(ConfigurationSession).where(ConfigurationSession.tenant_id == tenant.id)

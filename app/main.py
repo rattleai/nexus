@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import importlib
 from pathlib import Path
 
 import structlog
@@ -10,9 +11,15 @@ from fastapi.staticfiles import StaticFiles
 
 import app.core.event_handlers as _event_handlers  # noqa: F401 — registers handlers on import
 from app import __version__
+from app.api.etag import ETagMiddleware
+from app.api.exceptions import register_exception_handlers
+from app.api.middleware import PreferMinimalMiddleware, RequestSizeLimitMiddleware, SecurityHeadersMiddleware
+from app.config import settings, validate_settings
+from app.core.logging import setup_logging
+from app.core.redis import redis_pool
 from app.plugins.registry import discover_plugins, registry as plugin_registry
 
-# Discover application plugins before app creation
+# ── Plugin discovery (before app creation) ─────────────────
 discover_plugins()
 
 # Extend VALID_SCOPES with plugin-contributed scopes
@@ -22,15 +29,11 @@ for _plugin in plugin_registry:
 # Import plugin event handler modules (side-effect registration)
 for _plugin in plugin_registry:
     for _module_path in _plugin.get_event_handler_modules():
-        import importlib as _importlib
-        _importlib.import_module(_module_path)
-from app.api.etag import ETagMiddleware
-from app.api.exceptions import register_exception_handlers
-from app.api.middleware import PreferMinimalMiddleware, RequestSizeLimitMiddleware, SecurityHeadersMiddleware
-from app.api.v1 import v1_router
-from app.config import settings, validate_settings
-from app.core.logging import setup_logging
-from app.core.redis import redis_pool
+        importlib.import_module(_module_path)
+
+# API router must be imported AFTER plugin discovery so plugin
+# routers are registered when v1_router is assembled.
+from app.api.v1 import v1_router  # noqa: E402
 
 setup_logging()
 logger = structlog.stdlib.get_logger()
@@ -153,6 +156,12 @@ def create_app() -> FastAPI:
 
     # Exception handlers (fail-closed)
     register_exception_handlers(app)
+
+    # Plugin error handlers (registered after infra handlers so plugin
+    # handlers take precedence for their specific exception types)
+    for _plugin in plugin_registry:
+        for exc_class, handler in _plugin.get_error_handlers():
+            app.add_exception_handler(exc_class, handler)
 
     # Middleware — Starlette executes in reverse order of registration:
     # last added = outermost. We want:

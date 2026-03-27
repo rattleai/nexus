@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.configurator.engine import (
+from app.apps.cpq.engine.engine import (
     CharacteristicInfo,
     ConfiguratorEngine,
     DomainMap,
@@ -23,8 +23,8 @@ from app.configurator.engine import (
     _CharTypeProxy,
     _ValueProxy,
 )
-from app.configurator.analyzer import ConstraintAnalyzer
-from app.configurator.bom_resolver import BOMResolver, ResolvedItem
+from app.apps.cpq.engine.analyzer import ConstraintAnalyzer
+from app.apps.cpq.engine.bom_resolver import BOMResolver, ResolvedItem
 
 
 # ── P1.1: NumericInterval Tests ──────────────────────────
@@ -696,12 +696,12 @@ class TestSnapshotLoading:
 
 class TestBOMEagerLoad:
     def test_bom_eager_load_returns_load_option(self):
-        from app.configurator.bom_resolver import _bom_eager_load
+        from app.apps.cpq.engine.bom_resolver import _bom_eager_load
         load = _bom_eager_load(3)
         assert load is not None
 
     def test_bom_eager_load_depth_1(self):
-        from app.configurator.bom_resolver import _bom_eager_load
+        from app.apps.cpq.engine.bom_resolver import _bom_eager_load
         load = _bom_eager_load(1)
         assert load is not None
 

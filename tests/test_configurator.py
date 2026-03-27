@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import get_current_tenant, get_db
-from app.configurator.engine import ConfiguratorEngine, SelectionResult
+from app.apps.cpq.engine.engine import ConfiguratorEngine, SelectionResult
 from app.main import create_app
 
 

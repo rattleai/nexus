@@ -107,6 +107,8 @@ _BUILTIN_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+
 def _get_all_builtin_tools() -> dict[str, dict[str, Any]]:
     """Return infra tools merged with plugin-contributed tool definitions."""
     all_tools = _BUILTIN_TOOLS.copy()
@@ -277,11 +279,9 @@ class ToolRegistry:
                 )
             elif tool_name == "code_execute":
                 return await self._invoke_sandbox(arguments)
-            # ── Configuration domain tools ──
-            elif tool_name.startswith("config_"):
-                return await self._invoke_config_tool(tool_name, arguments, tenant, db)
             else:
-                return {"error": f"Built-in tool '{tool_name}' has no handler"}
+                # Delegate to plugin tool handlers
+                return await self._invoke_plugin_tool(tool_name, arguments, tenant, db)
         except Exception as exc:
             logger.warning(
                 "builtin_tool_error",
@@ -290,33 +290,51 @@ class ToolRegistry:
             )
             return {"error": f"Built-in tool '{tool_name}' failed"}
 
-    async def _invoke_config_tool(
+    async def _invoke_plugin_tool(
         self,
         tool_name: str,
         arguments: dict[str, Any],
         tenant: Any,
         db: AsyncSession | None,
     ) -> Any:
-        """Invoke a configuration domain tool by delegating to configurator handlers."""
+        """Invoke a plugin-contributed agent tool via the plugin registry."""
         if db is None:
             return {"error": f"Tool '{tool_name}' requires a database session"}
 
-        logger.info("tool_invoke_config", tool_name=tool_name, tenant_id=str(tenant.id))
+        from app.plugins.registry import registry as _plugin_registry
 
-        try:
-            from app.apps.cpq import mcp_tools as cfg
+        for plugin in _plugin_registry:
+            if tool_name in plugin.get_agent_tool_definitions():
+                logger.info(
+                    "tool_invoke_plugin",
+                    tool_name=tool_name,
+                    plugin=plugin.name,
+                    tenant_id=str(tenant.id),
+                )
+                try:
+                    result = await plugin.invoke_tool(
+                        tool_name, arguments, tenant=tenant, db=db,
+                    )
+                    if result is not None:
+                        return result
+                except (ValueError, KeyError, TypeError) as exc:
+                    logger.warning(
+                        "plugin_tool_validation_error",
+                        tool_name=tool_name,
+                        plugin=plugin.name,
+                        error=str(exc)[:200],
+                    )
+                    return {"error": f"Invalid input for '{tool_name}': {str(exc)[:200]}"}
+                except Exception:
+                    logger.error(
+                        "plugin_tool_error",
+                        tool_name=tool_name,
+                        plugin=plugin.name,
+                        exc_info=True,
+                    )
+                    return {"error": f"Plugin tool '{tool_name}' failed unexpectedly"}
 
-            handler = getattr(cfg, tool_name, None)
-            if handler is None:
-                return {"error": f"Configuration tool '{tool_name}' has no handler"}
-
-            return await handler(**arguments, tenant=tenant, db=db)
-        except (ValueError, KeyError, TypeError) as exc:
-            logger.warning("config_tool_validation_error", tool_name=tool_name, error=str(exc)[:200])
-            return {"error": f"Invalid input for '{tool_name}': {str(exc)[:200]}"}
-        except Exception as exc:
-            logger.error("config_tool_unexpected_error", tool_name=tool_name, exc_info=True)
-            return {"error": f"Configuration tool '{tool_name}' failed unexpectedly"}
+        return {"error": f"Built-in tool '{tool_name}' has no handler"}
 
     async def _invoke_sandbox(self, arguments: dict[str, Any]) -> Any:
         """Invoke the code execution sandbox.

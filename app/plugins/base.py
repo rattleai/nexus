@@ -18,9 +18,14 @@ import abc
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from typing import Callable
+
 if TYPE_CHECKING:
     from fastapi import APIRouter
+    from fastapi import Request
+    from fastapi.responses import JSONResponse
     from fastmcp import FastMCP
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 # ── Frontend manifest dataclasses ───────────────────────────
@@ -107,6 +112,22 @@ class AppPluginBase(abc.ABC):
         """Return tool definitions for the agent tool registry."""
         return {}
 
+    async def invoke_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        tenant: Any,
+        db: AsyncSession,
+    ) -> Any:
+        """Invoke a plugin-owned agent tool by name.
+
+        Called by the agent tool registry when a tool name matches
+        one of this plugin's ``get_agent_tool_definitions()`` keys.
+        Returns ``None`` if the tool is not handled by this plugin.
+        """
+        return None
+
     def get_celery_config(self) -> dict[str, Any]:
         """Return ``{"autodiscover": [...], "task_routes": {...}, "beat_schedule": {...}}``."""
         return {}
@@ -123,6 +144,17 @@ class AppPluginBase(abc.ABC):
         """Frontend integration metadata (nav items, etc.)."""
         return None
 
+    def get_error_handlers(self) -> list[tuple[type[Exception], Callable]]:
+        """Return ``[(ExceptionClass, handler_fn), ...]`` for plugin-specific errors.
+
+        Handler signature: ``async def handler(request: Request, exc: Exception) -> JSONResponse``
+        """
+        return []
+
+    def get_plugin_config(self) -> Any:
+        """Return the plugin's settings/configuration object."""
+        return None
+
     # ── Lifecycle hooks ─────────────────────────────────────
 
     async def on_startup(self) -> None:
@@ -130,3 +162,10 @@ class AppPluginBase(abc.ABC):
 
     async def on_shutdown(self) -> None:
         """Called during FastAPI lifespan shutdown."""
+
+    async def health_check(self) -> dict[str, Any]:
+        """Return plugin health status.
+
+        Expected keys: ``{"status": "ok"|"degraded"|"unhealthy", ...}``.
+        """
+        return {"status": "ok"}

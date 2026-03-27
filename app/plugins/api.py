@@ -47,3 +47,33 @@ async def get_plugin_manifest():
         "plugins": plugins_info,
         "nav_items": nav_items,
     }
+
+
+@router.get("/health")
+async def get_plugin_health():
+    """Return health status of all enabled plugins."""
+    import asyncio
+
+    results: dict[str, dict] = {}
+
+    async def _check(plugin):  # type: ignore[no-untyped-def]
+        try:
+            return plugin.name, await asyncio.wait_for(plugin.health_check(), timeout=5.0)
+        except asyncio.TimeoutError:
+            return plugin.name, {"status": "unhealthy", "error": "health check timed out"}
+        except Exception as exc:
+            return plugin.name, {"status": "unhealthy", "error": str(exc)}
+
+    checks = await asyncio.gather(*[_check(p) for p in registry])
+    for name, result in checks:
+        results[name] = result
+
+    overall = "ok"
+    for result in results.values():
+        if result.get("status") == "unhealthy":
+            overall = "unhealthy"
+            break
+        if result.get("status") == "degraded":
+            overall = "degraded"
+
+    return {"status": overall, "plugins": results}
