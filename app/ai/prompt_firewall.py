@@ -202,6 +202,16 @@ _CROSS_AGENT_INJECTION_PATTERNS: dict[str, re.Pattern] = {
         r'(?:"role"\s*:\s*"(?:system|assistant|function)")',
         re.IGNORECASE,
     ),
+    # Additional formats to prevent bypass
+    "tool_use_format": re.compile(
+        r'(?:"type"\s*:\s*"(?:tool_use|function)"|'
+        r'"action"\s*:\s*"(?:execute|invoke|run|call)")',
+        re.IGNORECASE,
+    ),
+    "xml_tool_call": re.compile(
+        r'<(?:tool_use|function_call|tool_call|tool_result)\b',
+        re.IGNORECASE,
+    ),
 }
 
 
@@ -344,6 +354,12 @@ class PromptFirewall:
                     })
                     result.risk_score = max(result.risk_score, 0.8)
 
+            # Structural JSON check: detect tool-call-like JSON structures
+            structural_violations = self._check_structural_injection(output)
+            result.violations.extend(structural_violations)
+            if structural_violations:
+                result.risk_score = max(result.risk_score, 0.85)
+
         result.passed = len(result.violations) == 0
 
         if result.violations:
@@ -364,8 +380,35 @@ class PromptFirewall:
                     "layer": "structural",
                     "detail": f"Blocked pattern matched: {name}",
                 })
-                break  # One violation per content block is sufficient
+                # Report all violations for full visibility (no early break)
 
+        return violations
+
+    @staticmethod
+    def _check_structural_injection(output: str) -> list[dict[str, str]]:
+        """Detect tool-call-like JSON structures in output regardless of formatting."""
+        violations: list[dict[str, str]] = []
+        import json as _json
+        try:
+            data = _json.loads(output)
+            if isinstance(data, dict):
+                keys = set(data.keys())
+                # Detect tool-call-like structures
+                tool_call_indicators = [
+                    {"name", "arguments"},
+                    {"function", "arguments"},
+                    {"tool_call", "id"},
+                    {"type", "name", "input"},
+                ]
+                for indicator in tool_call_indicators:
+                    if indicator.issubset(keys):
+                        violations.append({
+                            "layer": "structural_injection",
+                            "detail": f"Output JSON resembles a tool call (keys: {indicator})",
+                        })
+                        break
+        except (_json.JSONDecodeError, TypeError, ValueError):
+            pass
         return violations
 
     def _log_violations(self, result: FirewallResult, direction: str) -> None:

@@ -27,6 +27,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import structlog
+from cryptography.hazmat.primitives.hashes import SHA256
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from app.config import settings
 from app.core.redis import redis_pool
@@ -38,6 +40,29 @@ _SEQ_KEY = "agent:a2a:seq:{tenant_id}:{from_id}:{to_id}"
 
 # Maximum acceptable clock skew for message freshness (seconds)
 _MAX_CLOCK_SKEW_SECONDS = 300  # 5 minutes
+
+
+class A2ASecurityError(Exception):
+    """Raised when an A2A security operation fails."""
+
+
+# Atomic Lua script for replay detection.
+# Checks if the sequence number has already been seen and updates atomically.
+# Uses Redis server-side Lua (not Python eval).
+_REPLAY_CHECK_LUA = """
+local seen_key = KEYS[1]
+local seq_num = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+local last_seen = tonumber(redis.call('GET', seen_key) or '0')
+if seq_num <= last_seen then
+    return 1
+end
+redis.call('SET', seen_key, tostring(seq_num))
+if ttl > 0 then
+    redis.call('EXPIRE', seen_key, ttl)
+end
+return 0
+"""
 
 
 @dataclass
@@ -88,25 +113,30 @@ class A2ASecurityLayer:
         self.tenant_id = tenant_id
 
     def derive_signing_key(self, instance_id: str) -> bytes:
-        """Derive a per-instance ephemeral signing key.
+        """Derive a per-instance ephemeral signing key using HKDF.
 
-        Uses HMAC with the platform secret and instance ID for domain separation.
+        Uses HKDF-SHA256 with tenant+instance-specific info for proper
+        domain separation and key derivation.
         """
         source = settings.ENCRYPTION_KEY or settings.SECRET_KEY
-        return hmac.new(
-            source.encode(),
-            f"a2a-signing:{self.tenant_id}:{instance_id}".encode(),
-            hashlib.sha256,
-        ).digest()
+        hkdf = HKDF(
+            algorithm=SHA256(),
+            length=32,
+            salt=None,
+            info=f"a2a-signing-v1:{self.tenant_id}:{instance_id}".encode(),
+        )
+        return hkdf.derive(source.encode())
 
     def derive_encryption_key(self, instance_id: str) -> bytes:
-        """Derive a per-instance encryption key for AES-256-GCM."""
+        """Derive a per-instance encryption key for AES-256-GCM using HKDF."""
         source = settings.ENCRYPTION_KEY or settings.SECRET_KEY
-        return hmac.new(
-            source.encode(),
-            f"a2a-encryption:{self.tenant_id}:{instance_id}".encode(),
-            hashlib.sha256,
-        ).digest()
+        hkdf = HKDF(
+            algorithm=SHA256(),
+            length=32,
+            salt=None,
+            info=f"a2a-encryption-v1:{self.tenant_id}:{instance_id}".encode(),
+        )
+        return hkdf.derive(source.encode())
 
     async def sign_message(
         self,
@@ -134,7 +164,13 @@ class A2ASecurityLayer:
         is_encrypted = False
         if encrypt and settings.AGENT_A2A_ENCRYPTION_ENABLED:
             encryption_key = self.derive_encryption_key(to_instance)
-            final_content = self._encrypt_content(content_json, encryption_key)
+            msg_metadata = {
+                "from": from_instance,
+                "to": to_instance,
+                "ts": timestamp,
+                "seq": seq_num,
+            }
+            final_content = self._encrypt_content(content_json, encryption_key, msg_metadata=msg_metadata)
             is_encrypted = True
 
         msg = SecureMessage(
@@ -205,7 +241,13 @@ class A2ASecurityLayer:
             return msg.content
 
         encryption_key = self.derive_encryption_key(msg.to_instance)
-        return self._decrypt_content(msg.content, encryption_key)
+        msg_metadata = {
+            "from": msg.from_instance,
+            "to": msg.to_instance,
+            "ts": msg.timestamp,
+            "seq": msg.sequence_number,
+        }
+        return self._decrypt_content(msg.content, encryption_key, msg_metadata=msg_metadata)
 
     # ── Internal helpers ──────────────────────────────────────────────
 
@@ -223,7 +265,10 @@ class A2ASecurityLayer:
         return hmac.new(signing_key, payload.encode(), hashlib.sha256).hexdigest()
 
     async def _next_sequence_number(self, from_id: str, to_id: str) -> int:
-        """Get the next monotonic sequence number for a sender+recipient pair."""
+        """Get the next monotonic sequence number for a sender+recipient pair.
+
+        Raises A2ASecurityError if Redis is unavailable (fail-closed).
+        """
         seq_key = _SEQ_KEY.format(tenant_id=self.tenant_id, from_id=from_id, to_id=to_id)
         try:
             pipe = redis_pool.pipeline()
@@ -232,32 +277,42 @@ class A2ASecurityLayer:
             results = await pipe.execute()
             return results[0]
         except Exception:
-            logger.debug("a2a_seq_increment_failed", exc_info=True)
-            return 0
+            logger.error("a2a_seq_increment_failed", exc_info=True)
+            raise A2ASecurityError("Cannot generate sequence number: Redis unavailable")
 
     async def _check_replay(self, from_id: str, to_id: str, seq_num: int) -> bool:
-        """Check if a sequence number has already been seen (replay detection)."""
+        """Check if a sequence number has already been seen (replay detection).
+
+        Uses atomic Lua script to prevent TOCTOU race conditions.
+        Fail-closed: returns True (replay) on Redis failure or missing sequence.
+        """
         if seq_num <= 0:
-            return False  # Sequence tracking unavailable
+            # Fail-closed: missing sequence number is treated as replay
+            logger.warning("a2a_replay_check_no_sequence", from_id=from_id, to_id=to_id)
+            return True
         seen_key = f"agent:a2a:seen:{self.tenant_id}:{to_id}:{from_id}"
         try:
-            last_seen = await redis_pool.get(seen_key)
-            last_seq = int(last_seen) if last_seen else 0
-            if seq_num <= last_seq:
-                return True  # Replay or out-of-order
-            await redis_pool.setex(seen_key, 86400, str(seq_num))
-            return False
+            # Atomic Lua: check-and-set in a single Redis server-side operation
+            # (not Python eval — this is redis_pool.eval which runs Lua on Redis)
+            result = await redis_pool.eval(  # noqa: S307
+                _REPLAY_CHECK_LUA, 1, seen_key, str(seq_num), "86400",
+            )
+            return int(result) == 1
         except Exception:
-            logger.debug("a2a_replay_check_failed", exc_info=True)
-            return False
+            # Fail-closed: if Redis is down, reject the message
+            logger.error("a2a_replay_check_redis_failed", exc_info=True)
+            return True
 
-    def _encrypt_content(self, content_json: str, key: bytes) -> dict[str, Any]:
-        """Encrypt message content using AES-256-GCM."""
+    def _encrypt_content(self, content_json: str, key: bytes, *, msg_metadata: dict[str, Any]) -> dict[str, Any]:
+        """Encrypt message content using AES-256-GCM with authenticated additional data."""
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
         nonce = os.urandom(12)
         aesgcm = AESGCM(key)
-        ciphertext = aesgcm.encrypt(nonce, content_json.encode(), None)
+        # AAD binds the ciphertext to the message metadata, preventing
+        # tampering of from/to/timestamp fields without detection
+        aad = json.dumps(msg_metadata, sort_keys=True, separators=(",", ":")).encode()
+        ciphertext = aesgcm.encrypt(nonce, content_json.encode(), aad)
 
         return {
             "__encrypted": True,
@@ -265,13 +320,27 @@ class A2ASecurityLayer:
             "ciphertext": base64.b64encode(ciphertext).decode(),
         }
 
-    def _decrypt_content(self, encrypted_data: dict[str, Any], key: bytes) -> dict[str, Any]:
-        """Decrypt AES-256-GCM encrypted content."""
+    def _decrypt_content(self, encrypted_data: dict[str, Any], key: bytes, *, msg_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Decrypt AES-256-GCM encrypted content with AAD verification.
+
+        Falls back to AAD=None for backward compatibility with legacy messages.
+        """
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
         nonce = base64.b64decode(encrypted_data["nonce"])
         ciphertext = base64.b64decode(encrypted_data["ciphertext"])
         aesgcm = AESGCM(key)
+
+        # Try with AAD first (current format)
+        if msg_metadata is not None:
+            aad = json.dumps(msg_metadata, sort_keys=True, separators=(",", ":")).encode()
+            try:
+                plaintext = aesgcm.decrypt(nonce, ciphertext, aad)
+                return json.loads(plaintext.decode())
+            except Exception:
+                # Fall back to no-AAD for legacy messages
+                logger.warning("a2a_decrypt_aad_failed_trying_legacy")
+
         plaintext = aesgcm.decrypt(nonce, ciphertext, None)
         return json.loads(plaintext.decode())
 
@@ -305,4 +374,11 @@ class A2ASecurityLayer:
                 durable=True,
             )
         except Exception:
-            logger.debug("a2a_security_event_failed", exc_info=True)
+            logger.error("a2a_security_event_failed", exc_info=True)
+            from app.agents.security_dlq import enqueue_dead_letter
+            await enqueue_dead_letter("a2a_security", {
+                "tenant_id": self.tenant_id,
+                "from_instance": msg.from_instance,
+                "to_instance": msg.to_instance,
+                "issue": issue,
+            })

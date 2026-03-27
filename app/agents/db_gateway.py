@@ -24,6 +24,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+import sqlparse
 import structlog
 
 from app.config import settings
@@ -108,6 +109,25 @@ class QueryPolicy:
     max_result_bytes_per_query: int = 0  # 0 = use global default
     max_total_db_bytes_per_run: int = 0  # 0 = use global default
     require_where_clause: bool = True
+
+    def __post_init__(self):
+        """Coerce and validate types from untrusted JSON input."""
+        int_fields = [
+            "max_result_rows", "max_joins", "max_subqueries",
+            "statement_timeout_ms", "max_queries_per_minute",
+            "max_result_bytes_per_query", "max_total_db_bytes_per_run",
+        ]
+        for field_name in int_fields:
+            val = getattr(self, field_name)
+            if not isinstance(val, int):
+                try:
+                    setattr(self, field_name, int(val))
+                except (ValueError, TypeError):
+                    setattr(self, field_name, 0)
+
+        # Clamp statement_timeout_ms to sane range
+        if self.statement_timeout_ms != 0:
+            self.statement_timeout_ms = max(100, min(self.statement_timeout_ms, 300_000))
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> QueryPolicy:
@@ -262,6 +282,14 @@ class AgentDatabaseGateway:
                 f"Query length ({len(normalized)}) exceeds maximum ({self._MAX_QUERY_LENGTH})",
             )
 
+        # Check for multi-statement queries (prevents piggyback attacks)
+        statements = sqlparse.parse(normalized)
+        if len(statements) > 1:
+            raise GatewayViolationError(
+                "multi_statement",
+                "Multi-statement queries are not allowed",
+            )
+
         # Check forbidden patterns
         for pattern in _FORBIDDEN_SQL_PATTERNS:
             if pattern.search(normalized):
@@ -319,27 +347,65 @@ class AgentDatabaseGateway:
             )
 
     def _extract_table_names(self, query: str) -> set[str]:
-        """Extract table names from a SQL query (best-effort parsing).
+        """Extract ALL table names from a SQL query using AST parsing.
 
-        Handles: simple names, quoted identifiers, and schema-qualified names.
-        Examples: FROM users, FROM "Users", FROM public.users, FROM public."Users"
+        Uses sqlparse for robust extraction that handles CTEs, subqueries,
+        UNION, INSERT..SELECT, and other constructs that regex misses.
         """
         tables: set[str] = set()
-        # Match FROM/JOIN with optional schema prefix and optional quoting
-        pattern = re.compile(
-            r'\b(?:FROM|JOIN)\s+'
-            r'(?:(\w+)\s*\.\s*)?'        # optional schema.
-            r'(?:"([^"]+)"|(\w+))',       # quoted or unquoted table name
-            re.IGNORECASE,
-        )
-        for match in pattern.finditer(query):
-            schema = match.group(1)
-            table = match.group(2) or match.group(3)
-            if table:
-                tables.add(table.lower())
-                if schema:
-                    tables.add(f"{schema.lower()}.{table.lower()}")
+        parsed = sqlparse.parse(query)
+        for statement in parsed:
+            self._extract_tables_from_tokens(statement.tokens, tables)
         return tables
+
+    def _extract_tables_from_tokens(self, tokens, tables: set[str]) -> None:
+        """Recursively extract table names from parsed SQL tokens."""
+        from sqlparse.sql import Identifier, IdentifierList, Parenthesis, Where
+        from sqlparse import tokens as T
+
+        expect_table = False
+        for token in tokens:
+            if token.ttype is T.Keyword and token.normalized in (
+                "FROM", "JOIN", "INNER JOIN", "LEFT JOIN", "RIGHT JOIN",
+                "FULL JOIN", "CROSS JOIN", "LEFT OUTER JOIN", "RIGHT OUTER JOIN",
+                "FULL OUTER JOIN", "INTO", "UPDATE", "TABLE",
+            ):
+                expect_table = True
+                continue
+
+            if expect_table:
+                if isinstance(token, Identifier):
+                    name = token.get_real_name()
+                    if name:
+                        tables.add(name.lower())
+                        schema = token.get_parent_name()
+                        if schema:
+                            tables.add(f"{schema.lower()}.{name.lower()}")
+                    expect_table = False
+                elif isinstance(token, IdentifierList):
+                    for identifier in token.get_identifiers():
+                        if isinstance(identifier, Identifier):
+                            name = identifier.get_real_name()
+                            if name:
+                                tables.add(name.lower())
+                                schema = identifier.get_parent_name()
+                                if schema:
+                                    tables.add(f"{schema.lower()}.{name.lower()}")
+                    expect_table = False
+                elif token.ttype is not T.Whitespace:
+                    expect_table = False
+
+            # Recurse into subqueries, CTEs, WHERE clauses, etc.
+            if isinstance(token, (Parenthesis, Where)):
+                self._extract_tables_from_tokens(token.tokens, tables)
+            elif isinstance(token, Identifier):
+                # CTE definitions (e.g. "cte AS (SELECT ...)") contain a
+                # Parenthesis child with the subquery — recurse into it.
+                for child in token.tokens:
+                    if isinstance(child, Parenthesis):
+                        self._extract_tables_from_tokens(child.tokens, tables)
+            elif hasattr(token, 'tokens'):
+                self._extract_tables_from_tokens(token.tokens, tables)
 
     async def _check_rate_limit(self) -> None:
         """Check per-agent query rate limit via Redis Lua."""
@@ -370,9 +436,13 @@ class AgentDatabaseGateway:
     async def _set_statement_timeout(self, db: Any) -> None:
         """Set per-agent statement timeout (tighter than global 30s)."""
         timeout_ms = self.policy.statement_timeout_ms or settings.AGENT_DB_STATEMENT_TIMEOUT_MS
+        # Strict validation: must be positive int within sane range to prevent SQL injection
+        if not isinstance(timeout_ms, int) or timeout_ms < 100 or timeout_ms > 300_000:
+            timeout_ms = settings.AGENT_DB_STATEMENT_TIMEOUT_MS
         from sqlalchemy import text
         await db.execute(
-            text(f"SET LOCAL statement_timeout = '{timeout_ms}'"),
+            text("SET LOCAL statement_timeout = :timeout"),
+            {"timeout": str(timeout_ms)},
         )
 
     async def _track_bytes(self, result_bytes: int) -> None:
@@ -395,8 +465,12 @@ class AgentDatabaseGateway:
         except GatewayViolationError:
             raise
         except Exception:
-            # Best-effort tracking — don't block on Redis failure
-            logger.debug("agent_db_bytes_tracking_failed", exc_info=True)
+            # Fail-closed: block if we can't verify byte limits
+            logger.error("agent_db_bytes_tracking_failed", exc_info=True)
+            raise GatewayViolationError(
+                "byte_tracking_unavailable",
+                "Unable to track query bytes (Redis unavailable)",
+            )
 
     async def _emit_block_event(self, reason: str, query_hash: str) -> None:
         """Emit a security event when a query is blocked."""
@@ -415,4 +489,11 @@ class AgentDatabaseGateway:
                 durable=True,
             )
         except Exception:
-            logger.debug("agent_db_block_event_failed", exc_info=True)
+            logger.error("agent_db_block_event_failed", exc_info=True)
+            from app.agents.security_dlq import enqueue_dead_letter
+            await enqueue_dead_letter("db_query_blocked", {
+                "tenant_id": str(self.tenant_id),
+                "agent_id": self.agent_id,
+                "reason": reason,
+                "query_hash": query_hash,
+            })

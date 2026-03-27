@@ -24,13 +24,19 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import structlog
+from cryptography.hazmat.primitives.hashes import SHA256
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from app.config import settings
+from app.core.redis import redis_pool
 
 logger = structlog.stdlib.get_logger()
 
 # Default capability TTL (1 hour)
 _DEFAULT_CAPABILITY_TTL_SECONDS = 3600
+
+# Redis key for token revocation set (per-tenant)
+_REVOKED_TOKEN_KEY = "agent:cap:revoked:{tenant_id}"
 
 
 @dataclass
@@ -172,13 +178,39 @@ class CapabilityManager:
             ...
     """
 
-    def __init__(self):
-        self._signing_key = self._derive_signing_key()
+    # Key version for rotation support. Bump this and set the corresponding
+    # ENCRYPTION_KEY_V{N} env var to rotate signing keys. Tokens signed with
+    # older versions can still be verified via _previous_keys.
+    _CURRENT_KEY_VERSION = 1
 
-    def _derive_signing_key(self) -> bytes:
-        """Derive a signing key for capability tokens."""
-        source = settings.ENCRYPTION_KEY or settings.SECRET_KEY
-        return hashlib.sha256(f"capability-signing:{source}".encode()).digest()
+    def __init__(self):
+        self._signing_key = self._derive_signing_key(self._CURRENT_KEY_VERSION)
+        # Cache previous key version for rotation grace period
+        self._previous_keys: list[bytes] = []
+        if self._CURRENT_KEY_VERSION > 1:
+            self._previous_keys.append(
+                self._derive_signing_key(self._CURRENT_KEY_VERSION - 1)
+            )
+
+    @staticmethod
+    def _derive_signing_key(version: int = 1) -> bytes:
+        """Derive a signing key for capability tokens using HKDF.
+
+        Uses HKDF-SHA256 with a versioned info string for key rotation support.
+        """
+        # Try version-specific key first, fall back to primary
+        source = (
+            getattr(settings, f"ENCRYPTION_KEY_V{version}", "")
+            or settings.ENCRYPTION_KEY
+            or settings.SECRET_KEY
+        )
+        hkdf = HKDF(
+            algorithm=SHA256(),
+            length=32,
+            salt=None,
+            info=f"capability-token-signing-v{version}".encode(),
+        )
+        return hkdf.derive(source.encode())
 
     def create_token(
         self,
@@ -241,14 +273,28 @@ class CapabilityManager:
         )
 
     def verify_token(self, token: CapabilityToken) -> bool:
-        """Verify a token's signature and expiry."""
+        """Verify a token's signature and expiry.
+
+        Tries the current signing key first, then previous key versions
+        for rotation grace period support.
+        """
         if not token.signature:
             return False
         if time.time() > token.expires_at:
             logger.debug("capability_token_expired", token_id=token.token_id)
             return False
+        # Try current key
         expected_sig = self._sign(token)
-        return hmac.compare_digest(token.signature, expected_sig)
+        if hmac.compare_digest(token.signature, expected_sig):
+            return True
+        # Try previous key versions for rotation grace period
+        for prev_key in self._previous_keys:
+            expected_sig = self._sign(token, signing_key=prev_key)
+            if hmac.compare_digest(token.signature, expected_sig):
+                logger.info("capability_token_verified_with_previous_key",
+                            token_id=token.token_id)
+                return True
+        return False
 
     def verify_tool_access(self, token: CapabilityToken, tool_name: str) -> bool:
         """Check if a capability token allows access to a specific tool."""
@@ -279,12 +325,58 @@ class CapabilityManager:
             return False
         return data_idx <= token_level
 
+    async def revoke_token(self, token: CapabilityToken) -> None:
+        """Revoke a capability token by adding it to the Redis revocation set.
+
+        The revocation entry auto-expires when the token would have expired,
+        preventing unbounded growth of the revocation set.
+        """
+        key = _REVOKED_TOKEN_KEY.format(tenant_id=token.tenant_id)
+        remaining_ttl = max(1, int(token.expires_at - time.time()))
+        try:
+            pipe = redis_pool.pipeline()
+            pipe.sadd(key, token.token_id)
+            pipe.expire(key, remaining_ttl + 60)  # Buffer for clock skew
+            await pipe.execute()
+            logger.info(
+                "capability_token_revoked",
+                token_id=token.token_id,
+                tenant_id=token.tenant_id,
+            )
+        except Exception:
+            logger.error("capability_token_revocation_failed", exc_info=True)
+            raise CapabilityError("Failed to revoke token: Redis unavailable")
+
+    async def is_revoked(self, token: CapabilityToken) -> bool:
+        """Check if a token has been revoked.
+
+        Fail-closed: returns True (revoked) if Redis is unavailable.
+        """
+        key = _REVOKED_TOKEN_KEY.format(tenant_id=token.tenant_id)
+        try:
+            return await redis_pool.sismember(key, token.token_id)
+        except Exception:
+            logger.error("capability_revocation_check_failed", exc_info=True)
+            return True  # Fail-closed
+
+    async def verify_token_full(self, token: CapabilityToken) -> bool:
+        """Full verification including signature, expiry, and revocation check.
+
+        Use this async method at critical enforcement points (tool execution,
+        data access). The synchronous verify_token() is kept for hot paths
+        where revocation checking is not needed.
+        """
+        if not self.verify_token(token):
+            return False
+        return not await self.is_revoked(token)
+
     def token_hash(self, token: CapabilityToken) -> str:
         """Get the hash of a token for storage in DB."""
         return hashlib.sha256(token.signature.encode()).hexdigest()
 
-    def _sign(self, token: CapabilityToken) -> str:
+    def _sign(self, token: CapabilityToken, *, signing_key: bytes | None = None) -> str:
         """Create HMAC-SHA256 signature for a capability token."""
+        key = signing_key or self._signing_key
         payload = json.dumps({
             "token_id": token.token_id,
             "instance_id": token.instance_id,
@@ -295,7 +387,7 @@ class CapabilityManager:
             "expires_at": token.expires_at,
             "parent_token_id": token.parent_token_id,
         }, sort_keys=True, separators=(",", ":"))
-        return hmac.new(self._signing_key, payload.encode(), hashlib.sha256).hexdigest()
+        return hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()
 
 
 class CapabilityError(Exception):

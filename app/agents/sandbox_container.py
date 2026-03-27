@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import json
 import os
 import shutil
@@ -215,10 +216,19 @@ class NsjailSandbox:
         if not self.config.network_enabled:
             cmd.extend(["--disable_clone_newnet"])
         elif egress_allowlist:
+            # Enforce egress allowlist via iptables rules in a pre-exec script
+            egress_script = self._build_egress_script(egress_allowlist, sandbox_dir)
+            cmd.extend(["--setup_cmd", egress_script])
+            # Bind resolv.conf read-only to prevent DNS covert channels
+            cmd.extend(["--bindmount_ro", "/etc/resolv.conf"])
             logger.info(
-                "nsjail_network_egress_allowlist",
+                "nsjail_network_egress_enforced",
                 allowlist=egress_allowlist,
             )
+        else:
+            # Network enabled but no allowlist — block ALL egress as safety default
+            cmd.extend(["--disable_clone_newnet"])
+            logger.warning("nsjail_network_enabled_no_allowlist_blocking_all")
 
         # Execute python3 with wrapper (arguments as list, not string)
         cmd.extend(["--", "python3", wrapper_file])
@@ -231,16 +241,60 @@ class NsjailSandbox:
         return sandbox._build_wrapper()
 
     def _parse_cgroup_memory(self, sandbox_dir: str) -> float:
-        """Parse cgroup memory stats if available."""
-        try:
-            cgroup_path = os.path.join(sandbox_dir, ".cgroup_stats")
-            if os.path.exists(cgroup_path):
+        """Parse cgroup v2 memory peak if available.
+
+        Tries nsjail's cgroup path format first, then falls back to
+        the .cgroup_stats JSON file.
+        """
+        candidate_paths = [
+            f"/sys/fs/cgroup/nsjail/{os.path.basename(sandbox_dir)}/memory.peak",
+            os.path.join(sandbox_dir, ".cgroup_stats"),
+        ]
+        for cgroup_path in candidate_paths:
+            try:
+                if not os.path.exists(cgroup_path):
+                    continue
                 with open(cgroup_path) as f:
-                    data = json.load(f)
-                return data.get("memory_peak_mb", 0.0)
-        except Exception:
-            pass
+                    content = f.read().strip()
+                if not content:
+                    continue
+                if content.startswith("{"):
+                    data = json.loads(content)
+                    return data.get("memory_peak_mb", 0.0)
+                return int(content) / (1024 * 1024)
+            except Exception:
+                continue
         return 0.0
+
+    def _build_egress_script(self, allowlist: list[str], sandbox_dir: str) -> str:
+        """Build a shell script that sets up iptables rules for egress allowlisting.
+
+        Only valid IP addresses/CIDRs are added. Non-IP entries (hostnames)
+        are skipped with a log warning.
+        """
+        rules = ["#!/bin/sh", "set -e", "# Egress allowlist enforcement"]
+        rules.append("iptables -P OUTPUT DROP")
+        rules.append("iptables -A OUTPUT -o lo -j ACCEPT")
+        rules.append("# Allow established connections")
+        rules.append("iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT")
+
+        for entry in allowlist:
+            try:
+                network = ipaddress.ip_network(entry, strict=False)
+                rules.append(f"iptables -A OUTPUT -d {network} -j ACCEPT")
+            except ValueError:
+                logger.warning(
+                    "nsjail_egress_invalid_entry",
+                    entry=entry,
+                    reason="not a valid IP or CIDR, skipping",
+                )
+                rules.append(f"# Skipped invalid entry: {entry}")
+
+        script_path = os.path.join(sandbox_dir, "setup_egress.sh")
+        with open(script_path, "w") as f:
+            f.write("\n".join(rules) + "\n")
+        os.chmod(script_path, 0o755)
+        return script_path
 
 
 class ContainerSandboxRouter:

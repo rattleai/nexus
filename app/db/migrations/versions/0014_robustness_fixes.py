@@ -9,6 +9,7 @@ Create Date: 2026-03-24
 """
 
 from alembic import op
+from sqlalchemy import text
 
 revision = "0014_robustness_fixes"
 down_revision = "0013_agent_resilience"
@@ -17,11 +18,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.drop_constraint(
-        "agent_definition_memory_entries_definition_id_fkey",
-        "agent_definition_memory_entries",
-        type_="foreignkey",
-    )
+    op.execute(text(
+        "ALTER TABLE agent_definition_memory_entries "
+        "DROP CONSTRAINT IF EXISTS agent_definition_memory_entries_definition_id_fkey"
+    ))
     op.create_foreign_key(
         "agent_definition_memory_entries_definition_id_fkey",
         "agent_definition_memory_entries",
@@ -33,11 +33,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "agent_definition_memory_entries_definition_id_fkey",
-        "agent_definition_memory_entries",
-        type_="foreignkey",
-    )
+    op.execute(text(
+        "ALTER TABLE agent_definition_memory_entries "
+        "DROP CONSTRAINT IF EXISTS agent_definition_memory_entries_definition_id_fkey"
+    ))
     op.create_foreign_key(
         "agent_definition_memory_entries_definition_id_fkey",
         "agent_definition_memory_entries",

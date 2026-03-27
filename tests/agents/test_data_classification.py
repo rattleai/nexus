@@ -227,3 +227,23 @@ class TestDataExfiltrationAttacks:
         # Email and phone are INTERNAL-level PII — only redacted when
         # max_level < INTERNAL. At INTERNAL they stay visible.
         assert count >= 1
+
+
+# ── TestCreditCardReDoS ──────────────────────────────────────────────
+
+
+class TestCreditCardReDoS:
+    """Validate that credit card regex does not exhibit catastrophic backtracking."""
+
+    def test_credit_card_regex_no_redos(self):
+        """Pattern '1 ' * 100 should complete quickly (under 100ms), not hang."""
+        import time
+
+        from app.agents.data_classification import _CONFIDENTIAL_PII_PATTERNS
+
+        text = "1 " * 100
+        start = time.monotonic()
+        _CONFIDENTIAL_PII_PATTERNS["credit_card"].search(text)
+        elapsed_ms = (time.monotonic() - start) * 1000
+
+        assert elapsed_ms < 100, f"Credit card regex took {elapsed_ms:.1f}ms (ReDoS risk)"

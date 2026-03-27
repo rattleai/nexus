@@ -22,7 +22,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.db.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin, VersionMixin
 
@@ -42,6 +42,21 @@ class InstanceStatus(enum.StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+# Valid state transitions for agent instances.
+# Enforced by AgentInstance.validate_status_transition().
+VALID_INSTANCE_TRANSITIONS: dict[InstanceStatus, set[InstanceStatus]] = {
+    InstanceStatus.PENDING: {InstanceStatus.RUNNING, InstanceStatus.CANCELLED, InstanceStatus.FAILED},
+    InstanceStatus.RUNNING: {
+        InstanceStatus.COMPLETED, InstanceStatus.FAILED,
+        InstanceStatus.CANCELLED, InstanceStatus.PAUSED,
+    },
+    InstanceStatus.PAUSED: {InstanceStatus.RUNNING, InstanceStatus.CANCELLED, InstanceStatus.FAILED},
+    InstanceStatus.COMPLETED: set(),
+    InstanceStatus.FAILED: set(),
+    InstanceStatus.CANCELLED: set(),
+}
 
 
 class SessionStatus(enum.StrEnum):
@@ -212,6 +227,21 @@ class AgentInstance(Base, TimestampMixin):
     sessions: Mapped[list[AgentSession]] = relationship(
         back_populates="instance", foreign_keys="AgentSession.instance_id", lazy="raise",
     )
+
+    @validates("status")
+    def validate_status_transition(self, key: str, new_status: InstanceStatus) -> InstanceStatus:
+        """Enforce valid state machine transitions for agent instances."""
+        # Skip validation on initial creation (no previous state)
+        state = self.__dict__.get("status")
+        if state is None:
+            return new_status
+        old_status = InstanceStatus(state) if isinstance(state, str) else state
+        valid_next = VALID_INSTANCE_TRANSITIONS.get(old_status)
+        if valid_next is not None and new_status not in valid_next:
+            raise ValueError(
+                f"Invalid agent instance status transition: {old_status.value} -> {new_status.value}"
+            )
+        return new_status
 
 
 # ── Agent Session ──────────────────────────────────────────────────────
