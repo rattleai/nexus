@@ -52,12 +52,15 @@ export function InstanceMonitorItem({
     <TooltipProvider delayDuration={300}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
+          <div
+            role="button"
+            tabIndex={0}
             onClick={() => openDrawer(instance.id)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") openDrawer(instance.id) }}
             className={cn(
               "flex items-center gap-2 rounded-md border px-2.5 py-1.5",
               "bg-background hover:bg-accent/50 transition-colors",
-              "text-left shrink-0 max-w-[220px]",
+              "text-left shrink-0 max-w-[220px] cursor-pointer",
             )}
           >
             {/* Status dot */}
@@ -100,7 +103,7 @@ export function InstanceMonitorItem({
                 )}
               </Button>
             )}
-          </button>
+          </div>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
           <div className="space-y-0.5">
