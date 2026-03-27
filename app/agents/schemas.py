@@ -113,6 +113,8 @@ class AgentDefinitionResponse(BaseModel):
     max_concurrent_instances: int
     memory_config: dict[str, Any]
     governance_policy: dict[str, Any]
+    db_access_policy: dict[str, Any] = Field(default_factory=dict)
+    behavioral_baseline: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)
     created_at: datetime
     updated_at: datetime
@@ -336,6 +338,8 @@ class TenantToolResponse(BaseModel):
     output_schema: dict[str, Any]
     endpoint_url: str | None
     auth_config: dict[str, Any] = {}
+    schema_hash: str | None = None
+    trust_level: str = "untrusted"
     is_active: bool
     health_check_url: str | None
     metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)

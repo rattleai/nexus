@@ -155,6 +155,47 @@ class AgentExecutor:
         if session.messages:
             messages = list(session.messages) + messages
 
+        # ── Security Layer Integration ────────────────────────────────
+
+        # Check tenant circuit breaker (Phase 2.4)
+        from app.agents.governance import GovernanceEngine as _GovEngine
+        cb_open, cb_reason = await _GovEngine.check_tenant_circuit_breaker(tenant_id)
+        if cb_open:
+            raise AgentExecutionError(f"Agent execution paused: {cb_reason}")
+
+        # Create capability token (Phase 1.1)
+        from app.agents.capabilities import CapabilityScope, capability_manager
+        cap_scope = CapabilityScope(
+            tools=definition.allowed_tools or [],
+            max_spend_usd=float(definition.governance_policy.get("max_spend_per_run_usd", 0) or 0),
+            can_delegate=True,
+            can_access_external_tools=True,
+        )
+        cap_token = capability_manager.create_token(
+            instance_id=str(instance.id),
+            tenant_id=str(tenant_id),
+            agent_id=str(definition_id),
+            scope=cap_scope,
+        )
+        instance.capability_token_hash = capability_manager.token_hash(cap_token)
+        instance.capability_scope = cap_scope.to_dict()
+
+        # Run prompt firewall on input messages (Phase 0.2)
+        canary_token = ""
+        from app.ai.prompt_firewall import PromptFirewall
+        firewall = PromptFirewall(
+            tenant_id=str(tenant_id),
+            agent_id=str(definition_id),
+            instance_id=str(instance.id),
+            firewall_level=definition.governance_policy.get("prompt_firewall_level", "standard"),
+        )
+        fw_result = firewall.scan_input(messages)
+        canary_token = fw_result.canary_token
+        if fw_result.should_block:
+            raise AgentExecutionError(
+                f"Prompt firewall blocked input: {fw_result.violations[0]['detail'][:200]}"
+            )
+
         # Set up tool executor and governance (created once, not per-call)
         tool_executor = self._build_tool_executor(definition, tenant_id)
         governance_checker = self._build_governance_checker(definition, tenant_id)
@@ -207,6 +248,42 @@ class AgentExecutor:
             session.messages = new_messages
 
             await self.db.commit()
+
+            # Post-run security: canary check, threat detection, baseline update
+            import contextlib as _ctxlib
+
+            # Check canary token leak in output (Phase 0.2)
+            if canary_token and result.output:
+                with _ctxlib.suppress(Exception):
+                    output_fw = firewall.scan_output(result.output, canary=canary_token)
+                    if not output_fw.passed:
+                        logger.warning(
+                            "canary_token_leaked",
+                            instance_id=str(instance.id),
+                            violations=[v["layer"] for v in output_fw.violations],
+                        )
+
+            # Threat detection scoring (Phase 2.1)
+            with _ctxlib.suppress(Exception):
+                from app.agents.threat_detection import RunMetrics, ThreatDetectionEngine
+                td_engine = ThreatDetectionEngine(
+                    tenant_id=str(tenant_id),
+                    agent_id=str(definition_id),
+                )
+                run_metrics = RunMetrics(
+                    steps=len(result.steps),
+                    tokens=result.total_tokens,
+                    cost_usd=result.total_cost_usd,
+                    tool_calls=sum(1 for s in result.steps if s.action == "tool_call"),
+                    tools_used=list({s.tool_name for s in result.steps if s.tool_name}),
+                    duration_ms=result.total_duration_ms,
+                )
+                anomaly = await td_engine.score_run(str(instance.id), run_metrics)
+                if anomaly.action == "suspend":
+                    instance.status = InstanceStatus.PAUSED
+                    instance.error = f"Suspended by threat detection (score={anomaly.total_score:.1f})"
+                # Update behavioral baseline
+                await td_engine.update_baseline(run_metrics)
 
             # Emit completion event (best-effort — already committed)
             try:

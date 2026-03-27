@@ -131,6 +131,12 @@ class AgentDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Version
     # Governance policy (inline or reference to AgentPolicy)
     governance_policy: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
 
+    # Database access policy — controls which tables/patterns the agent can query
+    db_access_policy: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+
+    # Behavioral baseline for threat detection (auto-populated after runs)
+    behavioral_baseline: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+
     # Arbitrary metadata
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, server_default="{}")
 
@@ -184,6 +190,10 @@ class AgentInstance(Base, TimestampMixin):
 
     # Idempotency key for deduplication
     idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Capability token hash and scope for capability-based privilege system
+    capability_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    capability_scope: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
 
     # Parent workflow run (if spawned by orchestrator)
     workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -405,6 +415,13 @@ class TenantTool(Base, TimestampMixin, SoftDeleteMixin):
     # External endpoint (for tenant-hosted tools)
     endpoint_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     auth_config: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+
+    # Supply chain verification
+    schema_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tool_signature_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trust_level: Mapped[str] = mapped_column(
+        String(20), default="untrusted", server_default="untrusted",
+    )  # "verified", "trusted", "untrusted"
 
     # Health/status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")

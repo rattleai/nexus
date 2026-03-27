@@ -176,6 +176,43 @@ class Settings(BaseSettings):
     AGENT_MEMORY_VECTOR_ENABLED: bool = False  # Requires pgvector extension
     AGENT_MEMORY_VECTOR_DIMENSIONS: int = 1536
 
+    # ── Agent Security (Phase 0-2) ──────────────────────────
+    # Phase 0 — DB Gateway
+    AGENT_DB_MAX_QUERIES_PER_MINUTE: int = 60
+    AGENT_DB_MAX_RESULT_ROWS: int = 1000
+    AGENT_DB_MAX_RESULT_BYTES: int = 5_242_880  # 5 MB
+    AGENT_DB_MAX_JOINS: int = 3
+    AGENT_DB_STATEMENT_TIMEOUT_MS: int = 10_000
+    AGENT_DB_POOL_PARTITION_PCT: int = 40  # % of pool reserved for agents
+
+    # Phase 0 — Prompt Firewall
+    PROMPT_FIREWALL_ENABLED: bool = True
+    PROMPT_FIREWALL_CLASSIFIER_ENABLED: bool = False  # LLM classifier (costs tokens)
+    PROMPT_FIREWALL_CLASSIFIER_MODEL: str = "claude-haiku-4-5-20251001"
+    PROMPT_FIREWALL_CANARY_ENABLED: bool = True
+    PROMPT_FIREWALL_FAIL_MODE: str = "log"  # "log" or "block"
+
+    # Phase 1 — Sandbox
+    AGENT_SANDBOX_BACKEND: str = "auto"  # "nsjail", "subprocess", "auto"
+    AGENT_SANDBOX_STRICT: bool = False  # Reject if nsjail unavailable
+
+    # Phase 1 — A2A Security
+    AGENT_A2A_SIGNING_ENABLED: bool = True
+    AGENT_A2A_ENCRYPTION_ENABLED: bool = False
+
+    # Phase 1 — Tool Verification
+    AGENT_TOOL_SCHEMA_VERIFICATION: bool = True
+    AGENT_TOOL_BEHAVIORAL_MONITORING: bool = True
+
+    # Phase 2 — Threat Detection
+    AGENT_THREAT_DETECTION_ENABLED: bool = True
+    AGENT_THREAT_ANOMALY_WARN_SIGMA: float = 2.0
+    AGENT_THREAT_ANOMALY_SUSPEND_SIGMA: float = 3.0
+
+    # Phase 2 — Data Classification
+    DATA_CLASSIFICATION_ENABLED: bool = False
+    DATA_CLASSIFICATION_DEFAULT_LEVEL: str = "INTERNAL"
+
     # Durable Event Bus (Redis Streams)
     EVENT_BUS_ENABLED: bool = True
     EVENT_BUS_STREAM_PREFIX: str = "events"

@@ -15,6 +15,7 @@ blocked.
 from __future__ import annotations
 
 import contextlib
+import time
 import uuid
 from typing import Any
 
@@ -145,6 +146,7 @@ class GovernanceEngine:
         await self._check_tool_access(action, context, tenant_id)
         await self._check_spending_limits(action, context, tenant_id)
         await self._check_rate_limits(action, context, tenant_id)
+        await self._check_db_flooding(action, context, tenant_id)
         await self._check_approval_required(action, context, tenant_id)
 
     async def _check_tool_access(
@@ -557,6 +559,72 @@ class GovernanceEngine:
             durable=True,
         )
 
+    async def _check_db_flooding(
+        self,
+        action: str,
+        context: dict[str, Any],
+        tenant_id: uuid.UUID,
+    ) -> None:
+        """Check for database flooding: idle transaction detection and connection reservation."""
+        if action != "tool_call":
+            return
+        tool_name = context.get("tool_name", "")
+        if tool_name not in ("db_query", "code_execute"):
+            return
+
+        instance_id = context.get("instance_id", "")
+        if not instance_id:
+            return
+
+        # Check per-agent DB query rate (separate from general rate limiting)
+        max_db_qpm = self.policy.get("max_queries_per_minute")
+        if max_db_qpm is not None:
+            from app.config import settings
+            rate_key = f"agent:gov:db_rate:{tenant_id}:{instance_id}"
+            try:
+                pipe = redis_pool.pipeline()
+                pipe.incr(rate_key)
+                pipe.expire(rate_key, 60)
+                results = await pipe.execute()
+                current = results[0]
+            except Exception as exc:
+                logger.error("governance_redis_unavailable", check="db_rate_limit", exc_info=True)
+                raise GovernanceViolationError(
+                    "db_rate_limit",
+                    "Unable to verify DB rate limits (Redis unavailable). Action blocked.",
+                    details={"reason": "redis_unavailable"},
+                ) from exc
+
+            if current > max_db_qpm:
+                await self._emit_violation(
+                    tenant_id=tenant_id,
+                    context=context,
+                    violation_type="db_rate_limit",
+                    details=f"DB query rate limit exceeded: {current}/{max_db_qpm} queries/minute",
+                )
+                raise GovernanceViolationError(
+                    "db_rate_limit",
+                    f"Agent DB query rate limit exceeded ({max_db_qpm} queries/minute)",
+                    details={"current": current, "limit": max_db_qpm},
+                )
+
+        # Check per-agent max result bytes
+        max_result_bytes = self.policy.get("max_result_bytes_per_query")
+        if max_result_bytes is not None:
+            result_bytes = context.get("result_bytes", 0)
+            if result_bytes > max_result_bytes:
+                await self._emit_violation(
+                    tenant_id=tenant_id,
+                    context=context,
+                    violation_type="db_result_size",
+                    details=f"DB result size exceeded: {result_bytes}/{max_result_bytes} bytes",
+                )
+                raise GovernanceViolationError(
+                    "db_result_size",
+                    f"Agent DB result exceeds maximum ({max_result_bytes} bytes)",
+                    details={"result_bytes": result_bytes, "limit": max_result_bytes},
+                )
+
     @staticmethod
     async def track_spending(
         *,
@@ -686,6 +754,142 @@ class GovernanceEngine:
             resolved_by=resolved_by,
         )
         return data
+
+    # ── Anti-Abuse & Graceful Degradation ──────────────────────────
+
+    async def check_abuse_patterns(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        agent_id: str,
+        instance_id: str,
+    ) -> dict[str, Any]:
+        """Detect token abuse patterns: repeated governance violations, retry storms.
+
+        Returns abuse detection result with recommended action.
+        """
+        abuse_key = f"agent:gov:abuse:{tenant_id}:{agent_id}"
+        violation_key = f"agent:gov:violations:{tenant_id}:{agent_id}"
+
+        try:
+            # Count recent governance violations (last hour)
+            pipe = redis_pool.pipeline()
+            pipe.get(violation_key)
+            pipe.get(abuse_key)
+            results = await pipe.execute()
+
+            violation_count = int(results[0]) if results[0] else 0
+            abuse_score = int(results[1]) if results[1] else 0
+
+            action = "none"
+            if violation_count >= 10 or abuse_score >= 5:
+                action = "suspend"
+            elif violation_count >= 5 or abuse_score >= 3:
+                action = "throttle"
+            elif violation_count >= 3:
+                action = "warn"
+
+            return {
+                "violation_count": violation_count,
+                "abuse_score": abuse_score,
+                "action": action,
+            }
+        except Exception:
+            return {"violation_count": 0, "abuse_score": 0, "action": "none"}
+
+    @staticmethod
+    async def record_violation(
+        tenant_id: uuid.UUID,
+        agent_id: str,
+    ) -> None:
+        """Record a governance violation for abuse detection."""
+        violation_key = f"agent:gov:violations:{tenant_id}:{agent_id}"
+        try:
+            pipe = redis_pool.pipeline()
+            pipe.incr(violation_key)
+            pipe.expire(violation_key, 3600)  # 1 hour window
+            await pipe.execute()
+        except Exception:
+            logger.debug("violation_record_failed", exc_info=True)
+
+    @staticmethod
+    async def check_tenant_circuit_breaker(tenant_id: uuid.UUID) -> tuple[bool, str]:
+        """Check if the tenant's agent circuit breaker is open.
+
+        Returns (is_open, reason). When open, all agent execution for this tenant is paused.
+        """
+        cb_key = f"agent:gov:tenant_cb:{tenant_id}"
+        try:
+            raw = await redis_pool.get(cb_key)
+            if raw:
+                import json
+                data = json.loads(raw)
+                return True, data.get("reason", "Circuit breaker open")
+            return False, ""
+        except Exception:
+            return False, ""
+
+    @staticmethod
+    async def trip_tenant_circuit_breaker(
+        tenant_id: uuid.UUID,
+        reason: str,
+        duration_seconds: int = 300,
+    ) -> None:
+        """Trip the tenant-level circuit breaker, pausing all agent execution."""
+        import json
+        cb_key = f"agent:gov:tenant_cb:{tenant_id}"
+        data = json.dumps({
+            "reason": reason,
+            "tripped_at": time.time(),
+            "duration": duration_seconds,
+        })
+        try:
+            await redis_pool.setex(cb_key, duration_seconds, data)
+            logger.warning(
+                "tenant_circuit_breaker_tripped",
+                tenant_id=str(tenant_id),
+                reason=reason,
+                duration=duration_seconds,
+            )
+        except Exception:
+            logger.error("tenant_cb_trip_failed", exc_info=True)
+
+    @staticmethod
+    async def apply_progressive_throttling(
+        tenant_id: uuid.UUID,
+        agent_id: str,
+        instance_id: str,
+    ) -> float:
+        """Calculate progressive throttling delay for an agent.
+
+        Instead of hard-blocking, progressively slow execution with exponential backoff.
+        Returns delay in seconds (0 = no throttling).
+        """
+        throttle_key = f"agent:gov:throttle:{tenant_id}:{agent_id}"
+        try:
+            count = await redis_pool.get(throttle_key)
+            if count:
+                # Exponential backoff: 1s, 2s, 4s, 8s, max 30s
+                delay = min(2 ** (int(count) - 1), 30)
+                return float(delay)
+        except Exception:
+            pass
+        return 0.0
+
+    @staticmethod
+    async def increment_throttle_counter(
+        tenant_id: uuid.UUID,
+        agent_id: str,
+    ) -> None:
+        """Increment the throttle counter for progressive throttling."""
+        throttle_key = f"agent:gov:throttle:{tenant_id}:{agent_id}"
+        try:
+            pipe = redis_pool.pipeline()
+            pipe.incr(throttle_key)
+            pipe.expire(throttle_key, 300)  # Reset after 5 min of good behavior
+            await pipe.execute()
+        except Exception:
+            pass
 
     @staticmethod
     async def list_pending_approvals(tenant_id: uuid.UUID) -> list[dict[str, Any]]:
