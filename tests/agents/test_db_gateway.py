@@ -265,7 +265,8 @@ class TestSQLInjectionAttacks:
         gw = _make_gateway()
         with pytest.raises(GatewayViolationError) as exc_info:
             gw._validate_query("SELECT 1; DROP TABLE users")
-        assert exc_info.value.violation_type == "forbidden_pattern"
+        # sqlparse multi-statement check runs before forbidden patterns
+        assert exc_info.value.violation_type == "multi_statement"
 
     def test_pg_sleep_injection(self):
         gw = _make_gateway()
@@ -280,3 +281,116 @@ class TestSQLInjectionAttacks:
                 "SELECT table_name FROM information_schema.columns WHERE 1=1"
             )
         assert exc_info.value.violation_type == "forbidden_pattern"
+
+
+# ── TestQueryPolicyFromDict ──────────────────────────────────────────
+
+
+class TestQueryPolicyFromDict:
+    """Validate QueryPolicy.from_dict coercion, clamping, and SQL injection safety."""
+
+    def test_sql_injection_in_statement_timeout(self):
+        """SQL injection string in statement_timeout_ms is coerced to safe int or fallback."""
+        policy = QueryPolicy.from_dict({"statement_timeout_ms": "1'; DROP TABLE x; --"})
+        # The string is not a valid int, so it falls back to 0
+        assert isinstance(policy.statement_timeout_ms, int)
+        assert policy.statement_timeout_ms == 0
+
+    def test_non_int_string_coerced(self):
+        """Numeric string is coerced to int."""
+        policy = QueryPolicy.from_dict({"statement_timeout_ms": "5000"})
+        assert policy.statement_timeout_ms == 5000
+
+    def test_non_int_float_coerced(self):
+        """Float value is coerced to int (truncated)."""
+        policy = QueryPolicy.from_dict({"statement_timeout_ms": 5000.7})
+        assert isinstance(policy.statement_timeout_ms, int)
+        assert policy.statement_timeout_ms == 5000
+
+    def test_non_int_none_coerced(self):
+        """None value is coerced to fallback 0."""
+        policy = QueryPolicy.from_dict({"statement_timeout_ms": None})
+        assert policy.statement_timeout_ms == 0
+
+    def test_statement_timeout_clamped_lower(self):
+        """Values below 100ms are clamped to 100."""
+        policy = QueryPolicy.from_dict({"statement_timeout_ms": 10})
+        assert policy.statement_timeout_ms == 100
+
+    def test_statement_timeout_clamped_upper(self):
+        """Values above 300000ms are clamped to 300000."""
+        policy = QueryPolicy.from_dict({"statement_timeout_ms": 999_999})
+        assert policy.statement_timeout_ms == 300_000
+
+    def test_statement_timeout_zero_not_clamped(self):
+        """Zero means 'use global default' and should not be clamped."""
+        policy = QueryPolicy.from_dict({"statement_timeout_ms": 0})
+        assert policy.statement_timeout_ms == 0
+
+    def test_statement_timeout_within_range(self):
+        """Valid values within range are preserved."""
+        policy = QueryPolicy.from_dict({"statement_timeout_ms": 5000})
+        assert policy.statement_timeout_ms == 5000
+
+
+# ── TestMultiStatementBlocking ───────────────────────────────────────
+
+
+class TestMultiStatementBlocking:
+    """Validate AST-based multi-statement query detection via sqlparse."""
+
+    def test_multi_statement_blocked(self):
+        gw = _make_gateway()
+        with pytest.raises(GatewayViolationError) as exc_info:
+            gw._validate_query("SELECT 1; DROP TABLE users")
+        assert exc_info.value.violation_type == "multi_statement"
+
+
+# ── TestAdvancedTableExtraction ──────────────────────────────────────
+
+
+class TestAdvancedTableExtraction:
+    """Validate AST-based table extraction for CTEs, subqueries, and UNIONs."""
+
+    def _extract(self, query: str) -> set[str]:
+        gw = _make_gateway()
+        return gw._extract_table_names(query)
+
+    def test_cte_table_extraction(self):
+        """CTE (WITH clause) should extract the referenced source table."""
+        tables = self._extract(
+            "WITH cte AS (SELECT * FROM secret_table) SELECT * FROM cte"
+        )
+        assert "secret_table" in tables
+
+    def test_subquery_in_where_table_extraction(self):
+        """Subquery in WHERE clause should extract both outer and inner tables."""
+        tables = self._extract(
+            "SELECT * FROM public_table WHERE id IN (SELECT id FROM secret_table)"
+        )
+        assert "public_table" in tables
+        assert "secret_table" in tables
+
+    def test_union_table_extraction(self):
+        """UNION queries should extract tables from both sides."""
+        tables = self._extract(
+            "SELECT name FROM users WHERE id = 1 UNION SELECT password FROM admins"
+        )
+        assert "users" in tables
+        assert "admins" in tables
+
+
+# ── TestByteTrackingFailClosed ───────────────────────────────────────
+
+
+class TestByteTrackingFailClosed:
+    """Validate that byte tracking Redis failure raises GatewayViolationError (fail-closed)."""
+
+    @pytest.mark.asyncio
+    async def test_redis_failure_raises_violation(self, mock_redis_pool):
+        """Redis failure in _track_bytes raises GatewayViolationError."""
+        mock_redis_pool.eval = AsyncMock(side_effect=Exception("Redis connection refused"))
+        gw = _make_gateway()
+        with pytest.raises(GatewayViolationError) as exc_info:
+            await gw._track_bytes(1024)
+        assert exc_info.value.violation_type == "byte_tracking_unavailable"

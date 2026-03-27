@@ -361,3 +361,73 @@ class TestThreatAttacks:
 
         # z-score for cost = (50-0.5)/0.1 = 495 → suspend
         assert score.action == "suspend"
+
+
+# ── TestNonFiniteMetrics ────────────────────────────────────────────
+
+
+class TestNonFiniteMetrics:
+    """Validate that NaN and Infinity metric values are safely skipped."""
+
+    @pytest.mark.asyncio
+    async def test_nan_metric_skipped(self):
+        """NaN metric value is skipped without crashing."""
+        baseline = _make_baseline()
+        mock_redis = _make_redis_with_baseline(baseline)
+
+        with patch("app.agents.threat_detection.redis_pool", mock_redis):
+            engine = _make_engine()
+            metrics = RunMetrics(
+                steps=10, tokens=1000, cost_usd=float("nan"),
+                tool_calls=5, duration_ms=5000,
+            )
+            # Should not raise — NaN is safely skipped
+            score = await engine.score_run("inst-1", metrics)
+
+        # "cost" should NOT appear in factors since NaN was skipped
+        assert "cost" not in score.factors
+
+    @pytest.mark.asyncio
+    async def test_infinity_metric_skipped(self):
+        """Infinity metric value is skipped without crashing."""
+        baseline = _make_baseline()
+        mock_redis = _make_redis_with_baseline(baseline)
+
+        with patch("app.agents.threat_detection.redis_pool", mock_redis):
+            engine = _make_engine()
+            metrics = RunMetrics(
+                steps=10, tokens=1000, cost_usd=float("inf"),
+                tool_calls=5, duration_ms=5000,
+            )
+            # Should not raise — Infinity is safely skipped
+            score = await engine.score_run("inst-1", metrics)
+
+        assert "cost" not in score.factors
+
+
+# ── TestDLQFallback ─────────────────────────────────────────────────
+
+
+class TestDLQFallback:
+    """Validate DLQ fallback when threat event emission fails."""
+
+    @pytest.mark.asyncio
+    async def test_dlq_used_when_emit_fails(self):
+        """When event emission fails, the event is enqueued to the DLQ."""
+        baseline = _make_baseline()
+        mock_redis = _make_redis_with_baseline(baseline)
+
+        with (
+            patch("app.agents.threat_detection.redis_pool", mock_redis),
+            patch("app.core.events.emit", new_callable=AsyncMock, side_effect=Exception("event bus down")),
+            patch("app.agents.security_dlq.enqueue_dead_letter", new_callable=AsyncMock) as mock_dlq,
+        ):
+            engine = _make_engine(warn_sigma=2.0, suspend_sigma=3.0)
+            # Steps z-score = (500-10)/2 = 245 → triggers suspend → emits event
+            metrics = RunMetrics(steps=500, tokens=1000, cost_usd=0.5, tool_calls=5, duration_ms=5000)
+            score = await engine.score_run("inst-1", metrics)
+
+        assert score.action == "suspend"
+        mock_dlq.assert_called_once()
+        call_args = mock_dlq.call_args
+        assert call_args[0][0] == "threat_detected"

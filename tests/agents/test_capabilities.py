@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -302,3 +302,151 @@ class TestConfusedDeputyAttacks:
 
         # Signature now mismatches because the scope changed
         assert manager.verify_token(token) is False
+
+
+# ── TestHKDFKeyDerivation ────────────────────────────────────────────
+
+
+class TestHKDFKeyDerivation:
+    """HKDF key derivation produces deterministic output and proper domain separation."""
+
+    def test_deterministic_output(self):
+        """Same inputs produce the same derived key."""
+        key1 = CapabilityManager._derive_signing_key(version=1)
+        key2 = CapabilityManager._derive_signing_key(version=1)
+        assert key1 == key2
+
+    def test_different_versions_different_keys(self):
+        """Different key versions produce different derived keys."""
+        key1 = CapabilityManager._derive_signing_key(version=1)
+        key2 = CapabilityManager._derive_signing_key(version=2)
+        assert key1 != key2
+
+
+# ── TestTokenRevocation ──────────────────────────────────────────────
+
+
+class TestTokenRevocation:
+    """Token revocation via Redis and fail-closed behavior."""
+
+    @pytest.mark.asyncio
+    async def test_revoked_token_detected(self):
+        """Revoked token fails is_revoked check."""
+        mock_redis = MagicMock()
+        pipeline = MagicMock()
+        pipeline.execute = AsyncMock(return_value=[1, True])
+        mock_redis.pipeline.return_value = pipeline
+        mock_redis.sismember = AsyncMock(return_value=True)
+
+        with patch("app.agents.capabilities.redis_pool", mock_redis):
+            manager = _make_manager()
+            token = _make_token(manager)
+            is_revoked = await manager.is_revoked(token)
+
+        assert is_revoked is True
+
+    @pytest.mark.asyncio
+    async def test_fail_closed_on_redis_failure(self):
+        """Redis failure during revocation check returns True (fail-closed)."""
+        mock_redis = MagicMock()
+        mock_redis.sismember = AsyncMock(side_effect=ConnectionError("Redis down"))
+
+        with patch("app.agents.capabilities.redis_pool", mock_redis):
+            manager = _make_manager()
+            token = _make_token(manager)
+            is_revoked = await manager.is_revoked(token)
+
+        assert is_revoked is True
+
+    @pytest.mark.asyncio
+    async def test_non_revoked_token(self):
+        """Non-revoked token returns False."""
+        mock_redis = MagicMock()
+        mock_redis.sismember = AsyncMock(return_value=False)
+
+        with patch("app.agents.capabilities.redis_pool", mock_redis):
+            manager = _make_manager()
+            token = _make_token(manager)
+            is_revoked = await manager.is_revoked(token)
+
+        assert is_revoked is False
+
+
+# ── TestVerifyTokenFull ──────────────────────────────────────────────
+
+
+class TestVerifyTokenFull:
+    """verify_token_full combines signature + expiry + revocation check."""
+
+    @pytest.mark.asyncio
+    async def test_valid_non_revoked_token(self):
+        """Valid, non-revoked token passes full verification."""
+        mock_redis = MagicMock()
+        mock_redis.sismember = AsyncMock(return_value=False)
+
+        with patch("app.agents.capabilities.redis_pool", mock_redis):
+            manager = _make_manager()
+            token = _make_token(manager)
+            result = await manager.verify_token_full(token)
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_valid_but_revoked_token(self):
+        """Valid token that has been revoked fails full verification."""
+        mock_redis = MagicMock()
+        mock_redis.sismember = AsyncMock(return_value=True)
+
+        with patch("app.agents.capabilities.redis_pool", mock_redis):
+            manager = _make_manager()
+            token = _make_token(manager)
+            result = await manager.verify_token_full(token)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_expired_token_fails_without_revocation_check(self):
+        """Expired token fails full verification before revocation is even checked."""
+        mock_redis = MagicMock()
+        mock_redis.sismember = AsyncMock(return_value=False)
+
+        with patch("app.agents.capabilities.redis_pool", mock_redis):
+            manager = _make_manager()
+            token = _make_token(manager, ttl=1)
+            token.expires_at = time.time() - 100
+            result = await manager.verify_token_full(token)
+
+        assert result is False
+        # sismember should NOT have been called since signature check failed first
+        mock_redis.sismember.assert_not_called()
+
+
+# ── TestKeyRotation ──────────────────────────────────────────────────
+
+
+class TestKeyRotation:
+    """Token signed with previous key version still verifies during rotation grace period."""
+
+    def test_previous_key_version_verifies(self):
+        """Token signed with old key version verifies when current version is bumped."""
+        # Create a manager that simulates key version 2 being current,
+        # with version 1 as the previous key
+        with patch.object(CapabilityManager, "_CURRENT_KEY_VERSION", 2):
+            manager = CapabilityManager()
+
+        # Sign a token with version 1 key (the "old" key)
+        old_key = CapabilityManager._derive_signing_key(version=1)
+        token = CapabilityToken(
+            token_id="test-rotation-token",
+            instance_id="inst-1",
+            tenant_id="tenant-1",
+            agent_id="agent-1",
+            scope=CapabilityScope(),
+            issued_at=time.time(),
+            expires_at=time.time() + 3600,
+        )
+        # Manually sign with the old key
+        token.signature = manager._sign(token, signing_key=old_key)
+
+        # The manager (at version 2) should still verify via previous keys
+        assert manager.verify_token(token) is True

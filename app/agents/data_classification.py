@@ -46,7 +46,7 @@ class DataLevel(IntEnum):
 # PII patterns that indicate CONFIDENTIAL or higher classification
 _CONFIDENTIAL_PII_PATTERNS: dict[str, re.Pattern] = {
     "ssn": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
-    "credit_card": re.compile(r"\b(?:\d[ -]*?){13,16}\b"),
+    "credit_card": re.compile(r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{1,4}\b"),
     "passport": re.compile(r"\b[A-Z]{1,2}\d{6,9}\b"),
     "drivers_license": re.compile(r"\b[A-Z]\d{7,14}\b"),
     "bank_account": re.compile(r"\b\d{8,17}\b"),  # IBAN-like

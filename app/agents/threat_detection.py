@@ -158,6 +158,8 @@ class ThreatDetectionEngine:
 
         def update_stat(old_mean: float, old_std: float, new_value: float) -> tuple[float, float]:
             """Welford's online algorithm for mean and std dev."""
+            if not math.isfinite(new_value):
+                return old_mean, old_std  # Skip NaN/Inf values
             if n == 1:
                 return float(new_value), 0.0
             delta = new_value - old_mean
@@ -228,6 +230,14 @@ class ThreatDetectionEngine:
 
         z_scores: list[float] = []
         for name, (value, mean, std, atlas_key) in factors.items():
+            # Guard against NaN/Infinity from corrupted metrics
+            if not math.isfinite(value) or not math.isfinite(mean) or not math.isfinite(std):
+                logger.warning(
+                    "threat_detection_non_finite_metric",
+                    name=name, value=value, mean=mean, std=std,
+                )
+                continue
+
             if std > 0:
                 z = abs(value - mean) / std
             elif value > mean * 2:
@@ -285,10 +295,10 @@ class ThreatDetectionEngine:
             pipe.expire(key, 3600)
             await pipe.execute()
         except Exception:
-            pass
+            logger.debug("threat_step_metrics_failed", exc_info=True)
 
     async def _emit_threat_event(self, instance_id: str, score: AnomalyScore) -> None:
-        """Emit AgentThreatDetected event."""
+        """Emit AgentThreatDetected event with DLQ fallback."""
         from app.agents.events import AgentThreatDetected
         from app.core.events import emit
 
@@ -306,7 +316,15 @@ class ThreatDetectionEngine:
                 durable=True,
             )
         except Exception:
-            logger.debug("threat_event_emission_failed", exc_info=True)
+            logger.error("threat_event_emission_failed", exc_info=True)
+            from app.agents.security_dlq import enqueue_dead_letter
+            await enqueue_dead_letter("threat_detected", {
+                "tenant_id": self.tenant_id,
+                "instance_id": instance_id,
+                "agent_id": self.agent_id,
+                "anomaly_score": score.total_score,
+                "action": score.action,
+            })
 
         logger.warning(
             "agent_threat_detected",
