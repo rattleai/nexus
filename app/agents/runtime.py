@@ -712,6 +712,27 @@ class AgentRuntime:
                 conversation.append(assistant_msg)
 
                 for tc in tool_calls:
+                    # Governance check before tool execution (matches run() path)
+                    if governance_checker:
+                        try:
+                            await governance_checker(
+                                action="tool_call",
+                                context={
+                                    "tool_name": tc.name,
+                                    "instance_id": str(instance_id),
+                                    "agent_id": str(self.definition.id),
+                                    "step_number": step_num,
+                                    "current_cost": result.total_cost_usd,
+                                },
+                            )
+                        except Exception as gov_exc:
+                            from app.agents.governance import GovernanceViolationError
+                            if isinstance(gov_exc, GovernanceViolationError):
+                                yield {"event": "error", "data": {"message": str(gov_exc), "type": "governance_violation"}}
+                                yield {"event": "run_completed", "data": {"finish_reason": "governance_violation", "output": ""}}
+                                return
+                            raise
+
                     yield {"event": "tool_call", "data": {"tool_name": tc.name, "arguments": tc.arguments}}
 
                     try:

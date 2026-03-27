@@ -611,6 +611,16 @@ async def run_agent_stream(
 
     messages = body.input_data.get("messages", [{"role": "user", "content": str(body.input_data)}])
 
+    # Build tool executor and governance checker so agents can actually
+    # invoke tools (CPQ, built-in, tenant-custom) during the streaming run.
+    from app.agents.setup import build_tool_executor, build_governance_checker, resolve_datasource_mentions
+
+    tool_executor = build_tool_executor(agent, tenant.id, db)
+    governance_checker = build_governance_checker(agent, tenant.id)
+
+    # Resolve @[name](ds:uuid) data source mentions in user messages
+    messages = await resolve_datasource_mentions(messages, tenant.id, db)
+
     async def event_generator():
         import json as _json
 
@@ -624,6 +634,8 @@ async def run_agent_stream(
             async for event in runtime.run_stream(
                 messages=messages,
                 instance_id=instance_id,
+                tool_executor=tool_executor,
+                governance_checker=governance_checker,
                 db=db,
             ):
                 # Check client disconnect
