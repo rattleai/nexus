@@ -199,6 +199,11 @@ class Settings(BaseSettings):
     AGENT_RATE_LIMIT_WINDOW_SECONDS: int = 60
     OAUTH_CLIENT_CREDENTIALS_ENABLED: bool = False
 
+    # ── Application plugin feature flags ──
+    # Each app plugin checks its flag via the plugin registry.
+    # Listed here for documentation; actual gating is in app.plugins.registry.
+    APP_CPQ_ENABLED: bool = True
+
     # (Cloud Drive OAuth settings are defined above — do not duplicate here.)
 
     # Allowed scope values for API keys
@@ -213,9 +218,8 @@ class Settings(BaseSettings):
         "ai:read", "ai:write", "ai:admin",
         "mcp:read", "mcp:write",
         "agents:read", "agents:write", "agents:admin", "agents:execute",
-        "configurator:read", "configurator:write",
-        "datasources:read", "datasources:write",
-        "cloud-connections:read", "cloud-connections:write",
+        # App-specific scopes are contributed dynamically via plugins.
+        # See app.plugins.registry — scopes are appended after discovery.
     ]
 
     # Scopes that must never be granted to API keys.  These control critical

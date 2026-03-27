@@ -1,5 +1,5 @@
 import { createLazyFileRoute, useParams } from "@tanstack/react-router"
-import { ConfigurationDetail } from "@/components/configurations/configuration-detail"
+import { ConfigurationDetail } from "@/apps/cpq/components/configurations/configuration-detail"
 
 export const Route = createLazyFileRoute("/configurations/$sessionId")({
   component: ConfigurationDetailLayout,

@@ -1,1 +1,1 @@
-"""Product configurator engine — constraint propagation, BOM resolution, and pricing."""
+"""Backward-compat shim — configurator engine moved to app.apps.cpq.engine."""

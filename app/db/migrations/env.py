@@ -7,37 +7,12 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import settings
 from app.db.base import Base
-from app.db.models import (  # noqa: F401 — register models
-    AIUsageLog,
-    ApiKey,
-    AuditLog,
-    ChangeLog,
-    CreditPack,
-    DollarWallet,
-    EmailVerificationToken,
-    FeatureFlag,
-    Invitation,
-    Job,
-    Notification,
-    OAuthAccount,
-    OAuthClient,
-    Plan,
-    PromptTemplate,
-    PushSubscription,
-    RefreshToken,
-    SSOConfiguration,
-    Subscription,
-    Tenant,
-    TenantAIProviderKey,
-    TenantFeatureOverride,
-    TenantMembership,
-    UsageRecord,
-    User,
-    WalletTransaction,
-    WebAuthnCredential,
-    WebhookDelivery,
-    WebhookEndpoint,
-)
+from app.plugins.registry import discover_plugins  # noqa: E402
+
+# Discover plugins so their models register on Base.metadata
+discover_plugins()
+
+from app.db.models import *  # noqa: F401, F403 — register all models (infra + plugins)
 
 config = context.config
 # Migrations need superuser privileges (CREATE TABLE, ALTER, ENABLE RLS).

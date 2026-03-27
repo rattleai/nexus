@@ -29,7 +29,7 @@ logger = structlog.stdlib.get_logger()
 # non-infrastructure entities here.
 # NEVER add: auth, admin, tenants, api-keys, oauth, webauthn, audit, push, sync.
 # These are critical infrastructure that must only be managed from the application UI.
-_ALLOWED_TAGS = frozenset({
+_INFRA_ALLOWED_TAGS = frozenset({
     "jobs",
     "files",
     "billing",
@@ -39,10 +39,7 @@ _ALLOWED_TAGS = frozenset({
     "team",
 })
 
-# Path prefixes that are allowed to be auto-exposed as MCP tools.
-# Only tenant-facing API routes under /api/v1 with known-safe segments.
-# Infrastructure paths (api-keys, oauth, auth, admin, audit) are excluded.
-_ALLOWED_PATH_PREFIXES = (
+_INFRA_ALLOWED_PATH_PREFIXES = (
     "/api/v1/jobs",
     "/api/v1/files",
     "/api/v1/billing",
@@ -51,6 +48,23 @@ _ALLOWED_PATH_PREFIXES = (
     "/api/v1/agents",
     "/api/v1/team",
 )
+
+# Extend allowlists with plugin contributions
+from app.plugins.registry import registry as _plugin_registry
+
+_plugin_tags: set[str] = set()
+_plugin_prefixes: list[str] = []
+for _plugin in _plugin_registry:
+    _bridge_cfg = _plugin.get_mcp_bridge_config()
+    _plugin_tags.update(_bridge_cfg.get("allowed_tags", set()))
+    _plugin_prefixes.extend(_bridge_cfg.get("allowed_path_prefixes", []))
+
+_ALLOWED_TAGS = _INFRA_ALLOWED_TAGS | frozenset(_plugin_tags)
+
+# Path prefixes that are allowed to be auto-exposed as MCP tools.
+# Only tenant-facing API routes under /api/v1 with known-safe segments.
+# Infrastructure paths (api-keys, oauth, auth, admin, audit) are excluded.
+_ALLOWED_PATH_PREFIXES = _INFRA_ALLOWED_PATH_PREFIXES + tuple(_plugin_prefixes)
 
 # Operation IDs of hand-written tools that should take precedence.
 # If an auto-generated tool would conflict, it's skipped.

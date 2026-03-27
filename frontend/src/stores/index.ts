@@ -15,4 +15,3 @@ export type {
   PlaygroundResponse,
 } from "@/stores/ai-playground-store"
 
-export { useConfiguratorStore } from "@/stores/configurator-store"

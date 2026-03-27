@@ -57,7 +57,8 @@ from app.db.models.mobile import (
 from app.db.models.oauth_client import (
     OAuthClient,
 )
-from app.db.models.product import (
+# CPQ app models — backward-compat re-exports from new location
+from app.apps.cpq.models.product import (  # noqa: F401
     CharacteristicAssignment,
     CharacteristicGroup,
     CharacteristicType,
@@ -73,12 +74,12 @@ from app.db.models.product import (
     ProductVersion,
     VariantTable,
 )
-from app.db.models.bom import (
+from app.apps.cpq.models.bom import (  # noqa: F401
     BOMHeader,
     BOMItem,
     BOMItemType,
 )
-from app.db.models.datasource import (
+from app.apps.cpq.models.datasource import (  # noqa: F401
     CloudConnection,
     CloudProvider,
     ConfigItemProvenance,
@@ -87,7 +88,7 @@ from app.db.models.datasource import (
     DataSourceStatus,
     DataSourceType,
 )
-from app.db.models.configurator import (
+from app.apps.cpq.models.configurator import (  # noqa: F401
     ConfigurationPricing,
     ConfigurationSelection,
     ConfigurationSession,
@@ -108,6 +109,14 @@ from app.db.models.operations import (
     Job,
     JobStatus,
 )
+
+# ── Plugin model discovery ─────────────────────────────────
+# Import all plugin models so they register on Base.metadata.
+# This ensures Alembic sees them and backward-compat re-exports work.
+from app.plugins.registry import registry as _plugin_registry
+
+for _plugin in _plugin_registry:
+    _plugin.get_models()  # Side effect: imports and registers models on Base.metadata
 
 __all__ = [
     # Core

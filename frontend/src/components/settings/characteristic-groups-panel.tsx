@@ -39,8 +39,8 @@ import {
   useCreateCharacteristicGroup,
   useUpdateCharacteristicGroup,
   useDeleteCharacteristicGroup,
-} from "@/hooks/use-characteristics"
-import type { CharacteristicGroup } from "@/types/configurator"
+} from "@/apps/cpq/hooks/use-characteristics"
+import type { CharacteristicGroup } from "@/apps/cpq/types/configurator"
 
 // ── Slug helper ──────────────────────────────────────────
 

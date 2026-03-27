@@ -54,8 +54,8 @@ import {
   useAddCharacteristicValue,
   useUpdateCharacteristicValue,
   useDeleteCharacteristicValue,
-} from "@/hooks/use-characteristics"
-import type { CharacteristicValue, CharType } from "@/types/configurator"
+} from "@/apps/cpq/hooks/use-characteristics"
+import type { CharacteristicValue, CharType } from "@/apps/cpq/types/configurator"
 
 // ── Type badge styling (matches characteristics-library.tsx) ─────
 

@@ -14,13 +14,6 @@ from app.api.v1.jobs import router as jobs_router
 from app.api.v1.tenants import router as tenants_router
 from app.api.v1.webhooks import router as webhooks_router
 from app.api.v1.ws import router as ws_router
-from app.api.v1.products import router as products_router
-from app.api.v1.characteristics import router as characteristics_router
-from app.api.v1.constraints import router as constraints_router
-from app.api.v1.boms import router as boms_router
-from app.api.v1.configurator import router as configurator_router
-from app.api.v1.cloud_connections import router as cloud_connections_router
-from app.api.v1.datasources import router as datasources_router
 from app.config import settings
 
 v1_router = APIRouter()
@@ -35,14 +28,14 @@ v1_router.include_router(webhooks_router, tags=["webhooks"])
 v1_router.include_router(billing_router, tags=["billing"])
 v1_router.include_router(export_router, tags=["export"])
 
-# Product configurator endpoints (always available)
-v1_router.include_router(products_router, tags=["products"])
-v1_router.include_router(characteristics_router, tags=["characteristics"])
-v1_router.include_router(constraints_router, tags=["constraints"])
-v1_router.include_router(boms_router, tags=["boms"])
-v1_router.include_router(configurator_router, tags=["configurator"])
-v1_router.include_router(datasources_router, tags=["datasources"])
-v1_router.include_router(cloud_connections_router, tags=["cloud-connections"])
+# ── Application plugin routers ─────────────────────────────
+# Plugins register their routers via the plugin framework.
+# This replaces hardcoded app-specific router includes.
+from app.plugins.registry import registry as _plugin_registry
+
+for _plugin in _plugin_registry:
+    for _router in _plugin.get_routers():
+        v1_router.include_router(_router)
 
 # Agent & mobile endpoints (always available)
 v1_router.include_router(agent_info_router, tags=["agent"])

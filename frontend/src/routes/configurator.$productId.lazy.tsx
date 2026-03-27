@@ -1,5 +1,5 @@
 import { createLazyFileRoute, useParams } from "@tanstack/react-router"
-import { ConfiguratorPage } from "@/components/configurator/configurator-layout"
+import { ConfiguratorPage } from "@/apps/cpq/components/configurator/configurator-layout"
 
 export const Route = createLazyFileRoute("/configurator/$productId")({
   component: ConfiguratorPageRoute,

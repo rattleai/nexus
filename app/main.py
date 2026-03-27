@@ -10,6 +10,20 @@ from fastapi.staticfiles import StaticFiles
 
 import app.core.event_handlers as _event_handlers  # noqa: F401 — registers handlers on import
 from app import __version__
+from app.plugins.registry import discover_plugins, registry as plugin_registry
+
+# Discover application plugins before app creation
+discover_plugins()
+
+# Extend VALID_SCOPES with plugin-contributed scopes
+for _plugin in plugin_registry:
+    settings.VALID_SCOPES.extend(_plugin.get_scopes())
+
+# Import plugin event handler modules (side-effect registration)
+for _plugin in plugin_registry:
+    for _module_path in _plugin.get_event_handler_modules():
+        import importlib as _importlib
+        _importlib.import_module(_module_path)
 from app.api.etag import ETagMiddleware
 from app.api.exceptions import register_exception_handlers
 from app.api.middleware import PreferMinimalMiddleware, RequestSizeLimitMiddleware, SecurityHeadersMiddleware
@@ -39,7 +53,12 @@ async def lifespan(app: FastAPI):
     from app.db.session import setup_pool_monitoring
     setup_pool_monitoring()
 
-    logger.info("app_starting", version=__version__, debug=settings.DEBUG)
+    logger.info(
+        "app_starting",
+        version=__version__,
+        debug=settings.DEBUG,
+        plugins=[p.name for p in plugin_registry],
+    )
 
     # Warm up Redis connection pool
     try:
@@ -76,12 +95,26 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("rls_check_skipped", exc_info=True)
 
+    # Plugin startup hooks
+    for _plugin in plugin_registry:
+        try:
+            await _plugin.on_startup()
+        except Exception:
+            logger.error("plugin_startup_failed", plugin=_plugin.name, exc_info=True)
+
     yield
 
     # Graceful shutdown — dispose resources in reverse init order with timeouts
     import asyncio
 
     logger.info("app_shutting_down")
+
+    # Plugin shutdown hooks (reverse order)
+    for _plugin in reversed(list(plugin_registry)):
+        try:
+            await _plugin.on_shutdown()
+        except Exception:
+            logger.warning("plugin_shutdown_failed", plugin=_plugin.name, exc_info=True)
 
     if settings.OTEL_ENABLED:
         from app.core.telemetry import shutdown_telemetry
@@ -231,6 +264,10 @@ def create_app() -> FastAPI:
 
     # API routes (must be before SPA catch-all)
     app.include_router(v1_router, prefix=settings.API_V1_PREFIX)
+
+    # Plugin manifest endpoint
+    from app.plugins.api import router as plugins_router
+    app.include_router(plugins_router, prefix=settings.API_V1_PREFIX)
 
     # Enrich OpenAPI schema with agent-friendly metadata
     _original_openapi = app.openapi

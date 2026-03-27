@@ -1,5 +1,5 @@
 import { createLazyFileRoute, useParams } from "@tanstack/react-router"
-import { ProductDetail } from "@/components/products/product-detail"
+import { ProductDetail } from "@/apps/cpq/components/products/product-detail"
 
 export const Route = createLazyFileRoute("/products/$productId")({
   component: ProductDetailLayout,

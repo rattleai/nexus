@@ -66,8 +66,8 @@ import {
   useCreateCharacteristic,
   useUpdateCharacteristic,
   useDeleteCharacteristic,
-} from "@/hooks/use-characteristics"
-import type { Characteristic, CharType } from "@/types/configurator"
+} from "@/apps/cpq/hooks/use-characteristics"
+import type { Characteristic, CharType } from "@/apps/cpq/types/configurator"
 
 // ── Slug helper ──────────────────────────────────────────
 
