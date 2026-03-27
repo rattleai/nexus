@@ -163,7 +163,26 @@ async def get_subscription(
     )
     subscription = result.scalar_one_or_none()
     if not subscription:
-        return None
+        # No Stripe subscription — synthesise a response from tenant.plan so the
+        # billing page correctly reflects the actual plan (e.g. after a direct DB
+        # upgrade in dev, or before Stripe is wired up).
+        plan_name = (tenant.plan or "free").capitalize()
+        return SubscriptionResponse(
+            id=uuid.UUID(int=0),
+            plan=PlanResponse(
+                id=uuid.UUID(int=0),
+                name=plan_name,
+                tier=tenant.plan or "free",
+                price_cents=0,
+                billing_period="monthly",
+                limits={},
+                features=[],
+            ),
+            status="active",
+            current_period_start=None,
+            current_period_end=None,
+            cancel_at=None,
+        )
 
     return SubscriptionResponse(
         id=subscription.id,
