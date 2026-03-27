@@ -19,7 +19,7 @@ from app.apps.cpq.engine.engine import (
     VariantTable,
 )
 
-from app.db.models import Characteristic
+from app.apps.cpq.models.product import Characteristic
 
 
 @dataclass

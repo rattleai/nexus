@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models import (
+from app.apps.cpq.models.product import (
     Characteristic,
     CharacteristicAssignment,
     ConstraintRule,

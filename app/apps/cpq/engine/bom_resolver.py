@@ -16,13 +16,11 @@ from sqlalchemy.orm import selectinload
 
 from app.apps.cpq.engine.engine import ConfiguratorEngine
 from app.core.metrics import CONFIGURATOR_BOM_RESOLUTION_DURATION
-from app.db.models import (
-    BOMHeader,
-    BOMItem,
-    BOMItemType,
+from app.apps.cpq.models.bom import BOMHeader, BOMItem, BOMItemType
+from app.apps.cpq.models.configurator import (
+    ConfigurationPricing,
     ConfigurationSession,
     ConfiguredBOM,
-    ConfigurationPricing,
     PricingRule,
 )
 

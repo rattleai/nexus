@@ -40,7 +40,7 @@ from app.apps.cpq.api.schemas_configurator import (
 )
 from app.apps.cpq.engine.bom_resolver import BOMResolver
 from app.apps.cpq.engine.engine import ConfiguratorEngine
-from app.apps.cpq.engine.events import (
+from app.apps.cpq.events import (
     BOMResolved,
     ConfigurationCompleted,
     ConfigurationLocked,
@@ -54,7 +54,7 @@ from app.core.events import emit
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
 from app.db.base import optimistic_version_bump
-from app.db.models import (
+from app.apps.cpq.models.configurator import (
     ConfigurationPricing,
     ConfigurationSession,
     ConfigurationStatus,
@@ -62,9 +62,9 @@ from app.db.models import (
     ConfiguredBOM,
     PricingRule,
     PricingRuleType,
-    Product,
-    Tenant,
 )
+from app.apps.cpq.models.product import Product
+from app.db.models import Tenant
 
 _api_key_rate_limit = ApiKeyRateLimiter()
 router = APIRouter(prefix="/configurator", dependencies=[Depends(_api_key_rate_limit)])
@@ -243,7 +243,7 @@ async def make_selection(
         raise HTTPException(status_code=404, detail="Configuration session not found")
 
     # Resolve characteristic slug from ID
-    from app.db.models import Characteristic
+    from app.apps.cpq.models.product import Characteristic
     char_result = await db.execute(
         select(Characteristic).where(Characteristic.id == body.characteristic_id, Characteristic.deleted_at.is_(None))
     )
@@ -572,7 +572,7 @@ async def clone_session(
     db.add(clone)
     await db.flush()
 
-    from app.db.models import ConfigurationSelection
+    from app.apps.cpq.models.configurator import ConfigurationSelection
     for sel in source.selections:
         new_sel = ConfigurationSelection(
             tenant_id=tenant.id,
@@ -622,7 +622,7 @@ async def delete_session(
         raise HTTPException(status_code=400, detail="Cannot delete a locked configuration")
 
     # Delete related records first
-    from app.db.models import ConfigurationSelection
+    from app.apps.cpq.models.configurator import ConfigurationSelection
     await db.execute(
         select(ConfigurationSelection).where(ConfigurationSelection.session_id == session_id)
     )
@@ -693,7 +693,7 @@ async def bulk_action(
                         session_id=sid, success=False, error="Cannot delete locked session",
                     ))
                     continue
-                from app.db.models import ConfigurationSelection
+                from app.apps.cpq.models.configurator import ConfigurationSelection
                 for sel in session.selections:
                     await db.delete(sel)
                 bom = (await db.execute(

@@ -132,10 +132,8 @@ class DataSource(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
     chunks: Mapped[list[DataSourceChunk]] = relationship(
         back_populates="data_source", cascade="all, delete-orphan"
     )
-    # Provenance relationship defined via string reference (plugin model)
-    provenance_records = relationship(
-        "ConfigItemProvenance", back_populates="data_source", cascade="all, delete-orphan"
-    )
+    # NOTE: provenance_records relationship is contributed by the CPQ plugin
+    # (see app.apps.cpq.models.datasource.ConfigItemProvenance)
 
     __table_args__ = (
         Index("ix_data_sources_tenant", "tenant_id"),

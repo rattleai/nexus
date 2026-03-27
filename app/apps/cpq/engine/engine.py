@@ -27,13 +27,15 @@ from app.core.metrics import (
     CONFIGURATOR_PROPAGATION_DURATION,
     CONFIGURATOR_PROPAGATION_ITERATIONS,
 )
-from app.db.models import (
-    Characteristic,
-    CharacteristicAssignment,
-    CharacteristicValue,
+from app.apps.cpq.models.configurator import (
     ConfigurationSelection,
     ConfigurationSession,
     ConfigurationStatus,
+)
+from app.apps.cpq.models.product import (
+    Characteristic,
+    CharacteristicAssignment,
+    CharacteristicValue,
     ConstraintRule,
     ConstraintType,
     VariantTable,

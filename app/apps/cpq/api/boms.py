@@ -27,7 +27,9 @@ from app.apps.cpq.api.schemas_configurator import (
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
 from app.db.base import optimistic_version_bump
-from app.db.models import BOMHeader, BOMItem, BOMItemType, Product, Tenant
+from app.apps.cpq.models.bom import BOMHeader, BOMItem, BOMItemType
+from app.apps.cpq.models.product import Product
+from app.db.models import Tenant
 
 _api_key_rate_limit = ApiKeyRateLimiter()
 router = APIRouter(prefix="/boms", dependencies=[Depends(_api_key_rate_limit)])

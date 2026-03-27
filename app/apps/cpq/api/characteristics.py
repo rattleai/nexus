@@ -30,15 +30,15 @@ from app.apps.cpq.api.schemas_configurator import (
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
 from app.db.base import optimistic_version_bump
-from app.db.models import (
+from app.apps.cpq.models.product import (
     Characteristic,
     CharacteristicAssignment,
     CharacteristicGroup,
     CharacteristicType,
     CharacteristicValue,
     Product,
-    Tenant,
 )
+from app.db.models import Tenant
 
 _api_key_rate_limit = ApiKeyRateLimiter()
 router = APIRouter(prefix="/characteristics", dependencies=[Depends(_api_key_rate_limit)])

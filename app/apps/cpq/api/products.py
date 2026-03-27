@@ -25,7 +25,8 @@ from app.core.audit import AuditAction, emit_audit_event
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
 from app.db.base import optimistic_version_bump
-from app.db.models import Product, ProductFamily, ProductStatus, ProductVersion, Tenant
+from app.apps.cpq.models.product import Product, ProductFamily, ProductStatus, ProductVersion
+from app.db.models import Tenant
 
 _api_key_rate_limit = ApiKeyRateLimiter()
 router = APIRouter(prefix="/products", dependencies=[Depends(_api_key_rate_limit)])

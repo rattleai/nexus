@@ -38,7 +38,14 @@ from app.apps.cpq.api.schemas_configurator import (
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
 from app.db.base import optimistic_version_bump
-from app.db.models import ConstraintGroup, ConstraintRule, ConstraintType, Product, Tenant, VariantTable
+from app.apps.cpq.models.product import (
+    ConstraintGroup,
+    ConstraintRule,
+    ConstraintType,
+    Product,
+    VariantTable,
+)
+from app.db.models import Tenant
 
 _api_key_rate_limit = ApiKeyRateLimiter()
 router = APIRouter(prefix="/constraints", dependencies=[Depends(_api_key_rate_limit)])
@@ -559,7 +566,7 @@ async def analyze_impact(
     if body.rule_expression and body.rule_constraint_type:
         # Create an inline simulated rule
         from dataclasses import dataclass as _dc, field as _field
-        from app.db.models import ConstraintType as _CT
+        from app.apps.cpq.models.product import ConstraintType as _CT
 
         @_dc
         class _SimRule:

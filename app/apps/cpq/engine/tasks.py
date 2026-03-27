@@ -47,7 +47,7 @@ def bulk_validate_sessions(self, product_id: str, tenant_id: str) -> dict:
     import asyncio
     from sqlalchemy import select
     from app.db.session import get_session
-    from app.db.models import ConfigurationSession, ConfigurationStatus
+    from app.apps.cpq.models.configurator import ConfigurationSession, ConfigurationStatus
     from app.apps.cpq.engine.validator import ConfigurationValidator
 
     async def _validate():

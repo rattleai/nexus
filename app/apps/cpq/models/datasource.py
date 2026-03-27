@@ -36,8 +36,8 @@ class ConfigItemProvenance(TimestampMixin, Base):
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
     extraction_context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
-    # Relationship to infrastructure DataSource
-    data_source = relationship("DataSource", back_populates="provenance_records")
+    # Relationship to infrastructure DataSource (no back_populates — cross-layer)
+    data_source = relationship("DataSource", foreign_keys=[data_source_id])
 
     __table_args__ = (
         Index("ix_config_provenance_tenant_entity", "tenant_id", "entity_type", "entity_id"),

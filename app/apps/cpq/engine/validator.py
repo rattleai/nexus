@@ -11,10 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.apps.cpq.engine.engine import ConfiguratorEngine, ValidationError
-from app.db.models import (
+from app.apps.cpq.models.configurator import ConfigurationSession
+from app.apps.cpq.models.product import (
     Characteristic,
     CharacteristicAssignment,
-    ConfigurationSession,
 )
 
 logger = structlog.stdlib.get_logger()
