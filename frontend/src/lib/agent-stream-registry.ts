@@ -15,14 +15,14 @@ import type { ToolCallEntry } from "@/components/agents/sessions/tool-call-card"
 
 // ── Types (matching stream-view.tsx) ────────────────────
 
-interface ContentEntry {
+export interface ContentEntry {
   id: string
   type: "content"
   text: string
   timestamp: number
 }
 
-interface StepEntry {
+export interface StepEntry {
   id: string
   type: "step"
   step: number
@@ -31,7 +31,16 @@ interface StepEntry {
   timestamp: number
 }
 
-interface StatusEntry {
+export interface ThinkingEntry {
+  id: string
+  type: "thinking"
+  content: string
+  tokens?: number
+  cost?: number
+  timestamp: number
+}
+
+export interface StatusEntry {
   id: string
   type: "status"
   status: string
@@ -39,13 +48,14 @@ interface StatusEntry {
   timestamp: number
 }
 
-type StreamEntry = ContentEntry | ToolCallEntry | StepEntry | StatusEntry
+export type StreamEntry = ContentEntry | ToolCallEntry | StepEntry | StatusEntry | ThinkingEntry
 
 type RunStatus = "streaming" | "completed" | "error"
 
 interface ActiveStream {
   instanceId: string
   definitionId: string
+  sessionId?: string
   entries: StreamEntry[]
   listeners: Set<() => void>
   abort: AbortController
@@ -102,8 +112,26 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
 
           switch (currentEventType) {
             case "run_started":
-              // Already handled — instanceId read from header
+            case "session_started":
+            case "turn_started":
+              // Session/turn metadata — store sessionId if present
+              if (parsed.session_id && !stream.sessionId) {
+                stream.sessionId = parsed.session_id
+              }
               break
+
+            case "thinking": {
+              stream.entries.push({
+                id: crypto.randomUUID(),
+                type: "thinking",
+                content: parsed.content ?? "",
+                tokens: parsed.tokens,
+                cost: parsed.cost_usd,
+                timestamp: now,
+              })
+              notifyListeners(stream)
+              break
+            }
 
             case "content_delta": {
               if (parsed.content) {
@@ -385,6 +413,135 @@ export function subscribe(instanceId: string, callback: () => void): () => void 
  */
 export function hasStream(instanceId: string): boolean {
   return registry.has(instanceId)
+}
+
+/**
+ * Get the sessionId associated with a stream (set by session_started/turn_started events).
+ */
+export function getSessionId(instanceId: string): string | null {
+  return registry.get(instanceId)?.sessionId ?? null
+}
+
+/**
+ * Start a new interactive conversation via the conversations endpoint.
+ * Returns { sessionId, instanceId } once the stream begins.
+ */
+export async function startConversation(
+  agentId: string,
+  prompt: string,
+): Promise<{ sessionId: string; instanceId: string }> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  }
+  const token = getAccessToken()
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`
+  }
+
+  const controller = new AbortController()
+
+  const response = await fetch(`/api/v1/agents/definitions/${agentId}/conversations`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      input_data: { prompt },
+    }),
+    signal: controller.signal,
+  })
+
+  if (!response.ok) {
+    let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+    try {
+      const errBody = await response.json()
+      if (errBody.detail) errorMessage = errBody.detail
+    } catch {
+      // use default
+    }
+    throw new Error(errorMessage)
+  }
+
+  const instanceId = response.headers.get("X-Instance-Id")
+  const sessionId = response.headers.get("X-Session-Id")
+
+  if (!instanceId || !sessionId) {
+    throw new Error("Missing instance or session ID from conversations endpoint")
+  }
+
+  const stream: ActiveStream = {
+    instanceId,
+    definitionId: agentId,
+    sessionId,
+    entries: [],
+    listeners: new Set(),
+    abort: controller,
+    status: "streaming",
+  }
+  registry.set(instanceId, stream)
+
+  if (response.body) {
+    consumeStream(stream, response.body)
+  }
+
+  return { sessionId, instanceId }
+}
+
+/**
+ * Send a follow-up message in an existing conversation.
+ * Returns the new instanceId for this turn.
+ */
+export async function sendReply(
+  sessionId: string,
+  message: string,
+): Promise<string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  }
+  const token = getAccessToken()
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`
+  }
+
+  const controller = new AbortController()
+
+  const response = await fetch(`/api/v1/agents/sessions/${sessionId}/reply`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ message }),
+    signal: controller.signal,
+  })
+
+  if (!response.ok) {
+    let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+    try {
+      const errBody = await response.json()
+      if (errBody.detail) errorMessage = errBody.detail
+    } catch {
+      // use default
+    }
+    throw new Error(errorMessage)
+  }
+
+  const instanceId = response.headers.get("X-Instance-Id")
+  if (!instanceId) {
+    throw new Error("No instance ID returned from reply endpoint")
+  }
+
+  const stream: ActiveStream = {
+    instanceId,
+    definitionId: "",
+    sessionId,
+    entries: [],
+    listeners: new Set(),
+    abort: controller,
+    status: "streaming",
+  }
+  registry.set(instanceId, stream)
+
+  if (response.body) {
+    consumeStream(stream, response.body)
+  }
+
+  return instanceId
 }
 
 /**

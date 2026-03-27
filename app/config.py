@@ -170,6 +170,12 @@ class Settings(BaseSettings):
     AGENT_PENDING_STALE_SECONDS: int = 600           # Mark PENDING as failed
     AGENT_LEGACY_STALE_SECONDS: int = 3600           # Fallback for pre-heartbeat instances
 
+    # Agent Conversations (multi-turn interactive sessions)
+    AGENT_SESSION_IDLE_TIMEOUT_SECONDS: int = 3600    # Default idle timeout for interactive sessions
+    AGENT_SESSION_MAX_TURNS: int = 50                  # Max follow-up turns per conversation
+    AGENT_SESSION_SLIDING_TTL: bool = True             # Extend session TTL on each turn
+    AGENT_CONVERSATION_LOCK_TIMEOUT: int = 30          # Redis lock timeout for concurrent reply safety
+
     # Agent Memory
     AGENT_MEMORY_SHORT_TTL_SECONDS: int = 3600
     AGENT_MEMORY_SHORT_MAX_ENTRIES: int = 100

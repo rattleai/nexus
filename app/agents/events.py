@@ -143,6 +143,38 @@ class WorkflowRunFailed(DomainEvent):
     failed_step: str = ""
 
 
+# ── Conversation Events ──────────────────────────────────────────────
+
+
+@dataclass
+class ConversationStarted(DomainEvent):
+    """Emitted when a new interactive conversation session begins."""
+    tenant_id: str = ""
+    session_id: str = ""
+    agent_id: str = ""
+
+
+@dataclass
+class ConversationTurnCompleted(DomainEvent):
+    """Emitted after each turn in an interactive conversation completes."""
+    tenant_id: str = ""
+    session_id: str = ""
+    instance_id: str = ""
+    turn_number: int = 0
+    tokens_used: int = 0
+    cost_usd: float = 0.0
+
+
+@dataclass
+class ConversationEnded(DomainEvent):
+    """Emitted when an interactive conversation session is closed."""
+    tenant_id: str = ""
+    session_id: str = ""
+    total_turns: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
+
+
 # ── Security Events (Phase 0-2) ──────────────────────────────────────
 
 

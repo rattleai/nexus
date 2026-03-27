@@ -16,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -158,6 +159,7 @@ class AgentInstance(Base, TimestampMixin):
         Index("ix_agent_inst_tenant_status", "tenant_id", "status"),
         Index("ix_agent_inst_definition", "definition_id"),
         Index("ix_agent_inst_status_heartbeat", "status", "last_heartbeat_at"),
+        Index("ix_agent_inst_session", "session_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -195,6 +197,11 @@ class AgentInstance(Base, TimestampMixin):
     capability_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     capability_scope: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
 
+    # Parent conversation session (for multi-turn interactive runs)
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agent_sessions.id"), nullable=True,
+    )
+
     # Parent workflow run (if spawned by orchestrator)
     workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workflow_runs.id"), nullable=True,
@@ -202,7 +209,9 @@ class AgentInstance(Base, TimestampMixin):
 
     # Relationships
     definition: Mapped[AgentDefinition] = relationship(back_populates="instances")
-    sessions: Mapped[list[AgentSession]] = relationship(back_populates="instance", lazy="raise")
+    sessions: Mapped[list[AgentSession]] = relationship(
+        back_populates="instance", foreign_keys="AgentSession.instance_id", lazy="raise",
+    )
 
 
 # ── Agent Session ──────────────────────────────────────────────────────
@@ -219,12 +228,18 @@ class AgentSession(Base, TimestampMixin):
     __tablename__ = "agent_sessions"
     __table_args__ = (
         Index("ix_agent_session_instance", "instance_id"),
+        Index("ix_agent_session_definition", "tenant_id", "definition_id", "status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     instance_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("agent_instances.id"), nullable=False,
+    )
+
+    # Direct link to the agent definition (for listing conversations per agent)
+    definition_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agent_definitions.id"), nullable=True,
     )
 
     status: Mapped[SessionStatus] = mapped_column(
@@ -234,8 +249,16 @@ class AgentSession(Base, TimestampMixin):
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, server_default="{}")
     expires_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Interactive conversation fields
+    is_interactive: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    turn_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    total_cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=0.0, server_default="0")
+    last_activity_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    idle_timeout_seconds: Mapped[int] = mapped_column(Integer, default=3600, server_default="3600")
+
     # Relationships
-    instance: Mapped[AgentInstance] = relationship(back_populates="sessions")
+    instance: Mapped[AgentInstance] = relationship(back_populates="sessions", foreign_keys=[instance_id])
 
 
 # ── Agent Memory Entry ─────────────────────────────────────────────────

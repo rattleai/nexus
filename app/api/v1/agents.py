@@ -29,6 +29,7 @@ from app.agents.models import (
     AgentSession,
     AgentStatus,
     InstanceStatus,
+    SessionStatus,
     TenantTool,
     WorkflowDefinition,
     WorkflowRun,
@@ -43,6 +44,9 @@ from app.agents.schemas import (
     AgentPolicyCreate,
     AgentPolicyResponse,
     AgentSessionResponse,
+    ConversationReplyRequest,
+    ConversationSessionResponse,
+    ConversationStartRequest,
     MemoryWriteRequest,
     PaginatedResponse,
     TenantToolCreate,
@@ -826,6 +830,516 @@ async def list_agent_sessions(
 
     return PaginatedResponse(
         items=[AgentSessionResponse.model_validate(s) for s in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=(total + page_size - 1) // page_size,
+    )
+
+
+# ── Conversations (Multi-Turn Interactive Sessions) ────────────────────
+
+
+@router.post(
+    "/definitions/{agent_id}/conversations",
+    dependencies=[Depends(RequireScopes("agents:execute"))],
+)
+async def start_conversation(
+    agent_id: uuid.UUID,
+    body: ConversationStartRequest,
+    request: Request,
+    tenant: Tenant = Depends(get_current_tenant),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
+    db: AsyncSession = Depends(get_db),
+):
+    """Start a new interactive conversation with an agent.
+
+    Creates an interactive AgentSession and executes the first turn,
+    streaming SSE events in real-time. The session_id is returned in
+    the first SSE event for use in subsequent reply calls.
+    """
+    from datetime import UTC, datetime as _dt
+
+    from starlette.responses import StreamingResponse
+
+    from app.agents.runtime import AgentRuntime
+    from app.config import settings
+
+    await set_tenant_context(db, str(tenant.id))
+
+    from app.billing.entitlements import EntitlementDenied, entitlements
+    try:
+        await entitlements.require_feature(tenant.id, "agents:execute", db=db)
+    except EntitlementDenied:
+        raise HTTPException(403, "Feature not available on your current plan") from None
+
+    agent = await _get_agent_or_404(db, agent_id, tenant.id)
+    if agent.status != AgentStatus.ACTIVE:
+        raise HTTPException(400, f"Agent '{agent.name}' is not active")
+
+    await _enforce_concurrent_limit(db, agent, tenant.id)
+
+    # Resolve API key
+    from app.core.encryption import decrypt
+    from app.db.models.ai import TenantAIProviderKey
+    from sqlalchemy import select as _select
+
+    provider_key_result = await db.execute(
+        _select(TenantAIProviderKey).where(
+            TenantAIProviderKey.tenant_id == tenant.id,
+            TenantAIProviderKey.is_active.is_(True),
+        ).limit(1)
+    )
+    provider_key = provider_key_result.scalar_one_or_none()
+    resolved_api_key = decrypt(provider_key.encrypted_api_key) if provider_key else ""
+    if not resolved_api_key:
+        raise HTTPException(503, "No AI provider key configured for this tenant")
+
+    runtime = AgentRuntime(
+        definition=agent,
+        tenant_id=tenant.id,
+        api_key=resolved_api_key,
+        key_source="platform",
+    )
+
+    now = _dt.now(UTC)
+    instance_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+
+    idle_timeout = body.idle_timeout_seconds or settings.AGENT_SESSION_IDLE_TIMEOUT_SECONDS
+
+    # Create interactive session
+    session = AgentSession(
+        id=session_id,
+        tenant_id=tenant.id,
+        instance_id=instance_id,  # First instance that created this session
+        definition_id=agent.id,
+        status=SessionStatus.ACTIVE,
+        is_interactive=True,
+        messages=[],
+        last_activity_at=now,
+        idle_timeout_seconds=idle_timeout,
+    )
+    db.add(session)
+
+    # Create first instance linked to session
+    instance = AgentInstance(
+        id=instance_id,
+        tenant_id=tenant.id,
+        definition_id=agent.id,
+        session_id=session_id,
+        status=InstanceStatus.RUNNING,
+        input_data=body.input_data,
+        started_at=now,
+    )
+    db.add(instance)
+    await db.commit()
+    await db.refresh(instance)
+    await db.refresh(session)
+
+    messages = body.input_data.get("messages", [])
+    if not messages and "prompt" in body.input_data:
+        messages = [{"role": "user", "content": str(body.input_data["prompt"])}]
+    if not messages:
+        messages = [{"role": "user", "content": str(body.input_data)}]
+
+    async def event_generator():
+        import json as _json
+
+        _completed_normally = False
+        _final_data: dict = {}
+        _assistant_messages: list[dict] = []
+
+        # First event: session info so frontend can track the conversation
+        yield (
+            f"event: session_started\n"
+            f"data: {_json.dumps({'session_id': str(session_id), 'instance_id': str(instance_id), 'definition_id': str(agent.id)})}\n\n"
+        )
+
+        try:
+            async for event in runtime.run_stream(
+                messages=messages,
+                instance_id=instance_id,
+                db=db,
+            ):
+                if await request.is_disconnected():
+                    runtime.cancel()
+                    return
+
+                event_type = event.get("event", "message")
+                event_data = event.get("data", {})
+
+                if event_type == "run_completed":
+                    _completed_normally = True
+                    _final_data = event_data
+                    if event_data.get("output"):
+                        _assistant_messages.append({
+                            "role": "assistant",
+                            "content": str(event_data["output"]),
+                        })
+
+                yield f"event: {event_type}\ndata: {_json.dumps(event_data, default=str)}\n\n"
+        except Exception as exc:
+            import json as _json2
+            logger.error("conversation_stream_error", error=str(exc), exc_info=True)
+            yield f"event: error\ndata: {_json2.dumps({'message': str(exc)[:500]})}\n\n"
+        finally:
+            try:
+                inst = await db.get(AgentInstance, instance_id)
+                sess = await db.get(AgentSession, session_id)
+                if inst and inst.status in (InstanceStatus.RUNNING, InstanceStatus.PENDING):
+                    if _completed_normally:
+                        inst.status = InstanceStatus.COMPLETED
+                        inst.output_data = _final_data.get("output", {})
+                        inst.tokens_used = _final_data.get("total_tokens", 0)
+                        inst.cost_usd = _final_data.get("total_cost_usd", 0)
+                        inst.steps_executed = _final_data.get("steps", 0)
+                    elif runtime._cancelled:
+                        inst.status = InstanceStatus.CANCELLED
+                    else:
+                        inst.status = InstanceStatus.FAILED
+                        inst.error = "Stream terminated unexpectedly"
+                    inst.completed_at = _dt.now(UTC)
+
+                # Update session with conversation history and metrics
+                if sess:
+                    stored_messages = list(sess.messages or [])
+                    stored_messages.extend(messages)
+                    stored_messages.extend(_assistant_messages)
+                    sess.messages = stored_messages
+                    sess.turn_count = 1
+                    sess.total_tokens = _final_data.get("total_tokens", 0)
+                    sess.total_cost_usd = float(_final_data.get("total_cost_usd", 0))
+                    sess.last_activity_at = _dt.now(UTC)
+
+                await db.commit()
+            except Exception:
+                logger.warning(
+                    "conversation_cleanup_failed",
+                    instance_id=str(instance_id),
+                    session_id=str(session_id),
+                    exc_info=True,
+                )
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Instance-Id": str(instance_id),
+            "X-Session-Id": str(session_id),
+            "Access-Control-Expose-Headers": "X-Instance-Id, X-Session-Id",
+        },
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/reply",
+    dependencies=[Depends(RequireScopes("agents:execute"))],
+)
+async def conversation_reply(
+    session_id: uuid.UUID,
+    body: ConversationReplyRequest,
+    request: Request,
+    tenant: Tenant = Depends(get_current_tenant),
+    api_key: ApiKey | None = Depends(get_current_api_key_optional),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send a follow-up message in an existing interactive conversation.
+
+    Validates the session is still active and not locked by another reply,
+    then creates a new AgentInstance for this turn and streams SSE events.
+    """
+    from datetime import UTC, datetime as _dt
+
+    from starlette.responses import StreamingResponse
+
+    from app.agents.runtime import AgentRuntime
+    from app.config import settings
+
+    await set_tenant_context(db, str(tenant.id))
+
+    # Load and validate session
+    session = await db.get(AgentSession, session_id)
+    if not session or session.tenant_id != tenant.id:
+        raise HTTPException(404, "Session not found")
+    if not session.is_interactive:
+        raise HTTPException(400, "Session is not interactive — use run-stream for one-shot runs")
+    if session.status != SessionStatus.ACTIVE:
+        raise HTTPException(400, f"Session is {session.status.value}, cannot accept replies")
+
+    # Check session expiry
+    now = _dt.now(UTC)
+    if session.expires_at and session.expires_at < now:
+        raise HTTPException(410, "Session has expired")
+    if session.last_activity_at:
+        from datetime import timedelta
+        idle_deadline = session.last_activity_at + timedelta(seconds=session.idle_timeout_seconds)
+        if now > idle_deadline:
+            session.status = SessionStatus.EXPIRED
+            await db.commit()
+            raise HTTPException(410, "Session has expired due to inactivity")
+
+    # Check turn limit
+    if session.turn_count >= settings.AGENT_SESSION_MAX_TURNS:
+        raise HTTPException(
+            429,
+            f"Session has reached the maximum number of turns ({settings.AGENT_SESSION_MAX_TURNS})",
+        )
+
+    # Acquire Redis distributed lock to prevent concurrent replies
+    from app.core.redis import get_redis
+    redis = await get_redis()
+    lock_key = f"agent:session:lock:{session_id}"
+    lock = redis.lock(lock_key, timeout=settings.AGENT_CONVERSATION_LOCK_TIMEOUT + 300, blocking_timeout=0)
+    if not await lock.acquire():
+        raise HTTPException(409, "A response is still in progress for this session")
+
+    try:
+        # Load agent definition
+        agent = await db.get(AgentDefinition, session.definition_id)
+        if not agent or agent.status != AgentStatus.ACTIVE:
+            raise HTTPException(400, "Agent is no longer active")
+
+        await _enforce_concurrent_limit(db, agent, tenant.id)
+
+        # Resolve API key
+        from app.core.encryption import decrypt
+        from app.db.models.ai import TenantAIProviderKey
+        from sqlalchemy import select as _select
+
+        provider_key_result = await db.execute(
+            _select(TenantAIProviderKey).where(
+                TenantAIProviderKey.tenant_id == tenant.id,
+                TenantAIProviderKey.is_active.is_(True),
+            ).limit(1)
+        )
+        provider_key = provider_key_result.scalar_one_or_none()
+        resolved_api_key = decrypt(provider_key.encrypted_api_key) if provider_key else ""
+        if not resolved_api_key:
+            raise HTTPException(503, "No AI provider key configured for this tenant")
+
+        runtime = AgentRuntime(
+            definition=agent,
+            tenant_id=tenant.id,
+            api_key=resolved_api_key,
+            key_source="platform",
+        )
+
+        instance_id = uuid.uuid4()
+        new_user_message = {"role": "user", "content": body.message}
+        turn_number = session.turn_count + 1
+
+        # Build full conversation from session history + new message
+        conversation_messages = list(session.messages or [])
+        conversation_messages.append(new_user_message)
+
+        # Create new instance for this turn
+        instance = AgentInstance(
+            id=instance_id,
+            tenant_id=tenant.id,
+            definition_id=agent.id,
+            session_id=session_id,
+            status=InstanceStatus.RUNNING,
+            input_data={"messages": [new_user_message]},
+            started_at=now,
+        )
+        db.add(instance)
+        await db.commit()
+        await db.refresh(instance)
+
+        async def event_generator():
+            import json as _json
+
+            _completed_normally = False
+            _final_data: dict = {}
+            _assistant_messages: list[dict] = []
+
+            yield (
+                f"event: turn_started\n"
+                f"data: {_json.dumps({'instance_id': str(instance_id), 'session_id': str(session_id), 'turn_number': turn_number})}\n\n"
+            )
+
+            try:
+                async for event in runtime.run_stream(
+                    messages=conversation_messages,
+                    instance_id=instance_id,
+                    db=db,
+                ):
+                    if await request.is_disconnected():
+                        runtime.cancel()
+                        return
+
+                    event_type = event.get("event", "message")
+                    event_data = event.get("data", {})
+
+                    if event_type == "run_completed":
+                        _completed_normally = True
+                        _final_data = event_data
+                        if event_data.get("output"):
+                            _assistant_messages.append({
+                                "role": "assistant",
+                                "content": str(event_data["output"]),
+                            })
+
+                    yield f"event: {event_type}\ndata: {_json.dumps(event_data, default=str)}\n\n"
+            except Exception as exc:
+                import json as _json2
+                logger.error("conversation_reply_error", error=str(exc), exc_info=True)
+                yield f"event: error\ndata: {_json2.dumps({'message': str(exc)[:500]})}\n\n"
+            finally:
+                try:
+                    inst = await db.get(AgentInstance, instance_id)
+                    sess = await db.get(AgentSession, session_id)
+
+                    if inst and inst.status in (InstanceStatus.RUNNING, InstanceStatus.PENDING):
+                        if _completed_normally:
+                            inst.status = InstanceStatus.COMPLETED
+                            inst.output_data = _final_data.get("output", {})
+                            inst.tokens_used = _final_data.get("total_tokens", 0)
+                            inst.cost_usd = _final_data.get("total_cost_usd", 0)
+                            inst.steps_executed = _final_data.get("steps", 0)
+                        elif runtime._cancelled:
+                            inst.status = InstanceStatus.CANCELLED
+                        else:
+                            inst.status = InstanceStatus.FAILED
+                            inst.error = "Stream terminated unexpectedly"
+                        inst.completed_at = _dt.now(UTC)
+
+                    # Update session with new messages and metrics
+                    if sess:
+                        stored_messages = list(sess.messages or [])
+                        stored_messages.append(new_user_message)
+                        stored_messages.extend(_assistant_messages)
+                        sess.messages = stored_messages
+                        sess.turn_count = turn_number
+                        sess.total_tokens = (sess.total_tokens or 0) + _final_data.get("total_tokens", 0)
+                        sess.total_cost_usd = float(sess.total_cost_usd or 0) + float(_final_data.get("total_cost_usd", 0))
+                        sess.last_activity_at = _dt.now(UTC)
+
+                        # Sliding TTL: extend expiry on each turn
+                        if settings.AGENT_SESSION_SLIDING_TTL:
+                            from datetime import timedelta
+                            sess.expires_at = _dt.now(UTC) + timedelta(seconds=sess.idle_timeout_seconds)
+
+                    await db.commit()
+                except Exception:
+                    logger.warning(
+                        "conversation_reply_cleanup_failed",
+                        instance_id=str(instance_id),
+                        session_id=str(session_id),
+                        exc_info=True,
+                    )
+                finally:
+                    # Always release the lock
+                    try:
+                        await lock.release()
+                    except Exception:
+                        logger.warning("session_lock_release_failed", session_id=str(session_id))
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+                "X-Instance-Id": str(instance_id),
+                "X-Session-Id": str(session_id),
+                "Access-Control-Expose-Headers": "X-Instance-Id, X-Session-Id",
+            },
+        )
+    except HTTPException:
+        await lock.release()
+        raise
+    except Exception:
+        await lock.release()
+        raise
+
+
+@router.get(
+    "/sessions/{session_id}",
+    response_model=ConversationSessionResponse,
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
+async def get_session(
+    session_id: uuid.UUID,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a session by ID with full message history."""
+    await set_tenant_context(db, str(tenant.id))
+    session = await db.get(AgentSession, session_id)
+    if not session or session.tenant_id != tenant.id:
+        raise HTTPException(404, "Session not found")
+    return ConversationSessionResponse.model_validate(session)
+
+
+@router.post(
+    "/sessions/{session_id}/close",
+    response_model=ConversationSessionResponse,
+    dependencies=[Depends(RequireScopes("agents:execute"))],
+)
+async def close_session(
+    session_id: uuid.UUID,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Explicitly close an interactive conversation session."""
+    await set_tenant_context(db, str(tenant.id))
+    session = await db.get(AgentSession, session_id)
+    if not session or session.tenant_id != tenant.id:
+        raise HTTPException(404, "Session not found")
+    if session.status == SessionStatus.COMPLETED:
+        return ConversationSessionResponse.model_validate(session)
+    session.status = SessionStatus.COMPLETED
+    await db.commit()
+    await db.refresh(session)
+    return ConversationSessionResponse.model_validate(session)
+
+
+@router.get(
+    "/definitions/{agent_id}/conversations",
+    response_model=PaginatedResponse,
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
+async def list_conversations(
+    agent_id: uuid.UUID,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status: str | None = Query(None),
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """List interactive conversation sessions for an agent definition."""
+    await set_tenant_context(db, str(tenant.id))
+    await _get_agent_or_404(db, agent_id, tenant.id)
+
+    conditions = [
+        AgentSession.definition_id == agent_id,
+        AgentSession.tenant_id == tenant.id,
+        AgentSession.is_interactive.is_(True),
+    ]
+    if status:
+        conditions.append(AgentSession.status == status)
+
+    count_stmt = select(func.count()).select_from(AgentSession).where(*conditions)
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    stmt = (
+        select(AgentSession)
+        .where(*conditions)
+        .order_by(AgentSession.last_activity_at.desc().nullslast(), AgentSession.created_at.desc())
+        .limit(page_size)
+        .offset((page - 1) * page_size)
+    )
+    result = await db.execute(stmt)
+    items = list(result.scalars().all())
+
+    return PaginatedResponse(
+        items=[ConversationSessionResponse.model_validate(s) for s in items],
         total=total,
         page=page,
         page_size=page_size,
