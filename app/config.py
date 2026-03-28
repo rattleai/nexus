@@ -205,6 +205,7 @@ class Settings(BaseSettings):
     # Phase 1 — A2A Security
     AGENT_A2A_SIGNING_ENABLED: bool = True
     AGENT_A2A_ENCRYPTION_ENABLED: bool = True
+    AGENT_A2A_LEGACY_DECRYPT: bool = True              # Allow no-AAD fallback for legacy messages (set False after migration)
 
     # Phase 1 — Tool Verification
     AGENT_TOOL_SCHEMA_VERIFICATION: bool = True
@@ -226,6 +227,7 @@ class Settings(BaseSettings):
     EVENT_BUS_CONSUMER_GROUP: str = "platform"
     EVENT_BUS_BLOCK_MS: int = 5000
     AGENT_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    AGENT_RATE_LIMIT_FAIL_OPEN: bool = False           # If True, allow requests when Redis rate limiter unavailable (dev only)
     OAUTH_CLIENT_CREDENTIALS_ENABLED: bool = False
 
     # Allowed scope values for API keys

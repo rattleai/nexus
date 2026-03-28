@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -466,3 +467,120 @@ class TestEncryptedMessageAAD:
             # Should fall back to no-AAD and still decrypt
             decrypted = security.decrypt_message(msg)
             assert decrypted == original
+
+
+# ── TestLegacyDecryptBlocked ────────────────────────────────────────
+
+
+class TestLegacyDecryptBlocked:
+    """When AGENT_A2A_LEGACY_DECRYPT is False, decryption without AAD must fail."""
+
+    @pytest.mark.asyncio
+    async def test_legacy_decrypt_blocked_when_disabled(self):
+        """Decrypt a message without AAD when legacy mode is disabled -> A2ASecurityError."""
+        import base64
+        import json
+        import os
+
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        from app.agents.a2a_security import A2ASecurityError
+
+        with (
+            patch("app.agents.a2a_security.settings") as mock_settings,
+        ):
+            mock_settings.AGENT_A2A_LEGACY_DECRYPT = False
+            mock_settings.ENCRYPTION_KEY = "test-encryption-key-for-a2a"
+            mock_settings.SECRET_KEY = "test-secret-key"
+
+            security = _make_security()
+            encryption_key = security.derive_encryption_key("receiver-1")
+
+            # Simulate legacy encryption (no AAD)
+            original = {"data": "legacy-payload"}
+            content_json = json.dumps(original, sort_keys=True, separators=(",", ":"))
+            nonce = os.urandom(12)
+            aesgcm = AESGCM(encryption_key)
+            ciphertext = aesgcm.encrypt(nonce, content_json.encode(), None)
+
+            encrypted_data = {
+                "__encrypted": True,
+                "nonce": base64.b64encode(nonce).decode(),
+                "ciphertext": base64.b64encode(ciphertext).decode(),
+            }
+
+            msg = SecureMessage(
+                from_instance="sender-1",
+                to_instance="receiver-1",
+                content=encrypted_data,
+                encrypted=True,
+                timestamp=time.time(),
+                sequence_number=1,
+            )
+
+            # With legacy decrypt disabled, this MUST raise A2ASecurityError
+            with pytest.raises(A2ASecurityError, match="legacy fallback is disabled"):
+                security.decrypt_message(msg)
+
+
+# ── TestSigningKeyDeterminism ───────────────────────────────────────
+
+
+class TestSigningKeyDeterminism:
+    """Signing key derivation with salt is deterministic for same inputs."""
+
+    def test_signing_key_with_salt_deterministic(self):
+        """derive_signing_key returns same result for same tenant + instance."""
+        with (
+            patch("app.agents.a2a_security.settings") as mock_settings,
+        ):
+            mock_settings.ENCRYPTION_KEY = "test-encryption-key"
+            mock_settings.SECRET_KEY = "test-secret-key"
+
+            security = _make_security(tenant_id="tenant-determinism")
+            key1 = security.derive_signing_key("instance-x")
+            key2 = security.derive_signing_key("instance-x")
+
+            assert key1 == key2
+            assert len(key1) == 32  # HKDF-SHA256 with length=32
+
+    def test_signing_key_with_salt_different_instances(self):
+        """Different instance_ids produce different keys (even with same tenant)."""
+        with (
+            patch("app.agents.a2a_security.settings") as mock_settings,
+        ):
+            mock_settings.ENCRYPTION_KEY = "test-encryption-key"
+            mock_settings.SECRET_KEY = "test-secret-key"
+
+            security = _make_security(tenant_id="tenant-determinism")
+            key_a = security.derive_signing_key("instance-a")
+            key_b = security.derive_signing_key("instance-b")
+
+            assert key_a != key_b
+
+
+# ── TestSigningKeyTenantIsolation ───────────────────────────────────
+
+
+class TestSigningKeyTenantIsolation:
+    """Signing keys must be different across tenants for same instance_id."""
+
+    def test_signing_key_different_tenants_isolated(self):
+        """Two different tenant_ids produce completely different signing keys."""
+        with (
+            patch("app.agents.a2a_security.settings") as mock_settings,
+        ):
+            mock_settings.ENCRYPTION_KEY = "test-encryption-key"
+            mock_settings.SECRET_KEY = "test-secret-key"
+
+            security_a = _make_security(tenant_id=str(uuid.uuid4()))
+            security_b = _make_security(tenant_id=str(uuid.uuid4()))
+
+            # Same instance_id, different tenants
+            key_a = security_a.derive_signing_key("shared-instance")
+            key_b = security_b.derive_signing_key("shared-instance")
+
+            assert key_a != key_b
+            # Both must be valid 32-byte keys
+            assert len(key_a) == 32
+            assert len(key_b) == 32

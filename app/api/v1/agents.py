@@ -649,7 +649,7 @@ async def run_agent_stream(
         except Exception as exc:
             import json as _json2
             logger.error("agent_stream_error", error=str(exc), exc_info=True)
-            yield f"event: error\ndata: {_json2.dumps({'message': str(exc)[:500]})}\n\n"
+            yield f"event: error\ndata: {_json2.dumps({'message': 'An internal error occurred. Please try again.'})}\n\n"
         finally:
             # Immediate cleanup — don't rely on periodic sweep to catch orphaned instances
             try:
@@ -898,7 +898,9 @@ async def start_conversation(
     except HTTPException:
         raise
     except Exception:
-        logger.warning("conv_rate_limit_redis_unavailable", exc_info=True)
+        logger.error("conv_rate_limit_redis_unavailable", exc_info=True)
+        if not getattr(settings, "AGENT_RATE_LIMIT_FAIL_OPEN", False):
+            raise HTTPException(503, "Rate limiting service unavailable") from None
 
     # Resolve API key
     from app.core.encryption import decrypt
@@ -1141,7 +1143,9 @@ async def conversation_reply(
     except HTTPException:
         raise
     except Exception:
-        logger.warning("reply_rate_limit_redis_unavailable", exc_info=True)
+        logger.error("reply_rate_limit_redis_unavailable", exc_info=True)
+        if not getattr(settings, "AGENT_RATE_LIMIT_FAIL_OPEN", False):
+            raise HTTPException(503, "Rate limiting service unavailable") from None
 
     # Check turn limit
     if session.turn_count >= settings.AGENT_SESSION_MAX_TURNS:

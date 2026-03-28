@@ -48,6 +48,7 @@ export function useAgentConversation(
   const toolCallMapRef = React.useRef(new Map<string, string>()) // toolName → toolCallId
   const processedCountRef = React.useRef(0)
   const sendingRef = React.useRef(false)
+  const streamVersionRef = React.useRef(0)
 
   // Initialize conversation in store
   React.useEffect(() => {
@@ -66,11 +67,13 @@ export function useAgentConversation(
   // Process registry stream entries into conversation turns
   React.useEffect(() => {
     if (!resolvedSessionId || !registry.entries) return
+    const currentVersion = streamVersionRef.current
 
     const entries = registry.entries
     const startIdx = processedCountRef.current
 
     for (let i = startIdx; i < entries.length; i++) {
+      if (streamVersionRef.current !== currentVersion) return
       const entry = entries[i]
 
       switch (entry.type) {
@@ -231,6 +234,7 @@ export function useAgentConversation(
       const sid = resolvedSessionId
       if (!sid || sendingRef.current) return
       sendingRef.current = true
+      streamVersionRef.current += 1
 
       try {
         // Add user turn to store

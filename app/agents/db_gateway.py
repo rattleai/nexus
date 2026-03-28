@@ -201,6 +201,9 @@ class AgentDatabaseGateway:
             # 3. Set agent-specific statement timeout
             await self._set_statement_timeout(db)
 
+            # 3b. Verify RLS tenant context is set correctly (fail-closed)
+            await self._verify_tenant_context(db)
+
             # 4. Execute the query
             from sqlalchemy import text
             result = await db.execute(text(query), params or {})
@@ -263,7 +266,7 @@ class AgentDatabaseGateway:
             )
             return QueryResult(
                 success=False,
-                error=f"Query execution failed: {str(exc)[:200]}",
+                error="Query execution failed",
                 duration_ms=duration_ms,
                 query_hash=query_hash,
             )
@@ -444,6 +447,42 @@ class AgentDatabaseGateway:
             text("SET LOCAL statement_timeout = :timeout"),
             {"timeout": str(timeout_ms)},
         )
+
+    async def _verify_tenant_context(self, db: Any) -> None:
+        """Verify that the database session has the correct RLS tenant context.
+
+        Fail-closed: if the tenant context is missing or mismatched, block the query.
+        This is a defense-in-depth check — RLS should already be set by the caller,
+        but this prevents data leaks if the caller forgot or used the wrong session.
+        """
+        from sqlalchemy import text
+        try:
+            result = await db.execute(text("SELECT current_setting('app.tenant_id', true)"))
+            row = result.scalar_one_or_none()
+            if not row:
+                raise GatewayViolationError(
+                    "tenant_context_missing",
+                    "Database session has no tenant context (app.tenant_id not set)",
+                )
+            if row != str(self.tenant_id):
+                logger.error(
+                    "agent_db_tenant_context_mismatch",
+                    expected=str(self.tenant_id),
+                    actual=row[:36],  # truncate to UUID length for safety
+                )
+                raise GatewayViolationError(
+                    "tenant_context_mismatch",
+                    "Database session tenant context does not match agent tenant",
+                )
+        except GatewayViolationError:
+            raise
+        except Exception:
+            # Fail-closed: if we can't verify tenant context, block the query
+            logger.error("agent_db_tenant_context_check_failed", exc_info=True)
+            raise GatewayViolationError(
+                "tenant_context_unavailable",
+                "Unable to verify tenant context",
+            )
 
     async def _track_bytes(self, result_bytes: int) -> None:
         """Track cumulative bytes returned to agent for this run."""

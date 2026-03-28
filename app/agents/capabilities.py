@@ -204,10 +204,13 @@ class CapabilityManager:
             or settings.ENCRYPTION_KEY
             or settings.SECRET_KEY
         )
+        # Deterministic salt provides better key separation than salt=None
+        # (RFC 5869 recommends a non-secret random value or application-specific constant)
+        salt = hashlib.sha256(b"cadprice-capability-salt-v1").digest()
         hkdf = HKDF(
             algorithm=SHA256(),
             length=32,
-            salt=None,
+            salt=salt,
             info=f"capability-token-signing-v{version}".encode(),
         )
         return hkdf.derive(source.encode())

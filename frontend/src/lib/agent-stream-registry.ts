@@ -67,6 +67,7 @@ interface ActiveStream {
 const registry = new Map<string, ActiveStream>()
 
 const CLEANUP_DELAY_MS = 5 * 60 * 1000 // 5 minutes
+const MAX_STREAM_ENTRIES = 5000
 
 function notifyListeners(stream: ActiveStream) {
   for (const listener of stream.listeners) {
@@ -129,6 +130,9 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
                 cost: parsed.cost_usd,
                 timestamp: now,
               })
+              if (stream.entries.length > MAX_STREAM_ENTRIES) {
+                stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+              }
               notifyListeners(stream)
               break
             }
@@ -145,6 +149,9 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
                     text: parsed.content,
                     timestamp: now,
                   })
+                  if (stream.entries.length > MAX_STREAM_ENTRIES) {
+                    stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+                  }
                 }
                 notifyListeners(stream)
               }
@@ -163,6 +170,9 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
                   status: "running",
                   timestamp: now,
                 })
+                if (stream.entries.length > MAX_STREAM_ENTRIES) {
+                  stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+                }
                 notifyListeners(stream)
               }
               break
@@ -196,6 +206,9 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
                   cost: parsed.cost_usd ?? parsed.cost,
                   timestamp: now,
                 })
+                if (stream.entries.length > MAX_STREAM_ENTRIES) {
+                  stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+                }
                 notifyListeners(stream)
               }
               break
@@ -209,6 +222,9 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
                 message: parsed.finish_reason,
                 timestamp: now,
               })
+              if (stream.entries.length > MAX_STREAM_ENTRIES) {
+                stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+              }
               stream.status = "completed"
               notifyListeners(stream)
               break
@@ -222,6 +238,9 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
                 message: parsed.message,
                 timestamp: now,
               })
+              if (stream.entries.length > MAX_STREAM_ENTRIES) {
+                stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+              }
               stream.status = "error"
               notifyListeners(stream)
               break
@@ -445,6 +464,9 @@ export function abortStream(instanceId: string): void {
       message: "Stopped by user",
       timestamp: Date.now(),
     })
+    if (stream.entries.length > MAX_STREAM_ENTRIES) {
+      stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+    }
     notifyListeners(stream)
   }
 }

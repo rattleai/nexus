@@ -116,13 +116,15 @@ class A2ASecurityLayer:
         """Derive a per-instance ephemeral signing key using HKDF.
 
         Uses HKDF-SHA256 with tenant+instance-specific info for proper
-        domain separation and key derivation.
+        domain separation and key derivation. Deterministic salt per
+        RFC 5869 improves key separation vs salt=None.
         """
         source = settings.ENCRYPTION_KEY or settings.SECRET_KEY
+        salt = hashlib.sha256(f"cadprice-a2a-signing-salt-v1:{self.tenant_id}".encode()).digest()
         hkdf = HKDF(
             algorithm=SHA256(),
             length=32,
-            salt=None,
+            salt=salt,
             info=f"a2a-signing-v1:{self.tenant_id}:{instance_id}".encode(),
         )
         return hkdf.derive(source.encode())
@@ -130,10 +132,11 @@ class A2ASecurityLayer:
     def derive_encryption_key(self, instance_id: str) -> bytes:
         """Derive a per-instance encryption key for AES-256-GCM using HKDF."""
         source = settings.ENCRYPTION_KEY or settings.SECRET_KEY
+        salt = hashlib.sha256(f"cadprice-a2a-encryption-salt-v1:{self.tenant_id}".encode()).digest()
         hkdf = HKDF(
             algorithm=SHA256(),
             length=32,
-            salt=None,
+            salt=salt,
             info=f"a2a-encryption-v1:{self.tenant_id}:{instance_id}".encode(),
         )
         return hkdf.derive(source.encode())
@@ -338,8 +341,15 @@ class A2ASecurityLayer:
                 plaintext = aesgcm.decrypt(nonce, ciphertext, aad)
                 return json.loads(plaintext.decode())
             except Exception:
-                # Fall back to no-AAD for legacy messages
-                logger.warning("a2a_decrypt_aad_failed_trying_legacy")
+                if not settings.AGENT_A2A_LEGACY_DECRYPT:
+                    raise A2ASecurityError(
+                        "AAD verification failed and legacy fallback is disabled"
+                    )
+                # Fall back to no-AAD for legacy messages — log for migration tracking
+                logger.warning(
+                    "a2a_decrypt_aad_fallback_used",
+                    tenant_id=self.tenant_id if hasattr(self, "tenant_id") else "unknown",
+                )
 
         plaintext = aesgcm.decrypt(nonce, ciphertext, None)
         return json.loads(plaintext.decode())
