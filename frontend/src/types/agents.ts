@@ -18,6 +18,8 @@ export interface AgentDefinition {
   temperature: number | null
   max_tokens: number | null
   allowed_tools: string[]
+  capabilities: string[]
+  resolved_tools: string[]
   max_steps_per_run: number
   max_duration_seconds: number
   max_tokens_per_run: number
@@ -41,6 +43,8 @@ export interface AgentDefinitionCreate {
   temperature?: number | null
   max_tokens?: number | null
   allowed_tools?: string[]
+  capabilities?: string[]
+  capability_preset_id?: string
   max_steps_per_run?: number
   max_duration_seconds?: number
   max_tokens_per_run?: number
@@ -59,6 +63,7 @@ export interface AgentDefinitionUpdate {
   temperature?: number | null
   max_tokens?: number | null
   allowed_tools?: string[]
+  capabilities?: string[]
   max_steps_per_run?: number
   max_duration_seconds?: number
   max_tokens_per_run?: number
@@ -101,7 +106,9 @@ export interface GovernancePolicy {
   max_spend_per_month_usd?: number | null
   allowed_tools?: string[]
   denied_tools?: string[]
+  denied_capabilities?: string[]
   require_approval_for?: string[]
+  require_approval_for_capabilities?: string[]
   approval_timeout_seconds?: number
   approval_default_action?: "deny" | "approve"
   max_requests_per_minute?: number | null
@@ -260,4 +267,42 @@ export interface StreamPaneState {
   instanceId: string | null
   agentName: string
   definitionId: string
+}
+
+// ── Capabilities ─────────────────────────────────────────────
+
+export interface ToolCapability {
+  slug: string
+  label: string
+  description: string
+  tools: string[]
+  tool_count: number
+  risk_level: "low" | "medium" | "high" | "critical"
+  requires_approval_default: boolean
+}
+
+export interface CapabilityDomain {
+  slug: string
+  label: string
+  icon: string
+  capabilities: ToolCapability[]
+}
+
+export interface CapabilityCatalog {
+  domains: CapabilityDomain[]
+}
+
+export interface CapabilityPreset {
+  id: string
+  tenant_id: string | null
+  name: string
+  slug: string
+  description: string
+  icon: string
+  capabilities: string[]
+  additional_tools: string[]
+  governance_overrides: Record<string, unknown>
+  is_system: boolean
+  created_at: string
+  updated_at: string
 }

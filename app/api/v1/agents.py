@@ -43,6 +43,8 @@ from app.agents.schemas import (
     AgentPolicyCreate,
     AgentPolicyResponse,
     AgentSessionResponse,
+    CapabilityPresetCreate,
+    CapabilityResolveRequest,
     MemoryWriteRequest,
     PaginatedResponse,
     TenantToolCreate,
@@ -112,6 +114,28 @@ async def create_agent_definition(
     """Create a new agent definition."""
     await set_tenant_context(db, str(tenant.id))
 
+    # Resolve capabilities from preset if provided
+    capabilities = body.capabilities
+    if body.capability_preset_id and not capabilities:
+        from app.agents.models import CapabilityPreset
+        from sqlalchemy import or_
+        preset_stmt = select(CapabilityPreset).where(
+            CapabilityPreset.id == body.capability_preset_id,
+            CapabilityPreset.deleted_at.is_(None),
+            or_(
+                CapabilityPreset.tenant_id == tenant.id,
+                CapabilityPreset.tenant_id.is_(None),
+            ),
+        )
+        preset_result = await db.execute(preset_stmt)
+        preset = preset_result.scalar_one_or_none()
+        if preset:
+            capabilities = preset.capabilities
+            if preset.additional_tools:
+                body.allowed_tools = list(set(body.allowed_tools) | set(preset.additional_tools))
+            if preset.governance_overrides:
+                body.governance_policy = {**body.governance_policy, **preset.governance_overrides}
+
     agent = AgentDefinition(
         tenant_id=tenant.id,
         name=body.name,
@@ -122,6 +146,7 @@ async def create_agent_definition(
         temperature=body.temperature,
         max_tokens=body.max_tokens,
         allowed_tools=body.allowed_tools,
+        capabilities=capabilities,
         max_steps_per_run=body.max_steps_per_run,
         max_duration_seconds=body.max_duration_seconds,
         max_tokens_per_run=body.max_tokens_per_run,
@@ -239,7 +264,7 @@ async def update_agent_definition(
     # Allowlist of mutable fields to prevent mass-assignment of sensitive columns
     _MUTABLE_FIELDS = {
         "name", "slug", "description", "status", "system_prompt", "model",
-        "temperature", "max_tokens", "allowed_tools", "tool_versions",
+        "temperature", "max_tokens", "allowed_tools", "capabilities", "tool_versions",
         "max_steps_per_run", "max_duration_seconds", "max_tokens_per_run",
         "sandbox_enabled", "parallel_tool_execution", "max_concurrent_instances",
         "memory_config", "output_schema", "governance_policy", "metadata",
@@ -292,6 +317,193 @@ async def delete_agent_definition(
     agent = await _get_agent_or_404(db, agent_id, tenant.id)
     agent.deleted_at = datetime.now(UTC)
     agent.status = AgentStatus.DISABLED
+    await db.commit()
+
+
+# ── Capability Catalog & Presets ───────────────────────────────────────
+
+
+@router.get("/capabilities")
+async def get_capability_catalog(
+    tenant: Tenant = Depends(get_current_tenant),
+):
+    """Return the full capability catalog (platform + all plugins).
+
+    No database hit — derived from in-memory plugin registry.
+    """
+    from app.agents.capabilities import capability_resolver
+    from app.agents.schemas import (
+        CapabilityCatalogResponse,
+        CapabilityDomainResponse,
+        ToolCapabilityResponse,
+    )
+
+    domains = capability_resolver.get_catalog()
+    return CapabilityCatalogResponse(
+        domains=[
+            CapabilityDomainResponse(
+                slug=d.slug,
+                label=d.label,
+                icon=d.icon,
+                capabilities=[
+                    ToolCapabilityResponse(
+                        slug=c.slug,
+                        label=c.label,
+                        description=c.description,
+                        tools=list(c.tools),
+                        tool_count=len(c.tools),
+                        risk_level=c.risk_level,
+                        requires_approval_default=c.requires_approval_default,
+                    )
+                    for c in d.capabilities
+                ],
+            )
+            for d in domains
+        ],
+    )
+
+
+@router.post("/capabilities/resolve")
+async def resolve_capabilities(
+    body: "CapabilityResolveRequest",
+    tenant: Tenant = Depends(get_current_tenant),
+):
+    """Preview which tools a set of capabilities resolves to."""
+    from app.agents.capabilities import capability_resolver
+    from app.agents.schemas import CapabilityResolveRequest, CapabilityResolveResponse
+
+    tools = sorted(capability_resolver.resolve(body.capabilities))
+    return CapabilityResolveResponse(tools=tools, count=len(tools))
+
+
+@router.get(
+    "/capability-presets",
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
+async def list_capability_presets(
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """List capability presets (system + tenant-scoped)."""
+    from app.agents.models import CapabilityPreset
+    from app.agents.schemas import CapabilityPresetResponse
+
+    await set_tenant_context(db, str(tenant.id))
+    stmt = select(CapabilityPreset).where(
+        CapabilityPreset.deleted_at.is_(None),
+        (CapabilityPreset.tenant_id == tenant.id) | (CapabilityPreset.tenant_id.is_(None)),
+    ).order_by(CapabilityPreset.is_system.desc(), CapabilityPreset.name)
+    result = await db.execute(stmt)
+    presets = result.scalars().all()
+    return [CapabilityPresetResponse.model_validate(p) for p in presets]
+
+
+@router.post(
+    "/capability-presets",
+    status_code=201,
+    dependencies=[Depends(RequireScopes("agents:write"))],
+)
+async def create_capability_preset(
+    body: "CapabilityPresetCreate",
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a tenant-scoped capability preset."""
+    from app.agents.models import CapabilityPreset
+    from app.agents.schemas import CapabilityPresetCreate, CapabilityPresetResponse
+
+    await set_tenant_context(db, str(tenant.id))
+    preset = CapabilityPreset(
+        tenant_id=tenant.id,
+        name=body.name,
+        slug=body.slug,
+        description=body.description,
+        icon=body.icon,
+        capabilities=body.capabilities,
+        additional_tools=body.additional_tools,
+        governance_overrides=body.governance_overrides,
+    )
+    db.add(preset)
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(409, f"Preset with slug '{body.slug}' already exists") from exc
+    await db.refresh(preset)
+    await db.commit()
+    return CapabilityPresetResponse.model_validate(preset)
+
+
+@router.put(
+    "/capability-presets/{preset_id}",
+    dependencies=[Depends(RequireScopes("agents:write"))],
+)
+async def update_capability_preset(
+    preset_id: uuid.UUID,
+    body: CapabilityPresetCreate,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a tenant-scoped capability preset (system presets cannot be modified)."""
+    from app.agents.models import CapabilityPreset
+    from app.agents.schemas import CapabilityPresetResponse
+
+    await set_tenant_context(db, str(tenant.id))
+    stmt = select(CapabilityPreset).where(
+        CapabilityPreset.id == preset_id,
+        CapabilityPreset.tenant_id == tenant.id,
+        CapabilityPreset.deleted_at.is_(None),
+    )
+    result = await db.execute(stmt)
+    preset = result.scalar_one_or_none()
+    if not preset:
+        raise HTTPException(404, "Preset not found")
+    if preset.is_system:
+        raise HTTPException(403, "System presets cannot be modified")
+    preset.name = body.name
+    preset.slug = body.slug
+    preset.description = body.description
+    preset.icon = body.icon
+    preset.capabilities = body.capabilities
+    preset.additional_tools = body.additional_tools
+    preset.governance_overrides = body.governance_overrides
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(409, f"Preset with slug '{body.slug}' already exists") from exc
+    await db.commit()
+    return CapabilityPresetResponse.model_validate(preset)
+
+
+@router.delete(
+    "/capability-presets/{preset_id}",
+    status_code=204,
+    dependencies=[Depends(RequireScopes("agents:write"))],
+)
+async def delete_capability_preset(
+    preset_id: uuid.UUID,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a tenant-scoped capability preset (system presets cannot be deleted)."""
+    from datetime import UTC, datetime
+
+    from app.agents.models import CapabilityPreset
+
+    await set_tenant_context(db, str(tenant.id))
+    stmt = select(CapabilityPreset).where(
+        CapabilityPreset.id == preset_id,
+        CapabilityPreset.tenant_id == tenant.id,
+        CapabilityPreset.deleted_at.is_(None),
+    )
+    result = await db.execute(stmt)
+    preset = result.scalar_one_or_none()
+    if not preset:
+        raise HTTPException(404, "Preset not found")
+    if preset.is_system:
+        raise HTTPException(403, "System presets cannot be deleted")
+    preset.deleted_at = datetime.now(UTC)
     await db.commit()
 
 
@@ -609,6 +821,10 @@ async def run_agent_stream(
     await db.refresh(instance)
     await db.commit()
 
+    # Re-establish RLS context: SET LOCAL is transaction-scoped and the
+    # commit above ended the transaction, wiping app.tenant_id.
+    await set_tenant_context(db, str(tenant.id))
+
     messages = body.input_data.get("messages", [{"role": "user", "content": str(body.input_data)}])
 
     # Build tool executor and governance checker so agents can actually
@@ -658,8 +874,18 @@ async def run_agent_stream(
             yield f"event: error\ndata: {_json2.dumps({'message': str(exc)[:500]})}\n\n"
         finally:
             # Immediate cleanup — don't rely on periodic sweep to catch orphaned instances
-            try:
-                inst = await db.get(AgentInstance, instance_id)
+            async def _cleanup_instance() -> None:
+                """Update instance status, recovering from PendingRollbackError if needed."""
+                from sqlalchemy.exc import PendingRollbackError
+
+                try:
+                    await set_tenant_context(db, str(tenant.id))
+                    inst = await db.get(AgentInstance, instance_id)
+                except PendingRollbackError:
+                    await db.rollback()
+                    await set_tenant_context(db, str(tenant.id))
+                    inst = await db.get(AgentInstance, instance_id)
+
                 if inst and inst.status in (InstanceStatus.RUNNING, InstanceStatus.PENDING):
                     if _completed_normally:
                         inst.status = InstanceStatus.COMPLETED
@@ -674,6 +900,9 @@ async def run_agent_stream(
                         inst.error = "Stream terminated unexpectedly"
                     inst.completed_at = _dt.now(UTC)
                     await db.commit()
+
+            try:
+                await _cleanup_instance()
             except Exception:
                 logger.warning("stream_instance_cleanup_failed", instance_id=str(instance_id), exc_info=True)
 

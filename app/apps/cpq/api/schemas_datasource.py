@@ -82,34 +82,6 @@ class DataSourceList(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ── Cloud Connection ─────────────────────────────────────
-
-
-class CloudConnectionCreate(BaseModel):
-    provider: str = Field(..., description="One of: google_drive, dropbox, onedrive")
-    account_email: str = Field(..., min_length=1, max_length=255)
-    display_name: str | None = Field(default=None, max_length=255)
-    access_token: str = Field(..., min_length=1, description="OAuth access token (will be encrypted)")
-    refresh_token: str | None = Field(default=None, description="OAuth refresh token (will be encrypted)")
-    token_expires_at: datetime | None = None
-    scopes: list[str] | None = None
-
-
-class CloudConnectionRead(BaseModel):
-    id: uuid.UUID
-    tenant_id: uuid.UUID
-    provider: str
-    account_email: str
-    display_name: str | None
-    token_expires_at: datetime | None
-    scopes: dict | None
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
 # ── Data Source Chunk ────────────────────────────────────
 
 

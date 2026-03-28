@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ── Shared Validators ─────────────────────────────────────────────────
 
@@ -43,6 +43,8 @@ class AgentDefinitionCreate(BaseModel):
     temperature: float | None = Field(None, ge=0.0, le=2.0)
     max_tokens: int | None = Field(None, ge=1, le=1_000_000)
     allowed_tools: list[str] = []
+    capabilities: list[str] = []
+    capability_preset_id: uuid.UUID | None = None
     max_steps_per_run: int = Field(50, ge=1, le=1000)
     max_duration_seconds: int = Field(300, ge=10, le=3600)
     max_tokens_per_run: int = Field(100_000, ge=100, le=10_000_000)
@@ -72,6 +74,7 @@ class AgentDefinitionUpdate(BaseModel):
     temperature: float | None = Field(None, ge=0.0, le=2.0)
     max_tokens: int | None = Field(None, ge=1, le=1_000_000)
     allowed_tools: list[str] | None = None
+    capabilities: list[str] | None = None
     max_steps_per_run: int | None = Field(None, ge=1, le=1000)
     max_duration_seconds: int | None = Field(None, ge=10, le=3600)
     max_tokens_per_run: int | None = Field(None, ge=100, le=10_000_000)
@@ -105,6 +108,8 @@ class AgentDefinitionResponse(BaseModel):
     temperature: float | None
     max_tokens: int | None
     allowed_tools: list[str]
+    capabilities: list[str]
+    resolved_tools: list[str] = []
     max_steps_per_run: int
     max_duration_seconds: int
     max_tokens_per_run: int
@@ -118,6 +123,15 @@ class AgentDefinitionResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True, "populate_by_name": True}
+
+    @model_validator(mode="after")
+    def _compute_resolved_tools(self) -> "AgentDefinitionResponse":
+        """Populate resolved_tools from capabilities + allowed_tools."""
+        if not self.resolved_tools:
+            from app.agents.capabilities import capability_resolver
+
+            self.resolved_tools = capability_resolver.resolve_agent_tools(self)
+        return self
 
 
 # ── Agent Instance ─────────────────────────────────────────────────────
@@ -423,3 +437,90 @@ class PaginatedResponse(BaseModel):
     page: int
     page_size: int
     pages: int
+
+
+# ── Capability Catalog ─────────────────────────────────────────────────
+
+
+class ToolCapabilityResponse(BaseModel):
+    slug: str
+    label: str
+    description: str
+    tools: list[str]
+    tool_count: int
+    risk_level: str
+    requires_approval_default: bool
+
+
+class CapabilityDomainResponse(BaseModel):
+    slug: str
+    label: str
+    icon: str
+    capabilities: list[ToolCapabilityResponse]
+
+
+class CapabilityCatalogResponse(BaseModel):
+    domains: list[CapabilityDomainResponse]
+
+
+class CapabilityResolveRequest(BaseModel):
+    capabilities: list[str]
+
+
+class CapabilityResolveResponse(BaseModel):
+    tools: list[str]
+    count: int
+
+
+# ── Capability Presets ─────────────────────────────────────────────────
+
+
+_ALLOWED_GOVERNANCE_OVERRIDE_KEYS = {
+    "denied_tools",
+    "allowed_tools",
+    "denied_capabilities",
+    "require_approval_for",
+    "require_approval_for_capabilities",
+    "approval_timeout_seconds",
+    "approval_default_action",
+    "max_spend_per_run_usd",
+    "max_spend_per_day_usd",
+    "max_spend_per_month_usd",
+    "max_requests_per_minute",
+    "max_agent_requests_per_minute",
+}
+
+
+class CapabilityPresetCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    slug: str = Field(..., min_length=1, max_length=255, pattern=r"^[a-z0-9][a-z0-9\-]*$")
+    description: str = Field("", max_length=5000)
+    icon: str = Field("Shield", max_length=50)
+    capabilities: list[str]
+    additional_tools: list[str] = []
+    governance_overrides: dict[str, Any] = {}
+
+    @field_validator("governance_overrides")
+    @classmethod
+    def _validate_governance_keys(cls, v: dict[str, Any]) -> dict[str, Any]:
+        bad_keys = set(v.keys()) - _ALLOWED_GOVERNANCE_OVERRIDE_KEYS
+        if bad_keys:
+            raise ValueError(f"Unknown governance override keys: {sorted(bad_keys)}")
+        return v
+
+
+class CapabilityPresetResponse(BaseModel):
+    id: uuid.UUID
+    tenant_id: uuid.UUID | None
+    name: str
+    slug: str
+    description: str
+    icon: str
+    capabilities: list[str]
+    additional_tools: list[str]
+    governance_overrides: dict[str, Any]
+    is_system: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}

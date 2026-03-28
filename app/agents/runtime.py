@@ -145,8 +145,12 @@ class AgentRuntime:
         """
         from datetime import datetime, UTC
         from sqlalchemy import update
+        from sqlalchemy.exc import PendingRollbackError
 
-        try:
+        async def _do_checkpoint() -> None:
+            from app.db.session import set_tenant_context
+
+            await set_tenant_context(db, str(self.tenant_id))
             await db.execute(
                 update(AgentInstance)
                 .where(AgentInstance.id == instance_id)
@@ -163,6 +167,17 @@ class AgentRuntime:
                 )
             )
             await db.flush()
+
+        try:
+            await _do_checkpoint()
+        except PendingRollbackError:
+            # A prior tool call may have failed, leaving the session dirty.
+            # Roll back and retry the checkpoint so future writes still work.
+            try:
+                await db.rollback()
+                await _do_checkpoint()
+            except Exception:
+                logger.debug("checkpoint_retry_failed", instance_id=str(instance_id))
         except Exception:
             logger.debug("checkpoint_write_failed", instance_id=str(instance_id))
 
@@ -818,8 +833,10 @@ class AgentRuntime:
         ]
 
     def _build_tools_schema(self) -> list[dict] | None:
-        """Build OpenAI-compatible tools schema from allowed_tools."""
-        allowed = self.definition.allowed_tools or []
+        """Build OpenAI-compatible tools schema from capabilities + allowed_tools."""
+        from app.agents.capabilities import capability_resolver
+
+        allowed = capability_resolver.resolve_agent_tools(self.definition)
         if not allowed:
             return None
 
@@ -861,9 +878,10 @@ class AgentRuntime:
 
     async def _load_tenant_tool_schemas(self, db: Any) -> None:
         """Preload tenant tool schemas from DB so _build_tools_schema uses real schemas."""
+        from app.agents.capabilities import capability_resolver
         from app.agents.tool_registry import tool_registry
 
-        allowed = self.definition.allowed_tools or []
+        allowed = capability_resolver.resolve_agent_tools(self.definition)
         builtin_names = set(tool_registry.list_builtin_tools().keys())
         tenant_tool_names = [n for n in allowed if n not in builtin_names]
 

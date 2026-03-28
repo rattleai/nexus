@@ -28,6 +28,36 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
+# ── Agent capability dataclasses ──────────────────────────
+
+
+@dataclass(frozen=True)
+class ToolCapability:
+    """A named group of tools representing a single permission scope.
+
+    Used by the capability resolver to map human-friendly scopes
+    (e.g. ``cpq:products:write``) to the underlying tool names that
+    the agent runtime understands.
+    """
+
+    slug: str  # e.g. "cpq:products:write"
+    label: str  # e.g. "Create & Edit Products"
+    description: str
+    tools: tuple[str, ...]  # Tool names this capability grants
+    risk_level: str = "low"  # "low" | "medium" | "high" | "critical"
+    requires_approval_default: bool = False
+
+
+@dataclass(frozen=True)
+class CapabilityDomain:
+    """Top-level grouping of capabilities, typically one per plugin."""
+
+    slug: str  # e.g. "cpq"
+    label: str  # e.g. "Product Configurator"
+    icon: str  # Lucide icon name
+    capabilities: tuple[ToolCapability, ...]
+
+
 # ── Frontend manifest dataclasses ───────────────────────────
 
 
@@ -111,6 +141,33 @@ class AppPluginBase(abc.ABC):
     def get_agent_tool_definitions(self) -> dict[str, dict[str, Any]]:
         """Return tool definitions for the agent tool registry."""
         return {}
+
+    def get_capability_domains(self) -> list[CapabilityDomain]:
+        """Return capability domains for the agent tool catalog UI.
+
+        The default implementation creates a single domain with one
+        ``{name}:all`` capability containing every tool from
+        ``get_agent_tool_definitions()``.  Override this method to
+        declare granular, human-friendly capability groups.
+        """
+        tool_defs = self.get_agent_tool_definitions()
+        if not tool_defs:
+            return []
+        return [
+            CapabilityDomain(
+                slug=self.name,
+                label=self.display_name,
+                icon="Package",
+                capabilities=(
+                    ToolCapability(
+                        slug=f"{self.name}:all",
+                        label=f"All {self.display_name} tools",
+                        description=f"Full access to all {self.display_name} capabilities",
+                        tools=tuple(tool_defs.keys()),
+                    ),
+                ),
+            ),
+        ]
 
     async def invoke_tool(
         self,
