@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 
 test.describe("Smoke Tests", () => {
   test("app loads and shows login or dashboard", async ({ page }) => {
@@ -6,11 +6,8 @@ test.describe("Smoke Tests", () => {
     await expect(page).toHaveTitle(/CAD/)
   })
 
-  test("settings/agents page loads", async ({ page }) => {
+  test("settings/agents page loads when authenticated", async ({ authenticatedPage: page }) => {
     await page.goto("/settings/agents")
-    // Should see the agent workspace heading or a login redirect
-    const heading = page.getByText("Agent Workspace")
-    const loginForm = page.locator("form")
-    await expect(heading.or(loginForm)).toBeVisible()
+    await expect(page.locator("h1").getByText("Agent Workspace")).toBeVisible({ timeout: 10_000 })
   })
 })
