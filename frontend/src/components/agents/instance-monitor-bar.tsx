@@ -8,7 +8,6 @@ import {
   useAgentDefinitions,
 } from "@/hooks/use-agents"
 import { useAgentStore } from "@/stores/agent-store"
-import { cn } from "@/lib/utils"
 
 export function InstanceMonitorBar() {
   const instanceMonitorCollapsed = useAgentStore(

@@ -100,6 +100,7 @@ async def test_ai_complete_success():
         completion_tokens=5,
         total_tokens=15,
         billed_tokens=18,
+        billed_amount_usd=0.0012,
         cost_usd=0.001,
         latency_ms=100,
         key_source="platform",
@@ -115,7 +116,7 @@ async def test_ai_complete_success():
         patch("app.mcp.tools.ai.wallet_service") as mock_wallet,
     ):
         mock_gateway.completion = AsyncMock(return_value=mock_result)
-        mock_wallet.deduct_tokens = AsyncMock(return_value=1000)
+        mock_wallet.deduct = AsyncMock(return_value=None)
 
         result = await ai_complete(
             model="gpt-4o",

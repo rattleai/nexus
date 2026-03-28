@@ -1,11 +1,5 @@
-import * as React from "react"
 import {
-  CheckCircle,
-  XCircle,
   Loader2,
-  Clock,
-  Square,
-  Pause,
   ChevronRight,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"

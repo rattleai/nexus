@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useNavigate, useRouterState } from "@tanstack/react-router"
+import { useNavigate } from "@tanstack/react-router"
 import {
   LayoutDashboard,
   Bot,
@@ -12,7 +12,6 @@ import {
   Users,
   Webhook,
   Shield,
-  Settings,
   Code2,
   Plus,
   ChevronRight,
@@ -31,9 +30,10 @@ import {
   CommandSeparator,
 } from "@/components/ui/command"
 import { Badge } from "@/components/ui/badge"
+import { toast } from "sonner"
 import { useAgentDefinitions } from "@/hooks/use-agents"
 import { useAgentStore } from "@/stores/agent-store"
-import { startRun } from "@/lib/agent-stream-registry"
+import { startConversation } from "@/lib/agent-stream-registry"
 import { cn } from "@/lib/utils"
 import type { AgentDefinition } from "@/types/agents"
 
@@ -56,8 +56,6 @@ export function AppCommandPalette() {
   const taskInputRef = React.useRef<HTMLInputElement>(null)
 
   const navigate = useNavigate()
-  const router = useRouterState()
-  const currentPath = router.location.pathname
 
   // Agent data
   const { data: agentData } = useAgentDefinitions()
@@ -145,11 +143,15 @@ export function AppCommandPalette() {
     setIsSubmitting(true)
     try {
       addRecentAgent(selectedAgent.id)
-      const instanceId = await startRun(selectedAgent.id, trimmed)
-      navigate({ to: "/agents/$instanceId", params: { instanceId } })
+      const { instanceId, sessionId } = await startConversation(selectedAgent.id, trimmed)
+      navigate({
+        to: "/agents/$instanceId",
+        params: { instanceId },
+        search: { session: sessionId },
+      })
       close()
-    } catch {
-      // Error is shown via toast from the API layer
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start agent run")
     } finally {
       setIsSubmitting(false)
     }

@@ -24,7 +24,6 @@ const API_DOCS_URL = "/api/docs"
 
 function DevelopersPage() {
   const { t } = useTranslation("developers")
-  const { t: tc } = useTranslation("common")
 
   return (
     <AuthGuard>

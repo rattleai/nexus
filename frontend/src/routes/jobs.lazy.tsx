@@ -69,7 +69,7 @@ function useJobColumns(): ColumnDef<Job>[] {
       accessorKey: "status",
       header: t("table.status"),
       cell: ({ row }) => (
-        <Badge variant={statusVariant[row.original.status]}>{tc(`status.${row.original.status}`)}</Badge>
+        <Badge variant={statusVariant[row.original.status]}>{tc(`status.${row.original.status}` as never)}</Badge>
       ),
     },
     {

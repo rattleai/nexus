@@ -124,7 +124,7 @@ function ConnectedAccountsSection() {
   const [providers, setProviders] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [unlinking, setUnlinking] = useState<string | null>(null)
-  const { user } = useAuthContext()
+  useAuthContext() // Ensure authenticated
 
   const fetchData = async () => {
     try {

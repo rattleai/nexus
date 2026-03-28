@@ -21,7 +21,7 @@ export function ServiceStatusGrid() {
         if (isError) {
           status = "unavailable"
         } else if (!isLoading && data) {
-          status = data.services[key] ? "connected" : "unavailable"
+          status = data.services?.[key] ? "connected" : "unavailable"
         }
         return <ServiceStatusCard key={key} label={label} status={status} />
       })}

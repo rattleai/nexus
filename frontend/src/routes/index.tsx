@@ -31,6 +31,7 @@ const statusColor: Record<JobStatus, string> = {
   processing: "bg-blue-500",
   completed: "bg-emerald-500",
   failed: "bg-red-500",
+  cancelled: "bg-gray-400",
 }
 
 function Dashboard() {
@@ -45,7 +46,6 @@ function Dashboard() {
 
 function LandingPage() {
   const { t } = useTranslation("dashboard")
-  const { t: tc } = useTranslation("common")
   return (
     <div className="space-y-12 py-8">
       {/* Hero */}
@@ -196,7 +196,7 @@ function AuthenticatedDashboard() {
                             : "secondary"
                       }
                     >
-                      {tc(`status.${job.status}`)}
+                      {tc(`status.${job.status}` as never)}
                     </Badge>
                   </div>
                 ))}

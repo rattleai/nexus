@@ -22,7 +22,7 @@ logger = structlog.stdlib.get_logger()
 _PII_PATTERNS: dict[str, re.Pattern] = {
     "email": re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"),
     "ssn": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
-    "credit_card": re.compile(r"\b(?:\d[ -]*?){13,16}\b"),
+    "credit_card": re.compile(r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{1,4}\b"),
     "phone_us": re.compile(r"\b(?:\+1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"),
     "ip_address": re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
 }
@@ -175,6 +175,54 @@ class OutputValidator:
         return sanitized
 
 
+    def validate_with_classification(
+        self,
+        output: str,
+        *,
+        max_data_level: str = "INTERNAL",
+        output_schema: dict | None = None,
+    ) -> list[ValidationError]:
+        """Validate output with data classification-aware checks.
+
+        Extends validate() with DLP enforcement based on agent's max data level.
+        """
+        errors = self.validate(output, output_schema=output_schema)
+
+        from app.agents.data_classification import DataClassifier, DataLevel, DLPEnforcer
+
+        classifier = DataClassifier()
+        result = classifier.classify_text(output)
+        agent_level = DataLevel.from_str(max_data_level)
+
+        if result.level > agent_level:
+            errors.append(ValidationError(
+                "data_classification_violation",
+                f"Output contains {result.level.name} data (agent max: {agent_level.name}): "
+                f"{', '.join(result.reasons[:3])}",
+            ))
+
+        return errors
+
+    def sanitize_with_classification(
+        self,
+        output: str,
+        *,
+        max_data_level: str = "INTERNAL",
+    ) -> str:
+        """Sanitize output with classification-aware redaction."""
+        # First apply standard PII sanitization
+        sanitized = self.sanitize(output)
+
+        # Then apply DLP-level redaction
+        from app.agents.data_classification import DataLevel, DLPEnforcer
+
+        agent_level = DataLevel.from_str(max_data_level)
+        enforcer = DLPEnforcer(max_level=agent_level)
+        sanitized, _ = enforcer.redact_text(sanitized)
+
+        return sanitized
+
+
 def validate_agent_output(
     output: str,
     *,
@@ -188,13 +236,23 @@ def validate_agent_output(
     policy = (governance_policy or {}).get("output_validation", {})
     validator = OutputValidator(policy)
 
-    errors = validator.validate(output, output_schema=output_schema)
+    # Use classification-aware validation if data classification is configured
+    max_data_level = policy.get("max_data_classification", "")
+    if max_data_level:
+        errors = validator.validate_with_classification(
+            output, max_data_level=max_data_level, output_schema=output_schema,
+        )
+    else:
+        errors = validator.validate(output, output_schema=output_schema)
 
     # Filter by severity
     blocking_errors = [e for e in errors if e.severity == "error"]
 
     if policy.get("sanitize_pii", False):
-        output = validator.sanitize(output)
+        if max_data_level:
+            output = validator.sanitize_with_classification(output, max_data_level=max_data_level)
+        else:
+            output = validator.sanitize(output)
 
     return (
         len(blocking_errors) == 0,

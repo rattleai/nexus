@@ -229,6 +229,41 @@ def validate_owasp_llm_top10(
     return violations
 
 
+def validate_with_prompt_firewall(
+    messages: list[dict],
+    *,
+    tenant_id: str = "",
+    agent_id: str = "",
+    instance_id: str = "",
+    firewall_level: str = "standard",
+) -> tuple[list[GuardrailViolation], str]:
+    """Run the multi-layered prompt firewall on input messages.
+
+    Returns (violations, canary_token). The canary_token should be injected
+    into the system prompt and checked in the output.
+    """
+    from app.ai.prompt_firewall import PromptFirewall
+
+    firewall = PromptFirewall(
+        tenant_id=tenant_id,
+        agent_id=agent_id,
+        instance_id=instance_id,
+        firewall_level=firewall_level,
+    )
+    result = firewall.scan_input(messages)
+
+    violations = []
+    for v in result.violations:
+        violations.append(
+            GuardrailViolation(
+                f"prompt_firewall_{v['layer']}",
+                v["detail"],
+            )
+        )
+
+    return violations, result.canary_token
+
+
 def _safe_get_ai_config(tenant_settings: dict | None) -> dict:
     """Safely extract ai_guardrails config, defaulting to empty dict on bad data."""
     if not isinstance(tenant_settings, dict):

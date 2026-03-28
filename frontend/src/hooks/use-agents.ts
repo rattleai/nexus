@@ -137,7 +137,7 @@ export function useRunAgent() {
           json: { input_data: input, idempotency_key: crypto.randomUUID() },
         })
         .json<AgentInstance>(),
-    onSuccess: (instance) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: agentKeys.instances.all })
       toast.success("Agent run started")
     },

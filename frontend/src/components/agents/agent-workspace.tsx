@@ -6,7 +6,6 @@ import {
   Plus,
   Search,
   LayoutGrid,
-  MessageSquare,
   Settings,
   Shield,
   Activity,

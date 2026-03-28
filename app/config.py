@@ -170,11 +170,55 @@ class Settings(BaseSettings):
     AGENT_PENDING_STALE_SECONDS: int = 600           # Mark PENDING as failed
     AGENT_LEGACY_STALE_SECONDS: int = 3600           # Fallback for pre-heartbeat instances
 
+    # Agent Conversations (multi-turn interactive sessions)
+    AGENT_SESSION_IDLE_TIMEOUT_SECONDS: int = 3600    # Default idle timeout for interactive sessions
+    AGENT_SESSION_MAX_TURNS: int = 50                  # Max follow-up turns per conversation
+    AGENT_SESSION_SLIDING_TTL: bool = True             # Extend session TTL on each turn
+    AGENT_CONVERSATION_LOCK_TIMEOUT: int = 30          # Redis lock timeout for concurrent reply safety
+
     # Agent Memory
     AGENT_MEMORY_SHORT_TTL_SECONDS: int = 3600
     AGENT_MEMORY_SHORT_MAX_ENTRIES: int = 100
     AGENT_MEMORY_VECTOR_ENABLED: bool = False  # Requires pgvector extension
     AGENT_MEMORY_VECTOR_DIMENSIONS: int = 1536
+
+    # ── Agent Security (Phase 0-2) ──────────────────────────
+    # Phase 0 — DB Gateway
+    AGENT_DB_MAX_QUERIES_PER_MINUTE: int = 60
+    AGENT_DB_MAX_RESULT_ROWS: int = 1000
+    AGENT_DB_MAX_RESULT_BYTES: int = 5_242_880  # 5 MB
+    AGENT_DB_MAX_JOINS: int = 3
+    AGENT_DB_STATEMENT_TIMEOUT_MS: int = 10_000
+    AGENT_DB_POOL_PARTITION_PCT: int = 40  # % of pool reserved for agents
+
+    # Phase 0 — Prompt Firewall
+    PROMPT_FIREWALL_ENABLED: bool = True
+    PROMPT_FIREWALL_CLASSIFIER_ENABLED: bool = False  # LLM classifier (costs tokens)
+    PROMPT_FIREWALL_CLASSIFIER_MODEL: str = "claude-haiku-4-5-20251001"
+    PROMPT_FIREWALL_CANARY_ENABLED: bool = True
+    PROMPT_FIREWALL_FAIL_MODE: str = "block"  # "log" or "block"
+
+    # Phase 1 — Sandbox
+    AGENT_SANDBOX_BACKEND: str = "auto"  # "nsjail", "subprocess", "auto"
+    AGENT_SANDBOX_STRICT: bool = True  # Reject if nsjail unavailable
+
+    # Phase 1 — A2A Security
+    AGENT_A2A_SIGNING_ENABLED: bool = True
+    AGENT_A2A_ENCRYPTION_ENABLED: bool = True
+    AGENT_A2A_LEGACY_DECRYPT: bool = True              # Allow no-AAD fallback for legacy messages (set False after migration)
+
+    # Phase 1 — Tool Verification
+    AGENT_TOOL_SCHEMA_VERIFICATION: bool = True
+    AGENT_TOOL_BEHAVIORAL_MONITORING: bool = True
+
+    # Phase 2 — Threat Detection
+    AGENT_THREAT_DETECTION_ENABLED: bool = True
+    AGENT_THREAT_ANOMALY_WARN_SIGMA: float = 2.0
+    AGENT_THREAT_ANOMALY_SUSPEND_SIGMA: float = 3.0
+
+    # Phase 2 — Data Classification
+    DATA_CLASSIFICATION_ENABLED: bool = True
+    DATA_CLASSIFICATION_DEFAULT_LEVEL: str = "INTERNAL"
 
     # Durable Event Bus (Redis Streams)
     EVENT_BUS_ENABLED: bool = True
@@ -183,6 +227,7 @@ class Settings(BaseSettings):
     EVENT_BUS_CONSUMER_GROUP: str = "platform"
     EVENT_BUS_BLOCK_MS: int = 5000
     AGENT_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    AGENT_RATE_LIMIT_FAIL_OPEN: bool = False           # If True, allow requests when Redis rate limiter unavailable (dev only)
     OAUTH_CLIENT_CREDENTIALS_ENABLED: bool = False
 
     # Allowed scope values for API keys
@@ -337,4 +382,75 @@ def validate_settings() -> None:
             "S3 storage credentials not configured (S3_ENDPOINT_URL, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY). "
             "File upload/download will not work.",
             stacklevel=2,
+        )
+
+    # ── Agent Security Configuration Validation ──────────────────
+    _validate_security_config()
+
+
+def _validate_security_config() -> None:
+    """Validate agent security configuration at startup."""
+    errors: list[str] = []
+
+    # Validate enum values
+    if settings.PROMPT_FIREWALL_FAIL_MODE not in ("log", "block"):
+        errors.append(
+            f"PROMPT_FIREWALL_FAIL_MODE must be 'log' or 'block', "
+            f"got '{settings.PROMPT_FIREWALL_FAIL_MODE}'"
+        )
+
+    if settings.DATA_CLASSIFICATION_DEFAULT_LEVEL not in (
+        "PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED",
+    ):
+        errors.append(
+            f"Invalid DATA_CLASSIFICATION_DEFAULT_LEVEL: "
+            f"'{settings.DATA_CLASSIFICATION_DEFAULT_LEVEL}'"
+        )
+
+    if settings.AGENT_SANDBOX_BACKEND not in ("nsjail", "subprocess", "auto"):
+        errors.append(
+            f"AGENT_SANDBOX_BACKEND must be 'nsjail', 'subprocess', or 'auto', "
+            f"got '{settings.AGENT_SANDBOX_BACKEND}'"
+        )
+
+    # Validate ranges
+    if settings.AGENT_DB_STATEMENT_TIMEOUT_MS < 100 or settings.AGENT_DB_STATEMENT_TIMEOUT_MS > 300_000:
+        errors.append("AGENT_DB_STATEMENT_TIMEOUT_MS must be between 100 and 300000")
+
+    if settings.AGENT_THREAT_ANOMALY_WARN_SIGMA >= settings.AGENT_THREAT_ANOMALY_SUSPEND_SIGMA:
+        errors.append(
+            "AGENT_THREAT_ANOMALY_WARN_SIGMA must be less than SUSPEND_SIGMA"
+        )
+
+    # Production security posture warnings
+    if not settings.DEBUG:
+        if not settings.PROMPT_FIREWALL_ENABLED:
+            warnings.warn(
+                "PROMPT_FIREWALL_ENABLED is False in production — "
+                "prompt injection attempts will not be detected.",
+                stacklevel=3,
+            )
+        if settings.PROMPT_FIREWALL_FAIL_MODE != "block":
+            warnings.warn(
+                "PROMPT_FIREWALL_FAIL_MODE is not 'block' in production — "
+                "prompt injection attempts will only be logged, not blocked.",
+                stacklevel=3,
+            )
+        if not settings.AGENT_THREAT_DETECTION_ENABLED:
+            warnings.warn(
+                "AGENT_THREAT_DETECTION_ENABLED is False in production — "
+                "anomalous agent behavior will not be detected.",
+                stacklevel=3,
+            )
+        if not settings.AGENT_A2A_ENCRYPTION_ENABLED:
+            warnings.warn(
+                "AGENT_A2A_ENCRYPTION_ENABLED is False in production — "
+                "agent-to-agent messages will not be encrypted.",
+                stacklevel=3,
+            )
+
+    if errors:
+        raise RuntimeError(
+            "Agent security configuration errors:\n"
+            + "\n".join(f"  - {e}" for e in errors)
         )
