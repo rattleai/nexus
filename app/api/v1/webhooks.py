@@ -124,8 +124,9 @@ async def create_webhook_endpoint(
         tenant_id=tenant.id,
         metadata={"url": url, "events": body.events},
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(endpoint)
+    await db.commit()
 
     logger.info("webhook_endpoint_created", tenant_id=str(tenant.id), endpoint_id=str(endpoint.id))
     return WebhookEndpointCreatedResponse(
@@ -227,8 +228,9 @@ async def update_webhook_endpoint(
         tenant_id=tenant.id,
         changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(endpoint)
+    await db.commit()
     return endpoint
 
 

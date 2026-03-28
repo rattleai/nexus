@@ -84,6 +84,21 @@ celery.conf.update(
 
 celery.autodiscover_tasks(["app.workers", "app.agents"])
 
+# ── Plugin task discovery ──────────────────────────────────
+from app.plugins.registry import registry as _plugin_registry
+
+for _plugin in _plugin_registry:
+    _celery_cfg = _plugin.get_celery_config()
+    _extra_discover = _celery_cfg.get("autodiscover", [])
+    if _extra_discover:
+        celery.autodiscover_tasks(_extra_discover)
+    _extra_routes = _celery_cfg.get("task_routes", {})
+    if _extra_routes:
+        celery.conf.task_routes.update(_extra_routes)
+    _extra_beat = _celery_cfg.get("beat_schedule", {})
+    if _extra_beat:
+        celery.conf.beat_schedule.update(_extra_beat)
+
 
 # ── Dead Letter Queue: publish failed tasks to Redis Stream ──────────
 

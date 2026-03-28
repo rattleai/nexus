@@ -8,16 +8,16 @@ Enables three-tier stale instance detection:
 Also stores incremental step progress in last_checkpoint so partial
 metrics (steps, tokens, cost) survive worker crashes.
 
-Revision ID: 0013_agent_resilience
-Revises: 0012_parallel_agent_instances
+Revision ID: 0014_agent_resilience
+Revises: 0013_parallel_agent_instances
 Create Date: 2026-03-20
 """
 
 from alembic import op
 from sqlalchemy import text
 
-revision = "0013_agent_resilience"
-down_revision = "0012_parallel_agent_instances"
+revision = "0014_agent_resilience"
+down_revision = "0013_parallel_agent_instances"
 branch_labels = None
 depends_on = None
 

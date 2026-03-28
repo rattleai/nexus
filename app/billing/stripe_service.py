@@ -173,8 +173,9 @@ async def create_subscription(
     if tenant:
         tenant.plan = plan.name
 
-    await db.commit()
+    await db.flush()
     await db.refresh(subscription)
+    await db.commit()
 
     logger.info("subscription_created", tenant_id=str(tenant_id), subscription_id=stripe_sub.id)
     return subscription

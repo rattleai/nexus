@@ -7,40 +7,18 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import settings
 from app.db.base import Base
-from app.db.models import (  # noqa: F401 — register models
-    AIUsageLog,
-    ApiKey,
-    AuditLog,
-    ChangeLog,
-    CreditPack,
-    DollarWallet,
-    EmailVerificationToken,
-    FeatureFlag,
-    Invitation,
-    Job,
-    Notification,
-    OAuthAccount,
-    OAuthClient,
-    Plan,
-    PromptTemplate,
-    PushSubscription,
-    RefreshToken,
-    SSOConfiguration,
-    Subscription,
-    Tenant,
-    TenantAIProviderKey,
-    TenantFeatureOverride,
-    TenantMembership,
-    UsageRecord,
-    User,
-    WalletTransaction,
-    WebAuthnCredential,
-    WebhookDelivery,
-    WebhookEndpoint,
-)
+from app.plugins.registry import discover_plugins  # noqa: E402
+
+# Discover plugins so their models register on Base.metadata
+discover_plugins()
+
+from app.db.models import *  # noqa: F401, F403 — register all models (infra + plugins)
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Migrations need superuser privileges (CREATE TABLE, ALTER, ENABLE RLS).
+# Use DATABASE_MIGRATION_URL if set, otherwise fall back to DATABASE_URL.
+_migration_url = settings.DATABASE_MIGRATION_URL or settings.DATABASE_URL
+config.set_main_option("sqlalchemy.url", _migration_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

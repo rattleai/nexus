@@ -80,11 +80,12 @@ async def create_job(
     # Redis increment happens first; if DB commit fails, we decrement to compensate.
     await increment_usage(tenant.id, QuotaMetric.JOBS_PER_MONTH)
     try:
-        await db.commit()
+        await db.flush()
     except Exception:
         await decrement_usage(tenant.id, QuotaMetric.JOBS_PER_MONTH)
         raise
     await db.refresh(job)
+    await db.commit()
 
     # Dispatch to Celery — if the broker is unreachable, log the error but
     # still return the job (it stays PENDING and will be picked up by the

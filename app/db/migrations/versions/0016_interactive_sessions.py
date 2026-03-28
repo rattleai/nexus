@@ -5,7 +5,7 @@ and sliding TTL for multi-turn conversations. Adds session_id FK to
 AgentInstance for linking turns back to their conversation.
 
 Revision ID: 0016_interactive_sessions
-Revises: 0015_merge_heads
+Revises: 0015_robustness_fixes
 Create Date: 2026-03-27
 """
 
@@ -13,7 +13,7 @@ from alembic import op
 from sqlalchemy import text
 
 revision = "0016_interactive_sessions"
-down_revision = "0015_merge_heads"
+down_revision = "0015_robustness_fixes"
 branch_labels = None
 depends_on = None
 

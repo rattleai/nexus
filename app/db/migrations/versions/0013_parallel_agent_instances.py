@@ -1,7 +1,7 @@
 """Add parallel agent instance support: max_concurrent_instances + definition-scoped memory.
 
-Revision ID: 0012_parallel_agent_instances
-Revises: 0011_gdpr_rls_policies
+Revision ID: 0013_parallel_agent_instances
+Revises: 0012_add_xai_provider
 Create Date: 2026-03-20
 """
 
@@ -10,8 +10,8 @@ from alembic import op
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-revision = "0012_parallel_agent_instances"
-down_revision = "0011_gdpr_rls_policies"
+revision = "0013_parallel_agent_instances"
+down_revision = "0012_add_xai_provider"
 branch_labels = None
 depends_on = None
 

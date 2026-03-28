@@ -290,8 +290,9 @@ async def create_invitation(
         actor_id=str(user.id),
         metadata={"email": body.email, "role": body.role},
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(invitation)
+    await db.commit()
 
     accept_url = f"{settings.APP_BASE_URL}/accept-invitation?token={raw_token}"
     await emit(InvitationSent(

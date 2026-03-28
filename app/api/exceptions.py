@@ -74,7 +74,14 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         request_id = _get_request_id(request)
-        logger.exception("unhandled_exception", exc_type=type(exc).__name__, request_id=request_id)
+        logger.exception(
+            "unhandled_exception",
+            exc_type=type(exc).__name__,
+            exc_msg=str(exc)[:200],
+            path=request.url.path,
+            method=request.method,
+            request_id=request_id,
+        )
 
         code = "INTERNAL_ERROR"
         content: dict = {

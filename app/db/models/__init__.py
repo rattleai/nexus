@@ -1,7 +1,9 @@
-"""Domain-driven model package — re-exports all models for backward compatibility.
+"""Infrastructure model package.
 
-All existing imports like ``from app.db.models import Tenant`` continue to work.
-Alembic discovers models through this package via ``env.py``.
+Re-exports all infrastructure models. Application-specific models live
+in their plugin packages (e.g. ``app.apps.cpq.models``).
+
+Alembic discovers plugin models via ``env.py`` through the plugin registry.
 """
 
 from app.db.models.ai import (
@@ -39,6 +41,14 @@ from app.db.models.core import (
     TenantMembership,
     User,
     UserRole,
+)
+from app.db.models.datasource import (
+    CloudConnection,
+    CloudProvider,
+    DataSource,
+    DataSourceChunk,
+    DataSourceStatus,
+    DataSourceType,
 )
 from app.db.models.enterprise import (
     SSOConfiguration,
@@ -125,4 +135,11 @@ __all__ = [
     "WebAuthnCredential",
     "ChangeLog",
     "SyncMixin",
+    # Data Sources (infrastructure — application-agnostic)
+    "DataSource",
+    "DataSourceType",
+    "DataSourceStatus",
+    "DataSourceChunk",
+    "CloudConnection",
+    "CloudProvider",
 ]

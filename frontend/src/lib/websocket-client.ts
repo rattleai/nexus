@@ -23,6 +23,7 @@ class WebSocketClient {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
   private _isConnected = false
   private _listeners = new Set<() => void>()
+  private _authChangeTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(baseUrl?: string) {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
@@ -30,24 +31,23 @@ class WebSocketClient {
     this.url = `${host}/api/v1/ws`
 
     // Reconnect with a fresh token whenever auth state changes.
-    // This ensures the WS connection uses the latest JWT after a refresh,
-    // and disconnects cleanly when the user logs out.
+    // Debounced to avoid reconnection storms when multiple auth-change
+    // events fire in rapid succession (e.g. concurrent token refresh).
     window.addEventListener("auth-change", () => {
-      const token = getAccessToken()
-      if (token && this.ws?.readyState !== WebSocket.OPEN) {
-        // Auth restored or token refreshed — reconnect with the new token
-        this.disconnect()
-        this.reconnectAttempts = 0
-        this.connect()
-      } else if (token && this.ws?.readyState === WebSocket.OPEN) {
-        // Token refreshed while connected — reconnect to use new token
-        this.disconnect()
-        this.reconnectAttempts = 0
-        this.connect()
-      } else if (!token && this.ws) {
-        // Auth lost — disconnect
-        this.disconnect()
-      }
+      if (this._authChangeTimer) clearTimeout(this._authChangeTimer)
+      this._authChangeTimer = setTimeout(() => {
+        this._authChangeTimer = null
+        const token = getAccessToken()
+        if (token) {
+          // Token available — (re)connect with the latest JWT
+          this.disconnect()
+          this.reconnectAttempts = 0
+          this.connect()
+        } else if (this.ws) {
+          // Auth lost — disconnect
+          this.disconnect()
+        }
+      }, 300)
     })
   }
 

@@ -119,12 +119,65 @@ _BUILTIN_TOOLS: dict[str, dict[str, Any]] = {
 }
 
 
+from app.plugins.base import CapabilityDomain, ToolCapability
+
+PLATFORM_CAPABILITIES = CapabilityDomain(
+    slug="platform",
+    label="Platform",
+    icon="Cpu",
+    capabilities=(
+        ToolCapability(
+            slug="platform:ai",
+            label="AI Completion",
+            description="Run AI completions and list available models",
+            tools=("ai_complete", "ai_list_models"),
+        ),
+        ToolCapability(
+            slug="platform:files",
+            label="File Management",
+            description="Upload and list files in storage",
+            tools=("file_upload", "file_list"),
+        ),
+        ToolCapability(
+            slug="platform:jobs",
+            label="Background Jobs",
+            description="Create and list background jobs",
+            tools=("job_create", "job_list"),
+            risk_level="medium",
+        ),
+        ToolCapability(
+            slug="platform:webhooks",
+            label="Webhooks",
+            description="Create webhook endpoints for event notifications",
+            tools=("webhook_create",),
+            risk_level="medium",
+        ),
+        ToolCapability(
+            slug="platform:code",
+            label="Code Execution",
+            description="Execute Python code in a secure sandbox",
+            tools=("code_execute",),
+            risk_level="high",
+        ),
+    ),
+)
+
+
+def _get_all_builtin_tools() -> dict[str, dict[str, Any]]:
+    """Return infra tools merged with plugin-contributed tool definitions."""
+    all_tools = _BUILTIN_TOOLS.copy()
+    from app.plugins.registry import registry as _plugin_registry
+    for _plugin in _plugin_registry:
+        all_tools.update(_plugin.get_agent_tool_definitions())
+    return all_tools
+
+
 class ToolRegistry:
     """Manages tool discovery, resolution, and invocation for agents."""
 
     def list_builtin_tools(self) -> dict[str, dict[str, Any]]:
-        """Return all built-in platform tools."""
-        return _BUILTIN_TOOLS.copy()
+        """Return all built-in platform tools (infra + plugins)."""
+        return _get_all_builtin_tools()
 
     async def list_tenant_tools(
         self,
@@ -148,8 +201,9 @@ class ToolRegistry:
         """List all available tools (built-in + tenant custom)."""
         tools = []
 
-        # Built-in tools
-        for name, info in _BUILTIN_TOOLS.items():
+        # Built-in tools (infra + plugins)
+        all_builtin = _get_all_builtin_tools()
+        for name, info in all_builtin.items():
             tools.append({
                 "name": name,
                 "source": "builtin",
@@ -181,8 +235,8 @@ class ToolRegistry:
 
         Routes to built-in handler or external endpoint based on tool type.
         """
-        # Check built-in tools first
-        if tool_name in _BUILTIN_TOOLS:
+        # Check built-in tools first (infra + plugins)
+        if tool_name in _get_all_builtin_tools():
             return await self._invoke_builtin(tool_name, arguments, tenant_id, db=db)
 
         # Check tenant tools
@@ -280,7 +334,8 @@ class ToolRegistry:
             elif tool_name == "code_execute":
                 return await self._invoke_sandbox(arguments)
             else:
-                return {"error": f"Built-in tool '{tool_name}' has no handler"}
+                # Delegate to plugin tool handlers
+                return await self._invoke_plugin_tool(tool_name, arguments, tenant, db)
         except Exception as exc:
             logger.warning(
                 "builtin_tool_error",
@@ -288,6 +343,58 @@ class ToolRegistry:
                 error=str(exc),
             )
             return {"error": f"Built-in tool '{tool_name}' failed"}
+
+    async def _invoke_plugin_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        tenant: Any,
+        db: AsyncSession | None,
+    ) -> Any:
+        """Invoke a plugin-contributed agent tool via the plugin registry."""
+        if db is None:
+            return {"error": f"Tool '{tool_name}' requires a database session"}
+
+        from app.plugins.registry import registry as _plugin_registry
+
+        for plugin in _plugin_registry:
+            if tool_name in plugin.get_agent_tool_definitions():
+                logger.info(
+                    "tool_invoke_plugin",
+                    tool_name=tool_name,
+                    plugin=plugin.name,
+                    tenant_id=str(tenant.id),
+                )
+                try:
+                    result = await plugin.invoke_tool(
+                        tool_name, arguments, tenant=tenant, db=db,
+                    )
+                    if result is not None:
+                        return result
+                except (ValueError, KeyError, TypeError) as exc:
+                    logger.warning(
+                        "plugin_tool_validation_error",
+                        tool_name=tool_name,
+                        plugin=plugin.name,
+                        error=str(exc)[:200],
+                    )
+                    return {"error": f"Invalid input for '{tool_name}': {str(exc)[:200]}"}
+                except Exception:
+                    logger.error(
+                        "plugin_tool_error",
+                        tool_name=tool_name,
+                        plugin=plugin.name,
+                        exc_info=True,
+                    )
+                    # Roll back the dirty session so subsequent tool calls
+                    # don't cascade-fail with PendingRollbackError.
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
+                    return {"error": f"Plugin tool '{tool_name}' failed unexpectedly"}
+
+        return {"error": f"Built-in tool '{tool_name}' has no handler"}
 
     async def _invoke_sandbox(self, arguments: dict[str, Any]) -> Any:
         """Invoke the code execution sandbox.
@@ -368,8 +475,9 @@ class ToolRegistry:
                     try:
                         from app.core.encryption import decrypt
                         token = decrypt(token)
-                    except (ValueError, Exception):
-                        pass  # Use as-is if not encrypted (legacy data)
+                    except Exception:
+                        logger.error("tool_auth_token_decrypt_failed", tool_name=tool.tool_name)
+                        return {"error": f"Tool '{tool.tool_name}' has invalid authentication credentials"}
                 headers["Authorization"] = f"Bearer {token}"
             elif auth_config.get("type") == "api_key":
                 header_name = auth_config.get("header", "X-API-Key")
@@ -378,8 +486,9 @@ class ToolRegistry:
                     try:
                         from app.core.encryption import decrypt
                         key = decrypt(key)
-                    except (ValueError, Exception):
-                        pass  # Use as-is if not encrypted (legacy data)
+                    except Exception:
+                        logger.error("tool_auth_key_decrypt_failed", tool_name=tool.tool_name)
+                        return {"error": f"Tool '{tool.tool_name}' has invalid authentication credentials"}
                 # Validate header name to prevent HTTP header injection
                 import re
                 _SAFE_HEADER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9\-]*$")

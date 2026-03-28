@@ -63,6 +63,9 @@ def _sanitize_error(exc: Exception, max_len: int = 2000) -> str:
     """Sanitize error messages to prevent leaking sensitive data."""
     msg = str(exc)
     msg = re.sub(r'(sk-|pk_|Bearer\s+)\S+', '[REDACTED]', msg)
+    msg = re.sub(r'AKIA[A-Z0-9]{16}', '[AWS_KEY_REDACTED]', msg)
+    msg = re.sub(r'(postgresql|mysql|redis|mongodb)://\S+', '[DB_URL_REDACTED]', msg)
+    msg = re.sub(r'(?i)(password|secret|token|key)\s*[=:]\s*\S+', r'\1=[REDACTED]', msg)
     msg = re.sub(r'(/Users/|/home/|/var/)\S+', '[PATH]', msg)
     return msg[:max_len]
 
@@ -97,10 +100,13 @@ class AgentExecutor:
 
         1. Load definition
         2. Create instance + session
-        3. Set up governance and tool access
-        4. Run the ReAct loop
-        5. Persist results
-        6. Emit completion/failure events
+        3. Security layer (circuit breaker, capability token, prompt firewall)
+        4. Resolve @data_source mentions
+        5. Set up governance and tool access
+        6. Run the ReAct loop
+        7. Post-run security checks
+        8. Persist results
+        9. Emit completion/failure events
         """
         await set_tenant_context(self.db, str(tenant_id))
 
@@ -157,13 +163,13 @@ class AgentExecutor:
 
         # ── Security Layer Integration ────────────────────────────────
 
-        # Check tenant circuit breaker (Phase 2.4)
+        # Check tenant circuit breaker
         from app.agents.governance import GovernanceEngine as _GovEngine
         cb_open, cb_reason = await _GovEngine.check_tenant_circuit_breaker(tenant_id)
         if cb_open:
             raise AgentExecutionError(f"Agent execution paused: {cb_reason}")
 
-        # Create capability token (Phase 1.1)
+        # Create capability token
         from app.agents.capabilities import CapabilityScope, capability_manager
         cap_scope = CapabilityScope(
             tools=definition.allowed_tools or [],
@@ -180,7 +186,7 @@ class AgentExecutor:
         instance.capability_token_hash = capability_manager.token_hash(cap_token)
         instance.capability_scope = cap_scope.to_dict()
 
-        # Run prompt firewall on input messages (Phase 0.2)
+        # Run prompt firewall on input messages
         canary_token = ""
         from app.ai.prompt_firewall import PromptFirewall
         firewall = PromptFirewall(
@@ -195,6 +201,9 @@ class AgentExecutor:
             raise AgentExecutionError(
                 f"Prompt firewall blocked input: {fw_result.violations[0]['detail'][:200]}"
             )
+
+        # Resolve @data_source mentions in user messages
+        messages = await self._resolve_datasource_mentions(messages, tenant_id)
 
         # Set up tool executor and governance (created once, not per-call)
         tool_executor = self._build_tool_executor(definition, tenant_id)
@@ -252,7 +261,7 @@ class AgentExecutor:
             # Post-run security: canary check, threat detection, baseline update
             import contextlib as _ctxlib
 
-            # Check canary token leak in output (Phase 0.2)
+            # Check canary token leak in output
             if canary_token and result.output:
                 with _ctxlib.suppress(Exception):
                     output_fw = firewall.scan_output(result.output, canary=canary_token)
@@ -263,7 +272,7 @@ class AgentExecutor:
                             violations=[v["layer"] for v in output_fw.violations],
                         )
 
-            # Threat detection scoring (Phase 2.1)
+            # Threat detection scoring
             with _ctxlib.suppress(Exception):
                 from app.agents.threat_detection import RunMetrics, ThreatDetectionEngine
                 td_engine = ThreatDetectionEngine(
@@ -462,30 +471,9 @@ class AgentExecutor:
 
         Returns an async callable: (tool_name, arguments) → result
         """
-        allowed_tools = set(definition.allowed_tools or [])
-        db = self.db  # Capture in closure for tenant tool lookups
+        from app.agents.setup import build_tool_executor
 
-        async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> Any:
-            if allowed_tools and tool_name not in allowed_tools:
-                return {"error": f"Tool '{tool_name}' is not allowed for this agent"}
-
-            try:
-                from app.agents.tool_registry import tool_registry
-                return await tool_registry.invoke(
-                    tool_name=tool_name,
-                    arguments=arguments,
-                    tenant_id=tenant_id,
-                    db=db,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "agent_tool_execution_failed",
-                    tool_name=tool_name,
-                    error=str(exc),
-                )
-                return {"error": f"Tool execution failed: {exc}"}
-
-        return execute_tool
+        return build_tool_executor(definition, tenant_id, self.db)
 
     def _build_governance_checker(
         self,
@@ -497,12 +485,18 @@ class AgentExecutor:
         Returns an async callable: (action, context) → None (raises on violation).
         Engine is created once and reused across all checks.
         """
-        from app.agents.governance import GovernanceEngine
+        from app.agents.setup import build_governance_checker
 
-        policy = definition.governance_policy or {}
-        engine = GovernanceEngine(policy)
+        return build_governance_checker(definition, tenant_id)
 
-        async def check_governance(action: str, context: dict[str, Any]) -> None:
-            await engine.check(action=action, context=context, tenant_id=tenant_id)
+    # ── Data Source @ Mention Resolution ──────────────────────────────
 
-        return check_governance
+    async def _resolve_datasource_mentions(
+        self,
+        messages: list[dict[str, Any]],
+        tenant_id: uuid.UUID,
+    ) -> list[dict[str, Any]]:
+        """Scan user messages for @[name](ds:uuid) patterns and inject source content."""
+        from app.agents.setup import resolve_datasource_mentions
+
+        return await resolve_datasource_mentions(messages, tenant_id, self.db)

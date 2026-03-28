@@ -119,8 +119,12 @@ class AgentDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Version
     temperature: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # Tool access — JSON array of tool names this agent may invoke
+    # Tool access — JSON array of tool names this agent may invoke (legacy)
     allowed_tools: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+
+    # Capability-based tool access — list of capability slugs (e.g. "cpq:products:write").
+    # When non-empty, resolved to tool names at runtime and unioned with allowed_tools.
+    capabilities: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
 
     # Tool version pinning — JSON object {"tool_name": version_int}
     # When set, the agent uses the pinned schema version instead of latest
@@ -524,3 +528,36 @@ class AgentPolicy(Base, TimestampMixin, VersionMixin):
 
     # Full policy document (for complex rules)
     rules: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+
+
+class CapabilityPreset(Base, TimestampMixin, SoftDeleteMixin):
+    """Pre-built capability profile for quick agent setup.
+
+    System presets (``tenant_id=NULL``) are seeded via migrations and
+    cannot be modified by tenants.  Tenant presets are fully CRUD-able.
+    """
+
+    __tablename__ = "capability_presets"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "slug", name="uq_capability_preset_slug"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    icon: Mapped[str] = mapped_column(String(50), default="Shield", server_default="Shield")
+
+    # Capability slugs this preset grants
+    capabilities: Mapped[list] = mapped_column(JSONB, nullable=False)
+
+    # Optional extra raw tool names (for tenant-specific custom tools)
+    additional_tools: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+
+    # Bundled governance policy overrides applied when this preset is used
+    governance_overrides: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+
+    # System presets are seeded at startup and cannot be edited by tenants
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

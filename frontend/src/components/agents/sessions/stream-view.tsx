@@ -59,6 +59,7 @@ export function StreamView({ instanceId, isActive }: StreamViewProps) {
 
   // Fallback: use instance-stream (Redis Streams SSE) for Celery-dispatched runs
   const [instanceEntries, setInstanceEntries] = React.useState<StreamEntry[]>([])
+  const [fallbackDone, setFallbackDone] = React.useState(false)
   const toolCallMapRef = React.useRef<Map<string, string>>(new Map())
   const { data: approvalsData } = usePendingApprovals()
 
@@ -164,15 +165,25 @@ export function StreamView({ instanceId, isActive }: StreamViewProps) {
     }
   }, [])
 
+  const handleFallbackDone = React.useCallback(() => setFallbackDone(true), [])
+  const handleFallbackError = React.useCallback(() => setFallbackDone(true), [])
+
+  // Reset fallbackDone when instanceId changes
+  React.useEffect(() => { setFallbackDone(false) }, [instanceId])
+
   const { isConnected } = useInstanceStream({
     instanceId,
     onEvent: handleEvent,
+    onDone: handleFallbackDone,
+    onError: handleFallbackError,
     enabled: useInstanceStreamEnabled,
   })
 
   // Use registry entries if available, otherwise use instance-stream entries
   const entries = registry.entries ?? instanceEntries
-  const isStreamActive = registry.hasStream ? registry.isActive : isActive
+  // When the fallback stream closes with no entries, stop showing the spinner
+  const fallbackActive = isActive && !fallbackDone
+  const isStreamActive = registry.hasStream ? registry.isActive : fallbackActive
   const isStreamConnected = registry.hasStream ? registry.isActive : isConnected
 
   React.useEffect(() => {

@@ -594,4 +594,14 @@ def create_mcp_server() -> FastMCP:
             ],
         })
 
+    # ── Plugin MCP Tools ─────────────────────────────────────
+    from app.plugins.registry import registry as _plugin_registry
+
+    for _plugin in _plugin_registry:
+        try:
+            _plugin.get_mcp_tools(mcp, _get_context)
+            logger.info("mcp_plugin_tools_loaded", plugin=_plugin.name)
+        except Exception:
+            logger.error("mcp_plugin_tools_failed", plugin=_plugin.name, exc_info=True)
+
     return mcp
