@@ -71,9 +71,11 @@ class CapabilityResolver:
                     exc_info=True,
                 )
 
-        self._slug_to_tools = slug_to_tools
-        self._tool_to_slug = tool_to_slug
-        self._domains = domains
+        # Assign all three atomically (single-statement swap) so that a
+        # concurrent resolve() never sees a partially-built index.
+        self._slug_to_tools, self._tool_to_slug, self._domains = (
+            slug_to_tools, tool_to_slug, domains,
+        )
 
     def _ensure_index(self) -> None:
         if self._slug_to_tools is None:
@@ -127,9 +129,7 @@ class CapabilityResolver:
 
     def invalidate(self) -> None:
         """Clear the cached index (e.g. after hot-reloading plugins in tests)."""
-        self._slug_to_tools = None
-        self._tool_to_slug = None
-        self._domains = None
+        self._slug_to_tools, self._tool_to_slug, self._domains = None, None, None
 
 
 # Module-level singleton

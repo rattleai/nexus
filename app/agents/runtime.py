@@ -173,9 +173,11 @@ class AgentRuntime:
         except PendingRollbackError:
             # A prior tool call may have failed, leaving the session dirty.
             # Roll back and retry the checkpoint so future writes still work.
-            with contextlib.suppress(Exception):
+            try:
                 await db.rollback()
                 await _do_checkpoint()
+            except Exception:
+                logger.debug("checkpoint_retry_failed", instance_id=str(instance_id))
         except Exception:
             logger.debug("checkpoint_write_failed", instance_id=str(instance_id))
 

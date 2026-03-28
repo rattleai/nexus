@@ -21,6 +21,7 @@ import {
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
@@ -61,6 +62,14 @@ export function CapabilitySelector({
           <div key={i} className="h-16 rounded-lg border bg-muted/30 animate-pulse" />
         ))}
       </div>
+    )
+  }
+
+  if (catalog.domains.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        No capabilities available. Install a plugin to add capability domains.
+      </p>
     )
   }
 
@@ -107,6 +116,7 @@ export function CapabilitySelector({
   }
 
   return (
+    <TooltipProvider delayDuration={300}>
     <div className="space-y-3">
       {catalog.domains.map((domain) => {
         const DomainIcon = DOMAIN_ICONS[domain.slug] ?? Package
@@ -168,6 +178,7 @@ export function CapabilitySelector({
         )
       })}
     </div>
+    </TooltipProvider>
   )
 }
 

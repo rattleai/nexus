@@ -55,8 +55,7 @@ export function PresetPicker({
           const Icon = PRESET_ICONS[preset.icon] ?? Shield
           const isMatch =
             preset.capabilities.length > 0 &&
-            preset.capabilities.every((c) => activeSet.has(c)) &&
-            activeSet.size === preset.capabilities.length
+            preset.capabilities.every((c) => activeSet.has(c))
 
           return (
             <button

@@ -475,6 +475,22 @@ class CapabilityResolveResponse(BaseModel):
 # ── Capability Presets ─────────────────────────────────────────────────
 
 
+_ALLOWED_GOVERNANCE_OVERRIDE_KEYS = {
+    "denied_tools",
+    "allowed_tools",
+    "denied_capabilities",
+    "require_approval_for",
+    "require_approval_for_capabilities",
+    "approval_timeout_seconds",
+    "approval_default_action",
+    "max_spend_per_run_usd",
+    "max_spend_per_day_usd",
+    "max_spend_per_month_usd",
+    "max_requests_per_minute",
+    "max_agent_requests_per_minute",
+}
+
+
 class CapabilityPresetCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     slug: str = Field(..., min_length=1, max_length=255, pattern=r"^[a-z0-9][a-z0-9\-]*$")
@@ -483,6 +499,14 @@ class CapabilityPresetCreate(BaseModel):
     capabilities: list[str]
     additional_tools: list[str] = []
     governance_overrides: dict[str, Any] = {}
+
+    @field_validator("governance_overrides")
+    @classmethod
+    def _validate_governance_keys(cls, v: dict[str, Any]) -> dict[str, Any]:
+        bad_keys = set(v.keys()) - _ALLOWED_GOVERNANCE_OVERRIDE_KEYS
+        if bad_keys:
+            raise ValueError(f"Unknown governance override keys: {sorted(bad_keys)}")
+        return v
 
 
 class CapabilityPresetResponse(BaseModel):

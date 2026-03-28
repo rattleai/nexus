@@ -46,26 +46,26 @@ CPQ_RLS_TABLES = [
 def upgrade() -> None:
     for table in CPQ_RLS_TABLES:
         # Drop existing USING-only policy (idempotent)
-        op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {table}")
+        op.execute(f'DROP POLICY IF EXISTS tenant_isolation ON "{table}"')
 
         # Recreate with both USING and WITH CHECK
         op.execute(
-            f"CREATE POLICY tenant_isolation ON {table} "
+            f'CREATE POLICY tenant_isolation ON "{table}" '
             f"USING (tenant_id = {TENANT_SETTING}) "
             f"WITH CHECK (tenant_id = {TENANT_SETTING})"
         )
 
         # Force RLS even for table owners (defense-in-depth)
-        op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
+        op.execute(f'ALTER TABLE "{table}" FORCE ROW LEVEL SECURITY')
 
 
 def downgrade() -> None:
     for table in CPQ_RLS_TABLES:
         # Restore original USING-only policies
-        op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {table}")
+        op.execute(f'DROP POLICY IF EXISTS tenant_isolation ON "{table}"')
         op.execute(
-            f"CREATE POLICY tenant_isolation ON {table} "
+            f'CREATE POLICY tenant_isolation ON "{table}" '
             f"USING (tenant_id = {TENANT_SETTING})"
         )
         # Remove FORCE (revert to default NO FORCE)
-        op.execute(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY")
+        op.execute(f'ALTER TABLE "{table}" NO FORCE ROW LEVEL SECURITY')

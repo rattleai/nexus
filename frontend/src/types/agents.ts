@@ -106,7 +106,9 @@ export interface GovernancePolicy {
   max_spend_per_month_usd?: number | null
   allowed_tools?: string[]
   denied_tools?: string[]
+  denied_capabilities?: string[]
   require_approval_for?: string[]
+  require_approval_for_capabilities?: string[]
   approval_timeout_seconds?: number
   approval_default_action?: "deny" | "approve"
   max_requests_per_minute?: number | null

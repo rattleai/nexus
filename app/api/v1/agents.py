@@ -118,8 +118,18 @@ async def create_agent_definition(
     capabilities = body.capabilities
     if body.capability_preset_id and not capabilities:
         from app.agents.models import CapabilityPreset
-        preset = await db.get(CapabilityPreset, body.capability_preset_id)
-        if preset and preset.deleted_at is None:
+        from sqlalchemy import or_
+        preset_stmt = select(CapabilityPreset).where(
+            CapabilityPreset.id == body.capability_preset_id,
+            CapabilityPreset.deleted_at.is_(None),
+            or_(
+                CapabilityPreset.tenant_id == tenant.id,
+                CapabilityPreset.tenant_id.is_(None),
+            ),
+        )
+        preset_result = await db.execute(preset_stmt)
+        preset = preset_result.scalar_one_or_none()
+        if preset:
             capabilities = preset.capabilities
             if preset.additional_tools:
                 body.allowed_tools = list(set(body.allowed_tools) | set(preset.additional_tools))
@@ -366,7 +376,10 @@ async def resolve_capabilities(
     return CapabilityResolveResponse(tools=tools, count=len(tools))
 
 
-@router.get("/capability-presets")
+@router.get(
+    "/capability-presets",
+    dependencies=[Depends(RequireScopes("agents:read"))],
+)
 async def list_capability_presets(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
@@ -385,7 +398,11 @@ async def list_capability_presets(
     return [CapabilityPresetResponse.model_validate(p) for p in presets]
 
 
-@router.post("/capability-presets", status_code=201)
+@router.post(
+    "/capability-presets",
+    status_code=201,
+    dependencies=[Depends(RequireScopes("agents:write"))],
+)
 async def create_capability_preset(
     body: "CapabilityPresetCreate",
     tenant: Tenant = Depends(get_current_tenant),
@@ -417,7 +434,10 @@ async def create_capability_preset(
     return CapabilityPresetResponse.model_validate(preset)
 
 
-@router.put("/capability-presets/{preset_id}")
+@router.put(
+    "/capability-presets/{preset_id}",
+    dependencies=[Depends(RequireScopes("agents:write"))],
+)
 async def update_capability_preset(
     preset_id: uuid.UUID,
     body: CapabilityPresetCreate,
@@ -456,7 +476,11 @@ async def update_capability_preset(
     return CapabilityPresetResponse.model_validate(preset)
 
 
-@router.delete("/capability-presets/{preset_id}", status_code=204)
+@router.delete(
+    "/capability-presets/{preset_id}",
+    status_code=204,
+    dependencies=[Depends(RequireScopes("agents:write"))],
+)
 async def delete_capability_preset(
     preset_id: uuid.UUID,
     tenant: Tenant = Depends(get_current_tenant),

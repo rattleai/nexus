@@ -97,7 +97,7 @@ SYSTEM_PRESETS = [
             "platform:ai", "platform:files", "platform:code",
         ],
         "governance_overrides": {
-            "max_cost_per_run_usd": 2.0,
+            "max_spend_per_run_usd": 2.0,
         },
     },
 ]
@@ -144,6 +144,15 @@ def upgrade() -> None:
         sa.column("is_system", sa.Boolean),
     )
 
+    # 3a. Partial unique index for system presets (tenant_id IS NULL).
+    # PostgreSQL treats NULL != NULL in composite unique constraints,
+    # so the table-level UniqueConstraint alone won't prevent duplicate
+    # system preset slugs.
+    op.execute(
+        'CREATE UNIQUE INDEX uq_capability_preset_system_slug '
+        'ON capability_presets (slug) WHERE tenant_id IS NULL'
+    )
+
     op.bulk_insert(presets_table, [
         {
             "id": p["id"],
@@ -162,5 +171,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute('DROP INDEX IF EXISTS uq_capability_preset_system_slug')
     op.drop_table("capability_presets")
     op.drop_column("agent_definitions", "capabilities")

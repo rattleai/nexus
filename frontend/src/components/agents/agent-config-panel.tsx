@@ -97,26 +97,30 @@ export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
     JSON.stringify([...capabilities].sort()) !== JSON.stringify([...(agent.capabilities ?? [])].sort())
 
   const handleSave = async () => {
-    await updateAgent.mutateAsync({
-      id: agent.id,
-      data: {
-        name,
-        description,
-        system_prompt: systemPrompt,
-        model,
-        temperature,
-        max_tokens: maxTokens,
-        max_steps_per_run: maxSteps,
-        max_duration_seconds: maxDuration,
-        max_tokens_per_run: maxTokensPerRun,
-        parallel_tool_execution: parallelTools,
-        sandbox_enabled: sandboxEnabled,
-        status,
-        allowed_tools: allowedTools,
-        capabilities,
-        expected_version: agent.version,
-      },
-    })
+    try {
+      await updateAgent.mutateAsync({
+        id: agent.id,
+        data: {
+          name,
+          description,
+          system_prompt: systemPrompt,
+          model,
+          temperature,
+          max_tokens: maxTokens,
+          max_steps_per_run: maxSteps,
+          max_duration_seconds: maxDuration,
+          max_tokens_per_run: maxTokensPerRun,
+          parallel_tool_execution: parallelTools,
+          sandbox_enabled: sandboxEnabled,
+          status,
+          allowed_tools: allowedTools,
+          capabilities,
+          expected_version: agent.version,
+        },
+      })
+    } catch {
+      // Error toast handled by global MutationCache.onError
+    }
   }
 
   const handleReset = () => {
@@ -398,7 +402,12 @@ export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
             presets={presets}
             isLoading={presetsLoading}
             activeCapabilities={capabilities}
-            onApply={(preset) => setCapabilities([...preset.capabilities])}
+            onApply={(preset) => {
+              setCapabilities([...preset.capabilities])
+              if (preset.additional_tools.length > 0) {
+                setAllowedTools((prev) => [...new Set([...prev, ...preset.additional_tools])])
+              }
+            }}
           />
 
           <Separator />

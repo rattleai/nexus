@@ -59,10 +59,10 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
     policy.max_requests_per_minute?.toString() ?? "",
   )
   const [deniedCapabilities, setDeniedCapabilities] = React.useState<string[]>(
-    (policy as Record<string, unknown>).denied_capabilities as string[] ?? [],
+    policy.denied_capabilities ?? [],
   )
   const [approvalCapabilities, setApprovalCapabilities] = React.useState<string[]>(
-    (policy as Record<string, unknown>).require_approval_for_capabilities as string[] ?? [],
+    policy.require_approval_for_capabilities ?? [],
   )
   const [toolInput, setToolInput] = React.useState("")
   const [approvalInput, setApprovalInput] = React.useState("")
@@ -77,8 +77,8 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
     setApprovalTimeout(p.approval_timeout_seconds?.toString() ?? "300")
     setApprovalDefault(p.approval_default_action ?? "deny")
     setMaxRpm(p.max_requests_per_minute?.toString() ?? "")
-    setDeniedCapabilities((p as Record<string, unknown>).denied_capabilities as string[] ?? [])
-    setApprovalCapabilities((p as Record<string, unknown>).require_approval_for_capabilities as string[] ?? [])
+    setDeniedCapabilities(p.denied_capabilities ?? [])
+    setApprovalCapabilities(p.require_approval_for_capabilities ?? [])
   }, [agent])
 
   const isDirty =
@@ -90,8 +90,8 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
     approvalTimeout !== (policy.approval_timeout_seconds?.toString() ?? "300") ||
     approvalDefault !== (policy.approval_default_action ?? "deny") ||
     maxRpm !== (policy.max_requests_per_minute?.toString() ?? "") ||
-    JSON.stringify([...deniedCapabilities].sort()) !== JSON.stringify([...((policy as Record<string, unknown>).denied_capabilities as string[] ?? [])].sort()) ||
-    JSON.stringify([...approvalCapabilities].sort()) !== JSON.stringify([...((policy as Record<string, unknown>).require_approval_for_capabilities as string[] ?? [])].sort())
+    JSON.stringify([...deniedCapabilities].sort()) !== JSON.stringify([...(policy.denied_capabilities ?? [])].sort()) ||
+    JSON.stringify([...approvalCapabilities].sort()) !== JSON.stringify([...(policy.require_approval_for_capabilities ?? [])].sort())
 
   const handleSave = async () => {
     const timeoutVal = Number(approvalTimeout)

@@ -332,9 +332,9 @@ class GovernanceEngine:
 
         rate_key = _RATE_KEY.format(tenant_id=tenant_id, instance_id=instance_id)
         try:
-            # Use a pipeline to make INCR + EXPIRE atomic (avoids permanent
-            # keys if the process crashes between the two calls).
-            pipe = redis_pool.pipeline()
+            # Use a transactional pipeline (MULTI/EXEC) to make INCR + EXPIRE
+            # atomic — avoids permanent keys if the process crashes mid-pipeline.
+            pipe = redis_pool.pipeline(transaction=True)
             pipe.incr(rate_key)
             pipe.expire(rate_key, 60)  # Always refresh TTL
             results = await pipe.execute()
@@ -371,7 +371,7 @@ class GovernanceEngine:
                 tenant_id=tenant_id, agent_id=agent_id,
             )
             try:
-                pipe = redis_pool.pipeline()
+                pipe = redis_pool.pipeline(transaction=True)
                 pipe.incr(agent_rate_key)
                 pipe.expire(agent_rate_key, 60)
                 results = await pipe.execute()
