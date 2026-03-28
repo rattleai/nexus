@@ -130,6 +130,18 @@ class GovernanceEngine:
 
     def __init__(self, policy: dict[str, Any]):
         self.policy = policy
+        # Eagerly resolve capability-level deny/approval to tool names
+        # so the hot-path check remains a set membership test.
+        self._denied_cap_tools: set[str] = set()
+        self._approval_cap_tools: set[str] = set()
+        denied_caps = policy.get("denied_capabilities", [])
+        approval_caps = policy.get("require_approval_for_capabilities", [])
+        if denied_caps or approval_caps:
+            from app.agents.capabilities import capability_resolver
+            if denied_caps:
+                self._denied_cap_tools = capability_resolver.resolve(denied_caps)
+            if approval_caps:
+                self._approval_cap_tools = capability_resolver.resolve(approval_caps)
 
     async def check(
         self,
@@ -161,7 +173,7 @@ class GovernanceEngine:
         if not tool_name:
             return
 
-        # Check denied tools first
+        # Check denied tools first (raw tool names)
         denied = self.policy.get("denied_tools", [])
         if denied and tool_name in denied:
             await self._emit_violation(
@@ -173,6 +185,20 @@ class GovernanceEngine:
             raise GovernanceViolationError(
                 "denied_tool",
                 f"Tool '{tool_name}' is denied by governance policy",
+                details={"tool_name": tool_name},
+            )
+
+        # Check denied capabilities (resolved at init)
+        if self._denied_cap_tools and tool_name in self._denied_cap_tools:
+            await self._emit_violation(
+                tenant_id=tenant_id,
+                context=context,
+                violation_type="denied_tool",
+                details=f"Tool '{tool_name}' is denied by capability policy",
+            )
+            raise GovernanceViolationError(
+                "denied_tool",
+                f"Tool '{tool_name}' is denied by capability governance policy",
                 details={"tool_name": tool_name},
             )
 
@@ -386,11 +412,14 @@ class GovernanceEngine:
         4. Raises GovernanceViolationError if denied or timed out
         """
         require_approval = self.policy.get("require_approval_for", [])
-        if not require_approval:
-            return
-
         tool_name = context.get("tool_name", "")
-        if tool_name not in require_approval:
+
+        # Check both raw tool names and capability-resolved tool names
+        needs_approval = (
+            (require_approval and tool_name in require_approval)
+            or (self._approval_cap_tools and tool_name in self._approval_cap_tools)
+        )
+        if not needs_approval:
             return
 
         approval_id = uuid.uuid4().hex

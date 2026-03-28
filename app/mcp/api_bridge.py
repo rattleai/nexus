@@ -37,6 +37,7 @@ _INFRA_ALLOWED_TAGS = frozenset({
     "ai",
     "agents",
     "team",
+    "cloud-connections",
 })
 
 _INFRA_ALLOWED_PATH_PREFIXES = (
@@ -47,6 +48,7 @@ _INFRA_ALLOWED_PATH_PREFIXES = (
     "/api/v1/ai",
     "/api/v1/agents",
     "/api/v1/team",
+    "/api/v1/cloud-connections",
 )
 
 # Extend allowlists with plugin contributions

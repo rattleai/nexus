@@ -1,4 +1,7 @@
-"""Cloud connection management: OAuth flows, file browsing, and import."""
+"""Cloud connection management: OAuth flows, file browsing, and import.
+
+Infrastructure-level router — available to all application plugins.
+"""
 
 from __future__ import annotations
 
@@ -9,16 +12,23 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.rate_limit import ApiKeyRateLimiter
-from app.apps.cpq.api.schemas_datasource import CloudConnectionRead
+from app.api.schemas_cloud import (
+    CloudConnectionRead,
+    CloudFileResponse,
+    FileImportRequest,
+    FileImportResult,
+    OAuthStartRequest,
+    OAuthStartResponse,
+)
 from app.config import settings
 from app.core.audit import AuditAction, emit_audit_event
 from app.core.encryption import decrypt, encrypt
+from app.core.events import CloudFilesImported, emit
 from app.core.tenant import tenant_query
 from app.db.models import Tenant
 from app.db.models.datasource import (
@@ -39,49 +49,6 @@ from app.integrations.cloud_drives.base import CloudFile
 _api_key_rate_limit = ApiKeyRateLimiter()
 router = APIRouter(prefix="/cloud-connections", dependencies=[Depends(_api_key_rate_limit)])
 logger = structlog.stdlib.get_logger()
-
-
-# ── Request / response schemas ────────────────────────────
-
-
-class OAuthStartRequest(BaseModel):
-    redirect_uri: str | None = Field(
-        default=None,
-        description="Custom redirect URI; falls back to the provider default in settings.",
-    )
-
-
-class OAuthStartResponse(BaseModel):
-    auth_url: str
-    state: str
-
-
-class OAuthCallbackRequest(BaseModel):
-    code: str
-    state: str
-    redirect_uri: str | None = None
-
-
-class CloudFileResponse(BaseModel):
-    id: str
-    name: str
-    mime_type: str | None
-    size: int | None
-    path: str
-    is_folder: bool
-    modified_at: str | None
-    thumbnail_url: str | None = None
-
-
-class FileImportRequest(BaseModel):
-    file_ids: list[str] = Field(..., min_length=1, max_length=50)
-
-
-class FileImportResult(BaseModel):
-    data_source_id: uuid.UUID
-    file_id: str
-    name: str
-    status: str
 
 
 # ── Helpers ───────────────────────────────────────────────
@@ -167,7 +134,7 @@ async def _get_access_token(conn: CloudConnection, db: AsyncSession) -> str:
 @router.get(
     "",
     response_model=list[CloudConnectionRead],
-    dependencies=[Depends(RequireScopes("datasources:read"))],
+    dependencies=[Depends(RequireScopes("cloud-connections:read"))],
 )
 async def list_cloud_connections(
     tenant: Tenant = Depends(get_current_tenant),
@@ -185,7 +152,7 @@ async def list_cloud_connections(
 @router.post(
     "/{provider}/auth",
     response_model=OAuthStartResponse,
-    dependencies=[Depends(RequireScopes("datasources:write"))],
+    dependencies=[Depends(RequireScopes("cloud-connections:write"))],
 )
 async def start_oauth_flow(
     provider: str,
@@ -230,7 +197,7 @@ async def start_oauth_flow(
 @router.get(
     "/{provider}/callback",
     response_model=CloudConnectionRead,
-    dependencies=[Depends(RequireScopes("datasources:write"))],
+    dependencies=[Depends(RequireScopes("cloud-connections:write"))],
 )
 async def oauth_callback(
     provider: str,
@@ -301,7 +268,7 @@ async def oauth_callback(
 @router.delete(
     "/{connection_id}",
     status_code=204,
-    dependencies=[Depends(RequireScopes("datasources:write"))],
+    dependencies=[Depends(RequireScopes("cloud-connections:write"))],
 )
 async def delete_cloud_connection(
     connection_id: uuid.UUID,
@@ -338,7 +305,7 @@ async def delete_cloud_connection(
 @router.get(
     "/{connection_id}/files",
     response_model=list[CloudFileResponse],
-    dependencies=[Depends(RequireScopes("datasources:read"))],
+    dependencies=[Depends(RequireScopes("cloud-connections:read"))],
 )
 async def browse_files(
     connection_id: uuid.UUID,
@@ -386,7 +353,7 @@ async def browse_files(
     "/{connection_id}/import",
     response_model=list[FileImportResult],
     status_code=201,
-    dependencies=[Depends(RequireScopes("datasources:write"))],
+    dependencies=[Depends(RequireScopes("cloud-connections:write"))],
 )
 async def import_files(
     connection_id: uuid.UUID,
@@ -402,6 +369,20 @@ async def import_files(
     conn = await _get_connection(connection_id, tenant, db)
     connector = _get_connector(conn.provider)
     access_token = await _get_access_token(conn, db)
+
+    _MAX_IMPORT_SIZE = 100_000_000
+    _ALLOWED_IMPORT_MIMES = {
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/csv",
+        "application/json",
+        "text/plain",
+        "text/html",
+        "application/vnd.oasis.opendocument.spreadsheet",
+        "application/vnd.oasis.opendocument.text",
+    }
 
     results: list[FileImportResult] = []
     for file_id in body.file_ids:
@@ -420,25 +401,10 @@ async def import_files(
             logger.info("cloud_import_skip_folder", file_id=file_id, name=meta.name)
             continue
 
-        # Validate file size (100 MB limit)
-        _MAX_IMPORT_SIZE = 100_000_000
         if meta.size and meta.size > _MAX_IMPORT_SIZE:
             logger.warning("cloud_import_file_too_large", file_id=file_id, size=meta.size)
             continue
 
-        # Validate MIME type against allowlist
-        _ALLOWED_IMPORT_MIMES = {
-            "application/pdf",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.ms-excel",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "text/csv",
-            "application/json",
-            "text/plain",
-            "text/html",
-            "application/vnd.oasis.opendocument.spreadsheet",
-            "application/vnd.oasis.opendocument.text",
-        }
         if meta.mime_type and meta.mime_type not in _ALLOWED_IMPORT_MIMES:
             logger.warning("cloud_import_unsupported_type", file_id=file_id, mime=meta.mime_type)
             continue
@@ -481,6 +447,15 @@ async def import_files(
         )
 
     await db.commit()
+
+    if results:
+        await emit(CloudFilesImported(
+            tenant_id=str(tenant.id),
+            connection_id=str(connection_id),
+            data_source_ids=[str(r.data_source_id) for r in results],
+            provider=conn.provider,
+        ))
+
     logger.info(
         "cloud_import_complete",
         connection_id=str(connection_id),

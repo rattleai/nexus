@@ -109,6 +109,50 @@ _BUILTIN_TOOLS: dict[str, dict[str, Any]] = {
 }
 
 
+from app.plugins.base import CapabilityDomain, ToolCapability
+
+PLATFORM_CAPABILITIES = CapabilityDomain(
+    slug="platform",
+    label="Platform",
+    icon="Cpu",
+    capabilities=(
+        ToolCapability(
+            slug="platform:ai",
+            label="AI Completion",
+            description="Run AI completions and list available models",
+            tools=("ai_complete", "ai_list_models"),
+        ),
+        ToolCapability(
+            slug="platform:files",
+            label="File Management",
+            description="Upload and list files in storage",
+            tools=("file_upload", "file_list"),
+        ),
+        ToolCapability(
+            slug="platform:jobs",
+            label="Background Jobs",
+            description="Create and list background jobs",
+            tools=("job_create", "job_list"),
+            risk_level="medium",
+        ),
+        ToolCapability(
+            slug="platform:webhooks",
+            label="Webhooks",
+            description="Create webhook endpoints for event notifications",
+            tools=("webhook_create",),
+            risk_level="medium",
+        ),
+        ToolCapability(
+            slug="platform:code",
+            label="Code Execution",
+            description="Execute Python code in a secure sandbox",
+            tools=("code_execute",),
+            risk_level="high",
+        ),
+    ),
+)
+
+
 def _get_all_builtin_tools() -> dict[str, dict[str, Any]]:
     """Return infra tools merged with plugin-contributed tool definitions."""
     all_tools = _BUILTIN_TOOLS.copy()

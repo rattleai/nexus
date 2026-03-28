@@ -11,6 +11,8 @@ import type {
   AgentAnalytics,
   TenantTool,
   PaginatedAgentResponse,
+  CapabilityCatalog,
+  CapabilityPreset,
 } from "@/types/agents"
 
 // ── Query Keys ────────────────────────────────────────────────────
@@ -44,6 +46,10 @@ export const agentKeys = {
   analytics: (days?: number, agentId?: string) =>
     ["agents", "analytics", days, agentId] as const,
   approvals: () => ["agents", "approvals"] as const,
+  capabilities: {
+    catalog: () => ["agents", "capabilities", "catalog"] as const,
+    presets: () => ["agents", "capabilities", "presets"] as const,
+  },
 } as const
 
 // ── Agent Definition Queries ──────────────────────────────────────
@@ -356,5 +362,33 @@ export function useDeleteDefinitionMemory() {
       })
       toast.success("Memory cleared")
     },
+  })
+}
+
+// ── Capability Catalog & Presets ─────────────────────────────────────
+
+export function useCapabilityCatalog() {
+  return useQuery({
+    queryKey: agentKeys.capabilities.catalog(),
+    queryFn: ({ signal }) =>
+      api.get("agents/capabilities", { signal }).json<CapabilityCatalog>(),
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useCapabilityPresets() {
+  return useQuery({
+    queryKey: agentKeys.capabilities.presets(),
+    queryFn: ({ signal }) =>
+      api.get("agents/capability-presets", { signal }).json<CapabilityPreset[]>(),
+  })
+}
+
+export function useResolveCapabilities() {
+  return useMutation({
+    mutationFn: async (capabilities: string[]) =>
+      api
+        .post("agents/capabilities/resolve", { json: { capabilities } })
+        .json<{ tools: string[]; count: number }>(),
   })
 }

@@ -18,8 +18,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useUpdateAgent } from "@/hooks/use-agents"
+import { useUpdateAgent, useCapabilityCatalog, useCapabilityPresets } from "@/hooks/use-agents"
 import { useModels } from "@/hooks/use-models"
+import { CapabilitySelector } from "@/components/agents/capability-selector"
+import { PresetPicker } from "@/components/agents/preset-picker"
 import type { AgentDefinition, AgentStatus } from "@/types/agents"
 import { Link } from "@tanstack/react-router"
 import { toast } from "sonner"
@@ -31,6 +33,8 @@ interface AgentConfigPanelProps {
 export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
   const updateAgent = useUpdateAgent()
   const { data: models = [] } = useModels()
+  const { data: catalog, isLoading: catalogLoading } = useCapabilityCatalog()
+  const { data: presets, isLoading: presetsLoading } = useCapabilityPresets()
 
   const modelsByProvider = React.useMemo(() => {
     const grouped = new Map<string, typeof models>()
@@ -56,6 +60,7 @@ export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
   const [status, setStatus] = React.useState<AgentStatus>(agent.status)
   const [toolInput, setToolInput] = React.useState("")
   const [allowedTools, setAllowedTools] = React.useState<string[]>(agent.allowed_tools)
+  const [capabilities, setCapabilities] = React.useState<string[]>(agent.capabilities ?? [])
 
   // Reset when agent changes
   React.useEffect(() => {
@@ -72,6 +77,7 @@ export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
     setSandboxEnabled(agent.sandbox_enabled)
     setStatus(agent.status)
     setAllowedTools(agent.allowed_tools)
+    setCapabilities(agent.capabilities ?? [])
   }, [agent])
 
   const isDirty =
@@ -87,7 +93,8 @@ export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
     parallelTools !== agent.parallel_tool_execution ||
     sandboxEnabled !== agent.sandbox_enabled ||
     status !== agent.status ||
-    JSON.stringify([...allowedTools].sort()) !== JSON.stringify([...agent.allowed_tools].sort())
+    JSON.stringify([...allowedTools].sort()) !== JSON.stringify([...agent.allowed_tools].sort()) ||
+    JSON.stringify([...capabilities].sort()) !== JSON.stringify([...(agent.capabilities ?? [])].sort())
 
   const handleSave = async () => {
     await updateAgent.mutateAsync({
@@ -106,6 +113,7 @@ export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
         sandbox_enabled: sandboxEnabled,
         status,
         allowed_tools: allowedTools,
+        capabilities,
         expected_version: agent.version,
       },
     })
@@ -125,6 +133,7 @@ export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
     setSandboxEnabled(agent.sandbox_enabled)
     setStatus(agent.status)
     setAllowedTools(agent.allowed_tools)
+    setCapabilities(agent.capabilities ?? [])
   }
 
   const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/
@@ -379,47 +388,69 @@ export function AgentConfigPanel({ agent }: AgentConfigPanelProps) {
         </CardContent>
       </Card>
 
-      {/* Tools */}
+      {/* Capabilities & Tools */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Allowed Tools</CardTitle>
+          <CardTitle className="text-sm">Capabilities & Tools</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex gap-2">
-            <Input
-              value={toolInput}
-              onChange={(e) => setToolInput(e.target.value)}
-              placeholder="Tool name (e.g., code_execute)"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault()
-                  addTool()
-                }
-              }}
-            />
-            <Button variant="outline" onClick={addTool}>
-              Add
-            </Button>
-          </div>
-          {allowedTools.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {allowedTools.map((tool) => (
-                <Badge
-                  key={tool}
-                  variant="secondary"
-                  className="cursor-pointer hover:bg-destructive/20 transition-colors"
-                  onClick={() => removeTool(tool)}
-                >
-                  {tool}
-                  <span className="ml-1 text-muted-foreground">&times;</span>
-                </Badge>
-              ))}
+        <CardContent className="space-y-4">
+          <PresetPicker
+            presets={presets}
+            isLoading={presetsLoading}
+            activeCapabilities={capabilities}
+            onApply={(preset) => setCapabilities([...preset.capabilities])}
+          />
+
+          <Separator />
+
+          <CapabilitySelector
+            capabilities={capabilities}
+            onChange={setCapabilities}
+            catalog={catalog}
+            isLoading={catalogLoading}
+          />
+
+          {/* Advanced: raw tool names for custom/tenant tools */}
+          <Separator />
+          <details className="group">
+            <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+              Advanced: additional tool names
+            </summary>
+            <div className="mt-2 space-y-2">
+              <div className="flex gap-2">
+                <Input
+                  value={toolInput}
+                  onChange={(e) => setToolInput(e.target.value)}
+                  placeholder="Custom tool name"
+                  className="text-xs"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      addTool()
+                    }
+                  }}
+                />
+                <Button variant="outline" size="sm" onClick={addTool}>
+                  Add
+                </Button>
+              </div>
+              {allowedTools.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {allowedTools.map((tool) => (
+                    <Badge
+                      key={tool}
+                      variant="secondary"
+                      className="cursor-pointer hover:bg-destructive/20 transition-colors text-[10px]"
+                      onClick={() => removeTool(tool)}
+                    >
+                      {tool}
+                      <span className="ml-1 text-muted-foreground">&times;</span>
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              No tools configured. The agent will only generate text responses.
-            </p>
-          )}
+          </details>
         </CardContent>
       </Card>
     </div>

@@ -218,6 +218,7 @@ class Settings(BaseSettings):
         "ai:read", "ai:write", "ai:admin",
         "mcp:read", "mcp:write",
         "agents:read", "agents:write", "agents:admin", "agents:execute",
+        "cloud-connections:read", "cloud-connections:write",
         # App-specific scopes are contributed dynamically via plugins.
         # See app.plugins.registry — scopes are appended after discovery.
     ]

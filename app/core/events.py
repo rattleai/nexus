@@ -205,6 +205,14 @@ class OAuthAccountLinked(DomainEvent):
     email: str = ""
 
 
+@dataclass
+class CloudFilesImported(DomainEvent):
+    tenant_id: str = ""
+    connection_id: str = ""
+    data_source_ids: list[str] = field(default_factory=list)
+    provider: str = ""
+
+
 def on(event_type: type) -> Callable:
     """Decorator to register an async handler for a domain event type."""
 

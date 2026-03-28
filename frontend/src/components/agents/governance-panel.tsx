@@ -13,11 +13,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useUpdateAgent } from "@/hooks/use-agents"
+import { useUpdateAgent, useCapabilityCatalog } from "@/hooks/use-agents"
 import type { AgentDefinition, GovernancePolicy } from "@/types/agents"
 import { toast } from "sonner"
 
 const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/
+const RISK_COLORS: Record<string, string> = {
+  low: "border-green-500/50 text-green-600 dark:text-green-400",
+  medium: "border-yellow-500/50 text-yellow-600 dark:text-yellow-400",
+  high: "border-orange-500/50 text-orange-600 dark:text-orange-400",
+  critical: "border-red-500/50 text-red-600 dark:text-red-400",
+}
 
 interface GovernancePanelProps {
   agent: AgentDefinition
@@ -25,6 +31,7 @@ interface GovernancePanelProps {
 
 export function GovernancePanel({ agent }: GovernancePanelProps) {
   const updateAgent = useUpdateAgent()
+  const { data: catalog } = useCapabilityCatalog()
   const policy = (agent.governance_policy ?? {}) as GovernancePolicy
 
   const [maxRunSpend, setMaxRunSpend] = React.useState(
@@ -51,6 +58,12 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
   const [maxRpm, setMaxRpm] = React.useState(
     policy.max_requests_per_minute?.toString() ?? "",
   )
+  const [deniedCapabilities, setDeniedCapabilities] = React.useState<string[]>(
+    (policy as Record<string, unknown>).denied_capabilities as string[] ?? [],
+  )
+  const [approvalCapabilities, setApprovalCapabilities] = React.useState<string[]>(
+    (policy as Record<string, unknown>).require_approval_for_capabilities as string[] ?? [],
+  )
   const [toolInput, setToolInput] = React.useState("")
   const [approvalInput, setApprovalInput] = React.useState("")
 
@@ -64,6 +77,8 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
     setApprovalTimeout(p.approval_timeout_seconds?.toString() ?? "300")
     setApprovalDefault(p.approval_default_action ?? "deny")
     setMaxRpm(p.max_requests_per_minute?.toString() ?? "")
+    setDeniedCapabilities((p as Record<string, unknown>).denied_capabilities as string[] ?? [])
+    setApprovalCapabilities((p as Record<string, unknown>).require_approval_for_capabilities as string[] ?? [])
   }, [agent])
 
   const isDirty =
@@ -74,7 +89,9 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
     JSON.stringify([...requireApproval].sort()) !== JSON.stringify([...(policy.require_approval_for ?? [])].sort()) ||
     approvalTimeout !== (policy.approval_timeout_seconds?.toString() ?? "300") ||
     approvalDefault !== (policy.approval_default_action ?? "deny") ||
-    maxRpm !== (policy.max_requests_per_minute?.toString() ?? "")
+    maxRpm !== (policy.max_requests_per_minute?.toString() ?? "") ||
+    JSON.stringify([...deniedCapabilities].sort()) !== JSON.stringify([...((policy as Record<string, unknown>).denied_capabilities as string[] ?? [])].sort()) ||
+    JSON.stringify([...approvalCapabilities].sort()) !== JSON.stringify([...((policy as Record<string, unknown>).require_approval_for_capabilities as string[] ?? [])].sort())
 
   const handleSave = async () => {
     const timeoutVal = Number(approvalTimeout)
@@ -88,6 +105,8 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
       approval_timeout_seconds: timeoutVal >= 1 ? timeoutVal : 300,
       approval_default_action: approvalDefault as "deny" | "approve",
       max_requests_per_minute: maxRpm ? Number(maxRpm) : null,
+      denied_capabilities: deniedCapabilities,
+      require_approval_for_capabilities: approvalCapabilities,
     }
 
     try {
@@ -200,18 +219,52 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
         </CardContent>
       </Card>
 
-      {/* Tool Access Control */}
+      {/* Capability Access Control */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm flex items-center gap-2">
             <Lock className="h-4 w-4" />
-            Denied Tools
+            Denied Capabilities
           </CardTitle>
           <CardDescription className="text-xs">
-            Explicitly block specific tools from being used by this agent.
+            Block entire capability groups or individual tools from being used.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {catalog && (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Block by capability</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {catalog.domains.flatMap((d) =>
+                  d.capabilities.map((cap) => {
+                    const isDenied = deniedCapabilities.includes(cap.slug)
+                    return (
+                      <Badge
+                        key={cap.slug}
+                        variant={isDenied ? "destructive" : "outline"}
+                        className={`cursor-pointer text-[10px] transition-colors ${
+                          !isDenied ? "hover:bg-destructive/10" : ""
+                        }`}
+                        onClick={() => {
+                          if (isDenied) {
+                            setDeniedCapabilities(deniedCapabilities.filter((c) => c !== cap.slug))
+                          } else {
+                            setDeniedCapabilities([...deniedCapabilities, cap.slug])
+                          }
+                        }}
+                      >
+                        {cap.label}
+                        {isDenied && <span className="ml-1">&times;</span>}
+                      </Badge>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          <Separator />
+          <Label className="text-xs text-muted-foreground">Block individual tools</Label>
           <div className="flex gap-2">
             <Input
               value={toolInput}
@@ -280,11 +333,48 @@ export function GovernancePanel({ agent }: GovernancePanelProps) {
             Approval Requirements
           </CardTitle>
           <CardDescription className="text-xs">
-            Require human approval before the agent uses certain tools. The agent
-            will pause and wait for a team member to approve or deny.
+            Require human approval before the agent uses certain capabilities or tools.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {catalog && (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Require approval by capability</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {catalog.domains.flatMap((d) =>
+                  d.capabilities
+                    .filter((cap) => cap.risk_level !== "low")
+                    .map((cap) => {
+                      const isRequired = approvalCapabilities.includes(cap.slug)
+                      return (
+                        <Badge
+                          key={cap.slug}
+                          variant="outline"
+                          className={`cursor-pointer text-[10px] transition-colors ${
+                            isRequired
+                              ? "border-yellow-500/50 text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/20"
+                              : "hover:bg-yellow-50 dark:hover:bg-yellow-950/10"
+                          }`}
+                          onClick={() => {
+                            if (isRequired) {
+                              setApprovalCapabilities(approvalCapabilities.filter((c) => c !== cap.slug))
+                            } else {
+                              setApprovalCapabilities([...approvalCapabilities, cap.slug])
+                            }
+                          }}
+                        >
+                          {cap.label}
+                          {isRequired && <span className="ml-1">&times;</span>}
+                        </Badge>
+                      )
+                    })
+                )}
+              </div>
+            </div>
+          )}
+
+          <Separator />
+          <Label className="text-xs text-muted-foreground">Require approval for individual tools</Label>
           <div className="flex gap-2">
             <Input
               value={approvalInput}

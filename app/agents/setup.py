@@ -27,10 +27,13 @@ def build_tool_executor(
 ) -> Callable[[str, dict[str, Any]], Coroutine[Any, Any, Any]]:
     """Build a tool executor callable: ``(tool_name, arguments) -> result``.
 
-    The returned closure checks ``allowed_tools`` before dispatching to the
-    tool registry, which routes to built-in, plugin, or tenant-external tools.
+    The returned closure checks the resolved capability + tool set before
+    dispatching to the tool registry, which routes to built-in, plugin, or
+    tenant-external tools.
     """
-    allowed_tools = set(definition.allowed_tools or [])
+    from app.agents.capabilities import capability_resolver
+
+    allowed_tools = set(capability_resolver.resolve_agent_tools(definition))
 
     async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> Any:
         if allowed_tools and tool_name not in allowed_tools:
