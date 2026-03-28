@@ -21,7 +21,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.agents.events import AgentDefinitionCreated, AgentDefinitionUpdated
+from app.agents.events import (
+    AgentDefinitionCreated,
+    AgentDefinitionUpdated,
+    ConversationStarted,
+    ConversationTurnCompleted,
+    ConversationEnded,
+)
 from app.agents.models import (
     AgentDefinition,
     AgentInstance,
@@ -879,6 +885,21 @@ async def start_conversation(
 
     await _enforce_concurrent_limit(db, agent, tenant.id)
 
+    # Rate limit: max 10 session creations per minute per tenant
+    from app.core.redis import redis_pool as _redis
+    _rate_key = f"agent:conv:create:rate:{tenant.id}"
+    try:
+        _pipe = _redis.pipeline()
+        _pipe.incr(_rate_key)
+        _pipe.expire(_rate_key, 60)
+        _rate_results = await _pipe.execute()
+        if _rate_results[0] > 10:
+            raise HTTPException(429, "Session creation rate limit exceeded (10/minute)")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.warning("conv_rate_limit_redis_unavailable", exc_info=True)
+
     # Resolve API key
     from app.core.encryption import decrypt
     from app.db.models.ai import TenantAIProviderKey
@@ -909,6 +930,7 @@ async def start_conversation(
     idle_timeout = body.idle_timeout_seconds or settings.AGENT_SESSION_IDLE_TIMEOUT_SECONDS
 
     # Create interactive session
+    from datetime import timedelta as _timedelta
     session = AgentSession(
         id=session_id,
         tenant_id=tenant.id,
@@ -919,6 +941,7 @@ async def start_conversation(
         messages=[],
         last_activity_at=now,
         idle_timeout_seconds=idle_timeout,
+        expires_at=now + _timedelta(seconds=idle_timeout),
     )
     db.add(session)
 
@@ -936,6 +959,10 @@ async def start_conversation(
     await db.commit()
     await db.refresh(instance)
     await db.refresh(session)
+
+    await emit(ConversationStarted(
+        tenant_id=str(tenant.id), session_id=str(session_id), agent_id=str(agent.id),
+    ))
 
     messages = body.input_data.get("messages", [])
     if not messages and "prompt" in body.input_data:
@@ -979,10 +1006,14 @@ async def start_conversation(
                         })
 
                 yield f"event: {event_type}\ndata: {_json.dumps(event_data, default=str)}\n\n"
-        except Exception as exc:
+        except HTTPException as exc:
             import json as _json2
-            logger.error("conversation_stream_error", error=str(exc), exc_info=True)
-            yield f"event: error\ndata: {_json2.dumps({'message': str(exc)[:500]})}\n\n"
+            logger.error("conversation_stream_error", error=exc.detail, exc_info=True)
+            yield f"event: error\ndata: {_json2.dumps({'message': exc.detail})}\n\n"
+        except Exception:
+            import json as _json2
+            logger.error("conversation_stream_error", exc_info=True)
+            yield f"event: error\ndata: {_json2.dumps({'message': 'An internal error occurred. Please try again.'})}\n\n"
         finally:
             try:
                 inst = await db.get(AgentInstance, instance_id)
@@ -1006,6 +1037,10 @@ async def start_conversation(
                     stored_messages = list(sess.messages or [])
                     stored_messages.extend(messages)
                     stored_messages.extend(_assistant_messages)
+                    # Bound message history to prevent unbounded JSONB growth
+                    max_messages = getattr(settings, "AGENT_SESSION_MAX_MESSAGES", 200)
+                    if len(stored_messages) > max_messages:
+                        stored_messages = stored_messages[-max_messages:]
                     sess.messages = stored_messages
                     sess.turn_count = 1
                     sess.total_tokens = _final_data.get("total_tokens", 0)
@@ -1014,12 +1049,23 @@ async def start_conversation(
 
                 await db.commit()
             except Exception:
-                logger.warning(
+                logger.error(
                     "conversation_cleanup_failed",
                     instance_id=str(instance_id),
                     session_id=str(session_id),
                     exc_info=True,
                 )
+                # Fallback: attempt to at least mark instance as failed
+                try:
+                    await db.rollback()
+                    inst = await db.get(AgentInstance, instance_id)
+                    if inst and inst.status == InstanceStatus.RUNNING:
+                        inst.status = InstanceStatus.FAILED
+                        inst.error = "Cleanup failed"
+                        inst.completed_at = _dt.now(UTC)
+                        await db.commit()
+                except Exception:
+                    pass
 
     return StreamingResponse(
         event_generator(),
@@ -1082,6 +1128,21 @@ async def conversation_reply(
             await db.commit()
             raise HTTPException(410, "Session has expired due to inactivity")
 
+    # Rate limit: max 20 replies per minute per session
+    from app.core.redis import redis_pool as _redis_reply
+    _reply_rate_key = f"agent:conv:reply:rate:{session_id}"
+    try:
+        _pipe = _redis_reply.pipeline()
+        _pipe.incr(_reply_rate_key)
+        _pipe.expire(_reply_rate_key, 60)
+        _rate_results = await _pipe.execute()
+        if _rate_results[0] > 20:
+            raise HTTPException(429, "Reply rate limit exceeded (20/minute)")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.warning("reply_rate_limit_redis_unavailable", exc_info=True)
+
     # Check turn limit
     if session.turn_count >= settings.AGENT_SESSION_MAX_TURNS:
         raise HTTPException(
@@ -1090,14 +1151,24 @@ async def conversation_reply(
         )
 
     # Acquire Redis distributed lock to prevent concurrent replies
-    from app.core.redis import get_redis
-    redis = await get_redis()
+    from app.core.redis import redis_pool
     lock_key = f"agent:session:lock:{session_id}"
-    lock = redis.lock(lock_key, timeout=settings.AGENT_CONVERSATION_LOCK_TIMEOUT + 300, blocking_timeout=0)
+    lock = redis_pool.lock(lock_key, timeout=settings.AGENT_CONVERSATION_LOCK_TIMEOUT, blocking_timeout=0)
     if not await lock.acquire():
         raise HTTPException(409, "A response is still in progress for this session")
 
+    # Pre-generator setup — if anything here raises, release lock immediately
     try:
+        # Re-validate session after lock (TOCTOU protection)
+        await db.refresh(session)
+        now = _dt.now(UTC)
+        if session.status != SessionStatus.ACTIVE:
+            raise HTTPException(400, f"Session is {session.status.value}, cannot accept replies")
+        if session.expires_at and session.expires_at < now:
+            session.status = SessionStatus.EXPIRED
+            await db.commit()
+            raise HTTPException(410, "Session has expired")
+
         # Load agent definition
         agent = await db.get(AgentDefinition, session.definition_id)
         if not agent or agent.status != AgentStatus.ACTIVE:
@@ -1149,114 +1220,144 @@ async def conversation_reply(
         db.add(instance)
         await db.commit()
         await db.refresh(instance)
-
-        async def event_generator():
-            import json as _json
-
-            _completed_normally = False
-            _final_data: dict = {}
-            _assistant_messages: list[dict] = []
-
-            yield (
-                f"event: turn_started\n"
-                f"data: {_json.dumps({'instance_id': str(instance_id), 'session_id': str(session_id), 'turn_number': turn_number})}\n\n"
-            )
-
-            try:
-                async for event in runtime.run_stream(
-                    messages=conversation_messages,
-                    instance_id=instance_id,
-                    db=db,
-                ):
-                    if await request.is_disconnected():
-                        runtime.cancel()
-                        return
-
-                    event_type = event.get("event", "message")
-                    event_data = event.get("data", {})
-
-                    if event_type == "run_completed":
-                        _completed_normally = True
-                        _final_data = event_data
-                        if event_data.get("output"):
-                            _assistant_messages.append({
-                                "role": "assistant",
-                                "content": str(event_data["output"]),
-                            })
-
-                    yield f"event: {event_type}\ndata: {_json.dumps(event_data, default=str)}\n\n"
-            except Exception as exc:
-                import json as _json2
-                logger.error("conversation_reply_error", error=str(exc), exc_info=True)
-                yield f"event: error\ndata: {_json2.dumps({'message': str(exc)[:500]})}\n\n"
-            finally:
-                try:
-                    inst = await db.get(AgentInstance, instance_id)
-                    sess = await db.get(AgentSession, session_id)
-
-                    if inst and inst.status in (InstanceStatus.RUNNING, InstanceStatus.PENDING):
-                        if _completed_normally:
-                            inst.status = InstanceStatus.COMPLETED
-                            inst.output_data = _final_data.get("output", {})
-                            inst.tokens_used = _final_data.get("total_tokens", 0)
-                            inst.cost_usd = _final_data.get("total_cost_usd", 0)
-                            inst.steps_executed = _final_data.get("steps", 0)
-                        elif runtime._cancelled:
-                            inst.status = InstanceStatus.CANCELLED
-                        else:
-                            inst.status = InstanceStatus.FAILED
-                            inst.error = "Stream terminated unexpectedly"
-                        inst.completed_at = _dt.now(UTC)
-
-                    # Update session with new messages and metrics
-                    if sess:
-                        stored_messages = list(sess.messages or [])
-                        stored_messages.append(new_user_message)
-                        stored_messages.extend(_assistant_messages)
-                        sess.messages = stored_messages
-                        sess.turn_count = turn_number
-                        sess.total_tokens = (sess.total_tokens or 0) + _final_data.get("total_tokens", 0)
-                        sess.total_cost_usd = float(sess.total_cost_usd or 0) + float(_final_data.get("total_cost_usd", 0))
-                        sess.last_activity_at = _dt.now(UTC)
-
-                        # Sliding TTL: extend expiry on each turn
-                        if settings.AGENT_SESSION_SLIDING_TTL:
-                            from datetime import timedelta
-                            sess.expires_at = _dt.now(UTC) + timedelta(seconds=sess.idle_timeout_seconds)
-
-                    await db.commit()
-                except Exception:
-                    logger.warning(
-                        "conversation_reply_cleanup_failed",
-                        instance_id=str(instance_id),
-                        session_id=str(session_id),
-                        exc_info=True,
-                    )
-                finally:
-                    # Always release the lock
-                    try:
-                        await lock.release()
-                    except Exception:
-                        logger.warning("session_lock_release_failed", session_id=str(session_id))
-
-        return StreamingResponse(
-            event_generator(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-                "X-Instance-Id": str(instance_id),
-                "X-Session-Id": str(session_id),
-                "Access-Control-Expose-Headers": "X-Instance-Id, X-Session-Id",
-            },
-        )
-    except HTTPException:
-        await lock.release()
-        raise
     except Exception:
-        await lock.release()
+        try:
+            await lock.release()
+        except Exception:
+            logger.warning("session_lock_release_failed", session_id=str(session_id))
         raise
+
+    # Lock ownership transfers to the generator — no outer release needed
+    async def event_generator():
+        import json as _json
+
+        _completed_normally = False
+        _final_data: dict = {}
+        _assistant_messages: list[dict] = []
+
+        yield (
+            f"event: turn_started\n"
+            f"data: {_json.dumps({'instance_id': str(instance_id), 'session_id': str(session_id), 'turn_number': turn_number})}\n\n"
+        )
+
+        try:
+            async for event in runtime.run_stream(
+                messages=conversation_messages,
+                instance_id=instance_id,
+                db=db,
+            ):
+                if await request.is_disconnected():
+                    runtime.cancel()
+                    return
+
+                event_type = event.get("event", "message")
+                event_data = event.get("data", {})
+
+                if event_type == "run_completed":
+                    _completed_normally = True
+                    _final_data = event_data
+                    if event_data.get("output"):
+                        _assistant_messages.append({
+                            "role": "assistant",
+                            "content": str(event_data["output"]),
+                        })
+
+                yield f"event: {event_type}\ndata: {_json.dumps(event_data, default=str)}\n\n"
+        except HTTPException as exc:
+            import json as _json2
+            logger.error("conversation_reply_error", error=exc.detail, exc_info=True)
+            yield f"event: error\ndata: {_json2.dumps({'message': exc.detail})}\n\n"
+        except Exception:
+            import json as _json2
+            logger.error("conversation_reply_error", exc_info=True)
+            yield f"event: error\ndata: {_json2.dumps({'message': 'An internal error occurred. Please try again.'})}\n\n"
+        finally:
+            try:
+                inst = await db.get(AgentInstance, instance_id)
+                sess = await db.get(AgentSession, session_id)
+
+                if inst and inst.status in (InstanceStatus.RUNNING, InstanceStatus.PENDING):
+                    if _completed_normally:
+                        inst.status = InstanceStatus.COMPLETED
+                        inst.output_data = _final_data.get("output", {})
+                        inst.tokens_used = _final_data.get("total_tokens", 0)
+                        inst.cost_usd = _final_data.get("total_cost_usd", 0)
+                        inst.steps_executed = _final_data.get("steps", 0)
+                    elif runtime._cancelled:
+                        inst.status = InstanceStatus.CANCELLED
+                    else:
+                        inst.status = InstanceStatus.FAILED
+                        inst.error = "Stream terminated unexpectedly"
+                    inst.completed_at = _dt.now(UTC)
+
+                # Update session with new messages and metrics
+                if sess:
+                    stored_messages = list(sess.messages or [])
+                    stored_messages.append(new_user_message)
+                    stored_messages.extend(_assistant_messages)
+                    # Bound message history to prevent unbounded JSONB growth
+                    max_messages = getattr(settings, "AGENT_SESSION_MAX_MESSAGES", 200)
+                    if len(stored_messages) > max_messages:
+                        stored_messages = stored_messages[-max_messages:]
+                    sess.messages = stored_messages
+                    sess.turn_count = turn_number
+                    sess.total_tokens = (sess.total_tokens or 0) + _final_data.get("total_tokens", 0)
+                    sess.total_cost_usd = float(sess.total_cost_usd or 0) + float(_final_data.get("total_cost_usd", 0))
+                    sess.last_activity_at = _dt.now(UTC)
+
+                    # Sliding TTL: extend expiry on each turn
+                    if settings.AGENT_SESSION_SLIDING_TTL:
+                        from datetime import timedelta
+                        sess.expires_at = _dt.now(UTC) + timedelta(seconds=sess.idle_timeout_seconds)
+
+                await db.commit()
+
+                if _completed_normally:
+                    await emit(ConversationTurnCompleted(
+                        tenant_id=str(tenant.id),
+                        session_id=str(session_id),
+                        instance_id=str(instance_id),
+                        turn_number=turn_number,
+                        tokens_used=_final_data.get("total_tokens", 0),
+                        cost_usd=float(_final_data.get("total_cost_usd", 0)),
+                    ))
+            except Exception:
+                logger.error(
+                    "conversation_reply_cleanup_failed",
+                    instance_id=str(instance_id),
+                    session_id=str(session_id),
+                    exc_info=True,
+                )
+                # Fallback: attempt to at least mark instance as failed
+                try:
+                    await db.rollback()
+                    inst = await db.get(AgentInstance, instance_id)
+                    if inst and inst.status == InstanceStatus.RUNNING:
+                        inst.status = InstanceStatus.FAILED
+                        inst.error = "Cleanup failed"
+                        inst.completed_at = _dt.now(UTC)
+                        await db.commit()
+                except Exception:
+                    pass
+            finally:
+                # Always release the lock
+                try:
+                    await lock.release()
+                except Exception:
+                    logger.warning("session_lock_release_failed", session_id=str(session_id))
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Instance-Id": str(instance_id),
+            "X-Session-Id": str(session_id),
+            "Access-Control-Expose-Headers": "X-Instance-Id, X-Session-Id",
+        },
+    )
 
 
 @router.get(
@@ -1297,6 +1398,15 @@ async def close_session(
     session.status = SessionStatus.COMPLETED
     await db.commit()
     await db.refresh(session)
+
+    await emit(ConversationEnded(
+        tenant_id=str(tenant.id),
+        session_id=str(session_id),
+        total_turns=session.turn_count,
+        total_tokens=session.total_tokens or 0,
+        total_cost_usd=float(session.total_cost_usd or 0),
+    ))
+
     return ConversationSessionResponse.model_validate(session)
 
 

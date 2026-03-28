@@ -4,6 +4,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useAgentConversation } from "@/hooks/use-agent-conversation"
+import { ErrorBoundary } from "@/components/error-boundary"
 import { AgentChatMessage } from "./agent-chat-message"
 import { AgentPromptBar } from "./agent-prompt-bar"
 import { ThinkingIndicator } from "./thinking-indicator"
@@ -90,7 +91,16 @@ export function AgentChatView({ instanceId, sessionId, className }: AgentChatVie
       >
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 space-y-6">
           {turns.map((turn) => (
-            <AgentChatMessage key={turn.id} turn={turn} />
+            <ErrorBoundary
+              key={turn.id}
+              fallback={
+                <div className="text-xs text-red-500 bg-red-500/5 p-3 rounded-lg border border-red-200 dark:border-red-900">
+                  Failed to render message
+                </div>
+              }
+            >
+              <AgentChatMessage turn={turn} />
+            </ErrorBoundary>
           ))}
 
           {/* Thinking indicator when streaming with no content yet */}

@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { toast } from "sonner"
 import { useAgentDefinitions } from "@/hooks/use-agents"
 import { startConversation } from "@/lib/agent-stream-registry"
 
@@ -53,8 +54,8 @@ export function NewRunDialog({ open, onOpenChange, onCreated, preselectedAgentId
       setSelectedAgentId(preselectedAgentId ?? "")
       setPrompt("")
       onCreated?.(instanceId, sessionId)
-    } catch {
-      // Error shown via toast
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start conversation")
     } finally {
       setIsSubmitting(false)
     }

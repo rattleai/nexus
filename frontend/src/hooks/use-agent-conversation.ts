@@ -6,7 +6,7 @@
  */
 
 import * as React from "react"
-import { useRegistryStream, sendReply, getSessionId } from "@/lib/agent-stream-registry"
+import { useRegistryStream, sendReply, getSessionId, abortStream } from "@/lib/agent-stream-registry"
 import {
   useAgentConversationStore,
   type ConversationTurn,
@@ -55,6 +55,13 @@ export function useAgentConversation(
     const defId = instance?.definition_id ?? ""
     store.initConversation(resolvedSessionId, defId)
   }, [resolvedSessionId, instance?.definition_id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset processing state when session or instance changes
+  React.useEffect(() => {
+    processedCountRef.current = 0
+    assistantTurnIdRef.current = null
+    toolCallMapRef.current.clear()
+  }, [resolvedSessionId, instanceId])
 
   // Process registry stream entries into conversation turns
   React.useEffect(() => {
@@ -220,27 +227,29 @@ export function useAgentConversation(
 
   const sendMessage = React.useCallback(
     async (content: string) => {
-      if (!resolvedSessionId || sendingRef.current) return
+      // Capture at call time to prevent stale closure during async gap
+      const sid = resolvedSessionId
+      if (!sid || sendingRef.current) return
       sendingRef.current = true
 
       try {
         // Add user turn to store
-        store.addUserTurn(resolvedSessionId, content, instanceId)
+        store.addUserTurn(sid, content, instanceId)
 
         // Reset processing state for new stream
         processedCountRef.current = 0
         assistantTurnIdRef.current = null
         toolCallMapRef.current.clear()
 
-        store.setStatus(resolvedSessionId, "streaming")
+        store.setStatus(sid, "streaming")
 
         // Send reply to backend — this creates a new SSE stream in the registry
-        const newInstanceId = await sendReply(resolvedSessionId, content)
+        const newInstanceId = await sendReply(sid, content)
 
         // Start assistant turn for the new stream
-        assistantTurnIdRef.current = store.startAssistantTurn(resolvedSessionId, newInstanceId)
+        assistantTurnIdRef.current = store.startAssistantTurn(sid, newInstanceId)
       } catch (err) {
-        store.setStatus(resolvedSessionId, "error", err instanceof Error ? err.message : "Failed to send message")
+        store.setStatus(sid, "error", err instanceof Error ? err.message : "Failed to send message")
       } finally {
         sendingRef.current = false
       }
@@ -251,13 +260,10 @@ export function useAgentConversation(
   // ── Stop handler ──────────────────────────────────────
 
   const stop = React.useCallback(() => {
-    // The registry stream abort controller will handle cancellation
-    const stream = registry
-    if (stream.isActive) {
-      // Import abort from registry if needed — for now the stream will be
-      // cancelled when the component unmounts
+    if (registry.isActive) {
+      abortStream(instanceId)
     }
-  }, [registry])
+  }, [instanceId, registry.isActive])
 
   // ── Derive agent state ────────────────────────────────
 

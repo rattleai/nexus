@@ -31,6 +31,7 @@ import {
   CommandSeparator,
 } from "@/components/ui/command"
 import { Badge } from "@/components/ui/badge"
+import { toast } from "sonner"
 import { useAgentDefinitions } from "@/hooks/use-agents"
 import { useAgentStore } from "@/stores/agent-store"
 import { startConversation } from "@/lib/agent-stream-registry"
@@ -152,8 +153,8 @@ export function AppCommandPalette() {
         search: { session: sessionId },
       })
       close()
-    } catch {
-      // Error is shown via toast from the API layer
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start agent run")
     } finally {
       setIsSubmitting(false)
     }

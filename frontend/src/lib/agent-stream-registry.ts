@@ -170,14 +170,15 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
 
             case "tool_result": {
               if (parsed.tool_name) {
-                const entryId = toolCallMap.get(parsed.tool_name)
-                if (entryId) {
-                  const entry = stream.entries.find((e) => e.id === entryId)
-                  if (entry && entry.type === "tool_call") {
-                    entry.status = "completed"
-                    entry.result = parsed.result
-                    entry.durationMs = now - entry.timestamp
-                  }
+                // Match to the oldest *running* entry for this tool name
+                // (handles duplicate tool calls correctly, unlike map-based lookup)
+                const entry = stream.entries.find(
+                  (e) => e.type === "tool_call" && e.toolName === parsed.tool_name && e.status === "running",
+                )
+                if (entry && entry.type === "tool_call") {
+                  entry.status = "completed"
+                  entry.result = parsed.result
+                  entry.durationMs = now - entry.timestamp
                   notifyListeners(stream)
                 }
               }
@@ -242,12 +243,18 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
     stream.status = "error"
     notifyListeners(stream)
   } finally {
+    // Release the stream reader to allow GC of the underlying stream
+    bodyReader.cancel().catch(() => {})
+
     // Invalidate instance query caches so sidebar picks up the new/updated instance
     queryClient.invalidateQueries({ queryKey: agentKeys.instances.all })
 
-    // Auto-cleanup after delay
+    // Auto-cleanup after delay (only if no listeners remain)
     setTimeout(() => {
-      registry.delete(stream.instanceId)
+      const s = registry.get(stream.instanceId)
+      if (!s || s.listeners.size === 0) {
+        registry.delete(stream.instanceId)
+      }
     }, CLEANUP_DELAY_MS)
   }
 }
@@ -420,6 +427,26 @@ export function hasStream(instanceId: string): boolean {
  */
 export function getSessionId(instanceId: string): string | null {
   return registry.get(instanceId)?.sessionId ?? null
+}
+
+/**
+ * Abort an active stream by instanceId.
+ * Signals the AbortController so the fetch is cancelled and consumeStream exits.
+ */
+export function abortStream(instanceId: string): void {
+  const stream = registry.get(instanceId)
+  if (stream && stream.status === "streaming") {
+    stream.abort.abort()
+    stream.status = "completed"
+    stream.entries.push({
+      id: crypto.randomUUID(),
+      type: "status",
+      status: "completed",
+      message: "Stopped by user",
+      timestamp: Date.now(),
+    })
+    notifyListeners(stream)
+  }
 }
 
 /**

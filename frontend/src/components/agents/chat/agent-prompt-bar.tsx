@@ -1,8 +1,11 @@
 import { Square, AlertCircle } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { PromptInput } from "@/components/chat/prompt-input"
 import { cn } from "@/lib/utils"
 import type { ConversationStatus } from "@/stores/agent-conversation-store"
+
+const MAX_PROMPT_LENGTH = 100_000 // Match backend ConversationReplyRequest.message max_length
 
 interface AgentPromptBarProps {
   status: ConversationStatus
@@ -23,6 +26,14 @@ export function AgentPromptBar({
 }: AgentPromptBarProps) {
   const isStreaming = status === "streaming"
   const isDisabled = isStreaming
+
+  const handleSend = (msg: string) => {
+    if (msg.length > MAX_PROMPT_LENGTH) {
+      toast.error(`Message is too long (${msg.length.toLocaleString()} chars). Maximum is ${MAX_PROMPT_LENGTH.toLocaleString()}.`)
+      return
+    }
+    onSend(msg)
+  }
 
   const placeholder =
     status === "streaming"
@@ -71,7 +82,7 @@ export function AgentPromptBar({
 
         {/* Prompt input */}
         <PromptInput
-          onSubmit={onSend}
+          onSubmit={handleSend}
           disabled={isDisabled}
           placeholder={placeholder}
           className="flex-1"
