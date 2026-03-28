@@ -13,9 +13,8 @@ Revises: 0012_parallel_agent_instances
 Create Date: 2026-03-20
 """
 
-import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import text
 
 revision = "0013_agent_resilience"
 down_revision = "0012_parallel_agent_instances"
@@ -24,22 +23,21 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "agent_instances",
-        sa.Column("last_heartbeat_at", sa.DateTime(timezone=True), nullable=True),
-    )
-    op.add_column(
-        "agent_instances",
-        sa.Column("last_checkpoint", JSONB, server_default="{}", nullable=False),
-    )
-    op.create_index(
-        "ix_agent_inst_status_heartbeat",
-        "agent_instances",
-        ["status", "last_heartbeat_at"],
-    )
+    op.execute(text(
+        "ALTER TABLE agent_instances "
+        "ADD COLUMN IF NOT EXISTS last_heartbeat_at TIMESTAMP WITH TIME ZONE"
+    ))
+    op.execute(text(
+        "ALTER TABLE agent_instances "
+        "ADD COLUMN IF NOT EXISTS last_checkpoint JSONB NOT NULL DEFAULT '{}'"
+    ))
+    op.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_agent_inst_status_heartbeat "
+        "ON agent_instances (status, last_heartbeat_at)"
+    ))
 
 
 def downgrade() -> None:
-    op.drop_index("ix_agent_inst_status_heartbeat", table_name="agent_instances")
-    op.drop_column("agent_instances", "last_checkpoint")
-    op.drop_column("agent_instances", "last_heartbeat_at")
+    op.execute(text("DROP INDEX IF EXISTS ix_agent_inst_status_heartbeat"))
+    op.execute(text("ALTER TABLE agent_instances DROP COLUMN IF EXISTS last_checkpoint"))
+    op.execute(text("ALTER TABLE agent_instances DROP COLUMN IF EXISTS last_heartbeat_at"))

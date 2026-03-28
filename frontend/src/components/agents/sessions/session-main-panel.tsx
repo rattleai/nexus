@@ -37,6 +37,8 @@ import { cn } from "@/lib/utils"
 import { formatDuration } from "@/lib/format"
 import { statusConfig } from "./status-config"
 import { StreamView } from "./stream-view"
+import { AgentChatView } from "@/components/agents/chat"
+import { getSessionId } from "@/lib/agent-stream-registry"
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -234,11 +236,14 @@ export function SessionMainPanel({ instanceId }: SessionMainPanelProps) {
       </div>
 
       {/* Tabbed content */}
-      <Tabs defaultValue="stream" className="flex flex-col flex-1 min-h-0">
+      <Tabs defaultValue="chat" className="flex flex-col flex-1 min-h-0">
         <div className="px-4 sm:px-6 pt-2">
           <TabsList>
-            <TabsTrigger value="stream" className="text-xs gap-1.5">
+            <TabsTrigger value="chat" className="text-xs gap-1.5">
               <Radio className="h-3 w-3" />
+              Chat
+            </TabsTrigger>
+            <TabsTrigger value="stream" className="text-xs gap-1.5">
               Stream
             </TabsTrigger>
             <TabsTrigger value="details" className="text-xs">
@@ -250,7 +255,15 @@ export function SessionMainPanel({ instanceId }: SessionMainPanelProps) {
           </TabsList>
         </div>
 
-        {/* Stream tab */}
+        {/* Chat tab — interactive conversation */}
+        <TabsContent value="chat" className="flex-1 min-h-0 mt-0">
+          <AgentChatView
+            instanceId={instanceId}
+            sessionId={instance.session_id ?? getSessionId(instanceId)}
+          />
+        </TabsContent>
+
+        {/* Stream tab — raw event log */}
         <TabsContent value="stream" className="flex-1 min-h-0 mt-0">
           <StreamView instanceId={instanceId} isActive={isActive} />
         </TabsContent>
