@@ -118,6 +118,8 @@ class AgentDefinitionResponse(BaseModel):
     max_concurrent_instances: int
     memory_config: dict[str, Any]
     governance_policy: dict[str, Any]
+    db_access_policy: dict[str, Any] = Field(default_factory=dict)
+    behavioral_baseline: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)
     created_at: datetime
     updated_at: datetime
@@ -147,6 +149,7 @@ class AgentInstanceResponse(BaseModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
     definition_id: uuid.UUID
+    session_id: uuid.UUID | None = None
     status: str
     steps_executed: int
     tokens_used: int
@@ -171,9 +174,55 @@ class AgentSessionResponse(BaseModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
     instance_id: uuid.UUID
+    definition_id: uuid.UUID | None = None
     status: str
+    is_interactive: bool = False
+    turn_count: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
     messages: list[dict[str, Any]]
     metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)
+    last_activity_at: datetime | None = None
+    idle_timeout_seconds: int = 3600
+    expires_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True, "populate_by_name": True}
+
+
+# ── Conversations (Multi-Turn Interactive Sessions) ────────────────────
+
+
+class ConversationStartRequest(BaseModel):
+    """Start a new interactive conversation with an agent."""
+    input_data: dict[str, Any] = {}
+    idle_timeout_seconds: int | None = Field(None, ge=60, le=86400)
+
+    @field_validator("input_data")
+    @classmethod
+    def validate_input_size(cls, v: dict[str, Any]) -> dict[str, Any]:
+        return _validate_json_size(v)
+
+
+class ConversationReplyRequest(BaseModel):
+    """Send a follow-up message in an existing conversation."""
+    message: str = Field(..., min_length=1, max_length=100_000)
+
+
+class ConversationSessionResponse(BaseModel):
+    """Extended session response for interactive conversations."""
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    definition_id: uuid.UUID | None
+    status: str
+    is_interactive: bool
+    turn_count: int
+    total_tokens: int
+    total_cost_usd: float
+    messages: list[dict[str, Any]]
+    last_activity_at: datetime | None
+    idle_timeout_seconds: int
     expires_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -350,6 +399,8 @@ class TenantToolResponse(BaseModel):
     output_schema: dict[str, Any]
     endpoint_url: str | None
     auth_config: dict[str, Any] = {}
+    schema_hash: str | None = None
+    trust_level: str = "untrusted"
     is_active: bool
     health_check_url: str | None
     metadata: dict[str, Any] = Field(validation_alias="metadata_", default_factory=dict)

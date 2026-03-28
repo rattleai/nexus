@@ -29,6 +29,7 @@ logger = structlog.stdlib.get_logger()
 
 # Redis key patterns
 _SHORT_TERM_KEY = "agent:memory:short:{instance_id}:{session_id}"
+_SESSION_SHORT_TERM_KEY = "agent:memory:short:session:{session_id}"
 _SHARED_KEY = "agent:memory:shared:{tenant_id}:{workflow_id}"
 
 # Cap for fallback Python-based similarity computation.
@@ -150,6 +151,79 @@ return 1
             instance_id=instance_id, session_id=session_id,
         )
         await redis_pool.delete(redis_key)
+
+    # ── Session-Scoped Short-Term Memory (Redis) ──────────────────────
+    # These methods use session_id only (not instance_id) so memory
+    # persists across turns in a multi-turn conversation.
+
+    async def get_session_short_term(
+        self,
+        session_id: uuid.UUID,
+        key: str,
+    ) -> Any | None:
+        """Read a value from session-scoped short-term memory."""
+        redis_key = _SESSION_SHORT_TERM_KEY.format(session_id=session_id)
+        raw = await redis_pool.hget(redis_key, key)
+        if raw is None:
+            return None
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return raw
+
+    async def set_session_short_term(
+        self,
+        session_id: uuid.UUID,
+        key: str,
+        value: Any,
+        *,
+        ttl_seconds: int = 3600,
+        max_entries: int = 100,
+    ) -> None:
+        """Write a value to session-scoped short-term memory.
+
+        Uses the same atomic Lua script for cap enforcement.
+        Memory persists across turns within the same conversation.
+        """
+        from app.config import settings
+
+        redis_key = _SESSION_SHORT_TERM_KEY.format(session_id=session_id)
+        cap = max_entries or settings.AGENT_MEMORY_SHORT_MAX_ENTRIES
+        serialized = json.dumps(value, default=str)
+
+        # NOTE: redis_pool.eval() runs a server-side Lua script atomically
+        # on the Redis server — this is NOT Python eval().
+        result = await redis_pool.eval(  # noqa: S307
+            self._SET_SHORT_TERM_LUA,
+            1,
+            redis_key,
+            key,
+            serialized,
+            str(cap),
+            str(ttl_seconds),
+        )
+
+        if result == 0:
+            logger.warning(
+                "session_short_term_memory_full",
+                session_id=str(session_id),
+                cap=cap,
+            )
+
+    async def get_all_session_short_term(
+        self,
+        session_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        """Read all session-scoped short-term memory."""
+        redis_key = _SESSION_SHORT_TERM_KEY.format(session_id=session_id)
+        raw = await redis_pool.hgetall(redis_key)
+        result = {}
+        for k, v in raw.items():
+            try:
+                result[k] = json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                result[k] = v
+        return result
 
     # ── Long-Term Memory (PostgreSQL) ──────────────────────────────────
 

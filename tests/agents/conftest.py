@@ -82,6 +82,9 @@ def mock_redis_pool():
         patch("app.agents.memory.redis_pool", redis),
         patch("app.agents.governance.redis_pool", redis),
         patch("app.agents.a2a.redis_pool", redis),
+        patch("app.agents.db_gateway.redis_pool", redis),
+        patch("app.agents.threat_detection.redis_pool", redis),
+        patch("app.agents.a2a_security.redis_pool", redis),
     ):
         yield redis
 

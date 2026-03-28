@@ -486,7 +486,7 @@ class TestMigration0023:
         """The migration must cover every table from migration 0016."""
         import importlib
         mod = importlib.import_module(
-            "app.db.migrations.versions.0023_cpq_rls_with_check"
+            "app.db.migrations.versions.0026_cpq_rls_with_check"
         )
 
         expected_tables = {
@@ -514,14 +514,14 @@ class TestMigration0023:
         assert set(mod.CPQ_RLS_TABLES) == expected_tables
 
     def test_migration_revision_chain(self):
-        """0023 must depend on 0022."""
+        """0026 must depend on 0025."""
         import importlib
         mod = importlib.import_module(
-            "app.db.migrations.versions.0023_cpq_rls_with_check"
+            "app.db.migrations.versions.0026_cpq_rls_with_check"
         )
 
-        assert mod.revision == "0023_cpq_rls_with_check"
-        assert mod.down_revision == "0022_capability_model"
+        assert mod.revision == "0026_cpq_rls_with_check"
+        assert mod.down_revision == "0025_capability_model"
 
 
 # ===================================================================

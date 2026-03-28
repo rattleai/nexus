@@ -15,14 +15,14 @@ import type { ToolCallEntry } from "@/components/agents/sessions/tool-call-card"
 
 // ── Types (matching stream-view.tsx) ────────────────────
 
-interface ContentEntry {
+export interface ContentEntry {
   id: string
   type: "content"
   text: string
   timestamp: number
 }
 
-interface StepEntry {
+export interface StepEntry {
   id: string
   type: "step"
   step: number
@@ -31,7 +31,16 @@ interface StepEntry {
   timestamp: number
 }
 
-interface StatusEntry {
+export interface ThinkingEntry {
+  id: string
+  type: "thinking"
+  content: string
+  tokens?: number
+  cost?: number
+  timestamp: number
+}
+
+export interface StatusEntry {
   id: string
   type: "status"
   status: string
@@ -39,13 +48,14 @@ interface StatusEntry {
   timestamp: number
 }
 
-type StreamEntry = ContentEntry | ToolCallEntry | StepEntry | StatusEntry
+export type StreamEntry = ContentEntry | ToolCallEntry | StepEntry | StatusEntry | ThinkingEntry
 
 type RunStatus = "streaming" | "completed" | "error"
 
 interface ActiveStream {
   instanceId: string
   definitionId: string
+  sessionId?: string
   entries: StreamEntry[]
   listeners: Set<() => void>
   abort: AbortController
@@ -57,6 +67,7 @@ interface ActiveStream {
 const registry = new Map<string, ActiveStream>()
 
 const CLEANUP_DELAY_MS = 5 * 60 * 1000 // 5 minutes
+const MAX_STREAM_ENTRIES = 5000
 
 function notifyListeners(stream: ActiveStream) {
   for (const listener of stream.listeners) {
@@ -102,8 +113,29 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
 
           switch (currentEventType) {
             case "run_started":
-              // Already handled — instanceId read from header
+            case "session_started":
+            case "turn_started":
+              // Session/turn metadata — store sessionId if present
+              if (parsed.session_id && !stream.sessionId) {
+                stream.sessionId = parsed.session_id
+              }
               break
+
+            case "thinking": {
+              stream.entries.push({
+                id: crypto.randomUUID(),
+                type: "thinking",
+                content: parsed.content ?? "",
+                tokens: parsed.tokens,
+                cost: parsed.cost_usd,
+                timestamp: now,
+              })
+              if (stream.entries.length > MAX_STREAM_ENTRIES) {
+                stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+              }
+              notifyListeners(stream)
+              break
+            }
 
             case "content_delta": {
               if (parsed.content) {
@@ -117,6 +149,9 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
                     text: parsed.content,
                     timestamp: now,
                   })
+                  if (stream.entries.length > MAX_STREAM_ENTRIES) {
+                    stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+                  }
                 }
                 notifyListeners(stream)
               }
@@ -135,6 +170,9 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
                   status: "running",
                   timestamp: now,
                 })
+                if (stream.entries.length > MAX_STREAM_ENTRIES) {
+                  stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+                }
                 notifyListeners(stream)
               }
               break
@@ -142,14 +180,15 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
 
             case "tool_result": {
               if (parsed.tool_name) {
-                const entryId = toolCallMap.get(parsed.tool_name)
-                if (entryId) {
-                  const entry = stream.entries.find((e) => e.id === entryId)
-                  if (entry && entry.type === "tool_call") {
-                    entry.status = "completed"
-                    entry.result = parsed.result
-                    entry.durationMs = now - entry.timestamp
-                  }
+                // Match to the oldest *running* entry for this tool name
+                // (handles duplicate tool calls correctly, unlike map-based lookup)
+                const entry = stream.entries.find(
+                  (e) => e.type === "tool_call" && e.toolName === parsed.tool_name && e.status === "running",
+                )
+                if (entry && entry.type === "tool_call") {
+                  entry.status = "completed"
+                  entry.result = parsed.result
+                  entry.durationMs = now - entry.timestamp
                   notifyListeners(stream)
                 }
               }
@@ -167,6 +206,9 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
                   cost: parsed.cost_usd ?? parsed.cost,
                   timestamp: now,
                 })
+                if (stream.entries.length > MAX_STREAM_ENTRIES) {
+                  stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+                }
                 notifyListeners(stream)
               }
               break
@@ -180,6 +222,9 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
                 message: parsed.finish_reason,
                 timestamp: now,
               })
+              if (stream.entries.length > MAX_STREAM_ENTRIES) {
+                stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+              }
               stream.status = "completed"
               notifyListeners(stream)
               break
@@ -193,6 +238,9 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
                 message: parsed.message,
                 timestamp: now,
               })
+              if (stream.entries.length > MAX_STREAM_ENTRIES) {
+                stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+              }
               stream.status = "error"
               notifyListeners(stream)
               break
@@ -214,12 +262,18 @@ async function consumeStream(stream: ActiveStream, reader: ReadableStream<Uint8A
     stream.status = "error"
     notifyListeners(stream)
   } finally {
+    // Release the stream reader to allow GC of the underlying stream
+    bodyReader.cancel().catch(() => {})
+
     // Invalidate instance query caches so sidebar picks up the new/updated instance
     queryClient.invalidateQueries({ queryKey: agentKeys.instances.all })
 
-    // Auto-cleanup after delay
+    // Auto-cleanup after delay (only if no listeners remain)
     setTimeout(() => {
-      registry.delete(stream.instanceId)
+      const s = registry.get(stream.instanceId)
+      if (!s || s.listeners.size === 0) {
+        registry.delete(stream.instanceId)
+      }
     }, CLEANUP_DELAY_MS)
   }
 }
@@ -385,6 +439,158 @@ export function subscribe(instanceId: string, callback: () => void): () => void 
  */
 export function hasStream(instanceId: string): boolean {
   return registry.has(instanceId)
+}
+
+/**
+ * Get the sessionId associated with a stream (set by session_started/turn_started events).
+ */
+export function getSessionId(instanceId: string): string | null {
+  return registry.get(instanceId)?.sessionId ?? null
+}
+
+/**
+ * Abort an active stream by instanceId.
+ * Signals the AbortController so the fetch is cancelled and consumeStream exits.
+ */
+export function abortStream(instanceId: string): void {
+  const stream = registry.get(instanceId)
+  if (stream && stream.status === "streaming") {
+    stream.abort.abort()
+    stream.status = "completed"
+    stream.entries.push({
+      id: crypto.randomUUID(),
+      type: "status",
+      status: "completed",
+      message: "Stopped by user",
+      timestamp: Date.now(),
+    })
+    if (stream.entries.length > MAX_STREAM_ENTRIES) {
+      stream.entries = stream.entries.slice(-Math.floor(MAX_STREAM_ENTRIES * 0.8));
+    }
+    notifyListeners(stream)
+  }
+}
+
+/**
+ * Start a new interactive conversation via the conversations endpoint.
+ * Returns { sessionId, instanceId } once the stream begins.
+ */
+export async function startConversation(
+  agentId: string,
+  prompt: string,
+): Promise<{ sessionId: string; instanceId: string }> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  }
+  const token = getAccessToken()
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`
+  }
+
+  const controller = new AbortController()
+
+  const response = await fetch(`/api/v1/agents/definitions/${agentId}/conversations`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      input_data: { prompt },
+    }),
+    signal: controller.signal,
+  })
+
+  if (!response.ok) {
+    let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+    try {
+      const errBody = await response.json()
+      if (errBody.detail) errorMessage = errBody.detail
+    } catch {
+      // use default
+    }
+    throw new Error(errorMessage)
+  }
+
+  const instanceId = response.headers.get("X-Instance-Id")
+  const sessionId = response.headers.get("X-Session-Id")
+
+  if (!instanceId || !sessionId) {
+    throw new Error("Missing instance or session ID from conversations endpoint")
+  }
+
+  const stream: ActiveStream = {
+    instanceId,
+    definitionId: agentId,
+    sessionId,
+    entries: [],
+    listeners: new Set(),
+    abort: controller,
+    status: "streaming",
+  }
+  registry.set(instanceId, stream)
+
+  if (response.body) {
+    consumeStream(stream, response.body)
+  }
+
+  return { sessionId, instanceId }
+}
+
+/**
+ * Send a follow-up message in an existing conversation.
+ * Returns the new instanceId for this turn.
+ */
+export async function sendReply(
+  sessionId: string,
+  message: string,
+): Promise<string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  }
+  const token = getAccessToken()
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`
+  }
+
+  const controller = new AbortController()
+
+  const response = await fetch(`/api/v1/agents/sessions/${sessionId}/reply`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ message }),
+    signal: controller.signal,
+  })
+
+  if (!response.ok) {
+    let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+    try {
+      const errBody = await response.json()
+      if (errBody.detail) errorMessage = errBody.detail
+    } catch {
+      // use default
+    }
+    throw new Error(errorMessage)
+  }
+
+  const instanceId = response.headers.get("X-Instance-Id")
+  if (!instanceId) {
+    throw new Error("No instance ID returned from reply endpoint")
+  }
+
+  const stream: ActiveStream = {
+    instanceId,
+    definitionId: "",
+    sessionId,
+    entries: [],
+    listeners: new Set(),
+    abort: controller,
+    status: "streaming",
+  }
+  registry.set(instanceId, stream)
+
+  if (response.body) {
+    consumeStream(stream, response.body)
+  }
+
+  return instanceId
 }
 
 /**

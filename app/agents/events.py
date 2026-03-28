@@ -141,3 +141,119 @@ class WorkflowRunFailed(DomainEvent):
     run_id: str = ""
     error: str = ""
     failed_step: str = ""
+
+
+# ── Conversation Events ──────────────────────────────────────────────
+
+
+@dataclass
+class ConversationStarted(DomainEvent):
+    """Emitted when a new interactive conversation session begins."""
+    tenant_id: str = ""
+    session_id: str = ""
+    agent_id: str = ""
+
+
+@dataclass
+class ConversationTurnCompleted(DomainEvent):
+    """Emitted after each turn in an interactive conversation completes."""
+    tenant_id: str = ""
+    session_id: str = ""
+    instance_id: str = ""
+    turn_number: int = 0
+    tokens_used: int = 0
+    cost_usd: float = 0.0
+
+
+@dataclass
+class ConversationEnded(DomainEvent):
+    """Emitted when an interactive conversation session is closed."""
+    tenant_id: str = ""
+    session_id: str = ""
+    total_turns: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
+
+
+# ── Security Events (Phase 0-2) ──────────────────────────────────────
+
+
+@dataclass
+class AgentDBQueryBlocked(DomainEvent):
+    """Emitted when the DB gateway blocks an agent query."""
+    tenant_id: str = ""
+    instance_id: str = ""
+    agent_id: str = ""
+    reason: str = ""  # "disallowed_pattern", "row_limit", "complexity", "rate_limit"
+    query_hash: str = ""
+
+
+@dataclass
+class PromptInjectionDetected(DomainEvent):
+    """Emitted when the prompt firewall detects a potential injection."""
+    tenant_id: str = ""
+    instance_id: str = ""
+    agent_id: str = ""
+    layer: str = ""  # "structural", "canary_leak", "cross_agent", "classifier"
+    detail: str = ""
+    blocked: bool = False
+
+
+@dataclass
+class AgentThreatDetected(DomainEvent):
+    """Emitted when the threat detection engine flags anomalous behavior."""
+    tenant_id: str = ""
+    instance_id: str = ""
+    agent_id: str = ""
+    anomaly_score: float = 0.0
+    factors: dict = field(default_factory=dict)
+    action_taken: str = ""  # "warn", "pause", "suspend"
+    atlas_technique: str = ""
+
+
+@dataclass
+class AgentCapabilityEscalation(DomainEvent):
+    """Emitted when an agent requests elevated capabilities."""
+    tenant_id: str = ""
+    instance_id: str = ""
+    agent_id: str = ""
+    requested_capabilities: list = field(default_factory=list)
+    granted: bool = False
+
+
+@dataclass
+class ToolSchemaViolation(DomainEvent):
+    """Emitted when a tool's schema drifts from its registered hash."""
+    tenant_id: str = ""
+    tool_name: str = ""
+    expected_hash: str = ""
+    actual_hash: str = ""
+
+
+@dataclass
+class A2AMessageSecurityEvent(DomainEvent):
+    """Emitted when A2A message security detects an issue."""
+    tenant_id: str = ""
+    from_instance: str = ""
+    to_instance: str = ""
+    issue: str = ""  # "signature_invalid", "replay_detected", "injection_detected"
+
+
+@dataclass
+class DataClassificationViolation(DomainEvent):
+    """Emitted when an agent accesses data above its classification level."""
+    tenant_id: str = ""
+    instance_id: str = ""
+    agent_id: str = ""
+    data_level: str = ""
+    agent_max_level: str = ""
+
+
+@dataclass
+class ComplianceCheckCompleted(DomainEvent):
+    """Emitted when a compliance check run finishes."""
+    tenant_id: str = ""
+    framework: str = ""  # "owasp_llm", "nist_ai_rmf", "eu_ai_act"
+    passed: int = 0
+    failed: int = 0
+    warnings: int = 0

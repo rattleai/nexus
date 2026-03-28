@@ -4,6 +4,7 @@ Manages the catalog of tools available to agents, combining:
     1. Built-in platform tools (from MCP server)
     2. Tenant-registered custom tools (external endpoints)
     3. Health checking and circuit breaking for external tools
+    4. Supply chain verification (schema drift, signature, behavioral monitoring)
 
 Tools are resolved at execution time based on the agent's allowed_tools
 list and the tenant's registered tools.
@@ -11,6 +12,10 @@ list and the tenant's registered tools.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import time
 import uuid
 from typing import Any
 
@@ -20,12 +25,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.models import TenantTool
+from app.config import settings
 from app.core.circuit_breaker import CircuitBreaker
+from app.core.redis import redis_pool
 
 logger = structlog.stdlib.get_logger()
 
 # Circuit breaker for external tool calls
 _tool_breaker = CircuitBreaker("tool", failure_threshold=3, recovery_timeout=60)
+
+# Redis key for tool behavioral monitoring
+_TOOL_BEHAVIOR_KEY = "agent:tool:behavior:{tenant_id}:{tool_name}"
 
 
 # Built-in tool definitions (from MCP server)
@@ -527,6 +537,170 @@ class ToolRegistry:
                 error=str(exc),
             )
             return {"error": f"Tool '{tool.tool_name}' invocation failed"}
+
+    # ── Supply Chain Verification ──────────────────────────────────────
+
+    @staticmethod
+    def compute_schema_hash(tool: TenantTool) -> str:
+        """Compute a deterministic hash of a tool's input/output schema."""
+        schema_data = json.dumps({
+            "input_schema": tool.input_schema or {},
+            "output_schema": tool.output_schema or {},
+        }, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(schema_data.encode()).hexdigest()[:16]
+
+    async def verify_tool_schema(
+        self,
+        tool: TenantTool,
+        db: AsyncSession,
+    ) -> tuple[bool, str]:
+        """Verify a tool's schema hasn't drifted from its registered hash.
+
+        Returns (is_valid, reason).
+        """
+        if not settings.AGENT_TOOL_SCHEMA_VERIFICATION:
+            return True, ""
+
+        if not tool.schema_hash:
+            # First invocation — set the hash
+            tool.schema_hash = self.compute_schema_hash(tool)
+            await db.flush()
+            return True, ""
+
+        current_hash = self.compute_schema_hash(tool)
+        if current_hash != tool.schema_hash:
+            logger.warning(
+                "tool_schema_drift_detected",
+                tool_name=tool.tool_name,
+                tenant_id=str(tool.tenant_id),
+                expected_hash=tool.schema_hash,
+                actual_hash=current_hash,
+            )
+            # Emit event
+            try:
+                from app.agents.events import ToolSchemaViolation
+                from app.core.events import emit
+                await emit(
+                    ToolSchemaViolation(
+                        tenant_id=str(tool.tenant_id),
+                        tool_name=tool.tool_name,
+                        expected_hash=tool.schema_hash,
+                        actual_hash=current_hash,
+                    ),
+                    durable=True,
+                )
+            except Exception:
+                pass
+            return False, f"Schema drift: expected {tool.schema_hash}, got {current_hash}"
+
+        return True, ""
+
+    def verify_tool_response_signature(
+        self,
+        tool: TenantTool,
+        response_body: bytes,
+        signature_header: str,
+    ) -> bool:
+        """Verify the HMAC signature of an external tool's response."""
+        if not tool.tool_signature_secret_encrypted:
+            return True  # No signature verification configured
+
+        try:
+            from app.core.encryption import decrypt
+            secret = decrypt(tool.tool_signature_secret_encrypted)
+        except Exception:
+            logger.warning("tool_signature_secret_decrypt_failed", tool_name=tool.tool_name)
+            return False
+
+        expected = hmac.new(
+            secret.encode(), response_body, hashlib.sha256,
+        ).hexdigest()
+        return hmac.compare_digest(expected, signature_header)
+
+    async def record_tool_behavior(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        tool_name: str,
+        latency_ms: int,
+        response_size: int,
+        success: bool,
+    ) -> None:
+        """Record behavioral metrics for tool anomaly detection."""
+        if not settings.AGENT_TOOL_BEHAVIORAL_MONITORING:
+            return
+
+        behavior_key = _TOOL_BEHAVIOR_KEY.format(
+            tenant_id=tenant_id, tool_name=tool_name,
+        )
+        try:
+            entry = json.dumps({
+                "ts": time.time(),
+                "latency_ms": latency_ms,
+                "size": response_size,
+                "ok": success,
+            })
+            pipe = redis_pool.pipeline()
+            pipe.lpush(behavior_key, entry)
+            pipe.ltrim(behavior_key, 0, 99)  # Keep last 100 entries
+            pipe.expire(behavior_key, 86400)
+            await pipe.execute()
+        except Exception:
+            logger.debug("tool_behavior_record_failed", exc_info=True)
+
+    async def check_tool_behavioral_anomaly(
+        self,
+        tenant_id: uuid.UUID,
+        tool_name: str,
+        latency_ms: int,
+    ) -> bool:
+        """Check if a tool's current behavior is anomalous.
+
+        Returns True if anomalous (sudden latency spike = possible supply chain compromise).
+        """
+        if not settings.AGENT_TOOL_BEHAVIORAL_MONITORING:
+            return False
+
+        behavior_key = _TOOL_BEHAVIOR_KEY.format(
+            tenant_id=tenant_id, tool_name=tool_name,
+        )
+        try:
+            entries_raw = await redis_pool.lrange(behavior_key, 0, 49)
+            if len(entries_raw) < 5:
+                return False  # Not enough data
+
+            latencies = []
+            for raw in entries_raw:
+                entry = json.loads(raw)
+                latencies.append(entry["latency_ms"])
+
+            avg = sum(latencies) / len(latencies)
+            if avg == 0:
+                return False
+
+            # Flag if current latency is >5x the average
+            if latency_ms > avg * 5:
+                logger.warning(
+                    "tool_behavioral_anomaly",
+                    tool_name=tool_name,
+                    current_latency=latency_ms,
+                    avg_latency=avg,
+                    ratio=latency_ms / avg,
+                )
+                return True
+        except Exception:
+            pass
+        return False
+
+    @staticmethod
+    def get_trust_level_checks(trust_level: str) -> dict[str, bool]:
+        """Return which governance checks to apply based on tool trust level."""
+        if trust_level == "verified":
+            return {"governance_check": False, "schema_verify": False, "signature_verify": False}
+        elif trust_level == "trusted":
+            return {"governance_check": False, "schema_verify": True, "signature_verify": False}
+        else:  # untrusted
+            return {"governance_check": True, "schema_verify": True, "signature_verify": True}
 
     async def health_check(
         self,
