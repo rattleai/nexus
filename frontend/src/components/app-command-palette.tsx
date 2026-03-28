@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useNavigate, useRouterState } from "@tanstack/react-router"
+import { useNavigate } from "@tanstack/react-router"
 import {
   LayoutDashboard,
   Bot,
@@ -12,7 +12,6 @@ import {
   Users,
   Webhook,
   Shield,
-  Settings,
   Code2,
   Plus,
   ChevronRight,
@@ -57,8 +56,6 @@ export function AppCommandPalette() {
   const taskInputRef = React.useRef<HTMLInputElement>(null)
 
   const navigate = useNavigate()
-  const router = useRouterState()
-  const currentPath = router.location.pathname
 
   // Agent data
   const { data: agentData } = useAgentDefinitions()

@@ -7,7 +7,6 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useResolveApproval } from "@/hooks/use-agents"
-import { cn } from "@/lib/utils"
 
 interface InlineApprovalProps {
   approval: Record<string, unknown>
@@ -74,7 +73,7 @@ export function InlineApproval({ approval }: InlineApprovalProps) {
           </Button>
         </div>
       </div>
-      {approval.arguments && Object.keys(approval.arguments as object).length > 0 && (
+      {!!approval.arguments && Object.keys(approval.arguments as Record<string, unknown>).length > 0 && (
         <div className="border-t border-amber-500/20 px-3 py-2 bg-amber-500/[0.02]">
           <pre className="text-xs overflow-x-auto max-w-full max-h-24">
             {JSON.stringify(approval.arguments, null, 2)}

@@ -185,11 +185,11 @@ export function useAgentConversation(
 
     // Build turns from instance data
     const turns: ConversationTurn[] = []
-    const now = Date.now()
 
     // User message
+    const messages = Array.isArray(instance.input_data?.messages) ? instance.input_data.messages as Array<Record<string, unknown>> : null
     const prompt = instance.input_data?.prompt
-      ?? instance.input_data?.messages?.[instance.input_data.messages.length - 1]?.content
+      ?? (messages && messages.length > 0 ? messages[messages.length - 1]?.content : null)
       ?? JSON.stringify(instance.input_data)
     if (prompt) {
       turns.push({

@@ -11,14 +11,13 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { useResolveApproval } from "@/hooks/use-agents"
-import { cn } from "@/lib/utils"
 
 interface ApprovalItem {
   approval_id: string
@@ -71,8 +70,8 @@ export function ApprovalsBanner({ approvals }: ApprovalsBannerProps) {
           <div className="border-t border-amber-500/20 px-4 py-3 space-y-2">
             {approvals.map((approval) => (
               <ApprovalCard
-                key={(approval as ApprovalItem).approval_id}
-                approval={approval as ApprovalItem}
+                key={(approval as unknown as ApprovalItem).approval_id}
+                approval={approval as unknown as ApprovalItem}
               />
             ))}
           </div>

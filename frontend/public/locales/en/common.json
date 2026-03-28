@@ -105,7 +105,8 @@
     "complete": "Complete",
     "generating": "Generating...",
     "uploading": "Uploading...",
-    "copied": "Copied"
+    "copied": "Copied",
+    "cancelled": "Cancelled"
   },
   "labels": {
     "actions": "Actions",

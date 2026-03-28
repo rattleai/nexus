@@ -16,6 +16,7 @@ import type audit_log from "../../public/locales/en/audit_log.json"
 import type chat from "../../public/locales/en/chat.json"
 import type notifications from "../../public/locales/en/notifications.json"
 import type ai from "../../public/locales/en/ai.json"
+import type developers from "../../public/locales/en/developers.json"
 
 declare module "i18next" {
   interface CustomTypeOptions {
@@ -42,6 +43,7 @@ declare module "i18next" {
       chat: typeof chat
       notifications: typeof notifications
       ai: typeof ai
+      developers: typeof developers
     }
   }
 }

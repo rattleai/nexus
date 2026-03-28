@@ -84,7 +84,7 @@ export function AgentOverview({ agent }: AgentOverviewProps) {
               <Pencil className="mr-1.5 h-3.5 w-3.5" />
               Configure
             </Button>
-            <Button size="sm" onClick={() => setActiveTab("chat")}>
+            <Button size="sm" onClick={() => setActiveTab("runs")}>
               <Zap className="mr-1.5 h-3.5 w-3.5" />
               Run Agent
             </Button>

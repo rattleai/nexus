@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ArrowDown, Bot, MessageSquare } from "lucide-react"
+import { ArrowDown, Bot } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"

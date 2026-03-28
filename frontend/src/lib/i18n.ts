@@ -30,6 +30,7 @@ export const ns = [
   "chat",
   "notifications",
   "ai",
+  "developers",
 ] as const
 
 i18n
