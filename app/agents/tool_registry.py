@@ -376,6 +376,12 @@ class ToolRegistry:
                         plugin=plugin.name,
                         exc_info=True,
                     )
+                    # Roll back the dirty session so subsequent tool calls
+                    # don't cascade-fail with PendingRollbackError.
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
                     return {"error": f"Plugin tool '{tool_name}' failed unexpectedly"}
 
         return {"error": f"Built-in tool '{tool_name}' has no handler"}

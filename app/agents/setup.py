@@ -41,6 +41,11 @@ def build_tool_executor(
 
         try:
             from app.agents.tool_registry import tool_registry
+            from app.db.session import set_tenant_context
+
+            # Re-set RLS context before every tool call: SET LOCAL is
+            # transaction-scoped and lost after each db.commit().
+            await set_tenant_context(db, str(tenant_id))
 
             return await tool_registry.invoke(
                 tool_name=tool_name,

@@ -797,6 +797,10 @@ async def run_agent_stream(
     await db.refresh(instance)
     await db.commit()
 
+    # Re-establish RLS context: SET LOCAL is transaction-scoped and the
+    # commit above ended the transaction, wiping app.tenant_id.
+    await set_tenant_context(db, str(tenant.id))
+
     messages = body.input_data.get("messages", [{"role": "user", "content": str(body.input_data)}])
 
     # Build tool executor and governance checker so agents can actually
@@ -846,8 +850,18 @@ async def run_agent_stream(
             yield f"event: error\ndata: {_json2.dumps({'message': str(exc)[:500]})}\n\n"
         finally:
             # Immediate cleanup — don't rely on periodic sweep to catch orphaned instances
-            try:
-                inst = await db.get(AgentInstance, instance_id)
+            async def _cleanup_instance() -> None:
+                """Update instance status, recovering from PendingRollbackError if needed."""
+                from sqlalchemy.exc import PendingRollbackError
+
+                try:
+                    await set_tenant_context(db, str(tenant.id))
+                    inst = await db.get(AgentInstance, instance_id)
+                except PendingRollbackError:
+                    await db.rollback()
+                    await set_tenant_context(db, str(tenant.id))
+                    inst = await db.get(AgentInstance, instance_id)
+
                 if inst and inst.status in (InstanceStatus.RUNNING, InstanceStatus.PENDING):
                     if _completed_normally:
                         inst.status = InstanceStatus.COMPLETED
@@ -862,6 +876,9 @@ async def run_agent_stream(
                         inst.error = "Stream terminated unexpectedly"
                     inst.completed_at = _dt.now(UTC)
                     await db.commit()
+
+            try:
+                await _cleanup_instance()
             except Exception:
                 logger.warning("stream_instance_cleanup_failed", instance_id=str(instance_id), exc_info=True)
 

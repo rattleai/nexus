@@ -145,8 +145,12 @@ class AgentRuntime:
         """
         from datetime import datetime, UTC
         from sqlalchemy import update
+        from sqlalchemy.exc import PendingRollbackError
 
-        try:
+        async def _do_checkpoint() -> None:
+            from app.db.session import set_tenant_context
+
+            await set_tenant_context(db, str(self.tenant_id))
             await db.execute(
                 update(AgentInstance)
                 .where(AgentInstance.id == instance_id)
@@ -163,6 +167,15 @@ class AgentRuntime:
                 )
             )
             await db.flush()
+
+        try:
+            await _do_checkpoint()
+        except PendingRollbackError:
+            # A prior tool call may have failed, leaving the session dirty.
+            # Roll back and retry the checkpoint so future writes still work.
+            with contextlib.suppress(Exception):
+                await db.rollback()
+                await _do_checkpoint()
         except Exception:
             logger.debug("checkpoint_write_failed", instance_id=str(instance_id))
 
