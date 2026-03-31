@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select"
 import { useInstanceStream } from "@/hooks/use-instance-stream"
 import { useAllActiveInstances, useStopInstance } from "@/hooks/use-agents"
+import { useRegistryStream } from "@/lib/agent-stream-registry"
 import { useMultiStreamStore } from "@/stores/multi-stream-store"
 import { useAgentStore } from "@/stores/agent-store"
 import { cn } from "@/lib/utils"
@@ -166,12 +167,17 @@ export function StreamPane({ instanceId, agentName, paneId, isFocused }: StreamP
   const stopInstance = useStopInstance()
   const activeInstances = useAllActiveInstances({ enabled: !instanceId })
 
+  // Check if the stream registry has an active run-stream for this instance
+  const registry = useRegistryStream(instanceId ?? "")
+
   const scrollLocked = streamState?.scrollLocked ?? false
   const agentState: StreamState = streamState?.agentState ?? "idle"
   const tokens = streamState?.tokens ?? 0
   const cost = streamState?.cost ?? 0
   const steps = streamState?.steps ?? 0
-  const isStreaming = streamState?.isStreaming ?? false
+  const storeIsStreaming = streamState?.isStreaming ?? false
+  // Use registry state when available (run-stream events don't go through Redis Streams)
+  const isStreaming = registry.hasStream ? registry.isActive : storeIsStreaming
 
   // Track tool calls by name for matching results
   const toolCallMapRef = React.useRef<Map<string, string>>(new Map())
@@ -313,13 +319,35 @@ export function StreamPane({ instanceId, agentName, paneId, isFocused }: StreamP
     [instanceId, errorStream],
   )
 
+  // Only use Redis Streams fallback when registry doesn't have this stream
   useInstanceStream({
     instanceId,
     onEvent: handleEvent,
     onDone: handleDone,
     onError: handleError,
-    enabled: !!instanceId,
+    enabled: !!instanceId && !registry.hasStream,
   })
+
+  // Merge registry entries into pane entries when available
+  React.useEffect(() => {
+    if (!registry.hasStream || !registry.entries) return
+    const mapped: StreamEntry[] = []
+    for (const e of registry.entries) {
+      if (e.type === "content") {
+        mapped.push({ id: e.id, type: "content", text: e.text })
+      } else if (e.type === "tool_call") {
+        mapped.push({
+          id: e.id,
+          type: "tool_call",
+          toolName: e.toolName,
+          args: e.args,
+          status: e.status,
+          result: e.result,
+        })
+      }
+    }
+    setEntries(mapped)
+  }, [registry.hasStream, registry.entries])
 
   // Auto-scroll
   React.useEffect(() => {

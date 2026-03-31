@@ -204,8 +204,9 @@ async def registration_complete(
     if not user.mfa_enabled:
         user.mfa_enabled = True
 
-    await db.commit()
+    await db.flush()
     await db.refresh(credential)
+    await db.commit()
 
     logger.info("webauthn_registered", user_id=str(user.id), device=body.device_name, mfa_enabled=True)
     return {"credential_id": str(credential.id)}

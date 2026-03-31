@@ -3,16 +3,16 @@
 Without CASCADE, hard-deleting an agent definition raises IntegrityError
 because orphaned memory entries reference the deleted definition.
 
-Revision ID: 0014_robustness_fixes
-Revises: 0013_agent_resilience
+Revision ID: 0015_robustness_fixes
+Revises: 0014_agent_resilience
 Create Date: 2026-03-24
 """
 
 from alembic import op
 from sqlalchemy import text
 
-revision = "0014_robustness_fixes"
-down_revision = "0013_agent_resilience"
+revision = "0015_robustness_fixes"
+down_revision = "0014_agent_resilience"
 branch_labels = None
 depends_on = None
 

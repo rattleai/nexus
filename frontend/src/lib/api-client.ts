@@ -35,7 +35,7 @@ export function getTokenVersion(): number {
  * Returns true if refresh succeeded, false otherwise.
  * Coalesces concurrent refresh attempts into a single request.
  */
-async function attemptTokenRefresh(): Promise<boolean> {
+export async function attemptTokenRefresh(): Promise<boolean> {
   // Coalesce: all concurrent callers share the same in-flight promise
   if (_refreshPromise) {
     return _refreshPromise

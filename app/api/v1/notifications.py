@@ -100,8 +100,9 @@ async def mark_as_read(
 
     if notification.read_at is None:
         notification.read_at = datetime.now(UTC)
-        await db.commit()
+        await db.flush()
         await db.refresh(notification)
+        await db.commit()
 
     return NotificationResponse.from_notification(notification)
 

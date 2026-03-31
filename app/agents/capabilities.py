@@ -1,16 +1,20 @@
-"""Capability-based agent privilege system.
+"""Agent capabilities — slug resolution and token-based privilege system.
 
-Provides:
-    - Capability tokens: Signed, scoped, time-limited tokens encoding agent permissions
-    - Capability attenuation: Sub-agents get monotonically reduced capability subsets
-    - Dynamic privilege escalation: Request elevated capabilities via approval workflow
-    - Confused deputy prevention: Every tool invocation carries + verifies a capability token
+Part 1: Capability Resolver
+    Maps capability slugs (``cpq:products:write``) to tool name sets.
+    Built from platform built-in + plugin-declared capabilities.
+    Cached per-process, no database dependency.
+
+Part 2: Capability Tokens
+    Signed, scoped, time-limited tokens encoding agent permissions.
+    Supports attenuation (sub-agents get monotonically reduced subsets),
+    revocation via Redis, and key rotation.
 
 Integrates with:
+    - app/agents/tool_registry for platform capabilities
+    - app/plugins.registry for plugin capabilities
     - app/agents/governance.py for approval workflow
     - app/agents/executor.py for token creation at instance startup
-    - app/agents/orchestrator.py for capability attenuation on delegation
-    - app/core/encryption.py for HMAC signing
 """
 
 from __future__ import annotations
@@ -29,8 +33,128 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from app.config import settings
 from app.core.redis import redis_pool
+from app.plugins.base import CapabilityDomain, ToolCapability  # noqa: F401
 
 logger = structlog.stdlib.get_logger()
+
+
+# ── Part 1: Capability Resolver (slug → tool names) ──────────────────
+
+
+class CapabilityResolver:
+    """Resolves capability slugs to flat tool name sets.
+
+    Usage::
+
+        from app.agents.capabilities import capability_resolver
+
+        tools = capability_resolver.resolve(["cpq:products:read", "platform:ai"])
+        # → {"config_list_products", "config_get_product", ..., "ai_complete", "ai_list_models"}
+    """
+
+    def __init__(self) -> None:
+        self._slug_to_tools: dict[str, tuple[str, ...]] | None = None
+        self._tool_to_slug: dict[str, str] | None = None
+        self._domains: list[CapabilityDomain] | None = None
+
+    def _build_index(self) -> None:
+        """Build the capability → tools index from all sources."""
+        from app.agents.tool_registry import PLATFORM_CAPABILITIES
+        from app.plugins.registry import registry as plugin_registry
+
+        slug_to_tools: dict[str, tuple[str, ...]] = {}
+        tool_to_slug: dict[str, str] = {}
+        domains: list[CapabilityDomain] = [PLATFORM_CAPABILITIES]
+
+        # Platform capabilities
+        for cap in PLATFORM_CAPABILITIES.capabilities:
+            slug_to_tools[cap.slug] = cap.tools
+            for tool_name in cap.tools:
+                tool_to_slug[tool_name] = cap.slug
+
+        # Plugin capabilities
+        for plugin in plugin_registry:
+            try:
+                plugin_domains = plugin.get_capability_domains()
+                for domain in plugin_domains:
+                    domains.append(domain)
+                    for cap in domain.capabilities:
+                        slug_to_tools[cap.slug] = cap.tools
+                        for tool_name in cap.tools:
+                            tool_to_slug[tool_name] = cap.slug
+            except Exception:
+                logger.warning(
+                    "capability_domain_load_failed",
+                    plugin=plugin.name,
+                    exc_info=True,
+                )
+
+        # Assign all three atomically (single-statement swap) so that a
+        # concurrent resolve() never sees a partially-built index.
+        self._slug_to_tools, self._tool_to_slug, self._domains = (
+            slug_to_tools, tool_to_slug, domains,
+        )
+
+    def _ensure_index(self) -> None:
+        if self._slug_to_tools is None:
+            self._build_index()
+
+    def resolve(self, capability_slugs: list[str]) -> set[str]:
+        """Resolve a list of capability slugs to a set of tool names."""
+        self._ensure_index()
+        assert self._slug_to_tools is not None  # ensured above
+        tools: set[str] = set()
+        for slug in capability_slugs:
+            if slug in self._slug_to_tools:
+                tools.update(self._slug_to_tools[slug])
+            else:
+                logger.debug("capability_slug_unknown", slug=slug)
+        return tools
+
+    def resolve_agent_tools(self, definition: Any) -> list[str]:
+        """Get the effective tool list for an agent definition.
+
+        Resolution logic:
+            - If ``definition.capabilities`` is non-empty, resolve those to
+              tool names and union with ``definition.allowed_tools``.
+            - If ``definition.capabilities`` is empty, fall back to
+              ``definition.allowed_tools`` only (legacy behaviour).
+
+        Returns a deduplicated, sorted list of tool names.
+        """
+        capabilities = getattr(definition, "capabilities", None) or []
+        allowed_tools = getattr(definition, "allowed_tools", None) or []
+
+        if capabilities:
+            tools = self.resolve(capabilities)
+            tools.update(allowed_tools)
+            return sorted(tools)
+
+        # Legacy: no capabilities configured, use raw allowed_tools
+        return list(allowed_tools)
+
+    def get_catalog(self) -> list[CapabilityDomain]:
+        """Return the full capability catalog (platform + all plugins)."""
+        self._ensure_index()
+        assert self._domains is not None
+        return list(self._domains)
+
+    def get_capability_for_tool(self, tool_name: str) -> str | None:
+        """Reverse lookup: which capability slug contains this tool?"""
+        self._ensure_index()
+        assert self._tool_to_slug is not None
+        return self._tool_to_slug.get(tool_name)
+
+    def invalidate(self) -> None:
+        """Clear the cached index (e.g. after hot-reloading plugins in tests)."""
+        self._slug_to_tools, self._tool_to_slug, self._domains = None, None, None
+
+
+# Module-level singleton
+capability_resolver = CapabilityResolver()
+
+
+# ── Part 2: Capability Tokens (signed privilege tokens) ──────────────
 
 # Default capability TTL (1 hour)
 _DEFAULT_CAPABILITY_TTL_SECONDS = 3600
@@ -261,10 +385,7 @@ class CapabilityManager:
 
         # TTL: child cannot exceed parent's remaining lifetime
         parent_remaining = parent_token.expires_at - time.time()
-        if ttl_seconds is None:
-            child_ttl = int(parent_remaining)
-        else:
-            child_ttl = min(ttl_seconds, int(parent_remaining))
+        child_ttl = int(parent_remaining) if ttl_seconds is None else min(ttl_seconds, int(parent_remaining))
 
         return self.create_token(
             instance_id=child_instance_id,
@@ -348,7 +469,7 @@ class CapabilityManager:
             )
         except Exception:
             logger.error("capability_token_revocation_failed", exc_info=True)
-            raise CapabilityError("Failed to revoke token: Redis unavailable")
+            raise CapabilityError("Failed to revoke token: Redis unavailable") from None
 
     async def is_revoked(self, token: CapabilityToken) -> bool:
         """Check if a token has been revoked.
@@ -397,5 +518,5 @@ class CapabilityError(Exception):
     """Raised when a capability check fails."""
 
 
-# Module-level singleton
+# Module-level singletons
 capability_manager = CapabilityManager()

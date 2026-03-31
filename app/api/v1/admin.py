@@ -258,8 +258,9 @@ async def create_feature_flag(body: FeatureFlagCreate, db: AsyncSession = Depend
         rollout_percentage=body.rollout_percentage,
     )
     db.add(flag)
-    await db.commit()
+    await db.flush()
     await db.refresh(flag)
+    await db.commit()
     logger.info("feature_flag_created", name=body.name)
     return flag
 
@@ -283,8 +284,9 @@ async def update_feature_flag(
     if body.rollout_percentage is not None:
         flag.rollout_percentage = body.rollout_percentage
 
-    await db.commit()
+    await db.flush()
     await db.refresh(flag)
+    await db.commit()
 
     # Invalidate cache for all tenants
     try:

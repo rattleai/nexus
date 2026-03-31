@@ -43,10 +43,13 @@ async def seed(session: AsyncSession) -> None:
     tenant = existing_tenant.scalar_one_or_none()
 
     if not tenant:
-        tenant = Tenant(name=TEST_TENANT_NAME, slug=TEST_TENANT_SLUG)
+        tenant = Tenant(name=TEST_TENANT_NAME, slug=TEST_TENANT_SLUG, plan="enterprise")
         session.add(tenant)
         await session.flush()
         print(f"Created tenant: {TEST_TENANT_NAME} ({TEST_TENANT_SLUG})")
+    elif tenant.plan != "enterprise":
+        tenant.plan = "enterprise"
+        print(f"Upgraded tenant plan to enterprise")
 
     user = User(
         tenant_id=tenant.id,

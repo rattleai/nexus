@@ -6,6 +6,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://app:app@localhost:5432/app"
+    # Superuser URL for running Alembic migrations (CREATE TABLE, ALTER, RLS setup).
+    # Falls back to DATABASE_URL when not set (dev convenience).
+    DATABASE_MIGRATION_URL: str = ""
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
 
@@ -69,6 +72,17 @@ class Settings(BaseSettings):
     EMAIL_VERIFICATION_EXPIRE_HOURS: int = 24
     PASSWORD_RESET_EXPIRE_HOURS: int = 1
     APP_BASE_URL: str = "http://localhost:3000"
+
+    # Cloud Drive OAuth
+    GOOGLE_DRIVE_CLIENT_ID: str = ""
+    GOOGLE_DRIVE_CLIENT_SECRET: str = ""
+    GOOGLE_DRIVE_REDIRECT_URI: str = ""
+    DROPBOX_APP_KEY: str = ""
+    DROPBOX_APP_SECRET: str = ""
+    DROPBOX_REDIRECT_URI: str = ""
+    ONEDRIVE_CLIENT_ID: str = ""
+    ONEDRIVE_CLIENT_SECRET: str = ""
+    ONEDRIVE_REDIRECT_URI: str = ""
 
     # Billing (Stripe)
     STRIPE_SECRET_KEY: str = ""
@@ -230,6 +244,13 @@ class Settings(BaseSettings):
     AGENT_RATE_LIMIT_FAIL_OPEN: bool = False           # If True, allow requests when Redis rate limiter unavailable (dev only)
     OAUTH_CLIENT_CREDENTIALS_ENABLED: bool = False
 
+    # ── Application plugin feature flags ──
+    # Each app plugin checks its flag via the plugin registry.
+    # Listed here for documentation; actual gating is in app.plugins.registry.
+    APP_CPQ_ENABLED: bool = True
+
+    # (Cloud Drive OAuth settings are defined above — do not duplicate here.)
+
     # Allowed scope values for API keys
     VALID_SCOPES: list[str] = [
         "jobs:read", "jobs:write",
@@ -242,6 +263,9 @@ class Settings(BaseSettings):
         "ai:read", "ai:write", "ai:admin",
         "mcp:read", "mcp:write",
         "agents:read", "agents:write", "agents:admin", "agents:execute",
+        "cloud-connections:read", "cloud-connections:write",
+        # App-specific scopes are contributed dynamically via plugins.
+        # See app.plugins.registry — scopes are appended after discovery.
     ]
 
     # Scopes that must never be granted to API keys.  These control critical

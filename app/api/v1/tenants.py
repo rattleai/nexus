@@ -42,7 +42,7 @@ async def create_tenant(body: TenantCreate, db: AsyncSession = Depends(get_db)):
     tenant = Tenant(**body.model_dump(exclude_none=True))
     db.add(tenant)
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Slug already taken") from None
@@ -101,8 +101,9 @@ async def update_tenant(tenant_id: uuid.UUID, body: TenantUpdate, db: AsyncSessi
         db, action=AuditAction.UPDATE, resource_type="tenant",
         resource_id=str(tenant.id), tenant_id=tenant.id, changes=changes,
     )
-    await db.commit()
+    await db.flush()
     await db.refresh(tenant)
+    await db.commit()
     await invalidate(f"tenants:{tenant_id}")
     logger.info("tenant_updated", tenant_id=str(tenant.id))
     return tenant
@@ -234,8 +235,9 @@ async def create_api_key_for_tenant(
         rate_limit=key_rate_limit,
     )
     db.add(api_key)
-    await db.commit()
+    await db.flush()
     await db.refresh(api_key)
+    await db.commit()
 
     await emit_audit_event(
         db, action=AuditAction.CREATE, resource_type="api_key",

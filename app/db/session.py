@@ -35,7 +35,7 @@ if settings.DATABASE_SSL_MODE:
 
 async_engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,
+    echo=False,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_pre_ping=True,
@@ -146,7 +146,7 @@ _read_session_factory = None
 if settings.DATABASE_READ_URL:
     _read_engine = create_async_engine(
         settings.DATABASE_READ_URL,
-        echo=settings.DEBUG,
+        echo=False,
         pool_size=settings.DB_POOL_SIZE,
         max_overflow=settings.DB_MAX_OVERFLOW,
         pool_pre_ping=True,

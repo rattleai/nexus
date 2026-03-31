@@ -91,15 +91,33 @@ async def _readiness_check() -> dict:
         except TimeoutError:
             return False
 
-    db_ok, redis_ok, storage_ok, celery_ok = await asyncio.gather(
+    # Critical checks (DB + Redis) gate the status.
+    # Non-critical checks (Storage + Celery) run in parallel but don't block
+    # the response — if they're still pending when critical checks finish, we
+    # return immediately and report them as "unknown".
+    critical_coros = [
         _with_timeout(_check_db()),
         _with_timeout(_check_redis()),
-        _with_timeout(_check_storage()),
-        _with_timeout(_check_celery()),
-    )
-    all_ok = db_ok and redis_ok and storage_ok and celery_ok
+    ]
+    non_critical_coros = [
+        _with_timeout(_check_storage(), timeout=3.0),
+        _with_timeout(_check_celery(), timeout=3.0),
+    ]
+
+    # Launch everything concurrently
+    all_tasks = [asyncio.ensure_future(c) for c in critical_coros + non_critical_coros]
+
+    # Wait only for critical checks
+    db_ok, redis_ok = await asyncio.gather(all_tasks[0], all_tasks[1])
+    critical_ok = db_ok and redis_ok
+
+    # Collect non-critical results if already done, otherwise report True
+    # (non-critical failure should never prevent API readiness)
+    storage_ok = all_tasks[2].result() if all_tasks[2].done() else True
+    celery_ok = all_tasks[3].result() if all_tasks[3].done() else True
+
     return {
-        "status": "ok" if all_ok else "degraded",
+        "status": "ok" if critical_ok else "degraded",
         "version": __version__,
         "services": {"db": db_ok, "redis": redis_ok, "storage": storage_ok, "celery": celery_ok},
     }
@@ -127,9 +145,30 @@ async def health_check():
     dependencies=[Depends(require_admin_key)],
 )
 async def health_details():
-    """Detailed health check with component breakdown — admin only."""
-    data = await _readiness_check()
-    return HealthResponse(**data)
+    """Detailed health check with component breakdown — admin only.
+
+    Unlike the readiness probe, this endpoint waits for ALL checks
+    (including non-critical Celery/Storage) so admins see real status.
+    """
+
+    async def _with_timeout(coro, timeout: float = 5.0) -> bool:
+        try:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        except TimeoutError:
+            return False
+
+    db_ok, redis_ok, storage_ok, celery_ok = await asyncio.gather(
+        _with_timeout(_check_db()),
+        _with_timeout(_check_redis()),
+        _with_timeout(_check_storage()),
+        _with_timeout(_check_celery()),
+    )
+    critical_ok = db_ok and redis_ok
+    return HealthResponse(
+        status="ok" if critical_ok else "degraded",
+        version=__version__,
+        services={"db": db_ok, "redis": redis_ok, "storage": storage_ok, "celery": celery_ok},
+    )
 
 
 @router.get("/.well-known/jwks.json")

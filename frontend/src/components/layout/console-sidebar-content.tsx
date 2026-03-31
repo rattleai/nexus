@@ -1,6 +1,14 @@
+import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 import { useTranslation } from "react-i18next"
-import { LayoutDashboard, Bot, Code2 } from "lucide-react"
+import {
+  LayoutDashboard,
+  Bot,
+  Code2,
+  Package,
+  ClipboardList,
+  type LucideIcon,
+} from "lucide-react"
 import { APP_NAME } from "@/lib/constants"
 import {
   SidebarContent,
@@ -13,8 +21,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import { LanguageSwitcher } from "@/components/language-switcher"
-
-import type { LucideIcon } from "lucide-react"
+import { usePluginManifest } from "@/lib/app-registry"
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? "0.1.0"
 
@@ -22,11 +29,21 @@ interface NavItem {
   href: string
   labelKey: string
   icon: LucideIcon
+  order: number
 }
 
-const CONSOLE_NAV_ITEMS: NavItem[] = [
-  { href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
-  { href: "/agents", labelKey: "nav.agents", icon: Bot },
+/** Map Lucide icon name strings (from plugin manifests) to components. */
+const ICON_MAP: Record<string, LucideIcon> = {
+  Package,
+  ClipboardList,
+  LayoutDashboard,
+  Bot,
+}
+
+/** Infrastructure nav items (always present). */
+const INFRA_NAV_ITEMS: NavItem[] = [
+  { href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard, order: 0 },
+  { href: "/agents", labelKey: "nav.agents", icon: Bot, order: 10 },
 ]
 
 interface ConsoleSidebarContentProps {
@@ -35,6 +52,17 @@ interface ConsoleSidebarContentProps {
 
 export function ConsoleSidebarContent({ currentPath }: ConsoleSidebarContentProps) {
   const { t } = useTranslation()
+  const { data: manifest } = usePluginManifest()
+
+  const allNavItems = useMemo(() => {
+    const pluginItems: NavItem[] = (manifest?.nav_items ?? []).map((item) => ({
+      href: item.href,
+      labelKey: item.labelKey,
+      icon: ICON_MAP[item.icon] ?? Package,
+      order: item.order,
+    }))
+    return [...INFRA_NAV_ITEMS, ...pluginItems].sort((a, b) => a.order - b.order)
+  }, [manifest])
 
   return (
     <>
@@ -48,7 +76,7 @@ export function ConsoleSidebarContent({ currentPath }: ConsoleSidebarContentProp
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {CONSOLE_NAV_ITEMS.map((item) => {
+              {allNavItems.map((item) => {
                 const isActive =
                   item.href === "/"
                     ? currentPath === "/"
