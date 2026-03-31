@@ -198,7 +198,7 @@ class ToolRegistry:
         tenant_id: uuid.UUID,
         db: AsyncSession,
     ) -> list[dict[str, Any]]:
-        """List all available tools (built-in + tenant custom)."""
+        """List all available tools (built-in + tenant custom + connectors)."""
         tools = []
 
         # Built-in tools (infra + plugins)
@@ -221,6 +221,16 @@ class ToolRegistry:
                 "input_schema": tool.input_schema,
             })
 
+        # Connector tools (from active connections)
+        if settings.CONNECTOR_ENABLED:
+            try:
+                from app.connectors.agent_bridge import connector_tool_provider
+
+                connector_tools = await connector_tool_provider.list_tools(tenant_id, db)
+                tools.extend(connector_tools)
+            except Exception:
+                logger.debug("connector_tools_load_failed", exc_info=True)
+
         return tools
 
     async def invoke(
@@ -233,11 +243,22 @@ class ToolRegistry:
     ) -> Any:
         """Invoke a tool by name with the given arguments.
 
-        Routes to built-in handler or external endpoint based on tool type.
+        Routes to built-in handler, connector, or external endpoint.
         """
         # Check built-in tools first (infra + plugins)
         if tool_name in _get_all_builtin_tools():
             return await self._invoke_builtin(tool_name, arguments, tenant_id, db=db)
+
+        # Check connector tools (prefix-based routing)
+        if tool_name.startswith("connector:") and settings.CONNECTOR_ENABLED and db is not None:
+            from app.connectors.agent_bridge import connector_tool_provider
+
+            return await connector_tool_provider.invoke(
+                tool_name=tool_name,
+                arguments=arguments,
+                tenant_id=tenant_id,
+                db=db,
+            )
 
         # Check tenant tools
         if db is None:
