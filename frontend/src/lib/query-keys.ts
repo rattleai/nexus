@@ -144,6 +144,19 @@ export const queryKeys = {
     partFrequency: (filters?: Record<string, string>) => ["configurator", "part-frequency", filters] as const,
   },
 
+  connectors: {
+    all: ["connectors"] as const,
+    list: (category?: string) => ["connectors", "list", category] as const,
+    detail: (slug: string) => ["connectors", "detail", slug] as const,
+  },
+
+  connections: {
+    all: ["connections"] as const,
+    list: () => ["connections", "list"] as const,
+    detail: (id: string) => ["connections", "detail", id] as const,
+    tools: (id: string) => ["connections", "tools", id] as const,
+  },
+
   pricingRules: {
     all: ["pricing-rules"] as const,
     list: (productId?: string) => ["pricing-rules", "list", productId] as const,

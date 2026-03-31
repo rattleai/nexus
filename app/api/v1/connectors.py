@@ -228,3 +228,12 @@ async def oauth_callback(
         created_at=connection.created_at,
         updated_at=connection.updated_at,
     )
+
+
+# ── Webhook Endpoint ─────────────────────────────────────
+# Include the webhook receiver endpoint on this router so it
+# lives at POST /api/v1/connectors/{slug}/webhook.
+
+from app.connectors.webhook_receiver import router as _webhook_router
+
+router.include_router(_webhook_router)
