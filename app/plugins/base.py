@@ -185,6 +185,14 @@ class AppPluginBase(abc.ABC):
         """
         return None
 
+    def get_connector_definitions(self) -> list[dict[str, Any]]:
+        """Return connector definitions this plugin contributes.
+
+        Each dict should match the ``ConnectorDefinition`` schema:
+        ``slug``, ``name``, ``connector_type``, ``auth_type``, etc.
+        """
+        return []
+
     def get_celery_config(self) -> dict[str, Any]:
         """Return ``{"autodiscover": [...], "task_routes": {...}, "beat_schedule": {...}}``."""
         return {}

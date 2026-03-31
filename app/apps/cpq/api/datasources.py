@@ -79,18 +79,18 @@ async def create_datasource(
 
     For file uploads, use POST /datasources/upload instead.
     """
-    # Verify cloud connection belongs to this tenant (prevent cross-tenant reference)
+    # Verify connection belongs to this tenant (prevent cross-tenant reference)
     if body.cloud_connection_id:
-        from app.db.models.datasource import CloudConnection
+        from app.connectors.models import TenantConnection
 
         cc_result = await db.execute(
-            tenant_query(select(CloudConnection), tenant).where(
-                CloudConnection.id == body.cloud_connection_id,
-                CloudConnection.deleted_at.is_(None),
+            tenant_query(select(TenantConnection), tenant).where(
+                TenantConnection.id == body.cloud_connection_id,
+                TenantConnection.deleted_at.is_(None),
             )
         )
         if not cc_result.scalar_one_or_none():
-            raise HTTPException(status_code=404, detail="Cloud connection not found")
+            raise HTTPException(status_code=404, detail="Connection not found")
 
     ds = DataSource(
         tenant_id=tenant.id,
@@ -101,8 +101,8 @@ async def create_datasource(
         mime_type=body.mime_type,
         file_size=body.file_size,
         url=body.url,
-        cloud_provider=body.cloud_provider,
-        cloud_connection_id=body.cloud_connection_id,
+        connector_slug=body.cloud_provider,
+        connection_id=body.cloud_connection_id,
         cloud_file_id=body.cloud_file_id,
         metadata_=body.metadata or {},
     )

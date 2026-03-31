@@ -43,12 +43,20 @@ from app.db.models.core import (
     UserRole,
 )
 from app.db.models.datasource import (
-    CloudConnection,
-    CloudProvider,
     DataSource,
     DataSourceChunk,
     DataSourceStatus,
     DataSourceType,
+)
+from app.connectors.models import (
+    ConnectorAuditLog,
+    ConnectorDefinition,
+    ConnectorType,
+    AuthType,
+    ConnectionStatus,
+    CredentialType,
+    TenantConnection,
+    TenantCredential,
 )
 from app.db.models.enterprise import (
     SSOConfiguration,
@@ -140,6 +148,13 @@ __all__ = [
     "DataSourceType",
     "DataSourceStatus",
     "DataSourceChunk",
-    "CloudConnection",
-    "CloudProvider",
+    # Connectors
+    "ConnectorDefinition",
+    "ConnectorType",
+    "AuthType",
+    "ConnectionStatus",
+    "CredentialType",
+    "TenantConnection",
+    "TenantCredential",
+    "ConnectorAuditLog",
 ]

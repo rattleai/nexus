@@ -1,0 +1,90 @@
+slug: linear
+name: Linear
+description: >-
+  Connect to Linear for modern issue tracking and project management.
+  Access issues, projects, teams, and cycles for streamlined software
+  development workflows.
+icon: Zap
+category: project_management
+connector_type: oauth_api
+auth_type: oauth2
+version: "1.0.0"
+documentation_url: https://developers.linear.app/docs
+
+tags:
+  - linear
+  - issues
+  - project-management
+  - agile
+  - developer
+
+auth_config:
+  authorize_url: https://linear.app/oauth/authorize
+  token_url: https://api.linear.app/oauth/token
+  userinfo_url: https://api.linear.app/graphql
+  revoke_url: https://api.linear.app/oauth/revoke
+  redirect_uri: ""
+  client_id: ""
+  client_secret: ""
+  pkce_required: true
+  scopes:
+    - read
+    - write
+    - issues:create
+  extra_authorize_params:
+    prompt: consent
+
+mcp_config: {}
+
+tool_definitions:
+  - name: list_issues
+    description: List issues with optional filters for team, project, or status
+    input_schema:
+      type: object
+      properties:
+        team_id:
+          type: string
+          description: Filter by team ID
+        project_id:
+          type: string
+          description: Filter by project ID
+        status:
+          type: string
+          description: Filter by issue status
+        limit:
+          type: integer
+          description: Maximum number of issues to return
+          default: 50
+      required: []
+  - name: create_issue
+    description: Create a new issue in Linear
+    input_schema:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Issue title
+        description:
+          type: string
+          description: Issue description in markdown
+        team_id:
+          type: string
+          description: Team ID to assign the issue to
+        priority:
+          type: integer
+          description: Priority level (0=none, 1=urgent, 2=high, 3=medium, 4=low)
+      required:
+        - title
+        - team_id
+  - name: get_issue
+    description: Get details of a specific issue by its identifier
+    input_schema:
+      type: object
+      properties:
+        issue_id:
+          type: string
+          description: The issue identifier (e.g., ENG-123)
+      required:
+        - issue_id
+
+capability_template: {}

@@ -1,0 +1,47 @@
+slug: google-workspace
+name: Google Workspace
+description: >-
+  Connect to Google Workspace services including Gmail, Google Calendar,
+  Google Drive, and Google Docs. Provides read access to emails, calendar
+  events, files, and documents.
+icon: Mail
+category: productivity
+connector_type: mcp_server
+auth_type: oauth2
+version: "1.0.0"
+documentation_url: https://developers.google.com/workspace
+
+tags:
+  - google
+  - gmail
+  - calendar
+  - drive
+  - docs
+  - email
+  - productivity
+
+auth_config:
+  authorize_url: https://accounts.google.com/o/oauth2/v2/auth
+  token_url: https://oauth2.googleapis.com/token
+  userinfo_url: https://openidconnect.googleapis.com/v1/userinfo
+  revoke_url: https://oauth2.googleapis.com/revoke
+  redirect_uri: ""
+  client_id: ""
+  client_secret: ""
+  pkce_required: true
+  scopes:
+    - https://www.googleapis.com/auth/gmail.readonly
+    - https://www.googleapis.com/auth/calendar.readonly
+    - https://www.googleapis.com/auth/drive.readonly
+    - https://www.googleapis.com/auth/documents.readonly
+  extra_authorize_params:
+    access_type: offline
+    prompt: consent
+
+mcp_config:
+  transport: streamable_http
+  server_url: ""
+
+tool_definitions: []
+
+capability_template: {}

@@ -105,6 +105,18 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.error("plugin_startup_failed", plugin=_plugin.name, exc_info=True)
 
+    # Sync built-in connector definitions to the database
+    if settings.CONNECTOR_ENABLED:
+        try:
+            from app.connectors.registry import connector_registry
+            from app.db.session import async_session_factory
+
+            async with async_session_factory() as _db:
+                await connector_registry.sync_builtins(_db)
+                await _db.commit()
+        except Exception:
+            logger.warning("connector_builtin_sync_failed", exc_info=True)
+
     yield
 
     # Graceful shutdown — dispose resources in reverse init order with timeouts

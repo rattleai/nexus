@@ -1,0 +1,76 @@
+slug: onedrive
+name: OneDrive
+description: >-
+  Connect to Microsoft OneDrive for cloud file storage and collaboration.
+  Access, manage, and share files and folders through the Microsoft Graph API.
+icon: Cloud
+category: cloud_storage
+connector_type: oauth_api
+auth_type: oauth2
+version: "1.0.0"
+documentation_url: https://learn.microsoft.com/en-us/onedrive/developer/
+
+tags:
+  - onedrive
+  - microsoft
+  - cloud-storage
+  - files
+  - sharepoint
+  - office-365
+
+auth_config:
+  authorize_url: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+  token_url: https://login.microsoftonline.com/common/oauth2/v2.0/token
+  userinfo_url: https://graph.microsoft.com/v1.0/me
+  revoke_url: ""
+  redirect_uri: ""
+  client_id: ""
+  client_secret: ""
+  pkce_required: true
+  scopes:
+    - Files.Read
+    - Files.ReadWrite
+    - User.Read
+    - offline_access
+  extra_authorize_params:
+    response_mode: query
+
+mcp_config: {}
+
+tool_definitions:
+  - name: list_items
+    description: List files and folders in a OneDrive directory
+    input_schema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: "The folder path to list (use /root for root directory)"
+          default: /root
+        limit:
+          type: integer
+          description: Maximum number of items to return
+          default: 100
+      required: []
+  - name: get_item
+    description: Get metadata for a specific file or folder
+    input_schema:
+      type: object
+      properties:
+        item_id:
+          type: string
+          description: The ID of the item to retrieve
+      required:
+        - item_id
+  - name: search
+    description: Search for files across the OneDrive
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Search query string
+      required:
+        - query
+
+capability_template: {}

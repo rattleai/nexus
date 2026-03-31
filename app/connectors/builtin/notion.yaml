@@ -1,0 +1,89 @@
+slug: notion
+name: Notion
+description: >-
+  Connect to Notion for workspace management, database queries, page creation,
+  and content organization. Access and manage your Notion pages, databases,
+  and blocks.
+icon: FileText
+category: productivity
+connector_type: oauth_api
+auth_type: oauth2
+version: "1.0.0"
+documentation_url: https://developers.notion.com/docs
+
+tags:
+  - notion
+  - wiki
+  - documents
+  - databases
+  - knowledge-base
+  - productivity
+
+auth_config:
+  authorize_url: https://api.notion.com/v1/oauth/authorize
+  token_url: https://api.notion.com/v1/oauth/token
+  userinfo_url: https://api.notion.com/v1/users/me
+  revoke_url: ""
+  redirect_uri: ""
+  client_id: ""
+  client_secret: ""
+  pkce_required: false
+  scopes: []
+  extra_authorize_params:
+    owner: user
+
+mcp_config: {}
+
+tool_definitions:
+  - name: search
+    description: Search for pages and databases in the Notion workspace
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Search query text
+        filter:
+          type: object
+          description: Filter by object type (page or database)
+          properties:
+            value:
+              type: string
+              enum:
+                - page
+                - database
+            property:
+              type: string
+              enum:
+                - object
+      required: []
+  - name: get_page
+    description: Retrieve a Notion page by its ID
+    input_schema:
+      type: object
+      properties:
+        page_id:
+          type: string
+          description: The ID of the Notion page to retrieve
+      required:
+        - page_id
+  - name: query_database
+    description: Query a Notion database with optional filters and sorts
+    input_schema:
+      type: object
+      properties:
+        database_id:
+          type: string
+          description: The ID of the Notion database to query
+        filter:
+          type: object
+          description: Filter conditions for the query
+        sorts:
+          type: array
+          description: Sort conditions for the query
+          items:
+            type: object
+      required:
+        - database_id
+
+capability_template: {}
