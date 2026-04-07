@@ -28,10 +28,14 @@ _MAX_CHUNKS_PER_DOCUMENT = 500
 
 
 class EmbeddingService:
-    """Generates vector embeddings for text using configured AI providers."""
+    """Generates vector embeddings for text using the multi-provider gateway.
+
+    Delegates to EmbeddingGateway for provider-agnostic embedding generation
+    with caching, circuit breaker, and multi-provider support.
+    """
 
     def __init__(self):
-        self._model = "text-embedding-3-small"
+        self._model = settings.EMBEDDING_DEFAULT_MODEL
         self._dimensions = settings.AGENT_MEMORY_VECTOR_DIMENSIONS
 
     async def generate(
@@ -40,18 +44,10 @@ class EmbeddingService:
         *,
         model: str | None = None,
     ) -> list[float]:
-        """Generate an embedding vector for the given text.
+        """Generate an embedding vector for the given text."""
+        from app.ai.embedding_gateway import embedding_gateway
 
-        Uses OpenAI's embedding API by default, with fallback providers.
-        """
-        model = model or self._model
-
-        if settings.AI_OPENAI_API_KEY:
-            return await self._generate_openai(text, model)
-
-        raise RuntimeError(
-            "No embedding provider configured. Set AI_OPENAI_API_KEY."
-        )
+        return await embedding_gateway.generate(text, model=model or self._model)
 
     async def generate_batch(
         self,
@@ -60,60 +56,9 @@ class EmbeddingService:
         model: str | None = None,
     ) -> list[list[float]]:
         """Generate embeddings for a batch of texts."""
-        model = model or self._model
+        from app.ai.embedding_gateway import embedding_gateway
 
-        if settings.AI_OPENAI_API_KEY:
-            return await self._generate_openai_batch(texts, model)
-
-        raise RuntimeError("No embedding provider configured.")
-
-    async def _generate_openai(self, text: str, model: str) -> list[float]:
-        """Generate embedding via OpenAI API."""
-        import httpx
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                "https://api.openai.com/v1/embeddings",
-                headers={
-                    "Authorization": f"Bearer {settings.AI_OPENAI_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "input": text[:8192],  # OpenAI max input length
-                    "model": model,
-                    "dimensions": self._dimensions,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data["data"][0]["embedding"]
-
-    async def _generate_openai_batch(
-        self, texts: list[str], model: str,
-    ) -> list[list[float]]:
-        """Generate embeddings for multiple texts in one API call."""
-        import httpx
-
-        truncated = [t[:8192] for t in texts]
-
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                "https://api.openai.com/v1/embeddings",
-                headers={
-                    "Authorization": f"Bearer {settings.AI_OPENAI_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "input": truncated,
-                    "model": model,
-                    "dimensions": self._dimensions,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-            # Sort by index to preserve order
-            sorted_data = sorted(data["data"], key=lambda x: x["index"])
-            return [item["embedding"] for item in sorted_data]
+        return await embedding_gateway.generate_batch(texts, model=model or self._model)
 
 
 def chunk_text(
@@ -238,11 +183,15 @@ class RAGPipeline:
         tenant_id: uuid.UUID,
         namespace: str = "rag",
         limit: int = 5,
+        rerank: bool = False,
         db: Any,
     ) -> list[dict[str, Any]]:
         """Retrieve relevant memory entries for a query.
 
         Returns ranked list of {"text": str, "score": float, "source": str}.
+
+        When rerank=True, over-fetches by 3x and applies re-ranking to
+        improve precision before trimming to the requested limit.
         """
         from app.agents.memory import AgentMemoryManager
 
@@ -252,16 +201,18 @@ class RAGPipeline:
             logger.warning("rag_query_embedding_failed", exc_info=True)
             return []
 
+        fetch_limit = limit * 3 if rerank else limit
+
         memory = AgentMemoryManager(db)
         results = await memory.search_by_embedding(
             instance_id=instance_id,
             tenant_id=tenant_id,
             query_embedding=query_embedding,
             namespace=namespace,
-            limit=limit,
+            limit=fetch_limit,
         )
 
-        return [
+        formatted = [
             {
                 "text": r["value"].get("text", ""),
                 "score": r["score"],
@@ -270,6 +221,24 @@ class RAGPipeline:
             }
             for r in results
         ]
+
+        # Apply re-ranking if requested and results exist
+        if rerank and formatted:
+            from app.agents.reranker import reranker as _reranker
+
+            documents = [r["text"] for r in formatted]
+            rerank_results = await _reranker.rerank(
+                query=query, documents=documents, top_k=limit,
+            )
+            reranked = []
+            for rr in rerank_results:
+                if rr.index < len(formatted):
+                    entry = formatted[rr.index].copy()
+                    entry["score"] = rr.score
+                    reranked.append(entry)
+            return reranked
+
+        return formatted[:limit]
 
     @staticmethod
     def _sanitize_rag_chunk(text: str) -> str:

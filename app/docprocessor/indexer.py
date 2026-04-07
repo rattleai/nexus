@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import hashlib
 import uuid
-from typing import Any
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.docprocessor.base import ExtractedTable, ExtractionResult
 
 logger = structlog.stdlib.get_logger()
@@ -19,7 +19,7 @@ class ContentIndexer:
     """Index extracted content for RAG retrieval.
 
     Chunks extraction results and stores them as DataSourceChunk records
-    with embeddings for vector search.
+    with embeddings for vector search. Supports pluggable chunking strategies.
     """
 
     async def index_extraction(
@@ -28,6 +28,8 @@ class ContentIndexer:
         data_source_id: UUID,
         tenant_id: UUID,
         db: AsyncSession,
+        *,
+        chunking_strategy: str | None = None,
     ) -> int:
         """Chunk and embed extracted content. Returns chunk count.
 
@@ -36,12 +38,14 @@ class ContentIndexer:
             data_source_id: ID of the DataSource record.
             tenant_id: Tenant owning the data.
             db: Async database session.
+            chunking_strategy: Override chunking strategy (default from config).
 
         Returns:
             Number of chunks stored.
         """
         from app.agents.embeddings import EmbeddingService
         from app.db.models.datasource import DataSourceChunk
+        from app.docprocessor.chunking import get_chunker
 
         # Verify tenant ownership (defense-in-depth against mismatched IDs)
         if hasattr(db, "get"):
@@ -54,8 +58,12 @@ class ContentIndexer:
                     f"{ds.tenant_id}, not {tenant_id}"
                 )
 
-        # Build chunks from text and tables
-        text_chunks = self._chunk_text(extraction.raw_text)
+        # Build chunks using pluggable strategy
+        chunker = get_chunker(chunking_strategy)
+        text_chunk_tuples = chunker.chunk(extraction.raw_text) if extraction.raw_text else []
+        text_chunks = [text for text, _ in text_chunk_tuples]
+        text_metadata = [meta for _, meta in text_chunk_tuples]
+
         table_chunks = self._chunk_tables(extraction.tables)
         all_chunks = text_chunks + table_chunks
 
@@ -76,18 +84,30 @@ class ContentIndexer:
             # Store chunks without embeddings rather than failing entirely
             embeddings = [None] * len(all_chunks)
 
+        # Convert embeddings to pgvector format string for native vector column
+        def _to_vector_str(emb: list[float] | None) -> str | None:
+            if emb is None:
+                return None
+            return "[" + ",".join(str(v) for v in emb) + "]"
+
         stored = 0
+        now = datetime.now(UTC)
         for idx, (chunk_text, embedding) in enumerate(zip(all_chunks, embeddings, strict=False)):
             # Determine section title for the chunk
             section_title = None
             if idx < len(text_chunks):
-                # Try to find the section this text chunk belongs to
-                for section in extraction.sections:
-                    if chunk_text[:100] in section.content:
-                        section_title = section.title
-                        break
+                # Use metadata from chunker if available
+                if idx < len(text_metadata) and text_metadata[idx].section_title:
+                    section_title = text_metadata[idx].section_title
+                else:
+                    for section in extraction.sections:
+                        if chunk_text[:100] in section.content:
+                            section_title = section.title
+                            break
             else:
                 section_title = "Table Data"
+
+            embedding_model = settings.EMBEDDING_DEFAULT_MODEL if embedding else None
 
             chunk = DataSourceChunk(
                 id=uuid.uuid4(),
@@ -95,10 +115,14 @@ class ContentIndexer:
                 data_source_id=data_source_id,
                 chunk_index=idx,
                 content=chunk_text,
+                # Write to both JSONB (backward compat) and native vector column
                 embedding=embedding,
-                embedding_model="text-embedding-3-small" if embedding else None,
+                embedding_vec=_to_vector_str(embedding),
+                embedding_model=embedding_model,
                 section_title=section_title,
                 table_index=idx - len(text_chunks) if idx >= len(text_chunks) else None,
+                content_type=extraction.source_type,
+                indexed_at=now,
             )
             db.add(chunk)
             stored += 1
@@ -110,45 +134,9 @@ class ContentIndexer:
             chunks=stored,
             text_chunks=len(text_chunks),
             table_chunks=len(table_chunks),
+            strategy=chunking_strategy or settings.RAG_CHUNKING_STRATEGY,
         )
         return stored
-
-    def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> list[str]:
-        """Split text into overlapping chunks.
-
-        Uses sentence-boundary-aware splitting to avoid breaking mid-sentence.
-        """
-        if not text or not text.strip():
-            return []
-
-        # Guard against infinite loop
-        if overlap >= chunk_size:
-            overlap = chunk_size // 2
-
-        chunks: list[str] = []
-        start = 0
-        max_chunks = 500  # Safety cap
-
-        while start < len(text) and len(chunks) < max_chunks:
-            end = start + chunk_size
-
-            # Try to break at a natural boundary
-            if end < len(text):
-                for sep in ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " "]:
-                    boundary = text.rfind(sep, start + chunk_size // 2, end)
-                    if boundary > start:
-                        end = boundary + len(sep)
-                        break
-
-            chunk = text[start:end].strip()
-            if chunk:
-                chunks.append(chunk)
-
-            start = end - overlap
-            if start <= 0 and len(chunks) > 0:
-                break
-
-        return chunks
 
     def _chunk_tables(self, tables: list[ExtractedTable]) -> list[str]:
         """Convert tables to text chunks serialized as markdown tables.

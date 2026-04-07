@@ -23,6 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import UserDefinedType
 
 from app.db.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin
 
@@ -145,6 +146,24 @@ class DataSource(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
 # ── Data Source Chunk ────────────────────────────────────
 
 
+class VectorType(UserDefinedType):
+    """SQLAlchemy type for pgvector's vector column."""
+
+    cache_ok = True
+
+    def __init__(self, dimensions: int = 1536):
+        self.dimensions = dimensions
+
+    def get_col_spec(self) -> str:
+        return f"vector({self.dimensions})"
+
+    def bind_expression(self, bindvalue):
+        return bindvalue
+
+    def result_processor(self, dialect, coltype):
+        return None
+
+
 class DataSourceChunk(TimestampMixin, Base):
     """A chunk of extracted content from a data source, with optional embedding."""
 
@@ -157,10 +176,21 @@ class DataSourceChunk(TimestampMixin, Base):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Legacy JSONB embedding column — kept for backward compatibility during transition.
+    # New code should use embedding_vec (native pgvector column) for storage and search.
     embedding: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     section_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     table_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Native pgvector column for hardware-accelerated similarity search (HNSW indexed)
+    embedding_vec = mapped_column(VectorType(1536), nullable=True)
+    # Auto-maintained tsvector for full-text search (GIN indexed, trigger-updated)
+    content_tsv = mapped_column("content_tsv", Text, nullable=True)
+    # Metadata for filtering
+    tags: Mapped[dict] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    content_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     data_source: Mapped[DataSource] = relationship(back_populates="chunks")

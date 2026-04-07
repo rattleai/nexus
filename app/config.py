@@ -196,6 +196,28 @@ class Settings(BaseSettings):
     AGENT_MEMORY_VECTOR_ENABLED: bool = False  # Requires pgvector extension
     AGENT_MEMORY_VECTOR_DIMENSIONS: int = 1536
 
+    # ── RAG / Embedding Gateway ──────────────────────────────
+    EMBEDDING_DEFAULT_PROVIDER: str = "openai"
+    EMBEDDING_DEFAULT_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_COHERE_API_KEY: str = ""
+    EMBEDDING_VOYAGE_API_KEY: str = ""
+    EMBEDDING_LOCAL_URL: str = ""  # e.g., http://localhost:8080 for local models
+    EMBEDDING_CACHE_ENABLED: bool = True
+    EMBEDDING_CACHE_TTL_SECONDS: int = 86400  # 24 hours
+
+    # RAG Chunking
+    RAG_CHUNKING_STRATEGY: str = "fixed_size"  # fixed_size, recursive, markdown, semantic
+    RAG_CHUNK_SIZE: int = 1000
+    RAG_CHUNK_OVERLAP: int = 200
+    RAG_SEMANTIC_SIMILARITY_THRESHOLD: float = 0.5
+
+    # RAG Re-ranking
+    RAG_RERANKER_PROVIDER: str = "none"  # none, cohere, cross_encoder
+    RAG_RERANKER_MODEL: str = "rerank-v3.5"
+    RAG_RERANKER_API_KEY: str = ""
+    RAG_RERANKER_LOCAL_URL: str = ""
+    RAG_RERANKER_TOP_K: int = 5
+
     # ── Agent Security (Phase 0-2) ──────────────────────────
     # Phase 0 — DB Gateway
     AGENT_DB_MAX_QUERIES_PER_MINUTE: int = 60

@@ -50,3 +50,78 @@ AI_FALLBACK_TOTAL = Counter(
     "Total times a fallback model was used",
     ["primary_model", "fallback_model", "reason"],
 )
+
+# ── Embedding Gateway Metrics ────────────────────────────────
+
+EMBEDDING_REQUESTS_TOTAL = Counter(
+    "saas_embedding_requests_total",
+    "Total embedding generation requests",
+    ["provider", "model", "status"],
+)
+
+EMBEDDING_TOKENS_TOTAL = Counter(
+    "saas_embedding_tokens_total",
+    "Total tokens consumed by embedding requests",
+    ["provider", "model"],
+)
+
+EMBEDDING_LATENCY_SECONDS = Histogram(
+    "saas_embedding_latency_seconds",
+    "Embedding generation latency in seconds",
+    ["provider", "model"],
+    buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+)
+
+EMBEDDING_CACHE_HITS_TOTAL = Counter(
+    "saas_embedding_cache_hits_total",
+    "Embedding cache hits",
+    ["model"],
+)
+
+EMBEDDING_CACHE_MISSES_TOTAL = Counter(
+    "saas_embedding_cache_misses_total",
+    "Embedding cache misses",
+    ["model"],
+)
+
+# ── RAG Pipeline Metrics ─────────────────────────────────────
+
+RAG_RETRIEVAL_TOTAL = Counter(
+    "saas_rag_retrieval_total",
+    "Total RAG retrieval queries",
+    ["search_type"],  # vector, text, hybrid
+)
+
+RAG_RETRIEVAL_LATENCY_SECONDS = Histogram(
+    "saas_rag_retrieval_latency_seconds",
+    "RAG retrieval latency in seconds",
+    ["search_type"],
+    buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5],
+)
+
+RAG_RETRIEVAL_EMPTY_TOTAL = Counter(
+    "saas_rag_retrieval_empty_total",
+    "RAG retrieval queries that returned zero results",
+    ["search_type"],
+)
+
+RAG_TOP_SCORE = Histogram(
+    "saas_rag_top_score",
+    "Similarity score of the top retrieval result",
+    ["search_type"],
+    buckets=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99],
+)
+
+RAG_CHUNKS_PER_QUERY = Histogram(
+    "saas_rag_chunks_per_query",
+    "Number of chunks returned per RAG query",
+    ["search_type"],
+    buckets=[1, 2, 3, 5, 10, 20, 50],
+)
+
+RAG_RERANK_LATENCY_SECONDS = Histogram(
+    "saas_rag_rerank_latency_seconds",
+    "Re-ranking latency in seconds",
+    ["provider"],
+    buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.5],
+)
