@@ -211,6 +211,12 @@ class Settings(BaseSettings):
     RAG_CHUNK_OVERLAP: int = 200
     RAG_SEMANTIC_SIMILARITY_THRESHOLD: float = 0.5
 
+    # Vector quantization — controls which column is used for search
+    # "full"  = float32 vector(1536) — highest accuracy, 6 KB/vector
+    # "half"  = float16 halfvec(1536) — near-zero loss, 3 KB/vector (recommended)
+    # "binary" = bit(1536) — 97% smaller but lower recall, 192 bytes/vector
+    VECTOR_QUANTIZATION: str = "half"
+
     # RAG Re-ranking
     RAG_RERANKER_PROVIDER: str = "none"  # none, cohere, cross_encoder
     RAG_RERANKER_MODEL: str = "rerank-v3.5"

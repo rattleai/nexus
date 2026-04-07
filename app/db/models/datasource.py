@@ -151,20 +151,34 @@ class VectorType(UserDefinedType):
 
     Handles serialization/deserialization between Python lists and
     PostgreSQL vector type. Implements proper caching support.
+
+    Supports three precision modes via the `precision` parameter:
+      - "full" (default): float32, vector(N) — 4 bytes/dim
+      - "half": float16, halfvec(N) — 2 bytes/dim (50% savings)
+      - "binary": 1-bit, bit(N) — 0.125 bytes/dim (97% savings)
     """
 
     cache_ok = True
 
-    def __init__(self, dimensions: int = 1536):
+    def __init__(self, dimensions: int = 1536, precision: str = "full"):
         self.dimensions = dimensions
+        self.precision = precision
 
     def __eq__(self, other):
-        return isinstance(other, VectorType) and self.dimensions == other.dimensions
+        return (
+            isinstance(other, VectorType)
+            and self.dimensions == other.dimensions
+            and self.precision == other.precision
+        )
 
     def __hash__(self):
-        return hash((VectorType, self.dimensions))
+        return hash((VectorType, self.dimensions, self.precision))
 
     def get_col_spec(self) -> str:
+        if self.precision == "half":
+            return f"halfvec({self.dimensions})"
+        elif self.precision == "binary":
+            return f"bit({self.dimensions})"
         return f"vector({self.dimensions})"
 
     def bind_expression(self, bindvalue):
@@ -203,9 +217,14 @@ class DataSourceChunk(TimestampMixin, Base):
     table_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Native pgvector column for hardware-accelerated similarity search (HNSW indexed).
-    # Values are stored as pgvector string format '[1.0,2.0,...]' and parsed
-    # back to Python lists by VectorType.result_processor().
+    # Full-precision float32: 6,144 bytes per 1536-dim vector.
     embedding_vec: Mapped[list | None] = mapped_column(VectorType(1536), nullable=True)
+    # Half-precision float16 column: 3,072 bytes per 1536-dim vector (50% savings).
+    # Used as the primary search column when VECTOR_QUANTIZATION="half" is enabled.
+    # The full-precision column is kept for accuracy-sensitive operations.
+    embedding_halfvec: Mapped[list | None] = mapped_column(
+        VectorType(1536, precision="half"), nullable=True,
+    )
     # Auto-maintained tsvector for full-text search (GIN indexed, trigger-updated).
     # Column type is tsvector in PostgreSQL; mapped as Text here since SQLAlchemy
     # doesn't have a native tsvector type. Reads return raw tsvector strings.

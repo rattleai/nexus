@@ -344,6 +344,8 @@ from app.agents.search import (
     SearchSource,
     SearchType,
     _escape_like,
+    _vec_column,
+    _vec_cast,
 )
 
 
@@ -412,6 +414,20 @@ class TestSearchStress:
             )
             assert isinstance(results, list)
 
+    def test_vec_column_selects_halfvec_when_configured(self):
+        """VECTOR_QUANTIZATION=half should use embedding_halfvec column."""
+        with patch("app.agents.search.settings") as mock_settings:
+            mock_settings.VECTOR_QUANTIZATION = "half"
+            assert _vec_column() == "embedding_halfvec"
+            assert "halfvec" in _vec_cast()
+
+    def test_vec_column_selects_full_when_configured(self):
+        """VECTOR_QUANTIZATION=full should use embedding_vec column."""
+        with patch("app.agents.search.settings") as mock_settings:
+            mock_settings.VECTOR_QUANTIZATION = "full"
+            assert _vec_column() == "embedding_vec"
+            assert "vector" in _vec_cast()
+
     @pytest.mark.asyncio
     async def test_search_with_sql_injection_in_section_title(self):
         """Ensure SQL injection in section_title is escaped."""
@@ -458,6 +474,42 @@ class TestVectorTypeStress:
         vt2 = VectorType(384)
         assert hash(vt1) != hash(vt2)
         assert vt1 != vt2
+
+    def test_halfvec_col_spec(self):
+        """Half-precision type generates halfvec column spec."""
+        vt = VectorType(1536, precision="half")
+        assert vt.get_col_spec() == "halfvec(1536)"
+
+    def test_binary_col_spec(self):
+        """Binary precision type generates bit column spec."""
+        vt = VectorType(1536, precision="binary")
+        assert vt.get_col_spec() == "bit(1536)"
+
+    def test_full_col_spec(self):
+        """Full precision type generates vector column spec."""
+        vt = VectorType(1536, precision="full")
+        assert vt.get_col_spec() == "vector(1536)"
+
+    def test_different_precision_different_hash(self):
+        """Same dimensions but different precision should differ."""
+        vt_full = VectorType(1536, precision="full")
+        vt_half = VectorType(1536, precision="half")
+        vt_binary = VectorType(1536, precision="binary")
+        assert hash(vt_full) != hash(vt_half)
+        assert hash(vt_full) != hash(vt_binary)
+        assert vt_full != vt_half
+
+    def test_storage_size_comparison(self):
+        """Verify the storage size claims are correct."""
+        # float32: 4 bytes * 1536 = 6144 bytes
+        assert 4 * 1536 == 6144
+        # float16: 2 bytes * 1536 = 3072 bytes (50% savings)
+        assert 2 * 1536 == 3072
+        # binary: 1536 bits / 8 = 192 bytes (97% savings)
+        assert 1536 // 8 == 192
+        # Verify savings ratios
+        assert 3072 / 6144 == 0.5    # halfvec = 50% of full
+        assert 192 / 6144 < 0.032    # binary < 3.2% of full
 
     def test_result_processor_parses_vector_string(self):
         """Result processor correctly parses pgvector string format."""

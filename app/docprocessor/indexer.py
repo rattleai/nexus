@@ -125,15 +125,17 @@ class ContentIndexer:
 
             embedding_model = settings.EMBEDDING_DEFAULT_MODEL if embedding else None
 
+            vec_str = _to_vector_str(embedding)
             chunk = DataSourceChunk(
                 id=uuid.uuid4(),
                 tenant_id=tenant_id,
                 data_source_id=data_source_id,
                 chunk_index=idx,
                 content=chunk_text,
-                # Write to both JSONB (backward compat) and native vector column
+                # Write to JSONB (backward compat), full-precision vector, and halfvec
                 embedding=embedding,
-                embedding_vec=_to_vector_str(embedding),
+                embedding_vec=vec_str,
+                embedding_halfvec=vec_str,  # PostgreSQL casts vector→halfvec automatically
                 embedding_model=embedding_model,
                 section_title=section_title,
                 table_index=idx - len(text_chunks) if idx >= len(text_chunks) else None,

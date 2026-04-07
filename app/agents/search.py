@@ -81,6 +81,31 @@ def _build_vector_str(embedding: list[float]) -> str:
     return embedding_to_vector_str(embedding)
 
 
+def _vec_column() -> str:
+    """Return the vector column name based on quantization config.
+
+    When VECTOR_QUANTIZATION="half", searches use the halfvec column
+    which is 50% smaller and uses a smaller HNSW index. The cast
+    operator (::halfvec) ensures the query vector matches the column type.
+    """
+    if settings.VECTOR_QUANTIZATION == "half":
+        return "embedding_halfvec"
+    return "embedding_vec"
+
+
+def _vec_cast() -> str:
+    """Return the SQL cast suffix for the query vector."""
+    if settings.VECTOR_QUANTIZATION == "half":
+        return "::halfvec(1536)"
+    return "::vector"
+
+
+def _vec_ops() -> str:
+    """Return the cosine distance operator for the configured precision."""
+    # pgvector uses <=> for cosine distance on all types
+    return "<=>"
+
+
 def _escape_like(value: str) -> str:
     """Escape LIKE/ILIKE special characters in a search pattern."""
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -299,15 +324,18 @@ class HybridSearchEngine:
         params["vec_w"] = vector_weight
         params["text_w"] = text_weight
 
+        col = _vec_column()
+        cast = _vec_cast()
+
         sql = f"""
             WITH vector_results AS (
                 SELECT dsc.id, dsc.content, dsc.data_source_id, dsc.section_title,
                        dsc.content_type,
-                       1 - (dsc.embedding_vec <=> :query_vec::vector) AS vec_score,
-                       ROW_NUMBER() OVER (ORDER BY dsc.embedding_vec <=> :query_vec::vector) AS vec_rank
+                       1 - (dsc.{col} {_vec_ops()} :query_vec{cast}) AS vec_score,
+                       ROW_NUMBER() OVER (ORDER BY dsc.{col} {_vec_ops()} :query_vec{cast}) AS vec_rank
                 FROM data_source_chunks dsc
-                WHERE {where} AND dsc.embedding_vec IS NOT NULL
-                ORDER BY dsc.embedding_vec <=> :query_vec::vector
+                WHERE {where} AND dsc.{col} IS NOT NULL
+                ORDER BY dsc.{col} {_vec_ops()} :query_vec{cast}
                 LIMIT :limit
             ),
             text_results AS (
@@ -369,13 +397,16 @@ class HybridSearchEngine:
         """Pure vector similarity search on chunks."""
         params["query_vec"] = _build_vector_str(query_embedding)
 
+        col = _vec_column()
+        cast = _vec_cast()
+
         sql = f"""
             SELECT dsc.id, dsc.content, dsc.data_source_id, dsc.section_title,
                    dsc.content_type,
-                   1 - (dsc.embedding_vec <=> :query_vec::vector) AS score
+                   1 - (dsc.{col} {_vec_ops()} :query_vec{cast}) AS score
             FROM data_source_chunks dsc
-            WHERE {where} AND dsc.embedding_vec IS NOT NULL
-            ORDER BY dsc.embedding_vec <=> :query_vec::vector
+            WHERE {where} AND dsc.{col} IS NOT NULL
+            ORDER BY dsc.{col} {_vec_ops()} :query_vec{cast}
             LIMIT :limit
         """
 
@@ -456,15 +487,18 @@ class HybridSearchEngine:
 
         vector_str = _build_vector_str(query_embedding)
 
-        sql = """
+        col = _vec_column()
+        cast = _vec_cast()
+
+        sql = f"""
             SELECT key, value, namespace,
-                   1 - (embedding_vec <=> :query_vec::vector) AS score
+                   1 - ({col} {_vec_ops()} :query_vec{cast}) AS score
             FROM agent_memory_entries
             WHERE tenant_id = :tenant_id
               AND namespace = :namespace
-              AND embedding_vec IS NOT NULL
+              AND {col} IS NOT NULL
               AND (expires_at IS NULL OR expires_at > now())
-            ORDER BY embedding_vec <=> :query_vec::vector
+            ORDER BY {col} {_vec_ops()} :query_vec{cast}
             LIMIT :limit
         """
 
