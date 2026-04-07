@@ -122,14 +122,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Drop trigger and function within the Alembic-managed transaction
     op.execute("DROP TRIGGER IF EXISTS trg_data_source_chunks_tsv ON data_source_chunks")
     op.execute("DROP FUNCTION IF EXISTS data_source_chunks_tsv_trigger()")
 
+    # DROP INDEX CONCURRENTLY requires being outside a transaction
     op.execute("COMMIT")
     op.execute("DROP INDEX CONCURRENTLY IF EXISTS ix_data_source_chunks_tenant_indexed")
     op.execute("DROP INDEX CONCURRENTLY IF EXISTS ix_data_source_chunks_tenant_type")
     op.execute("DROP INDEX CONCURRENTLY IF EXISTS ix_data_source_chunks_content_tsv")
     op.execute("DROP INDEX CONCURRENTLY IF EXISTS ix_data_source_chunks_embedding_vec")
+    # Re-enter a transaction for remaining DDL
     op.execute("BEGIN")
 
     op.execute("ALTER TABLE data_source_chunks DROP COLUMN IF EXISTS indexed_at")

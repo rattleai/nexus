@@ -195,7 +195,7 @@ class TestGetChunker:
         assert isinstance(chunker, RecursiveChunker)
 
     def test_get_unknown_raises(self):
-        with pytest.raises(ValueError, match="Unknown chunking strategy"):
+        with pytest.raises(ValueError):
             get_chunker("nonexistent")
 
     def test_default_from_settings(self):

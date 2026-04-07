@@ -10,6 +10,7 @@ from __future__ import annotations
 import enum
 import hashlib
 import json
+import math
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -30,6 +31,31 @@ from app.core.circuit_breaker import CircuitBreaker
 logger = structlog.stdlib.get_logger()
 
 embedding_breaker = CircuitBreaker("embedding", failure_threshold=5, recovery_timeout=120)
+
+# Maximum batch size to prevent resource exhaustion
+_MAX_BATCH_SIZE = 500
+
+# Shared HTTP client (connection pooled, lazy-initialized)
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    """Get or create the shared async HTTP client with connection pooling."""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0),
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+        )
+    return _http_client
+
+
+async def shutdown_http_client() -> None:
+    """Close the shared HTTP client. Call during app shutdown."""
+    global _http_client
+    if _http_client and not _http_client.is_closed:
+        await _http_client.aclose()
+        _http_client = None
 
 
 class EmbeddingProvider(enum.StrEnum):
@@ -114,8 +140,33 @@ class EmbeddingGatewayError(Exception):
 
 def _cache_key(model: str, dimensions: int, text: str) -> str:
     """Build a Redis cache key for an embedding."""
-    text_hash = hashlib.sha256(text.encode()).hexdigest()[:32]
+    text_hash = hashlib.sha256(text.encode()).hexdigest()
     return f"emb:{model}:{dimensions}:{text_hash}"
+
+
+def _sanitize_error(exc: Exception) -> str:
+    """Sanitize exception messages to prevent API key leakage in logs."""
+    msg = str(exc)
+    for keyword in ("Authorization", "Bearer", "api_key", "apikey"):
+        if keyword.lower() in msg.lower():
+            return f"{type(exc).__name__}: [credentials redacted]"
+    return msg
+
+
+def embedding_to_vector_str(embedding: list[float]) -> str:
+    """Convert embedding list to pgvector-compatible string format.
+
+    Validates that all values are finite floats and the list is non-empty.
+    Shared utility used by indexer.py and search.py to avoid duplication.
+    """
+    if not embedding:
+        raise ValueError("Empty embedding vector")
+    for i, v in enumerate(embedding):
+        if not isinstance(v, (int, float)):
+            raise ValueError(f"Embedding value at index {i} is not numeric: {type(v)}")
+        if math.isnan(v) or math.isinf(v):
+            raise ValueError(f"Embedding value at index {i} is {v}")
+    return "[" + ",".join(str(v) for v in embedding) + "]"
 
 
 class EmbeddingGateway:
@@ -191,6 +242,12 @@ class EmbeddingGateway:
         if not texts:
             return []
 
+        if len(texts) > _MAX_BATCH_SIZE:
+            raise EmbeddingGatewayError(
+                f"Batch size {len(texts)} exceeds maximum {_MAX_BATCH_SIZE}",
+                model=model or self._default_model,
+            )
+
         info = self._resolve_model_info(model)
         dims = dimensions or min(self._default_dimensions, info.dimensions)
 
@@ -246,6 +303,10 @@ class EmbeddingGateway:
             ).inc()
             return result[0]
         except EmbeddingGatewayError:
+            embedding_breaker.record_failure(breaker_key)
+            EMBEDDING_REQUESTS_TOTAL.labels(
+                provider=info.provider.value, model=info.model_name, status="error",
+            ).inc()
             raise
         except Exception as exc:
             embedding_breaker.record_failure(breaker_key)
@@ -253,7 +314,7 @@ class EmbeddingGateway:
                 provider=info.provider.value, model=info.model_name, status="error",
             ).inc()
             raise EmbeddingGatewayError(
-                f"Embedding generation failed: {exc}",
+                f"Embedding generation failed: {_sanitize_error(exc)}",
                 provider=info.provider.value,
                 model=info.model_name,
             ) from exc
@@ -283,6 +344,10 @@ class EmbeddingGateway:
             ).inc()
             return result
         except EmbeddingGatewayError:
+            embedding_breaker.record_failure(breaker_key)
+            EMBEDDING_REQUESTS_TOTAL.labels(
+                provider=info.provider.value, model=info.model_name, status="error",
+            ).inc()
             raise
         except Exception as exc:
             embedding_breaker.record_failure(breaker_key)
@@ -290,7 +355,7 @@ class EmbeddingGateway:
                 provider=info.provider.value, model=info.model_name, status="error",
             ).inc()
             raise EmbeddingGatewayError(
-                f"Batch embedding generation failed: {exc}",
+                f"Batch embedding generation failed: {_sanitize_error(exc)}",
                 provider=info.provider.value,
                 model=info.model_name,
             ) from exc
@@ -331,16 +396,17 @@ class EmbeddingGateway:
         if info.supports_dimensions_param:
             body["dimensions"] = dimensions
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                "https://api.openai.com/v1/embeddings",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=body,
-            )
-            response.raise_for_status()
+        client = _get_http_client()
+        response = await client.post(
+            "https://api.openai.com/v1/embeddings",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=body,
+        )
+        response.raise_for_status()
+        try:
             data = response.json()
             usage = data.get("usage", {})
             EMBEDDING_TOKENS_TOTAL.labels(
@@ -348,6 +414,12 @@ class EmbeddingGateway:
             ).inc(usage.get("total_tokens", 0))
             sorted_data = sorted(data["data"], key=lambda x: x["index"])
             return [item["embedding"] for item in sorted_data]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise EmbeddingGatewayError(
+                f"Unexpected response from OpenAI embedding API",
+                provider="openai",
+                model=info.model_name,
+            ) from exc
 
     async def _generate_cohere(
         self, texts: list[str], info: EmbeddingModelInfo, dimensions: int,
@@ -356,23 +428,30 @@ class EmbeddingGateway:
         api_key = self._resolve_api_key(EmbeddingProvider.COHERE)
         truncated = [t[:2048] for t in texts]
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                "https://api.cohere.com/v2/embed",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "texts": truncated,
-                    "model": info.model_name,
-                    "input_type": "search_document",
-                    "embedding_types": ["float"],
-                },
-            )
-            response.raise_for_status()
+        client = _get_http_client()
+        response = await client.post(
+            "https://api.cohere.com/v2/embed",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "texts": truncated,
+                "model": info.model_name,
+                "input_type": "search_document",
+                "embedding_types": ["float"],
+            },
+        )
+        response.raise_for_status()
+        try:
             data = response.json()
             return data["embeddings"]["float"]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise EmbeddingGatewayError(
+                f"Unexpected response from Cohere embedding API",
+                provider="cohere",
+                model=info.model_name,
+            ) from exc
 
     async def _generate_voyage(
         self, texts: list[str], info: EmbeddingModelInfo, dimensions: int,
@@ -381,22 +460,29 @@ class EmbeddingGateway:
         api_key = self._resolve_api_key(EmbeddingProvider.VOYAGE)
         truncated = [t[:32000] for t in texts]
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                "https://api.voyageai.com/v1/embeddings",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "input": truncated,
-                    "model": info.model_name,
-                },
-            )
-            response.raise_for_status()
+        client = _get_http_client()
+        response = await client.post(
+            "https://api.voyageai.com/v1/embeddings",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "input": truncated,
+                "model": info.model_name,
+            },
+        )
+        response.raise_for_status()
+        try:
             data = response.json()
             sorted_data = sorted(data["data"], key=lambda x: x["index"])
             return [item["embedding"] for item in sorted_data]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise EmbeddingGatewayError(
+                f"Unexpected response from Voyage embedding API",
+                provider="voyage",
+                model=info.model_name,
+            ) from exc
 
     async def _generate_local(
         self, texts: list[str], info: EmbeddingModelInfo, dimensions: int,
@@ -409,20 +495,27 @@ class EmbeddingGateway:
                 provider="local",
             )
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                f"{base_url.rstrip('/')}/embeddings",
-                json={
-                    "input": texts,
-                    "model": info.model_name,
-                },
-            )
-            response.raise_for_status()
+        client = _get_http_client()
+        response = await client.post(
+            f"{base_url.rstrip('/')}/embeddings",
+            json={
+                "input": texts,
+                "model": info.model_name,
+            },
+        )
+        response.raise_for_status()
+        try:
             data = response.json()
             if isinstance(data, list):
                 return data
             sorted_data = sorted(data.get("data", []), key=lambda x: x.get("index", 0))
             return [item["embedding"] for item in sorted_data]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise EmbeddingGatewayError(
+                f"Unexpected response from local embedding server",
+                provider="local",
+                model=info.model_name,
+            ) from exc
 
     # ── Cache operations ──────────────────────────────────────
 
@@ -437,8 +530,10 @@ class EmbeddingGateway:
                 EMBEDDING_CACHE_HITS_TOTAL.labels(model=model).inc()
                 return json.loads(raw)
             EMBEDDING_CACHE_MISSES_TOTAL.labels(model=model).inc()
+        except json.JSONDecodeError:
+            logger.warning("embedding_cache_corrupted_value", model=model)
         except Exception:
-            logger.debug("embedding_cache_get_error", exc_info=True)
+            logger.warning("embedding_cache_get_error", exc_info=True)
         return None
 
     async def _cache_set(
@@ -455,7 +550,7 @@ class EmbeddingGateway:
                 json.dumps(embedding),
             )
         except Exception:
-            logger.debug("embedding_cache_set_error", exc_info=True)
+            logger.warning("embedding_cache_set_error", exc_info=True)
 
 
 # Module-level singleton

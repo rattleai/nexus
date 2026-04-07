@@ -297,15 +297,15 @@ class MarkdownChunker(Chunker):
 
     def _split_by_headings(self, text: str) -> list[tuple[str, str, int]]:
         """Split text into (heading, content, level) tuples."""
-        # Protect code blocks from heading splitting
+        # Protect code blocks from heading splitting.
+        # Uses UUID-based markers to avoid collision with actual text content.
+        import uuid as _uuid
+
         protected: dict[str, str] = {}
-        counter = 0
 
         def protect_code(match: re.Match) -> str:
-            nonlocal counter
-            key = f"__CODE_BLOCK_{counter}__"
+            key = f"\x00CODEBLOCK_{_uuid.uuid4().hex}\x00"
             protected[key] = match.group(0)
-            counter += 1
             return key
 
         safe_text = self._CODE_BLOCK_PATTERN.sub(protect_code, text)

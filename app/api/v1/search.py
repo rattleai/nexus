@@ -128,27 +128,43 @@ async def search(
         filters.section_title = f.section_title
         filters.namespace = f.namespace
         if f.date_from:
-            from datetime import datetime, timezone
-            filters.date_from = datetime.fromisoformat(f.date_from)
+            from datetime import datetime as dt, timezone
+
+            try:
+                parsed = dt.fromisoformat(f.date_from)
+                filters.date_from = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid date_from format: {f.date_from}")
         if f.date_to:
-            from datetime import datetime, timezone
-            filters.date_to = datetime.fromisoformat(f.date_to)
+            from datetime import datetime as dt, timezone
+
+            try:
+                parsed = dt.fromisoformat(f.date_to)
+                filters.date_to = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid date_to format: {f.date_to}")
 
     # Determine limit (over-fetch if reranking)
     fetch_limit = request.limit * 3 if request.rerank else request.limit
 
     # Execute search
-    results = await hybrid_search_engine.search(
-        query=request.query,
-        tenant_id=tenant.id,
-        sources=sources,
-        filters=filters,
-        limit=fetch_limit,
-        search_type=search_type,
-        vector_weight=request.vector_weight,
-        text_weight=request.text_weight,
-        db=db,
-    )
+    try:
+        results = await hybrid_search_engine.search(
+            query=request.query,
+            tenant_id=tenant.id,
+            sources=sources,
+            filters=filters,
+            limit=fetch_limit,
+            search_type=search_type,
+            vector_weight=request.vector_weight,
+            text_weight=request.text_weight,
+            db=db,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error("search_failed", error=type(exc).__name__, exc_info=True)
+        raise HTTPException(status_code=500, detail="Search operation failed")
 
     # Apply re-ranking if requested
     reranked = False

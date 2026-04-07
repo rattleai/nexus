@@ -87,8 +87,13 @@ class Reranker:
             )
             return results
 
-        except Exception:
-            logger.warning("rerank_failed", provider=provider.value, exc_info=True)
+        except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError, TypeError) as exc:
+            logger.warning(
+                "rerank_failed",
+                provider=provider.value,
+                error=type(exc).__name__,
+                exc_info=True,
+            )
             return self._noop_rerank(documents, top_k)
 
     @staticmethod
@@ -128,10 +133,13 @@ class Reranker:
 
             results = []
             for item in data.get("results", []):
-                idx = item["index"]
+                idx = item.get("index")
+                if idx is None or not isinstance(idx, int) or not (0 <= idx < len(documents)):
+                    logger.warning("rerank_invalid_index", idx=idx, max=len(documents))
+                    continue
                 results.append(RerankerResult(
                     index=idx,
-                    score=item["relevance_score"],
+                    score=item.get("relevance_score", 0.0),
                     text=documents[idx],
                 ))
             return sorted(results, key=lambda r: r.score, reverse=True)
@@ -157,12 +165,19 @@ class Reranker:
             data = response.json()
 
             results = []
-            for item in data.get("results", data if isinstance(data, list) else []):
-                idx = item.get("index", 0)
+            items = data.get("results", data if isinstance(data, list) else [])
+            for item in items:
+                if not isinstance(item, dict):
+                    logger.warning("rerank_non_dict_result", item_type=type(item).__name__)
+                    continue
+                idx = item.get("index")
+                if idx is None or not isinstance(idx, int) or not (0 <= idx < len(documents)):
+                    logger.warning("rerank_invalid_index", idx=idx, max=len(documents))
+                    continue
                 results.append(RerankerResult(
                     index=idx,
                     score=item.get("score", item.get("relevance_score", 0.0)),
-                    text=documents[idx] if idx < len(documents) else "",
+                    text=documents[idx],
                 ))
             return sorted(results, key=lambda r: r.score, reverse=True)[:top_k]
 

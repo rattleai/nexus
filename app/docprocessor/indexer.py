@@ -88,11 +88,27 @@ class ContentIndexer:
         def _to_vector_str(emb: list[float] | None) -> str | None:
             if emb is None:
                 return None
-            return "[" + ",".join(str(v) for v in emb) + "]"
+            from app.ai.embedding_gateway import embedding_to_vector_str
+
+            try:
+                return embedding_to_vector_str(emb)
+            except ValueError:
+                logger.warning("invalid_embedding_values", exc_info=True)
+                return None
+
+        # Ensure embeddings list matches chunks (pad with None if partial failure)
+        if len(embeddings) < len(all_chunks):
+            logger.warning(
+                "partial_embedding_generation",
+                data_source_id=str(data_source_id),
+                expected=len(all_chunks),
+                got=len(embeddings),
+            )
+            embeddings.extend([None] * (len(all_chunks) - len(embeddings)))
 
         stored = 0
         now = datetime.now(UTC)
-        for idx, (chunk_text, embedding) in enumerate(zip(all_chunks, embeddings, strict=False)):
+        for idx, (chunk_text, embedding) in enumerate(zip(all_chunks, embeddings, strict=True)):
             # Determine section title for the chunk
             section_title = None
             if idx < len(text_chunks):

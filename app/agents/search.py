@@ -3,6 +3,10 @@
 Combines pgvector cosine similarity with PostgreSQL full-text search
 using Reciprocal Rank Fusion (RRF). Searches across both
 DataSourceChunks and AgentMemoryEntries with tenant-scoped isolation.
+
+SQL Safety: All filter clauses use parameterized queries via SQLAlchemy
+text() bindings. The WHERE clause is assembled from a fixed set of
+known-safe SQL fragments — no user input is interpolated into SQL.
 """
 
 from __future__ import annotations
@@ -70,6 +74,31 @@ class SearchResult:
     search_type: SearchType = SearchType.HYBRID
 
 
+def _build_vector_str(embedding: list[float]) -> str:
+    """Convert embedding to pgvector-compatible string, with validation."""
+    from app.ai.embedding_gateway import embedding_to_vector_str
+
+    return embedding_to_vector_str(embedding)
+
+
+def _escape_like(value: str) -> str:
+    """Escape LIKE/ILIKE special characters in a search pattern."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+# ── Known-safe SQL filter fragments ──────────────────────────
+# Each entry maps a filter name to a fixed SQL clause. Only these
+# are ever appended to WHERE clauses — no user input is interpolated.
+_FILTER_SQL = {
+    "data_source_ids": "dsc.data_source_id = ANY(:data_source_ids)",
+    "source_types": "dsc.content_type = ANY(:source_types)",
+    "tags": "dsc.tags ?| :tags",
+    "date_from": "dsc.indexed_at >= :date_from",
+    "date_to": "dsc.indexed_at <= :date_to",
+    "section_title": "dsc.section_title ILIKE :section_title ESCAPE '\\'",
+}
+
+
 class HybridSearchEngine:
     """Hybrid search combining vector similarity and full-text search with RRF."""
 
@@ -105,14 +134,19 @@ class HybridSearchEngine:
         sources = sources or [SearchSource.CHUNKS, SearchSource.MEMORY]
         filters = filters or SearchFilters()
         limit = min(limit, 50)
-        over_fetch = limit * 3  # Over-fetch for RRF merging
+        # Over-fetch factor of 3x for RRF merging: ensures enough candidates
+        # from each search mode to produce quality fused results.
+        over_fetch = limit * 3
+
+        # Validate weights
+        if vector_weight + text_weight <= 0:
+            vector_weight, text_weight = 0.6, 0.4
 
         start = time.monotonic()
 
         results: list[SearchResult] = []
 
-        if search_type == SearchType.VECTOR or search_type == SearchType.HYBRID:
-            # Generate query embedding
+        if search_type in (SearchType.VECTOR, SearchType.HYBRID):
             query_embedding = await self._get_query_embedding(query)
             if query_embedding is None and search_type == SearchType.VECTOR:
                 return []
@@ -161,13 +195,21 @@ class HybridSearchEngine:
         else:
             RAG_RETRIEVAL_EMPTY_TOTAL.labels(search_type=search_type.value).inc()
 
-        logger.info(
-            "hybrid_search_completed",
-            search_type=search_type.value,
-            sources=[s.value for s in sources],
-            results=len(results),
-            latency_ms=int(elapsed * 1000),
-        )
+        if elapsed > 1.0:
+            logger.warning(
+                "slow_search_query",
+                search_type=search_type.value,
+                latency_ms=int(elapsed * 1000),
+                results=len(results),
+            )
+        else:
+            logger.info(
+                "hybrid_search_completed",
+                search_type=search_type.value,
+                sources=[s.value for s in sources],
+                results=len(results),
+                latency_ms=int(elapsed * 1000),
+            )
         return results
 
     async def _get_query_embedding(self, query: str) -> list[float] | None:
@@ -176,8 +218,8 @@ class HybridSearchEngine:
             from app.ai.embedding_gateway import embedding_gateway
 
             return await embedding_gateway.generate(query)
-        except Exception:
-            logger.warning("search_query_embedding_failed", exc_info=True)
+        except (httpx_errors_tuple()) as exc:
+            logger.warning("search_query_embedding_failed", error=type(exc).__name__, exc_info=True)
             return None
 
     async def _search_chunks(
@@ -200,26 +242,26 @@ class HybridSearchEngine:
             "query": query,
         }
 
-        # Build filter clauses
+        # Build filter clauses from the fixed-safe SQL fragments
         filter_clauses = ["dsc.tenant_id = :tenant_id"]
         if filters.data_source_ids:
-            filter_clauses.append("dsc.data_source_id = ANY(:data_source_ids)")
+            filter_clauses.append(_FILTER_SQL["data_source_ids"])
             params["data_source_ids"] = [str(d) for d in filters.data_source_ids]
         if filters.source_types:
-            filter_clauses.append("dsc.content_type = ANY(:source_types)")
+            filter_clauses.append(_FILTER_SQL["source_types"])
             params["source_types"] = filters.source_types
         if filters.tags:
-            filter_clauses.append("dsc.tags ?| :tags")
+            filter_clauses.append(_FILTER_SQL["tags"])
             params["tags"] = filters.tags
         if filters.date_from:
-            filter_clauses.append("dsc.indexed_at >= :date_from")
+            filter_clauses.append(_FILTER_SQL["date_from"])
             params["date_from"] = filters.date_from
         if filters.date_to:
-            filter_clauses.append("dsc.indexed_at <= :date_to")
+            filter_clauses.append(_FILTER_SQL["date_to"])
             params["date_to"] = filters.date_to
         if filters.section_title:
-            filter_clauses.append("dsc.section_title ILIKE :section_title")
-            params["section_title"] = f"%{filters.section_title}%"
+            filter_clauses.append(_FILTER_SQL["section_title"])
+            params["section_title"] = f"%{_escape_like(filters.section_title)}%"
 
         where = " AND ".join(filter_clauses)
 
@@ -235,7 +277,6 @@ class HybridSearchEngine:
         elif search_type == SearchType.TEXT:
             return await self._text_chunk_search(query, where, params, limit, db)
         elif query_embedding is not None:
-            # Hybrid requested but fallback to vector-only
             return await self._vector_chunk_search(
                 query_embedding, where, params, limit, db,
             )
@@ -254,15 +295,14 @@ class HybridSearchEngine:
         db: AsyncSession,
     ) -> list[SearchResult]:
         """Combined vector + full-text search with RRF scoring."""
-        vector_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
-        params["query_vec"] = vector_str
+        params["query_vec"] = _build_vector_str(query_embedding)
         params["vec_w"] = vector_weight
         params["text_w"] = text_weight
 
         sql = f"""
             WITH vector_results AS (
                 SELECT dsc.id, dsc.content, dsc.data_source_id, dsc.section_title,
-                       dsc.content_type, dsc.tags,
+                       dsc.content_type,
                        1 - (dsc.embedding_vec <=> :query_vec::vector) AS vec_score,
                        ROW_NUMBER() OVER (ORDER BY dsc.embedding_vec <=> :query_vec::vector) AS vec_rank
                 FROM data_source_chunks dsc
@@ -272,7 +312,7 @@ class HybridSearchEngine:
             ),
             text_results AS (
                 SELECT dsc.id, dsc.content, dsc.data_source_id, dsc.section_title,
-                       dsc.content_type, dsc.tags,
+                       dsc.content_type,
                        ts_rank_cd(dsc.content_tsv, plainto_tsquery('english', :query)) AS text_score,
                        ROW_NUMBER() OVER (
                            ORDER BY ts_rank_cd(dsc.content_tsv, plainto_tsquery('english', :query)) DESC
@@ -303,8 +343,8 @@ class HybridSearchEngine:
         return [
             SearchResult(
                 id=str(row["id"]),
-                content=row["content"],
-                score=float(row["rrf_score"]),
+                content=row["content"] or "",
+                score=float(row["rrf_score"] or 0),
                 source=SearchSource.CHUNKS,
                 source_id=str(row["data_source_id"]) if row["data_source_id"] else "",
                 metadata={
@@ -327,8 +367,7 @@ class HybridSearchEngine:
         db: AsyncSession,
     ) -> list[SearchResult]:
         """Pure vector similarity search on chunks."""
-        vector_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
-        params["query_vec"] = vector_str
+        params["query_vec"] = _build_vector_str(query_embedding)
 
         sql = f"""
             SELECT dsc.id, dsc.content, dsc.data_source_id, dsc.section_title,
@@ -346,8 +385,8 @@ class HybridSearchEngine:
         return [
             SearchResult(
                 id=str(row["id"]),
-                content=row["content"],
-                score=float(row["score"]),
+                content=row["content"] or "",
+                score=float(row["score"] or 0),
                 source=SearchSource.CHUNKS,
                 source_id=str(row["data_source_id"]) if row["data_source_id"] else "",
                 metadata={
@@ -384,8 +423,8 @@ class HybridSearchEngine:
         return [
             SearchResult(
                 id=str(row["id"]),
-                content=row["content"],
-                score=float(row["score"]),
+                content=row["content"] or "",
+                score=float(row["score"] or 0),
                 source=SearchSource.CHUNKS,
                 source_id=str(row["data_source_id"]) if row["data_source_id"] else "",
                 metadata={
@@ -415,7 +454,7 @@ class HybridSearchEngine:
         if not settings.AGENT_MEMORY_VECTOR_ENABLED:
             return []
 
-        vector_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+        vector_str = _build_vector_str(query_embedding)
 
         sql = """
             SELECT key, value, namespace,
@@ -440,20 +479,45 @@ class HybridSearchEngine:
         )
         rows = result.mappings().all()
 
-        return [
-            SearchResult(
+        search_results = []
+        for row in rows:
+            val = row["value"]
+            if isinstance(val, dict):
+                content = val.get("text", "")
+                source_ref = val.get("source", "")
+            elif isinstance(val, str):
+                content = val
+                source_ref = ""
+            else:
+                content = str(val)[:1000] if val is not None else ""
+                source_ref = ""
+
+            search_results.append(SearchResult(
                 id=row["key"],
-                content=row["value"].get("text", "") if isinstance(row["value"], dict) else str(row["value"]),
-                score=float(row["score"]),
+                content=content,
+                score=float(row["score"] or 0),
                 source=SearchSource.MEMORY,
                 metadata={
                     "namespace": row["namespace"],
-                    "source": row["value"].get("source", "") if isinstance(row["value"], dict) else "",
+                    "source": source_ref,
                 },
                 search_type=SearchType.VECTOR,
-            )
-            for row in rows
-        ]
+            ))
+        return search_results
+
+
+def httpx_errors_tuple() -> tuple:
+    """Return a tuple of exception types that indicate transient embedding failures."""
+    from app.ai.embedding_gateway import EmbeddingGatewayError
+
+    import httpx
+    return (
+        httpx.RequestError,
+        httpx.HTTPStatusError,
+        TimeoutError,
+        ValueError,
+        EmbeddingGatewayError,
+    )
 
 
 # Module-level singleton

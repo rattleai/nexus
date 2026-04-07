@@ -147,12 +147,22 @@ class DataSource(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
 
 
 class VectorType(UserDefinedType):
-    """SQLAlchemy type for pgvector's vector column."""
+    """SQLAlchemy type for pgvector's vector column.
+
+    Handles serialization/deserialization between Python lists and
+    PostgreSQL vector type. Implements proper caching support.
+    """
 
     cache_ok = True
 
     def __init__(self, dimensions: int = 1536):
         self.dimensions = dimensions
+
+    def __eq__(self, other):
+        return isinstance(other, VectorType) and self.dimensions == other.dimensions
+
+    def __hash__(self):
+        return hash((VectorType, self.dimensions))
 
     def get_col_spec(self) -> str:
         return f"vector({self.dimensions})"
@@ -161,7 +171,16 @@ class VectorType(UserDefinedType):
         return bindvalue
 
     def result_processor(self, dialect, coltype):
-        return None
+        """Parse pgvector string format '[1.0,2.0,3.0]' to Python list."""
+        def process(value):
+            if value is None:
+                return None
+            if isinstance(value, list):
+                return value
+            if isinstance(value, str):
+                return [float(x) for x in value.strip("[]").split(",") if x.strip()]
+            return value
+        return process
 
 
 class DataSourceChunk(TimestampMixin, Base):
@@ -183,12 +202,16 @@ class DataSourceChunk(TimestampMixin, Base):
     section_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     table_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # Native pgvector column for hardware-accelerated similarity search (HNSW indexed)
-    embedding_vec = mapped_column(VectorType(1536), nullable=True)
-    # Auto-maintained tsvector for full-text search (GIN indexed, trigger-updated)
-    content_tsv = mapped_column("content_tsv", Text, nullable=True)
+    # Native pgvector column for hardware-accelerated similarity search (HNSW indexed).
+    # Values are stored as pgvector string format '[1.0,2.0,...]' and parsed
+    # back to Python lists by VectorType.result_processor().
+    embedding_vec: Mapped[list | None] = mapped_column(VectorType(1536), nullable=True)
+    # Auto-maintained tsvector for full-text search (GIN indexed, trigger-updated).
+    # Column type is tsvector in PostgreSQL; mapped as Text here since SQLAlchemy
+    # doesn't have a native tsvector type. Reads return raw tsvector strings.
+    content_tsv: Mapped[str | None] = mapped_column("content_tsv", Text, nullable=True)
     # Metadata for filtering
-    tags: Mapped[dict] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    tags: Mapped[list | None] = mapped_column(JSONB, nullable=False, server_default="[]")
     content_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
