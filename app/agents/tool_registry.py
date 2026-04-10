@@ -116,6 +116,48 @@ _BUILTIN_TOOLS: dict[str, dict[str, Any]] = {
             "required": ["code"],
         },
     },
+    "rag_search": {
+        "description": (
+            "Search documents and agent memory using AI-powered hybrid search. "
+            "Combines vector similarity (semantic meaning) with full-text keyword matching. "
+            "Use this to find relevant information across uploaded documents, JSON data, "
+            "PDFs, spreadsheets, and agent memory. Supports filtering by source type, "
+            "date range, and tags."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Natural language search query (e.g., 'stainless steel bolts with high tensile strength')",
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["chunks", "memory"]},
+                    "description": "Where to search: 'chunks' (documents), 'memory' (agent memory), or both. Defaults to both.",
+                },
+                "search_type": {
+                    "type": "string",
+                    "enum": ["hybrid", "vector", "text"],
+                    "description": "Search mode: 'hybrid' (recommended, combines vector+text), 'vector' (semantic only), 'text' (keyword only). Defaults to hybrid.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum results to return (1-50). Defaults to 10.",
+                },
+                "source_types": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Filter by document type (e.g., ['json', 'pdf', 'csv']). Optional.",
+                },
+                "rerank": {
+                    "type": "boolean",
+                    "description": "Apply re-ranking for improved precision. Defaults to false.",
+                },
+            },
+            "required": ["query"],
+        },
+    },
 }
 
 
@@ -131,6 +173,12 @@ PLATFORM_CAPABILITIES = CapabilityDomain(
             label="AI Completion",
             description="Run AI completions and list available models",
             tools=("ai_complete", "ai_list_models"),
+        ),
+        ToolCapability(
+            slug="platform:search",
+            label="RAG Search",
+            description="Search documents and memory using AI-powered hybrid vector + text search",
+            tools=("rag_search",),
         ),
         ToolCapability(
             slug="platform:files",
@@ -301,6 +349,52 @@ class ToolRegistry:
             elif tool_name == "ai_list_models":
                 from app.mcp.tools.ai import ai_list_models
                 return await ai_list_models(tenant=tenant, db=db)
+            elif tool_name == "rag_search":
+                from app.agents.search import (
+                    SearchFilters,
+                    SearchSource,
+                    SearchType,
+                    hybrid_search_engine,
+                )
+                from app.agents.reranker import reranker as _reranker
+                from app.db.session import set_tenant_context
+
+                await set_tenant_context(db, str(tenant_id))
+                query = arguments.get("query", "")
+                sources = [SearchSource(s) for s in arguments.get("sources", ["chunks", "memory"])]
+                search_type = SearchType(arguments.get("search_type", "hybrid"))
+                filters = SearchFilters(
+                    source_types=arguments.get("source_types"),
+                )
+                limit = min(arguments.get("limit", 10), 50)
+
+                results = await hybrid_search_engine.search(
+                    query=query,
+                    tenant_id=tenant_id,
+                    sources=sources,
+                    filters=filters,
+                    limit=limit * 3 if arguments.get("rerank") else limit,
+                    search_type=search_type,
+                    db=db,
+                )
+
+                if arguments.get("rerank") and results:
+                    docs = [r.content for r in results]
+                    reranked = await _reranker.rerank(query=query, documents=docs, top_k=limit)
+                    results = [results[rr.index] for rr in reranked if rr.index < len(results)]
+                else:
+                    results = results[:limit]
+
+                return [
+                    {
+                        "content": r.content,
+                        "score": round(r.score, 4),
+                        "source_type": r.source.value,
+                        "source_id": r.source_id,
+                        "metadata": r.metadata,
+                    }
+                    for r in results
+                ]
             elif tool_name == "file_upload":
                 from app.mcp.tools.files import file_upload
                 return await file_upload(
