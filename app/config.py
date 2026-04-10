@@ -211,10 +211,11 @@ class Settings(BaseSettings):
     RAG_CHUNK_OVERLAP: int = 200
     RAG_SEMANTIC_SIMILARITY_THRESHOLD: float = 0.5
 
-    # Vector quantization — controls which column is used for search
-    # "full"  = float32 vector(1536) — highest accuracy, 6 KB/vector
-    # "half"  = float16 halfvec(1536) — near-zero loss, 3 KB/vector (recommended)
-    # "binary" = bit(1536) — 97% smaller but lower recall, 192 bytes/vector
+    # Vector quantization — controls which column is used for search.
+    # Valid values (see VectorPrecision enum in app/db/models/datasource.py):
+    #   "full"   = float32 vector(1536) — highest accuracy, 6 KB/vector
+    #   "half"   = float16 halfvec(1536) — near-zero loss, 3 KB/vector (recommended)
+    #   "binary" = 1-bit bit(1536) — 97% smaller but lower recall, 192 bytes/vector
     VECTOR_QUANTIZATION: str = "half"
 
     # RAG Re-ranking
@@ -443,6 +444,25 @@ def validate_settings() -> None:
 def _validate_security_config() -> None:
     """Validate agent security configuration at startup."""
     errors: list[str] = []
+
+    # ── RAG / Vector config validation ────────────────────────
+    if settings.VECTOR_QUANTIZATION not in ("full", "half", "binary"):
+        errors.append(
+            f"VECTOR_QUANTIZATION must be 'full', 'half', or 'binary', "
+            f"got '{settings.VECTOR_QUANTIZATION}'"
+        )
+    if settings.RAG_CHUNKING_STRATEGY not in (
+        "fixed_size", "recursive", "markdown", "semantic",
+    ):
+        errors.append(
+            f"RAG_CHUNKING_STRATEGY must be fixed_size|recursive|markdown|semantic, "
+            f"got '{settings.RAG_CHUNKING_STRATEGY}'"
+        )
+    if settings.RAG_RERANKER_PROVIDER not in ("none", "cohere", "cross_encoder"):
+        errors.append(
+            f"RAG_RERANKER_PROVIDER must be none|cohere|cross_encoder, "
+            f"got '{settings.RAG_RERANKER_PROVIDER}'"
+        )
 
     # Validate enum values
     if settings.PROMPT_FIREWALL_FAIL_MODE not in ("log", "block"):

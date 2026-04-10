@@ -25,6 +25,14 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import UserDefinedType
 
+
+class VectorPrecision(enum.StrEnum):
+    """Vector storage precision modes for pgvector columns."""
+
+    FULL = "full"      # float32 vector(N) — 4 bytes/dim
+    HALF = "half"      # float16 halfvec(N) — 2 bytes/dim (50% savings)
+    BINARY = "binary"  # 1-bit bit(N) — 0.125 bytes/dim (97% savings)
+
 from app.db.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin
 
 
@@ -150,19 +158,19 @@ class VectorType(UserDefinedType):
     """SQLAlchemy type for pgvector's vector column.
 
     Handles serialization/deserialization between Python lists and
-    PostgreSQL vector type. Implements proper caching support.
-
-    Supports three precision modes via the `precision` parameter:
-      - "full" (default): float32, vector(N) — 4 bytes/dim
-      - "half": float16, halfvec(N) — 2 bytes/dim (50% savings)
-      - "binary": 1-bit, bit(N) — 0.125 bytes/dim (97% savings)
+    PostgreSQL vector types. The precision parameter determines the
+    underlying SQL type (vector, halfvec, or bit).
     """
 
     cache_ok = True
 
-    def __init__(self, dimensions: int = 1536, precision: str = "full"):
+    def __init__(
+        self,
+        dimensions: int = 1536,
+        precision: VectorPrecision | str = VectorPrecision.FULL,
+    ):
         self.dimensions = dimensions
-        self.precision = precision
+        self.precision = VectorPrecision(precision)
 
     def __eq__(self, other):
         return (
@@ -175,9 +183,9 @@ class VectorType(UserDefinedType):
         return hash((VectorType, self.dimensions, self.precision))
 
     def get_col_spec(self) -> str:
-        if self.precision == "half":
+        if self.precision == VectorPrecision.HALF:
             return f"halfvec({self.dimensions})"
-        elif self.precision == "binary":
+        if self.precision == VectorPrecision.BINARY:
             return f"bit({self.dimensions})"
         return f"vector({self.dimensions})"
 
@@ -185,15 +193,21 @@ class VectorType(UserDefinedType):
         return bindvalue
 
     def result_processor(self, dialect, coltype):
-        """Parse pgvector string format '[1.0,2.0,3.0]' to Python list."""
+        """Parse pgvector string format '[1.0,2.0,3.0]' to Python list.
+
+        Always returns list[float] or None — never leaks raw driver strings.
+        """
         def process(value):
             if value is None:
                 return None
             if isinstance(value, list):
                 return value
             if isinstance(value, str):
-                return [float(x) for x in value.strip("[]").split(",") if x.strip()]
-            return value
+                stripped = value.strip("[]")
+                if not stripped:
+                    return []
+                return [float(x) for x in stripped.split(",") if x.strip()]
+            return None
         return process
 
 

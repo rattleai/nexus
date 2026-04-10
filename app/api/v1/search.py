@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 import structlog
@@ -31,6 +32,15 @@ from app.db.session import set_tenant_context
 logger = structlog.stdlib.get_logger()
 
 router = APIRouter(prefix="/search", tags=["search"])
+
+
+def _parse_iso_with_tz(value: str, field_name: str) -> datetime:
+    """Parse ISO-8601 datetime; default naive values to UTC."""
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name} format: {value}")
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 # ── Request / Response schemas ───────────────────────────────
@@ -128,21 +138,9 @@ async def search(
         filters.section_title = f.section_title
         filters.namespace = f.namespace
         if f.date_from:
-            from datetime import datetime as dt, timezone
-
-            try:
-                parsed = dt.fromisoformat(f.date_from)
-                filters.date_from = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-            except ValueError:
-                raise HTTPException(status_code=400, detail=f"Invalid date_from format: {f.date_from}")
+            filters.date_from = _parse_iso_with_tz(f.date_from, "date_from")
         if f.date_to:
-            from datetime import datetime as dt, timezone
-
-            try:
-                parsed = dt.fromisoformat(f.date_to)
-                filters.date_to = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-            except ValueError:
-                raise HTTPException(status_code=400, detail=f"Invalid date_to format: {f.date_to}")
+            filters.date_to = _parse_iso_with_tz(f.date_to, "date_to")
 
     # Determine limit (over-fetch if reranking)
     fetch_limit = request.limit * 3 if request.rerank else request.limit

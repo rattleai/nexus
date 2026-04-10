@@ -18,10 +18,16 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+import httpx
 import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.embedding_gateway import (
+    EmbeddingGatewayError,
+    embedding_gateway,
+    embedding_to_vector_str,
+)
 from app.ai.metrics import (
     RAG_CHUNKS_PER_QUERY,
     RAG_RETRIEVAL_EMPTY_TOTAL,
@@ -30,11 +36,24 @@ from app.ai.metrics import (
     RAG_TOP_SCORE,
 )
 from app.config import settings
+from app.core.query_utils import escape_like
+from app.db.models.datasource import VectorPrecision
 
 logger = structlog.stdlib.get_logger()
 
 # Standard RRF constant (from the original RRF paper)
 RRF_K = 60
+
+# Exception types that indicate transient/expected embedding failures
+# (network errors, validation errors, gateway errors). Catching these
+# allows fallback to text-only search; other exceptions propagate.
+_EMBEDDING_FAILURE_TYPES = (
+    httpx.RequestError,
+    httpx.HTTPStatusError,
+    TimeoutError,
+    ValueError,
+    EmbeddingGatewayError,
+)
 
 
 class SearchType(enum.StrEnum):
@@ -74,41 +93,18 @@ class SearchResult:
     search_type: SearchType = SearchType.HYBRID
 
 
-def _build_vector_str(embedding: list[float]) -> str:
-    """Convert embedding to pgvector-compatible string, with validation."""
-    from app.ai.embedding_gateway import embedding_to_vector_str
-
-    return embedding_to_vector_str(embedding)
-
-
 def _vec_column() -> str:
-    """Return the vector column name based on quantization config.
-
-    When VECTOR_QUANTIZATION="half", searches use the halfvec column
-    which is 50% smaller and uses a smaller HNSW index. The cast
-    operator (::halfvec) ensures the query vector matches the column type.
-    """
-    if settings.VECTOR_QUANTIZATION == "half":
+    """Column name for vector search. Switches to halfvec for 50% storage savings."""
+    if settings.VECTOR_QUANTIZATION == VectorPrecision.HALF:
         return "embedding_halfvec"
     return "embedding_vec"
 
 
 def _vec_cast() -> str:
-    """Return the SQL cast suffix for the query vector."""
-    if settings.VECTOR_QUANTIZATION == "half":
+    """SQL cast suffix matching the column type from _vec_column()."""
+    if settings.VECTOR_QUANTIZATION == VectorPrecision.HALF:
         return "::halfvec(1536)"
     return "::vector"
-
-
-def _vec_ops() -> str:
-    """Return the cosine distance operator for the configured precision."""
-    # pgvector uses <=> for cosine distance on all types
-    return "<=>"
-
-
-def _escape_like(value: str) -> str:
-    """Escape LIKE/ILIKE special characters in a search pattern."""
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 # ── Known-safe SQL filter fragments ──────────────────────────
@@ -178,7 +174,8 @@ class HybridSearchEngine:
         else:
             query_embedding = None
 
-        # Search each source
+        # Chunks and memory searches share the same AsyncSession, which is
+        # NOT safe for concurrent use — run them sequentially.
         if SearchSource.CHUNKS in sources:
             chunk_results = await self._search_chunks(
                 query=query,
@@ -238,12 +235,10 @@ class HybridSearchEngine:
         return results
 
     async def _get_query_embedding(self, query: str) -> list[float] | None:
-        """Generate embedding for the query."""
+        """Generate embedding for the query. Returns None on transient failure."""
         try:
-            from app.ai.embedding_gateway import embedding_gateway
-
             return await embedding_gateway.generate(query)
-        except (httpx_errors_tuple()) as exc:
+        except _EMBEDDING_FAILURE_TYPES as exc:
             logger.warning("search_query_embedding_failed", error=type(exc).__name__, exc_info=True)
             return None
 
@@ -286,7 +281,7 @@ class HybridSearchEngine:
             params["date_to"] = filters.date_to
         if filters.section_title:
             filter_clauses.append(_FILTER_SQL["section_title"])
-            params["section_title"] = f"%{_escape_like(filters.section_title)}%"
+            params["section_title"] = f"%{escape_like(filters.section_title)}%"
 
         where = " AND ".join(filter_clauses)
 
@@ -320,7 +315,7 @@ class HybridSearchEngine:
         db: AsyncSession,
     ) -> list[SearchResult]:
         """Combined vector + full-text search with RRF scoring."""
-        params["query_vec"] = _build_vector_str(query_embedding)
+        params["query_vec"] = embedding_to_vector_str(query_embedding)
         params["vec_w"] = vector_weight
         params["text_w"] = text_weight
 
@@ -331,11 +326,11 @@ class HybridSearchEngine:
             WITH vector_results AS (
                 SELECT dsc.id, dsc.content, dsc.data_source_id, dsc.section_title,
                        dsc.content_type,
-                       1 - (dsc.{col} {_vec_ops()} :query_vec{cast}) AS vec_score,
-                       ROW_NUMBER() OVER (ORDER BY dsc.{col} {_vec_ops()} :query_vec{cast}) AS vec_rank
+                       1 - (dsc.{col} <=> :query_vec{cast}) AS vec_score,
+                       ROW_NUMBER() OVER (ORDER BY dsc.{col} <=> :query_vec{cast}) AS vec_rank
                 FROM data_source_chunks dsc
                 WHERE {where} AND dsc.{col} IS NOT NULL
-                ORDER BY dsc.{col} {_vec_ops()} :query_vec{cast}
+                ORDER BY dsc.{col} <=> :query_vec{cast}
                 LIMIT :limit
             ),
             text_results AS (
@@ -395,7 +390,7 @@ class HybridSearchEngine:
         db: AsyncSession,
     ) -> list[SearchResult]:
         """Pure vector similarity search on chunks."""
-        params["query_vec"] = _build_vector_str(query_embedding)
+        params["query_vec"] = embedding_to_vector_str(query_embedding)
 
         col = _vec_column()
         cast = _vec_cast()
@@ -403,10 +398,10 @@ class HybridSearchEngine:
         sql = f"""
             SELECT dsc.id, dsc.content, dsc.data_source_id, dsc.section_title,
                    dsc.content_type,
-                   1 - (dsc.{col} {_vec_ops()} :query_vec{cast}) AS score
+                   1 - (dsc.{col} <=> :query_vec{cast}) AS score
             FROM data_source_chunks dsc
             WHERE {where} AND dsc.{col} IS NOT NULL
-            ORDER BY dsc.{col} {_vec_ops()} :query_vec{cast}
+            ORDER BY dsc.{col} <=> :query_vec{cast}
             LIMIT :limit
         """
 
@@ -485,20 +480,20 @@ class HybridSearchEngine:
         if not settings.AGENT_MEMORY_VECTOR_ENABLED:
             return []
 
-        vector_str = _build_vector_str(query_embedding)
+        vector_str = embedding_to_vector_str(query_embedding)
 
         col = _vec_column()
         cast = _vec_cast()
 
         sql = f"""
             SELECT key, value, namespace,
-                   1 - ({col} {_vec_ops()} :query_vec{cast}) AS score
+                   1 - ({col} <=> :query_vec{cast}) AS score
             FROM agent_memory_entries
             WHERE tenant_id = :tenant_id
               AND namespace = :namespace
               AND {col} IS NOT NULL
               AND (expires_at IS NULL OR expires_at > now())
-            ORDER BY {col} {_vec_ops()} :query_vec{cast}
+            ORDER BY {col} <=> :query_vec{cast}
             LIMIT :limit
         """
 
@@ -538,20 +533,6 @@ class HybridSearchEngine:
                 search_type=SearchType.VECTOR,
             ))
         return search_results
-
-
-def httpx_errors_tuple() -> tuple:
-    """Return a tuple of exception types that indicate transient embedding failures."""
-    from app.ai.embedding_gateway import EmbeddingGatewayError
-
-    import httpx
-    return (
-        httpx.RequestError,
-        httpx.HTTPStatusError,
-        TimeoutError,
-        ValueError,
-        EmbeddingGatewayError,
-    )
 
 
 # Module-level singleton

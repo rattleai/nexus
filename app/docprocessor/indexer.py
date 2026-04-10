@@ -9,10 +9,25 @@ from uuid import UUID
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.embeddings import EmbeddingService
+from app.ai.embedding_gateway import embedding_to_vector_str
 from app.config import settings
+from app.db.models.datasource import DataSource, DataSourceChunk
 from app.docprocessor.base import ExtractedTable, ExtractionResult
+from app.docprocessor.chunking import get_chunker
 
 logger = structlog.stdlib.get_logger()
+
+
+def _to_vector_str(emb: list[float] | None) -> str | None:
+    """Convert an embedding to pgvector string format, tolerant of partial failures."""
+    if emb is None:
+        return None
+    try:
+        return embedding_to_vector_str(emb)
+    except ValueError:
+        logger.warning("invalid_embedding_values", exc_info=True)
+        return None
 
 
 class ContentIndexer:
@@ -43,14 +58,8 @@ class ContentIndexer:
         Returns:
             Number of chunks stored.
         """
-        from app.agents.embeddings import EmbeddingService
-        from app.db.models.datasource import DataSourceChunk
-        from app.docprocessor.chunking import get_chunker
-
-        # Verify tenant ownership (defense-in-depth against mismatched IDs)
+        # Defense-in-depth: verify tenant ownership against mismatched IDs.
         if hasattr(db, "get"):
-            from app.db.models.datasource import DataSource
-
             ds = await db.get(DataSource, data_source_id)
             if ds and str(ds.tenant_id) != str(tenant_id):
                 raise ValueError(
@@ -71,7 +80,6 @@ class ContentIndexer:
             logger.info("no_chunks_to_index", data_source_id=str(data_source_id))
             return 0
 
-        # Generate embeddings
         embedding_service = EmbeddingService()
         try:
             embeddings = await embedding_service.generate_batch(all_chunks)
@@ -84,19 +92,7 @@ class ContentIndexer:
             # Store chunks without embeddings rather than failing entirely
             embeddings = [None] * len(all_chunks)
 
-        # Convert embeddings to pgvector format string for native vector column
-        def _to_vector_str(emb: list[float] | None) -> str | None:
-            if emb is None:
-                return None
-            from app.ai.embedding_gateway import embedding_to_vector_str
-
-            try:
-                return embedding_to_vector_str(emb)
-            except ValueError:
-                logger.warning("invalid_embedding_values", exc_info=True)
-                return None
-
-        # Ensure embeddings list matches chunks (pad with None if partial failure)
+        # Pad embeddings list on partial provider failure
         if len(embeddings) < len(all_chunks):
             logger.warning(
                 "partial_embedding_generation",
@@ -106,19 +102,26 @@ class ContentIndexer:
             )
             embeddings.extend([None] * (len(all_chunks) - len(embeddings)))
 
+        # Pair each section's content with its title once, so the title-match
+        # loop only pays the Python attribute cost per section once.
+        section_pairs = [
+            (section.content, section.title)
+            for section in extraction.sections
+            if section.content
+        ]
+
         stored = 0
         now = datetime.now(UTC)
         for idx, (chunk_text, embedding) in enumerate(zip(all_chunks, embeddings, strict=True)):
-            # Determine section title for the chunk
             section_title = None
             if idx < len(text_chunks):
-                # Use metadata from chunker if available
                 if idx < len(text_metadata) and text_metadata[idx].section_title:
                     section_title = text_metadata[idx].section_title
                 else:
-                    for section in extraction.sections:
-                        if chunk_text[:100] in section.content:
-                            section_title = section.title
+                    chunk_head = chunk_text[:100]
+                    for content, title in section_pairs:
+                        if chunk_head in content:
+                            section_title = title
                             break
             else:
                 section_title = "Table Data"

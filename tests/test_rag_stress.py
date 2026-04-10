@@ -277,6 +277,36 @@ class TestEmbeddingGatewayStress:
                 assert len(results) == 50
                 assert all(len(r) == 1536 for r in results)
 
+    @pytest.mark.asyncio
+    async def test_batch_uses_mget_single_call(self):
+        """generate_batch should call _cache_mget once (not N times)."""
+        gateway = EmbeddingGateway()
+        emb = [0.1] * 1536
+
+        with patch("app.ai.embedding_gateway.settings") as mock_settings:
+            mock_settings.EMBEDDING_DEFAULT_MODEL = "text-embedding-3-small"
+            mock_settings.AGENT_MEMORY_VECTOR_DIMENSIONS = 1536
+            mock_settings.EMBEDDING_CACHE_ENABLED = True
+            mock_settings.EMBEDDING_CACHE_TTL_SECONDS = 86400
+
+            mget_mock = AsyncMock(return_value=[None, None, None])
+            mset_mock = AsyncMock()
+            with patch.object(gateway, "_cache_mget", mget_mock):
+                with patch.object(gateway, "_cache_mset", mset_mock):
+                    with patch.object(
+                        gateway, "_call_provider_batch",
+                        return_value=[emb, emb, emb],
+                    ):
+                        results = await gateway.generate_batch(["a", "b", "c"])
+                        assert len(results) == 3
+                        # Batched cache: one mget call, one mset call
+                        assert mget_mock.call_count == 1
+                        assert mset_mock.call_count == 1
+                        # mget called with exactly 3 keys
+                        assert len(mget_mock.call_args[0][0]) == 3
+                        # mset called with exactly 3 key-value pairs
+                        assert len(mset_mock.call_args[0][0]) == 3
+
 
 # ── Reranker Stress Tests ────────────────────────────────────
 
@@ -343,10 +373,10 @@ from app.agents.search import (
     SearchResult,
     SearchSource,
     SearchType,
-    _escape_like,
-    _vec_column,
     _vec_cast,
+    _vec_column,
 )
+from app.core.query_utils import escape_like
 
 
 class TestSearchStress:
@@ -354,12 +384,12 @@ class TestSearchStress:
 
     def test_escape_like_special_characters(self):
         """ILIKE escape handles all special characters."""
-        assert _escape_like("50% off") == "50\\% off"
-        assert _escape_like("file_name") == "file\\_name"
-        assert _escape_like("back\\slash") == "back\\\\slash"
-        assert _escape_like("normal text") == "normal text"
-        assert _escape_like("") == ""
-        assert _escape_like("%_%\\") == "\\%\\_\\%\\\\"
+        assert escape_like("50% off") == "50\\% off"
+        assert escape_like("file_name") == "file\\_name"
+        assert escape_like("back\\slash") == "back\\\\slash"
+        assert escape_like("normal text") == "normal text"
+        assert escape_like("") == ""
+        assert escape_like("%_%\\") == "\\%\\_\\%\\\\"
 
     @pytest.mark.asyncio
     async def test_search_with_all_filters(self):
@@ -455,7 +485,7 @@ class TestSearchStress:
 
 # ── Model Stress Tests ───────────────────────────────────────
 
-from app.db.models.datasource import VectorType
+from app.db.models.datasource import VectorPrecision, VectorType
 
 
 class TestVectorTypeStress:
@@ -477,18 +507,36 @@ class TestVectorTypeStress:
 
     def test_halfvec_col_spec(self):
         """Half-precision type generates halfvec column spec."""
-        vt = VectorType(1536, precision="half")
+        vt = VectorType(1536, precision=VectorPrecision.HALF)
         assert vt.get_col_spec() == "halfvec(1536)"
 
     def test_binary_col_spec(self):
         """Binary precision type generates bit column spec."""
-        vt = VectorType(1536, precision="binary")
+        vt = VectorType(1536, precision=VectorPrecision.BINARY)
         assert vt.get_col_spec() == "bit(1536)"
 
     def test_full_col_spec(self):
         """Full precision type generates vector column spec."""
-        vt = VectorType(1536, precision="full")
+        vt = VectorType(1536, precision=VectorPrecision.FULL)
         assert vt.get_col_spec() == "vector(1536)"
+
+    def test_precision_accepts_string(self):
+        """VectorType coerces string precision to VectorPrecision enum."""
+        vt = VectorType(1536, precision="half")
+        assert vt.precision == VectorPrecision.HALF
+        assert vt.get_col_spec() == "halfvec(1536)"
+
+    def test_precision_invalid_raises(self):
+        """Invalid precision string raises ValueError via enum coercion."""
+        with pytest.raises(ValueError):
+            VectorType(1536, precision="invalid")
+
+    def test_result_processor_returns_none_for_unknown_type(self):
+        """Result processor rejects raw driver types it doesn't understand."""
+        vt = VectorType(3)
+        processor = vt.result_processor(None, None)
+        assert processor(42) is None
+        assert processor({"not": "a vector"}) is None
 
     def test_different_precision_different_hash(self):
         """Same dimensions but different precision should differ."""
@@ -551,6 +599,34 @@ class TestVectorTypeStress:
 # ── RAG Evaluator Stress Tests ───────────────────────────────
 
 from app.agents.rag_metrics import RAGEvaluator, RetrievalMetrics
+
+
+class TestDateParser:
+    """Tests for the ISO-8601 date parser used in the search API."""
+
+    def test_naive_date_defaults_to_utc(self):
+        from app.api.v1.search import _parse_iso_with_tz
+
+        result = _parse_iso_with_tz("2025-01-15T12:00:00", "date_from")
+        assert result.tzinfo is not None
+        assert result.year == 2025
+
+    def test_aware_date_preserves_tz(self):
+        from app.api.v1.search import _parse_iso_with_tz
+
+        result = _parse_iso_with_tz("2025-01-15T12:00:00+05:00", "date_from")
+        assert result.tzinfo is not None
+        assert result.hour == 12
+
+    def test_invalid_date_raises_http_400(self):
+        from fastapi import HTTPException
+
+        from app.api.v1.search import _parse_iso_with_tz
+
+        with pytest.raises(HTTPException) as exc_info:
+            _parse_iso_with_tz("not-a-date", "date_from")
+        assert exc_info.value.status_code == 400
+        assert "date_from" in exc_info.value.detail
 
 
 class TestRAGEvaluatorStress:

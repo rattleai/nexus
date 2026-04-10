@@ -27,6 +27,7 @@ from app.ai.metrics import (
 )
 from app.config import settings
 from app.core.circuit_breaker import CircuitBreaker
+from app.core.redis import redis_pool
 
 logger = structlog.stdlib.get_logger()
 
@@ -172,13 +173,9 @@ def embedding_to_vector_str(embedding: list[float]) -> str:
 class EmbeddingGateway:
     """Production-grade embedding gateway with caching, circuit breaker, and multi-provider support."""
 
-    def __init__(self):
-        self._default_model = settings.EMBEDDING_DEFAULT_MODEL
-        self._default_dimensions = settings.AGENT_MEMORY_VECTOR_DIMENSIONS
-
     def _resolve_model_info(self, model: str | None) -> EmbeddingModelInfo:
         """Resolve model string to EmbeddingModelInfo."""
-        model = model or self._default_model
+        model = model or settings.EMBEDDING_DEFAULT_MODEL
         info = EMBEDDING_MODEL_CATALOG.get(model)
         if not info:
             raise EmbeddingGatewayError(f"Unknown embedding model: {model}", model=model)
@@ -211,18 +208,15 @@ class EmbeddingGateway:
         Checks Redis cache first, falls back to provider API.
         """
         info = self._resolve_model_info(model)
-        dims = dimensions or min(self._default_dimensions, info.dimensions)
+        dims = dimensions or min(settings.AGENT_MEMORY_VECTOR_DIMENSIONS, info.dimensions)
 
-        # Check cache
         if settings.EMBEDDING_CACHE_ENABLED:
             cached = await self._cache_get(info.model_name, dims, text)
             if cached is not None:
                 return cached
 
-        # Generate via provider
         embedding = await self._call_provider(text, info, dims)
 
-        # Store in cache
         if settings.EMBEDDING_CACHE_ENABLED:
             await self._cache_set(info.model_name, dims, text, embedding)
 
@@ -245,34 +239,40 @@ class EmbeddingGateway:
         if len(texts) > _MAX_BATCH_SIZE:
             raise EmbeddingGatewayError(
                 f"Batch size {len(texts)} exceeds maximum {_MAX_BATCH_SIZE}",
-                model=model or self._default_model,
+                model=model or settings.EMBEDDING_DEFAULT_MODEL,
             )
 
         info = self._resolve_model_info(model)
-        dims = dimensions or min(self._default_dimensions, info.dimensions)
+        dims = dimensions or min(settings.AGENT_MEMORY_VECTOR_DIMENSIONS, info.dimensions)
 
         results: list[list[float] | None] = [None] * len(texts)
         miss_indices: list[int] = []
 
-        # Check cache for each text
         if settings.EMBEDDING_CACHE_ENABLED:
-            for i, text in enumerate(texts):
-                cached = await self._cache_get(info.model_name, dims, text)
-                if cached is not None:
-                    results[i] = cached
+            # Single MGET for all cache lookups instead of N sequential GETs
+            cache_keys = [_cache_key(info.model_name, dims, t) for t in texts]
+            cached_values = await self._cache_mget(cache_keys)
+            for i, raw in enumerate(cached_values):
+                if raw is not None:
+                    results[i] = raw
                 else:
                     miss_indices.append(i)
         else:
             miss_indices = list(range(len(texts)))
 
-        # Call API for cache misses
         if miss_indices:
             miss_texts = [texts[i] for i in miss_indices]
             embeddings = await self._call_provider_batch(miss_texts, info, dims)
             for idx, embedding in zip(miss_indices, embeddings):
                 results[idx] = embedding
-                if settings.EMBEDDING_CACHE_ENABLED:
-                    await self._cache_set(info.model_name, dims, texts[idx], embedding)
+
+            if settings.EMBEDDING_CACHE_ENABLED:
+                # Single pipelined SET for all misses instead of N sequential SETs
+                miss_map = {
+                    _cache_key(info.model_name, dims, texts[idx]): embeddings[j]
+                    for j, idx in enumerate(miss_indices)
+                }
+                await self._cache_mset(miss_map)
 
         return results  # type: ignore[return-value]
 
@@ -521,10 +521,8 @@ class EmbeddingGateway:
 
     async def _cache_get(self, model: str, dimensions: int, text: str) -> list[float] | None:
         """Try to get an embedding from Redis cache."""
+        key = _cache_key(model, dimensions, text)
         try:
-            from app.core.redis import redis_pool
-
-            key = _cache_key(model, dimensions, text)
             raw = await redis_pool.get(key)
             if raw is not None:
                 EMBEDDING_CACHE_HITS_TOTAL.labels(model=model).inc()
@@ -536,14 +534,44 @@ class EmbeddingGateway:
             logger.warning("embedding_cache_get_error", exc_info=True)
         return None
 
+    async def _cache_mget(self, keys: list[str]) -> list[list[float] | None]:
+        """Batch cache lookup via Redis MGET. Returns parallel list of results."""
+        if not keys:
+            return []
+        try:
+            raws = await redis_pool.mget(keys)
+        except Exception:
+            logger.warning("embedding_cache_mget_error", exc_info=True)
+            return [None] * len(keys)
+
+        results: list[list[float] | None] = []
+        hits = 0
+        for raw in raws:
+            if raw is None:
+                results.append(None)
+                continue
+            try:
+                results.append(json.loads(raw))
+                hits += 1
+            except json.JSONDecodeError:
+                logger.warning("embedding_cache_corrupted_value")
+                results.append(None)
+
+        # Record aggregate hit/miss counts once per batch
+        misses = len(keys) - hits
+        model = settings.EMBEDDING_DEFAULT_MODEL
+        if hits:
+            EMBEDDING_CACHE_HITS_TOTAL.labels(model=model).inc(hits)
+        if misses:
+            EMBEDDING_CACHE_MISSES_TOTAL.labels(model=model).inc(misses)
+        return results
+
     async def _cache_set(
         self, model: str, dimensions: int, text: str, embedding: list[float],
     ) -> None:
         """Store an embedding in Redis cache with TTL."""
+        key = _cache_key(model, dimensions, text)
         try:
-            from app.core.redis import redis_pool
-
-            key = _cache_key(model, dimensions, text)
             await redis_pool.setex(
                 key,
                 settings.EMBEDDING_CACHE_TTL_SECONDS,
@@ -551,6 +579,19 @@ class EmbeddingGateway:
             )
         except Exception:
             logger.warning("embedding_cache_set_error", exc_info=True)
+
+    async def _cache_mset(self, key_to_embedding: dict[str, list[float]]) -> None:
+        """Batch cache write via Redis pipeline. Each key gets its own TTL."""
+        if not key_to_embedding:
+            return
+        try:
+            async with redis_pool.pipeline(transaction=False) as pipe:
+                ttl = settings.EMBEDDING_CACHE_TTL_SECONDS
+                for key, embedding in key_to_embedding.items():
+                    pipe.setex(key, ttl, json.dumps(embedding))
+                await pipe.execute()
+        except Exception:
+            logger.warning("embedding_cache_mset_error", exc_info=True)
 
 
 # Module-level singleton

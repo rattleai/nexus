@@ -97,10 +97,9 @@ class TestEmbeddingGateway:
         emb1 = [0.1] * 1536
         emb2 = [0.2] * 1536
 
-        async def mock_cache_get(model, dims, text):
-            if text == "text1":
-                return emb1
-            return None
+        async def mock_mget(keys):
+            # First key = text1 (hit), second = text2 (miss)
+            return [emb1, None]
 
         with patch("app.ai.embedding_gateway.settings") as mock_settings:
             mock_settings.EMBEDDING_DEFAULT_MODEL = "text-embedding-3-small"
@@ -108,8 +107,8 @@ class TestEmbeddingGateway:
             mock_settings.EMBEDDING_CACHE_ENABLED = True
             mock_settings.EMBEDDING_CACHE_TTL_SECONDS = 86400
 
-            with patch.object(gateway, "_cache_get", side_effect=mock_cache_get):
-                with patch.object(gateway, "_cache_set", new_callable=AsyncMock):
+            with patch.object(gateway, "_cache_mget", side_effect=mock_mget):
+                with patch.object(gateway, "_cache_mset", new_callable=AsyncMock):
                     with patch.object(
                         gateway, "_call_provider_batch",
                         return_value=[emb2],
