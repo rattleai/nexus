@@ -64,7 +64,7 @@ class SearchRequest(BaseModel):
     filters: SearchFilterRequest | None = None
     limit: int = Field(default=10, ge=1, le=50)
     search_type: str = Field(default="hybrid", description="vector, text, or hybrid")
-    rerank: bool = Field(default=False, description="Apply re-ranking to results")
+    rerank: bool = Field(default=True, description="Apply re-ranking to results")
     vector_weight: float = Field(default=0.6, ge=0.0, le=1.0)
     text_weight: float = Field(default=0.4, ge=0.0, le=1.0)
 

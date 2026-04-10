@@ -67,6 +67,20 @@ from app.db.models.mobile import (
 from app.db.models.oauth_client import (
     OAuthClient,
 )
+from app.db.models.rag_config import (
+    TenantRAGConfig,
+)
+from app.evaluation.models import (
+    RAGEvaluationDataset,
+    RAGEvaluationQuery,
+    RAGEvaluationResult,
+    RAGEvaluationRun,
+    RAGQueryLog,
+)
+from app.db.models.rag_graph import (
+    RAGEntity,
+    RAGRelationship,
+)
 from app.db.models.operations import (
     AuditLog,
     Consent,
@@ -142,4 +156,15 @@ __all__ = [
     "DataSourceChunk",
     "CloudConnection",
     "CloudProvider",
+    # RAG Configuration
+    "TenantRAGConfig",
+    # RAG Evaluation
+    "RAGEvaluationDataset",
+    "RAGEvaluationQuery",
+    "RAGEvaluationRun",
+    "RAGEvaluationResult",
+    "RAGQueryLog",
+    # RAG Graph
+    "RAGEntity",
+    "RAGRelationship",
 ]

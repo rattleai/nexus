@@ -63,6 +63,7 @@ class EmbeddingProvider(enum.StrEnum):
     OPENAI = "openai"
     COHERE = "cohere"
     VOYAGE = "voyage"
+    GOOGLE = "google"
     LOCAL = "local"
 
 
@@ -77,10 +78,11 @@ class EmbeddingModelInfo:
     max_input_tokens: int
     supports_batch: bool = True
     supports_dimensions_param: bool = False
+    supports_matryoshka: bool = False
 
 
 EMBEDDING_MODEL_CATALOG: dict[str, EmbeddingModelInfo] = {
-    # OpenAI
+    # ── OpenAI ────────────────────────────────────────────────
     "text-embedding-3-small": EmbeddingModelInfo(
         provider=EmbeddingProvider.OPENAI,
         model_name="text-embedding-3-small",
@@ -88,6 +90,7 @@ EMBEDDING_MODEL_CATALOG: dict[str, EmbeddingModelInfo] = {
         dimensions=1536,
         max_input_tokens=8191,
         supports_dimensions_param=True,
+        supports_matryoshka=True,
     ),
     "text-embedding-3-large": EmbeddingModelInfo(
         provider=EmbeddingProvider.OPENAI,
@@ -96,8 +99,9 @@ EMBEDDING_MODEL_CATALOG: dict[str, EmbeddingModelInfo] = {
         dimensions=3072,
         max_input_tokens=8191,
         supports_dimensions_param=True,
+        supports_matryoshka=True,
     ),
-    # Cohere
+    # ── Cohere ────────────────────────────────────────────────
     "embed-english-v3.0": EmbeddingModelInfo(
         provider=EmbeddingProvider.COHERE,
         model_name="embed-english-v3.0",
@@ -112,7 +116,15 @@ EMBEDDING_MODEL_CATALOG: dict[str, EmbeddingModelInfo] = {
         dimensions=1024,
         max_input_tokens=512,
     ),
-    # Voyage AI
+    "embed-v4.0": EmbeddingModelInfo(
+        provider=EmbeddingProvider.COHERE,
+        model_name="embed-v4.0",
+        display_name="Cohere Embed v4 (Multimodal)",
+        dimensions=1024,
+        max_input_tokens=512,
+        supports_matryoshka=True,
+    ),
+    # ── Voyage AI ─────────────────────────────────────────────
     "voyage-3": EmbeddingModelInfo(
         provider=EmbeddingProvider.VOYAGE,
         model_name="voyage-3",
@@ -126,6 +138,41 @@ EMBEDDING_MODEL_CATALOG: dict[str, EmbeddingModelInfo] = {
         display_name="Voyage 3 Lite",
         dimensions=512,
         max_input_tokens=32000,
+    ),
+    "voyage-4": EmbeddingModelInfo(
+        provider=EmbeddingProvider.VOYAGE,
+        model_name="voyage-4",
+        display_name="Voyage 4 (MoE)",
+        dimensions=1024,
+        max_input_tokens=32000,
+        supports_matryoshka=True,
+    ),
+    "voyage-4-large": EmbeddingModelInfo(
+        provider=EmbeddingProvider.VOYAGE,
+        model_name="voyage-4-large",
+        display_name="Voyage 4 Large",
+        dimensions=2048,
+        max_input_tokens=32000,
+        supports_matryoshka=True,
+    ),
+    # ── Google ────────────────────────────────────────────────
+    "text-embedding-005": EmbeddingModelInfo(
+        provider=EmbeddingProvider.GOOGLE,
+        model_name="text-embedding-005",
+        display_name="Google Text Embedding 005",
+        dimensions=768,
+        max_input_tokens=2048,
+        supports_dimensions_param=True,
+        supports_matryoshka=True,
+    ),
+    "gemini-embedding-001": EmbeddingModelInfo(
+        provider=EmbeddingProvider.GOOGLE,
+        model_name="gemini-embedding-001",
+        display_name="Gemini Embedding (Highest MTEB)",
+        dimensions=3072,
+        max_input_tokens=8192,
+        supports_dimensions_param=True,
+        supports_matryoshka=True,
     ),
 }
 
@@ -187,6 +234,7 @@ class EmbeddingGateway:
             EmbeddingProvider.OPENAI: settings.AI_OPENAI_API_KEY,
             EmbeddingProvider.COHERE: settings.EMBEDDING_COHERE_API_KEY,
             EmbeddingProvider.VOYAGE: settings.EMBEDDING_VOYAGE_API_KEY,
+            EmbeddingProvider.GOOGLE: settings.AI_GOOGLE_API_KEY,
         }
         key = key_map.get(provider, "")
         if not key and provider != EmbeddingProvider.LOCAL:
@@ -372,6 +420,7 @@ class EmbeddingGateway:
             EmbeddingProvider.OPENAI: self._generate_openai,
             EmbeddingProvider.COHERE: self._generate_cohere,
             EmbeddingProvider.VOYAGE: self._generate_voyage,
+            EmbeddingProvider.GOOGLE: self._generate_google,
             EmbeddingProvider.LOCAL: self._generate_local,
         }
         handler = dispatch_map.get(provider)
@@ -481,6 +530,39 @@ class EmbeddingGateway:
             raise EmbeddingGatewayError(
                 f"Unexpected response from Voyage embedding API",
                 provider="voyage",
+                model=info.model_name,
+            ) from exc
+
+    async def _generate_google(
+        self, texts: list[str], info: EmbeddingModelInfo, dimensions: int,
+    ) -> list[list[float]]:
+        """Generate embeddings via Google Generative AI API."""
+        api_key = self._resolve_api_key(EmbeddingProvider.GOOGLE)
+        truncated = [t[:8192] for t in texts]
+
+        # Google's batch embedding endpoint accepts multiple content items
+        requests_body = [
+            {"model": f"models/{info.model_name}", "content": {"parts": [{"text": t}]}}
+            for t in truncated
+        ]
+
+        body: dict[str, Any] = {"requests": requests_body}
+
+        client = _get_http_client()
+        response = await client.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{info.model_name}:batchEmbedContents",
+            params={"key": api_key},
+            headers={"Content-Type": "application/json"},
+            json=body,
+        )
+        response.raise_for_status()
+        try:
+            data = response.json()
+            return [item["values"] for item in data["embeddings"]]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise EmbeddingGatewayError(
+                "Unexpected response from Google embedding API",
+                provider="google",
                 model=info.model_name,
             ) from exc
 

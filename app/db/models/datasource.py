@@ -248,6 +248,18 @@ class DataSourceChunk(TimestampMixin, Base):
     content_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Contextual retrieval — document-level context prepended to chunk before embedding
+    context_preamble: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_with_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Parent-child retrieval — small child chunks for matching, parent chunks for context
+    parent_chunk_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True,
+    )
+    chunk_level: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, server_default="standard",
+    )
+
     # Relationships
     data_source: Mapped[DataSource] = relationship(back_populates="chunks")
 

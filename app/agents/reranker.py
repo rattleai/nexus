@@ -5,7 +5,7 @@ results, using cross-encoder models or reranking APIs to reorder
 candidates by relevance to the query.
 
 Providers:
-  - CohereReranker: Cohere Rerank API (rerank-v3.5)
+  - CohereReranker: Cohere Rerank API (rerank-v3.5 / rerank-v4)
   - CrossEncoderReranker: local cross-encoder model server
   - NoopReranker: passthrough (for when re-ranking is disabled)
 """
@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import httpx
 import structlog
 
+from app.ai.embedding_gateway import _get_http_client
 from app.ai.metrics import RAG_RERANK_LATENCY_SECONDS
 from app.config import settings
 
@@ -107,42 +108,42 @@ class Reranker:
     async def _rerank_cohere(
         self, query: str, documents: list[str], top_k: int,
     ) -> list[RerankerResult]:
-        """Re-rank via Cohere Rerank API."""
+        """Re-rank via Cohere Rerank API (supports rerank-v3.5 and rerank-v4)."""
         api_key = settings.RAG_RERANKER_API_KEY
         if not api_key:
             raise ValueError("RAG_RERANKER_API_KEY not configured for Cohere reranker")
 
         model = settings.RAG_RERANKER_MODEL
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                "https://api.cohere.com/v2/rerank",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "query": query,
-                    "documents": documents,
-                    "model": model,
-                    "top_n": top_k,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
+        client = _get_http_client()
+        response = await client.post(
+            "https://api.cohere.com/v2/rerank",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "query": query,
+                "documents": documents,
+                "model": model,
+                "top_n": top_k,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
 
-            results = []
-            for item in data.get("results", []):
-                idx = item.get("index")
-                if idx is None or not isinstance(idx, int) or not (0 <= idx < len(documents)):
-                    logger.warning("rerank_invalid_index", idx=idx, max=len(documents))
-                    continue
-                results.append(RerankerResult(
-                    index=idx,
-                    score=item.get("relevance_score", 0.0),
-                    text=documents[idx],
-                ))
-            return sorted(results, key=lambda r: r.score, reverse=True)
+        results = []
+        for item in data.get("results", []):
+            idx = item.get("index")
+            if idx is None or not isinstance(idx, int) or not (0 <= idx < len(documents)):
+                logger.warning("rerank_invalid_index", idx=idx, max=len(documents))
+                continue
+            results.append(RerankerResult(
+                index=idx,
+                score=item.get("relevance_score", 0.0),
+                text=documents[idx],
+            ))
+        return sorted(results, key=lambda r: r.score, reverse=True)
 
     async def _rerank_cross_encoder(
         self, query: str, documents: list[str], top_k: int,
@@ -152,34 +153,34 @@ class Reranker:
         if not base_url:
             raise ValueError("RAG_RERANKER_LOCAL_URL not configured")
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{base_url.rstrip('/')}/rerank",
-                json={
-                    "query": query,
-                    "documents": documents,
-                    "top_k": top_k,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
+        client = _get_http_client()
+        response = await client.post(
+            f"{base_url.rstrip('/')}/rerank",
+            json={
+                "query": query,
+                "documents": documents,
+                "top_k": top_k,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
 
-            results = []
-            items = data.get("results", data if isinstance(data, list) else [])
-            for item in items:
-                if not isinstance(item, dict):
-                    logger.warning("rerank_non_dict_result", item_type=type(item).__name__)
-                    continue
-                idx = item.get("index")
-                if idx is None or not isinstance(idx, int) or not (0 <= idx < len(documents)):
-                    logger.warning("rerank_invalid_index", idx=idx, max=len(documents))
-                    continue
-                results.append(RerankerResult(
-                    index=idx,
-                    score=item.get("score", item.get("relevance_score", 0.0)),
-                    text=documents[idx],
-                ))
-            return sorted(results, key=lambda r: r.score, reverse=True)[:top_k]
+        results = []
+        items = data.get("results", data if isinstance(data, list) else [])
+        for item in items:
+            if not isinstance(item, dict):
+                logger.warning("rerank_non_dict_result", item_type=type(item).__name__)
+                continue
+            idx = item.get("index")
+            if idx is None or not isinstance(idx, int) or not (0 <= idx < len(documents)):
+                logger.warning("rerank_invalid_index", idx=idx, max=len(documents))
+                continue
+            results.append(RerankerResult(
+                index=idx,
+                score=item.get("score", item.get("relevance_score", 0.0)),
+                text=documents[idx],
+            ))
+        return sorted(results, key=lambda r: r.score, reverse=True)[:top_k]
 
 
 # Module-level singleton

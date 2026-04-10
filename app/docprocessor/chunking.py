@@ -27,6 +27,7 @@ class ChunkingStrategy(enum.StrEnum):
     RECURSIVE = "recursive"
     MARKDOWN = "markdown"
     SEMANTIC = "semantic"
+    LATE = "late"
 
 
 @dataclass
@@ -442,11 +443,14 @@ def get_chunker(strategy: ChunkingStrategy | str | None = None) -> Chunker:
     if isinstance(strategy, str):
         strategy = ChunkingStrategy(strategy)
 
+    from app.docprocessor.late_chunker import LateChunker
+
     chunker_map: dict[ChunkingStrategy, type[Chunker]] = {
         ChunkingStrategy.FIXED_SIZE: FixedSizeChunker,
         ChunkingStrategy.RECURSIVE: RecursiveChunker,
         ChunkingStrategy.MARKDOWN: MarkdownChunker,
         ChunkingStrategy.SEMANTIC: SemanticChunker,
+        ChunkingStrategy.LATE: LateChunker,
     }
 
     cls = chunker_map.get(strategy)

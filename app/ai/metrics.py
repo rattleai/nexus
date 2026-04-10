@@ -125,3 +125,57 @@ RAG_RERANK_LATENCY_SECONDS = Histogram(
     ["provider"],
     buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.5],
 )
+
+# ── RAG Evaluation Metrics ──────────────────────────────────
+
+RAG_EVAL_PRECISION = Gauge(
+    "saas_rag_eval_precision_at_k",
+    "Precision@k from latest evaluation run",
+    ["dataset"],
+)
+
+RAG_EVAL_RECALL = Gauge(
+    "saas_rag_eval_recall_at_k",
+    "Recall@k from latest evaluation run",
+    ["dataset"],
+)
+
+RAG_EVAL_MRR = Gauge(
+    "saas_rag_eval_mrr",
+    "Mean Reciprocal Rank from latest evaluation run",
+    ["dataset"],
+)
+
+RAG_EVAL_NDCG = Gauge(
+    "saas_rag_eval_ndcg_at_k",
+    "NDCG@k from latest evaluation run",
+    ["dataset"],
+)
+
+RAG_EVAL_FAITHFULNESS = Gauge(
+    "saas_rag_eval_faithfulness",
+    "Average faithfulness score from LLM judge",
+    ["dataset"],
+)
+
+RAG_EVAL_ANSWER_RELEVANCY = Gauge(
+    "saas_rag_eval_answer_relevancy",
+    "Average answer relevancy score from LLM judge",
+    ["dataset"],
+)
+
+RAG_QUERY_EMPTY_RATE = Gauge(
+    "saas_rag_query_empty_rate",
+    "Rolling empty-result rate (updated by periodic task)",
+)
+
+RAG_CACHE_HIT_RATE = Gauge(
+    "saas_rag_cache_hit_rate",
+    "Semantic cache hit rate (rolling window)",
+)
+
+RAG_STORAGE_VECTORS_TOTAL = Gauge(
+    "saas_rag_storage_vectors_total",
+    "Total vector count per tenant",
+    ["tenant_id"],
+)

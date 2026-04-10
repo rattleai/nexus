@@ -80,9 +80,36 @@ class ContentIndexer:
             logger.info("no_chunks_to_index", data_source_id=str(data_source_id))
             return 0
 
+        # ── Contextual retrieval: generate preambles ──────────────
+        preambles: list[str] = [""] * len(all_chunks)
+        contextualized_texts = list(all_chunks)  # default: embed raw content
+        if settings.RAG_CONTEXTUAL_RETRIEVAL_ENABLED:
+            try:
+                from app.docprocessor.contextualizer import chunk_contextualizer
+
+                chunk_meta_pairs = [
+                    (text, text_metadata[i]._asdict() if i < len(text_metadata) else {})
+                    for i, text in enumerate(all_chunks)
+                ]
+                ctx_results = await chunk_contextualizer.contextualize(
+                    chunk_meta_pairs,
+                    document_name=extraction.source_name or "",
+                    document_text=extraction.raw_text or "",
+                )
+                for i, (preamble, with_ctx, _meta) in enumerate(ctx_results):
+                    preambles[i] = preamble
+                    contextualized_texts[i] = with_ctx
+            except Exception:
+                logger.warning(
+                    "contextual_retrieval_failed",
+                    data_source_id=str(data_source_id),
+                    exc_info=True,
+                )
+
+        # ── Generate embeddings (using contextualized text when available) ──
         embedding_service = EmbeddingService()
         try:
-            embeddings = await embedding_service.generate_batch(all_chunks)
+            embeddings = await embedding_service.generate_batch(contextualized_texts)
         except Exception:
             logger.error(
                 "embedding_generation_failed",
@@ -112,6 +139,8 @@ class ContentIndexer:
 
         stored = 0
         now = datetime.now(UTC)
+        chunk_records: list[DataSourceChunk] = []
+
         for idx, (chunk_text, embedding) in enumerate(zip(all_chunks, embeddings, strict=True)):
             section_title = None
             if idx < len(text_chunks):
@@ -144,9 +173,25 @@ class ContentIndexer:
                 table_index=idx - len(text_chunks) if idx >= len(text_chunks) else None,
                 content_type=extraction.source_type,
                 indexed_at=now,
+                context_preamble=preambles[idx] if preambles[idx] else None,
+                content_with_context=contextualized_texts[idx] if preambles[idx] else None,
+                chunk_level="standard",
             )
             db.add(chunk)
+            chunk_records.append(chunk)
             stored += 1
+
+        # ── Parent-child chunking ──────────────────────────────────
+        if settings.RAG_PARENT_CHILD_ENABLED and extraction.raw_text and chunk_records:
+            stored += await self._create_parent_child_chunks(
+                raw_text=extraction.raw_text,
+                child_records=chunk_records,
+                data_source_id=data_source_id,
+                tenant_id=tenant_id,
+                extraction=extraction,
+                db=db,
+                now=now,
+            )
 
         await db.flush()
         logger.info(
@@ -156,7 +201,71 @@ class ContentIndexer:
             text_chunks=len(text_chunks),
             table_chunks=len(table_chunks),
             strategy=chunking_strategy or settings.RAG_CHUNKING_STRATEGY,
+            contextual=settings.RAG_CONTEXTUAL_RETRIEVAL_ENABLED,
+            parent_child=settings.RAG_PARENT_CHILD_ENABLED,
         )
+        return stored
+
+    async def _create_parent_child_chunks(
+        self,
+        *,
+        raw_text: str,
+        child_records: list[DataSourceChunk],
+        data_source_id: UUID,
+        tenant_id: UUID,
+        extraction: ExtractionResult,
+        db: AsyncSession,
+        now: datetime,
+    ) -> int:
+        """Create large parent chunks and link existing chunks as children.
+
+        Parent chunks are larger (RAG_PARENT_CHUNK_SIZE) and stored without
+        embeddings — they serve as context containers. Child chunks (already
+        created as 'standard') get reclassified and linked to their parent.
+        """
+        parent_chunker = get_chunker("fixed_size")
+        parent_size = settings.RAG_PARENT_CHUNK_SIZE
+
+        # Override chunk size temporarily for parent chunking
+        original_size = settings.RAG_CHUNK_SIZE
+        settings.RAG_CHUNK_SIZE = parent_size
+        settings.RAG_CHUNK_OVERLAP = 0
+
+        try:
+            parent_tuples = parent_chunker.chunk(raw_text)
+        finally:
+            settings.RAG_CHUNK_SIZE = original_size
+            settings.RAG_CHUNK_OVERLAP = 200
+
+        parent_texts = [text for text, _ in parent_tuples]
+        stored = 0
+
+        for p_idx, parent_text in enumerate(parent_texts):
+            parent_id = uuid.uuid4()
+            parent_chunk = DataSourceChunk(
+                id=parent_id,
+                tenant_id=tenant_id,
+                data_source_id=data_source_id,
+                chunk_index=10000 + p_idx,  # Offset to avoid collision with child indices
+                content=parent_text,
+                embedding=None,
+                embedding_vec=None,
+                embedding_halfvec=None,
+                embedding_model=None,
+                section_title=None,
+                content_type=extraction.source_type,
+                indexed_at=now,
+                chunk_level="parent",
+            )
+            db.add(parent_chunk)
+            stored += 1
+
+            # Link child chunks whose content overlaps with this parent
+            for child in child_records:
+                if child.content and child.content[:80] in parent_text:
+                    child.parent_chunk_id = parent_id
+                    child.chunk_level = "child"
+
         return stored
 
     def _chunk_tables(self, tables: list[ExtractedTable]) -> list[str]:

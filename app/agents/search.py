@@ -93,8 +93,19 @@ class SearchResult:
     search_type: SearchType = SearchType.HYBRID
 
 
+def _use_diskann() -> bool:
+    """Whether DiskANN index type is active (uses embedding_vec directly with SBQ)."""
+    return settings.VECTOR_INDEX_TYPE == "diskann"
+
+
 def _vec_column() -> str:
-    """Column name for vector search. Switches to halfvec for 50% storage savings."""
+    """Column name for vector search.
+
+    DiskANN uses embedding_vec directly (SBQ built into the index).
+    HNSW switches to halfvec for 50% storage savings when configured.
+    """
+    if _use_diskann():
+        return "embedding_vec"
     if settings.VECTOR_QUANTIZATION == VectorPrecision.HALF:
         return "embedding_halfvec"
     return "embedding_vec"
@@ -102,6 +113,8 @@ def _vec_column() -> str:
 
 def _vec_cast() -> str:
     """SQL cast suffix matching the column type from _vec_column()."""
+    if _use_diskann():
+        return "::vector"
     if settings.VECTOR_QUANTIZATION == VectorPrecision.HALF:
         return "::halfvec(1536)"
     return "::vector"
@@ -202,6 +215,10 @@ class HybridSearchEngine:
             )
             results.extend(memory_results)
 
+        # Resolve parent chunks when parent-child retrieval is enabled
+        if settings.RAG_PARENT_CHILD_ENABLED and results:
+            results = await self._resolve_parent_chunks(results, db)
+
         # Sort by score and trim
         results.sort(key=lambda r: r.score, reverse=True)
         results = results[:limit]
@@ -234,6 +251,76 @@ class HybridSearchEngine:
             )
         return results
 
+    async def _resolve_parent_chunks(
+        self, results: list[SearchResult], db: AsyncSession,
+    ) -> list[SearchResult]:
+        """Replace child chunk results with their parent chunks for richer context.
+
+        Child chunks matched during vector search are resolved to their parent
+        chunks. Deduplicates parents that multiple children point to.
+        """
+        child_ids = [
+            r.id for r in results
+            if r.source == SearchSource.CHUNKS
+        ]
+        if not child_ids:
+            return results
+
+        # Query for parent_chunk_id mapping
+        sql = """
+            SELECT id::text, parent_chunk_id::text, chunk_level
+            FROM data_source_chunks
+            WHERE id = ANY(:chunk_ids)
+              AND parent_chunk_id IS NOT NULL
+        """
+        result = await db.execute(text(sql), {"chunk_ids": child_ids})
+        child_to_parent = {
+            row["id"]: row["parent_chunk_id"]
+            for row in result.mappings().all()
+        }
+
+        if not child_to_parent:
+            return results
+
+        # Fetch parent chunk content
+        parent_ids = list(set(child_to_parent.values()))
+        parent_sql = """
+            SELECT id::text, content, data_source_id::text, section_title, content_type
+            FROM data_source_chunks
+            WHERE id = ANY(:parent_ids)
+        """
+        parent_result = await db.execute(text(parent_sql), {"parent_ids": parent_ids})
+        parents = {row["id"]: row for row in parent_result.mappings().all()}
+
+        # Replace child results with parent content, keeping child's score
+        resolved = []
+        seen_parents: set[str] = set()
+        for r in results:
+            parent_id = child_to_parent.get(r.id)
+            if parent_id and parent_id in parents and parent_id not in seen_parents:
+                parent = parents[parent_id]
+                resolved.append(SearchResult(
+                    id=parent_id,
+                    content=parent["content"] or "",
+                    score=r.score,
+                    source=r.source,
+                    source_id=str(parent["data_source_id"]) if parent["data_source_id"] else "",
+                    metadata={
+                        **r.metadata,
+                        "resolved_from_child": r.id,
+                        "section_title": parent["section_title"],
+                        "content_type": parent["content_type"],
+                    },
+                    search_type=r.search_type,
+                ))
+                seen_parents.add(parent_id)
+            elif parent_id and parent_id in seen_parents:
+                continue  # Skip duplicate parent
+            else:
+                resolved.append(r)
+
+        return resolved
+
     async def _get_query_embedding(self, query: str) -> list[float] | None:
         """Generate embedding for the query. Returns None on transient failure."""
         try:
@@ -256,6 +343,11 @@ class HybridSearchEngine:
         db: AsyncSession,
     ) -> list[SearchResult]:
         """Search data_source_chunks with hybrid or single-mode search."""
+        # DiskANN requires setting the search list size for query-time recall tuning.
+        # Higher values improve recall at the cost of latency.
+        if _use_diskann() and query_embedding is not None:
+            await db.execute(text("SET LOCAL diskann.query_search_list_size = 100"))
+
         params: dict[str, Any] = {
             "tenant_id": str(tenant_id),
             "limit": limit,
@@ -479,6 +571,9 @@ class HybridSearchEngine:
 
         if not settings.AGENT_MEMORY_VECTOR_ENABLED:
             return []
+
+        if _use_diskann():
+            await db.execute(text("SET LOCAL diskann.query_search_list_size = 100"))
 
         vector_str = embedding_to_vector_str(query_embedding)
 
