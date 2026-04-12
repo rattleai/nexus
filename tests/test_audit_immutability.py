@@ -1,4 +1,4 @@
-"""Tests for audit_log immutability (migration 0008).
+"""Tests for audit_log immutability.
 
 Verifies that the trigger prevents UPDATE/DELETE on audit_logs
 and that the GUC bypass works for compliance-mandated purge.
