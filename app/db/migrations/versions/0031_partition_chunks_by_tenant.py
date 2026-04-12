@@ -29,6 +29,60 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Idempotency guard: if an earlier partial run already partitioned the
+    # table (partitions exist but alembic_version wasn't advanced), skip
+    # ahead. The "legacy" rename is the unambiguous signal that steps 1-4
+    # already completed.
+    conn = op.get_bind()
+    already_partitioned = conn.exec_driver_sql(
+        "SELECT EXISTS (SELECT 1 FROM pg_tables "
+        "WHERE tablename = 'data_source_chunks_legacy')"
+    ).scalar()
+    if already_partitioned:
+        # Steps 1-5 already done. Ensure RLS, trigger, and HNSW indexes exist
+        # (these are idempotent or guarded by IF NOT EXISTS), then return.
+        op.execute("ALTER TABLE data_source_chunks ENABLE ROW LEVEL SECURITY")
+        op.execute("ALTER TABLE data_source_chunks FORCE ROW LEVEL SECURITY")
+        op.execute("DROP POLICY IF EXISTS tenant_isolation ON data_source_chunks")
+        op.execute("""
+            CREATE POLICY tenant_isolation ON data_source_chunks
+            USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
+            WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
+        """)
+        op.execute("""
+            CREATE OR REPLACE FUNCTION dsc_tsvector_update() RETURNS trigger AS $$
+            BEGIN
+                NEW.content_tsv := to_tsvector('english', COALESCE(NEW.content, ''));
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+        """)
+        op.execute("DROP TRIGGER IF EXISTS dsc_tsvector_trigger ON data_source_chunks")
+        op.execute("""
+            CREATE TRIGGER dsc_tsvector_trigger
+            BEFORE INSERT OR UPDATE OF content ON data_source_chunks
+            FOR EACH ROW EXECUTE FUNCTION dsc_tsvector_update()
+        """)
+        # Ensure HNSW indexes exist on each partition (non-concurrent for
+        # reliability in alembic+asyncpg; CONCURRENTLY conflicts with
+        # alembic's transactional DDL wrapper).
+        for i in range(16):
+            op.execute(
+                f"CREATE INDEX IF NOT EXISTS "
+                f"ix_dsc_p{i:02d}_embedding_vec "
+                f"ON data_source_chunks_p{i:02d} "
+                f"USING hnsw (embedding_vec vector_cosine_ops) "
+                f"WITH (m = 16, ef_construction = 64)"
+            )
+            op.execute(
+                f"CREATE INDEX IF NOT EXISTS "
+                f"ix_dsc_p{i:02d}_embedding_halfvec "
+                f"ON data_source_chunks_p{i:02d} "
+                f"USING hnsw (embedding_halfvec halfvec_cosine_ops) "
+                f"WITH (m = 16, ef_construction = 64)"
+            )
+        return
+
     # ── Step 1: Create partitioned table with same schema ──────
     op.execute("""
         CREATE TABLE data_source_chunks_partitioned (
@@ -99,22 +153,26 @@ def upgrade() -> None:
         "CREATE INDEX ix_dsc_part_content_tsv ON data_source_chunks USING gin (content_tsv)"
     )
 
-    # HNSW vector indexes (created on each partition for locality)
-    op.execute("COMMIT")
-
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_dsc_part_embedding_vec "
-        "ON data_source_chunks USING hnsw (embedding_vec vector_cosine_ops) "
-        "WITH (m = 16, ef_construction = 64)"
-    )
-
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_dsc_part_embedding_halfvec "
-        "ON data_source_chunks USING hnsw (embedding_halfvec halfvec_cosine_ops) "
-        "WITH (m = 16, ef_construction = 64)"
-    )
-
-    op.execute("BEGIN")
+    # HNSW vector indexes: PostgreSQL disallows CREATE INDEX CONCURRENTLY on
+    # a partitioned parent. Create one index per child partition instead;
+    # the partitioned-table planner unions children automatically. Uses
+    # non-concurrent CREATE INDEX because CONCURRENTLY doesn't play well
+    # with alembic's transactional DDL + asyncpg.
+    for i in range(16):
+        op.execute(
+            f"CREATE INDEX IF NOT EXISTS "
+            f"ix_dsc_p{i:02d}_embedding_vec "
+            f"ON data_source_chunks_p{i:02d} "
+            f"USING hnsw (embedding_vec vector_cosine_ops) "
+            f"WITH (m = 16, ef_construction = 64)"
+        )
+        op.execute(
+            f"CREATE INDEX IF NOT EXISTS "
+            f"ix_dsc_p{i:02d}_embedding_halfvec "
+            f"ON data_source_chunks_p{i:02d} "
+            f"USING hnsw (embedding_halfvec halfvec_cosine_ops) "
+            f"WITH (m = 16, ef_construction = 64)"
+        )
 
     # ── Step 6: Recreate RLS policies ──────────────────────────
     op.execute("ALTER TABLE data_source_chunks ENABLE ROW LEVEL SECURITY")
