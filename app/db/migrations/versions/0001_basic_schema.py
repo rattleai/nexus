@@ -165,6 +165,26 @@ def _create_enums() -> None:
             "margin",
         ],
     )
+    # Datasource + GDPR enums (defined on ORM models, must match them exactly)
+    _create_enum("cloudprovider", ["google_drive", "dropbox", "onedrive"])
+    _create_enum("datasourcetype", ["upload", "cloud_drive", "url", "paste"])
+    _create_enum("datasourcestatus", ["pending", "processing", "ready", "error"])
+    _create_enum(
+        "consent_type",
+        [
+            "terms_of_service",
+            "privacy_policy",
+            "marketing",
+            "data_processing",
+            "cookies",
+            "third_party_sharing",
+        ],
+    )
+    _create_enum(
+        "dsar_type",
+        ["access", "rectification", "erasure", "portability", "restriction", "objection"],
+    )
+    _create_enum("dsar_status", ["received", "in_progress", "completed", "rejected"])
 
 
 # ── 3. Core multi-tenant tables ─────────────────────────────────────
@@ -761,7 +781,15 @@ def _create_gdpr_tables() -> None:
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
         sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
-        sa.Column("consent_type", sa.String(50), nullable=False),
+        sa.Column(
+            "consent_type",
+            PG_ENUM(
+                "terms_of_service", "privacy_policy", "marketing", "data_processing",
+                "cookies", "third_party_sharing",
+                name="consent_type", create_type=False,
+            ),
+            nullable=False,
+        ),
         sa.Column("granted", sa.Boolean, nullable=False, server_default="true"),
         sa.Column("policy_version", sa.String(50), nullable=False),
         sa.Column("ip_address", sa.String(45), nullable=True),
@@ -779,8 +807,23 @@ def _create_gdpr_tables() -> None:
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
         sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
-        sa.Column("request_type", sa.String(50), nullable=False),
-        sa.Column("status", sa.String(50), nullable=False, server_default="received"),
+        sa.Column(
+            "request_type",
+            PG_ENUM(
+                "access", "rectification", "erasure", "portability", "restriction", "objection",
+                name="dsar_type", create_type=False,
+            ),
+            nullable=False,
+        ),
+        sa.Column(
+            "status",
+            PG_ENUM(
+                "received", "in_progress", "completed", "rejected",
+                name="dsar_status", create_type=False,
+            ),
+            nullable=False,
+            server_default="received",
+        ),
         sa.Column("description", sa.Text, nullable=True),
         sa.Column("response_notes", sa.Text, nullable=True),
         sa.Column("received_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -800,10 +843,10 @@ def _create_gdpr_tables() -> None:
         sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
         sa.Column("resource_type", sa.String(100), nullable=False),
         sa.Column("retention_days", sa.Integer, nullable=False),
-        sa.Column("archive_before_delete", sa.Boolean, server_default="true"),
-        sa.Column("is_active", sa.Boolean, server_default="true"),
+        sa.Column("archive_before_delete", sa.Boolean, nullable=False, server_default="true"),
+        sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
         sa.Column("description", sa.Text, nullable=True),
-        sa.Column("version", sa.Integer, server_default="1"),
+        sa.Column("version", sa.Integer, nullable=False, server_default="1"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
     )
@@ -1177,6 +1220,9 @@ def _create_agent_tables() -> None:
         sa.Column("output_schema", JSONB, server_default="{}"),
         sa.Column("endpoint_url", sa.String(2048), nullable=True),
         sa.Column("auth_config", JSONB, server_default="{}"),
+        sa.Column("schema_hash", sa.String(64), nullable=True),
+        sa.Column("tool_signature_secret_encrypted", sa.Text, nullable=True),
+        sa.Column("trust_level", sa.String(20), nullable=False, server_default="untrusted"),
         sa.Column("is_active", sa.Boolean, server_default="true"),
         sa.Column("health_check_url", sa.String(2048), nullable=True),
         sa.Column("metadata", JSONB, server_default="{}"),
@@ -1772,7 +1818,14 @@ def _create_datasource_scaffolding() -> None:
         "cloud_connections",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("provider", sa.String(50), nullable=False),
+        sa.Column(
+            "provider",
+            PG_ENUM(
+                "google_drive", "dropbox", "onedrive",
+                name="cloudprovider", create_type=False,
+            ),
+            nullable=False,
+        ),
         sa.Column("account_email", sa.String(255), nullable=False),
         sa.Column("display_name", sa.String(255), nullable=True),
         sa.Column("access_token_encrypted", sa.Text, nullable=False),
@@ -1803,15 +1856,37 @@ def _create_datasource_scaffolding() -> None:
         "data_sources",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("name", sa.String(500), nullable=False),
-        sa.Column("source_type", sa.String(50), nullable=False),
-        sa.Column("status", sa.String(50), server_default="pending", nullable=False),
+        sa.Column("name", sa.String(255), nullable=False),
+        sa.Column(
+            "source_type",
+            PG_ENUM(
+                "upload", "cloud_drive", "url", "paste",
+                name="datasourcetype", create_type=False,
+            ),
+            nullable=False,
+        ),
+        sa.Column(
+            "status",
+            PG_ENUM(
+                "pending", "processing", "ready", "error",
+                name="datasourcestatus", create_type=False,
+            ),
+            server_default="pending",
+            nullable=False,
+        ),
         sa.Column("file_key", sa.String(1024), nullable=True),
-        sa.Column("filename", sa.String(500), nullable=True),
-        sa.Column("mime_type", sa.String(255), nullable=True),
-        sa.Column("file_size", sa.BigInteger, nullable=True),
-        sa.Column("url", sa.Text, nullable=True),
-        sa.Column("cloud_provider", sa.String(50), nullable=True),
+        sa.Column("filename", sa.String(255), nullable=True),
+        sa.Column("mime_type", sa.String(100), nullable=True),
+        sa.Column("file_size", sa.Integer, nullable=True),
+        sa.Column("url", sa.String(2048), nullable=True),
+        sa.Column(
+            "cloud_provider",
+            PG_ENUM(
+                "google_drive", "dropbox", "onedrive",
+                name="cloudprovider", create_type=False,
+            ),
+            nullable=True,
+        ),
         sa.Column(
             "cloud_connection_id",
             UUID(as_uuid=True),
@@ -2006,8 +2081,8 @@ def _create_rag_infrastructure() -> None:
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("description", sa.Text, nullable=True),
         sa.Column("source_type", sa.String(50), nullable=False, server_default="human_annotation"),
-        sa.Column("query_count", sa.Integer, server_default="0"),
-        sa.Column("is_active", sa.Boolean, server_default="true"),
+        sa.Column("query_count", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
         sa.Column("metadata", JSONB, server_default="{}"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
@@ -2049,7 +2124,7 @@ def _create_rag_infrastructure() -> None:
         sa.Column("status", sa.String(50), nullable=False, server_default="pending"),
         sa.Column("config", JSONB, nullable=False, server_default="{}"),
         sa.Column("aggregate_metrics", JSONB, nullable=True),
-        sa.Column("query_count", sa.Integer, server_default="0"),
+        sa.Column("query_count", sa.Integer, nullable=False, server_default="0"),
         sa.Column("duration_ms", sa.Integer, nullable=True),
         sa.Column("error", sa.Text, nullable=True),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
@@ -2099,9 +2174,9 @@ def _create_rag_infrastructure() -> None:
         sa.Column("top_score", sa.Float, nullable=True),
         sa.Column("mean_score", sa.Float, nullable=True),
         sa.Column("latency_ms", sa.Integer, nullable=True),
-        sa.Column("cache_hit", sa.Boolean, server_default="false"),
-        sa.Column("reranked", sa.Boolean, server_default="false"),
-        sa.Column("empty_result", sa.Boolean, server_default="false"),
+        sa.Column("cache_hit", sa.Boolean, nullable=False, server_default="false"),
+        sa.Column("reranked", sa.Boolean, nullable=False, server_default="false"),
+        sa.Column("empty_result", sa.Boolean, nullable=False, server_default="false"),
         sa.Column("search_config", JSONB, nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
@@ -2196,7 +2271,7 @@ def _create_rag_infrastructure() -> None:
         sa.Column("source_entity_id", UUID(as_uuid=True), nullable=False),
         sa.Column("target_entity_id", UUID(as_uuid=True), nullable=False),
         sa.Column("relationship_type", sa.String(100), nullable=False),
-        sa.Column("weight", sa.Float, server_default="1.0"),
+        sa.Column("weight", sa.Float, nullable=False, server_default="1.0"),
         sa.Column("chunk_id", UUID(as_uuid=True), nullable=True),
         sa.Column("metadata", JSONB, server_default="{}"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
