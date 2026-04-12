@@ -11,6 +11,7 @@ known-safe SQL fragments — no user input is interpolated into SQL.
 
 from __future__ import annotations
 
+import contextlib
 import enum
 import time
 import uuid
@@ -40,6 +41,21 @@ from app.core.query_utils import escape_like
 from app.db.models.datasource import VectorPrecision
 
 logger = structlog.stdlib.get_logger()
+
+# OpenTelemetry tracing — no-op when OTEL is unavailable
+try:
+    from opentelemetry import trace
+    _rag_tracer = trace.get_tracer("app.agents.search")
+except ImportError:
+    _rag_tracer = None
+
+
+def _rag_span(name: str, **attributes: Any) -> contextlib.AbstractContextManager:
+    """Create an OTel span for RAG pipeline stages, or no-op if disabled."""
+    if _rag_tracer:
+        return _rag_tracer.start_as_current_span(name, attributes=attributes)
+    return contextlib.nullcontext()
+
 
 # Standard RRF constant (from the original RRF paper)
 RRF_K = 60
@@ -133,6 +149,62 @@ _FILTER_SQL = {
 }
 
 
+async def _apply_vector_search_settings(db: AsyncSession) -> None:
+    """Apply pgvector/DiskANN query-time settings within the current transaction.
+
+    Must be called before executing vector similarity queries. Uses SET LOCAL
+    so settings are scoped to the current transaction and cannot leak to other
+    sessions — safe with PgBouncer transaction-mode pooling.
+
+    Config values (HNSW_EF_SEARCH, DISKANN_QUERY_SEARCH_LIST_SIZE) are cast
+    to int before interpolation to prevent SQL injection via settings.
+
+    Version compatibility:
+      * hnsw.ef_search and diskann.query_search_list_size are required for
+        their respective index types; failure to set them is a configuration
+        error that should propagate.
+      * hnsw.iterative_scan is newer (pgvector >=0.8.0) and is gracefully
+        skipped via SAVEPOINT rollback when the GUC is unrecognized. This
+        isolation prevents a version mismatch from poisoning the transaction.
+    """
+    if _use_diskann():
+        await db.execute(
+            text(
+                f"SET LOCAL diskann.query_search_list_size = "
+                f"{int(settings.DISKANN_QUERY_SEARCH_LIST_SIZE)}"
+            )
+        )
+        return
+
+    # HNSW path — ef_search tunes candidates evaluated per query (default 40
+    # is too low for 1536-dim vectors; 100 provides meaningfully better recall).
+    # Stable since pgvector 0.5.0 — no exception handling needed.
+    await db.execute(
+        text(f"SET LOCAL hnsw.ef_search = {int(settings.HNSW_EF_SEARCH)}")
+    )
+
+    # iterative_scan (pgvector >=0.8.0): re-enters the index when filtered
+    # candidates are exhausted, preventing under-fetching on selective WHERE
+    # clauses. Up to 9x improvement on filtered queries. Wrapped in an explicit
+    # SAVEPOINT so a failed SET (on older pgvector) doesn't abort the outer
+    # transaction. Uses raw SAVEPOINT SQL rather than session.begin_nested()
+    # so it routes through db.execute() uniformly.
+    if settings.PGVECTOR_ITERATIVE_SCAN:
+        await db.execute(text("SAVEPOINT vector_settings_sp"))
+        try:
+            await db.execute(text("SET LOCAL hnsw.iterative_scan = relaxed_order"))
+            await db.execute(text("RELEASE SAVEPOINT vector_settings_sp"))
+        except Exception:
+            # pgvector <0.8.0 does not support iterative_scan — roll back
+            # the savepoint so the outer transaction remains usable.
+            try:
+                await db.execute(text("ROLLBACK TO SAVEPOINT vector_settings_sp"))
+                await db.execute(text("RELEASE SAVEPOINT vector_settings_sp"))
+            except Exception:
+                pass
+            logger.debug("hnsw_iterative_scan_set_failed", exc_info=True)
+
+
 class HybridSearchEngine:
     """Hybrid search combining vector similarity and full-text search with RRF."""
 
@@ -181,7 +253,8 @@ class HybridSearchEngine:
         results: list[SearchResult] = []
 
         if search_type in (SearchType.VECTOR, SearchType.HYBRID):
-            query_embedding = await self._get_query_embedding(query)
+            with _rag_span("rag.embed_query"):
+                query_embedding = await self._get_query_embedding(query)
             if query_embedding is None and search_type == SearchType.VECTOR:
                 return []
         else:
@@ -190,34 +263,37 @@ class HybridSearchEngine:
         # Chunks and memory searches share the same AsyncSession, which is
         # NOT safe for concurrent use — run them sequentially.
         if SearchSource.CHUNKS in sources:
-            chunk_results = await self._search_chunks(
-                query=query,
-                query_embedding=query_embedding,
-                tenant_id=tenant_id,
-                filters=filters,
-                limit=over_fetch,
-                search_type=search_type,
-                vector_weight=vector_weight,
-                text_weight=text_weight,
-                db=db,
-            )
+            with _rag_span("rag.search_chunks", search_type=search_type.value):
+                chunk_results = await self._search_chunks(
+                    query=query,
+                    query_embedding=query_embedding,
+                    tenant_id=tenant_id,
+                    filters=filters,
+                    limit=over_fetch,
+                    search_type=search_type,
+                    vector_weight=vector_weight,
+                    text_weight=text_weight,
+                    db=db,
+                )
             results.extend(chunk_results)
 
         if SearchSource.MEMORY in sources:
-            memory_results = await self._search_memory(
-                query=query,
-                query_embedding=query_embedding,
-                tenant_id=tenant_id,
-                filters=filters,
-                limit=over_fetch,
-                search_type=search_type,
-                db=db,
-            )
+            with _rag_span("rag.search_memory"):
+                memory_results = await self._search_memory(
+                    query=query,
+                    query_embedding=query_embedding,
+                    tenant_id=tenant_id,
+                    filters=filters,
+                    limit=over_fetch,
+                    search_type=search_type,
+                    db=db,
+                )
             results.extend(memory_results)
 
         # Resolve parent chunks when parent-child retrieval is enabled
         if settings.RAG_PARENT_CHILD_ENABLED and results:
-            results = await self._resolve_parent_chunks(results, db)
+            with _rag_span("rag.parent_child_resolve"):
+                results = await self._resolve_parent_chunks(results, tenant_id, db)
 
         # Sort by score and trim
         results.sort(key=lambda r: r.score, reverse=True)
@@ -252,12 +328,16 @@ class HybridSearchEngine:
         return results
 
     async def _resolve_parent_chunks(
-        self, results: list[SearchResult], db: AsyncSession,
+        self,
+        results: list[SearchResult],
+        tenant_id: uuid.UUID,
+        db: AsyncSession,
     ) -> list[SearchResult]:
         """Replace child chunk results with their parent chunks for richer context.
 
         Child chunks matched during vector search are resolved to their parent
-        chunks. Deduplicates parents that multiple children point to.
+        chunks. Deduplicates parents that multiple children point to. All
+        queries are tenant-scoped to prevent cross-tenant content disclosure.
         """
         child_ids = [
             r.id for r in results
@@ -266,14 +346,19 @@ class HybridSearchEngine:
         if not child_ids:
             return results
 
-        # Query for parent_chunk_id mapping
+        # Query for parent_chunk_id mapping (tenant-scoped)
         sql = """
             SELECT id::text, parent_chunk_id::text, chunk_level
             FROM data_source_chunks
             WHERE id = ANY(:chunk_ids)
+              AND tenant_id = :tenant_id
+              AND deleted_at IS NULL
               AND parent_chunk_id IS NOT NULL
         """
-        result = await db.execute(text(sql), {"chunk_ids": child_ids})
+        result = await db.execute(
+            text(sql),
+            {"chunk_ids": child_ids, "tenant_id": str(tenant_id)},
+        )
         child_to_parent = {
             row["id"]: row["parent_chunk_id"]
             for row in result.mappings().all()
@@ -282,14 +367,19 @@ class HybridSearchEngine:
         if not child_to_parent:
             return results
 
-        # Fetch parent chunk content
+        # Fetch parent chunk content (tenant-scoped)
         parent_ids = list(set(child_to_parent.values()))
         parent_sql = """
             SELECT id::text, content, data_source_id::text, section_title, content_type
             FROM data_source_chunks
             WHERE id = ANY(:parent_ids)
+              AND tenant_id = :tenant_id
+              AND deleted_at IS NULL
         """
-        parent_result = await db.execute(text(parent_sql), {"parent_ids": parent_ids})
+        parent_result = await db.execute(
+            text(parent_sql),
+            {"parent_ids": parent_ids, "tenant_id": str(tenant_id)},
+        )
         parents = {row["id"]: row for row in parent_result.mappings().all()}
 
         # Replace child results with parent content, keeping child's score
@@ -343,10 +433,9 @@ class HybridSearchEngine:
         db: AsyncSession,
     ) -> list[SearchResult]:
         """Search data_source_chunks with hybrid or single-mode search."""
-        # DiskANN requires setting the search list size for query-time recall tuning.
-        # Higher values improve recall at the cost of latency.
-        if _use_diskann() and query_embedding is not None:
-            await db.execute(text("SET LOCAL diskann.query_search_list_size = 100"))
+        # Apply vector index tuning (ef_search, iterative_scan, DiskANN search list)
+        if query_embedding is not None:
+            await _apply_vector_search_settings(db)
 
         params: dict[str, Any] = {
             "tenant_id": str(tenant_id),
@@ -355,7 +444,7 @@ class HybridSearchEngine:
         }
 
         # Build filter clauses from the fixed-safe SQL fragments
-        filter_clauses = ["dsc.tenant_id = :tenant_id"]
+        filter_clauses = ["dsc.tenant_id = :tenant_id", "dsc.deleted_at IS NULL"]
         if filters.data_source_ids:
             filter_clauses.append(_FILTER_SQL["data_source_ids"])
             params["data_source_ids"] = [str(d) for d in filters.data_source_ids]
@@ -572,8 +661,7 @@ class HybridSearchEngine:
         if not settings.AGENT_MEMORY_VECTOR_ENABLED:
             return []
 
-        if _use_diskann():
-            await db.execute(text("SET LOCAL diskann.query_search_list_size = 100"))
+        await _apply_vector_search_settings(db)
 
         vector_str = embedding_to_vector_str(query_embedding)
 

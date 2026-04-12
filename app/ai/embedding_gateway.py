@@ -119,9 +119,10 @@ EMBEDDING_MODEL_CATALOG: dict[str, EmbeddingModelInfo] = {
     "embed-v4.0": EmbeddingModelInfo(
         provider=EmbeddingProvider.COHERE,
         model_name="embed-v4.0",
-        display_name="Cohere Embed v4 (Multimodal)",
+        display_name="Cohere Embed v4 (Multimodal, native int8/binary)",
         dimensions=1024,
         max_input_tokens=512,
+        supports_dimensions_param=True,
         supports_matryoshka=True,
     ),
     # ── Voyage AI ─────────────────────────────────────────────
@@ -145,6 +146,7 @@ EMBEDDING_MODEL_CATALOG: dict[str, EmbeddingModelInfo] = {
         display_name="Voyage 4 (MoE)",
         dimensions=1024,
         max_input_tokens=32000,
+        supports_dimensions_param=True,
         supports_matryoshka=True,
     ),
     "voyage-4-large": EmbeddingModelInfo(
@@ -153,6 +155,7 @@ EMBEDDING_MODEL_CATALOG: dict[str, EmbeddingModelInfo] = {
         display_name="Voyage 4 Large",
         dimensions=2048,
         max_input_tokens=32000,
+        supports_dimensions_param=True,
         supports_matryoshka=True,
     ),
     # ── Google ────────────────────────────────────────────────
@@ -473,9 +476,23 @@ class EmbeddingGateway:
     async def _generate_cohere(
         self, texts: list[str], info: EmbeddingModelInfo, dimensions: int,
     ) -> list[list[float]]:
-        """Generate embeddings via Cohere API."""
+        """Generate embeddings via Cohere API.
+
+        For embed-v4.0+, supports native int8/binary quantization and MRL
+        dimensionality reduction via output_dimension parameter.
+        """
         api_key = self._resolve_api_key(EmbeddingProvider.COHERE)
         truncated = [t[:2048] for t in texts]
+
+        body: dict[str, Any] = {
+            "texts": truncated,
+            "model": info.model_name,
+            "input_type": "search_document",
+            "embedding_types": ["float"],
+        }
+        # MRL: forward output_dimension for Matryoshka-capable models (embed-v4.0+)
+        if info.supports_dimensions_param and dimensions < info.dimensions:
+            body["output_dimension"] = dimensions
 
         client = _get_http_client()
         response = await client.post(
@@ -484,12 +501,7 @@ class EmbeddingGateway:
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
-            json={
-                "texts": truncated,
-                "model": info.model_name,
-                "input_type": "search_document",
-                "embedding_types": ["float"],
-            },
+            json=body,
         )
         response.raise_for_status()
         try:
@@ -505,9 +517,21 @@ class EmbeddingGateway:
     async def _generate_voyage(
         self, texts: list[str], info: EmbeddingModelInfo, dimensions: int,
     ) -> list[list[float]]:
-        """Generate embeddings via Voyage AI API."""
+        """Generate embeddings via Voyage AI API.
+
+        For Matryoshka-capable models (voyage-4, voyage-4-large), supports
+        output_dimension parameter for reduced dimensionality.
+        """
         api_key = self._resolve_api_key(EmbeddingProvider.VOYAGE)
         truncated = [t[:32000] for t in texts]
+
+        body: dict[str, Any] = {
+            "input": truncated,
+            "model": info.model_name,
+        }
+        # MRL: forward output_dimension for Matryoshka-capable models
+        if info.supports_matryoshka and dimensions < info.dimensions:
+            body["output_dimension"] = dimensions
 
         client = _get_http_client()
         response = await client.post(
@@ -516,10 +540,7 @@ class EmbeddingGateway:
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
-            json={
-                "input": truncated,
-                "model": info.model_name,
-            },
+            json=body,
         )
         response.raise_for_status()
         try:

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import enum
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import structlog
 
@@ -29,13 +29,25 @@ class QueryCategory(enum.StrEnum):
 
 @dataclass
 class QueryPlan:
-    """Optimized search parameters based on query classification."""
+    """Optimized search parameters based on query classification.
+
+    Controls both search weights and pipeline depth — simple queries skip
+    expensive stages (re-ranking, HyDE, agentic iterations) while complex
+    queries get the full treatment.
+    """
 
     category: QueryCategory
     vector_weight: float = 0.6
     text_weight: float = 0.4
     limit_multiplier: float = 1.0
     sub_queries: list[str] = field(default_factory=list)
+
+    # Adaptive pipeline depth controls
+    use_reranking: bool = False
+    use_hyde: bool = False
+    use_graph: bool = False
+    agentic_iterations: int = 1
+    search_type: str = "hybrid"  # "vector", "text", "hybrid"
 
 
 # Regex patterns for classification
@@ -68,10 +80,16 @@ class QueryRouter:
     """Classify queries and generate optimized search plans."""
 
     def route(self, query: str) -> QueryPlan:
-        """Classify query and return optimal search parameters."""
+        """Classify query and return optimal search parameters.
+
+        Returns a fresh copy of the category plan so callers can safely
+        mutate the returned plan without affecting subsequent requests.
+        """
         category = self._classify(query)
 
-        plan = _CATEGORY_PLANS[category]
+        # Return a shallow copy — QueryPlan is mutable and the singleton
+        # plans must not be shared across concurrent requests.
+        plan = replace(_CATEGORY_PLANS[category])
 
         logger.debug(
             "query_routed",
@@ -114,23 +132,47 @@ _CATEGORY_PLANS: dict[QueryCategory, QueryPlan] = {
         category=QueryCategory.FACTUAL,
         vector_weight=0.8,
         text_weight=0.2,
+        # Fast path: vector-heavy, no re-ranking, no HyDE, single pass
+        use_reranking=False,
+        use_hyde=False,
+        use_graph=False,
+        agentic_iterations=1,
+        search_type="vector",
     ),
     QueryCategory.KEYWORD: QueryPlan(
         category=QueryCategory.KEYWORD,
         vector_weight=0.2,
         text_weight=0.8,
+        # Text-heavy, no HyDE (already keyword-oriented), optional rerank
+        use_reranking=True,
+        use_hyde=False,
+        use_graph=False,
+        agentic_iterations=1,
+        search_type="hybrid",
     ),
     QueryCategory.ANALYTICAL: QueryPlan(
         category=QueryCategory.ANALYTICAL,
         vector_weight=0.5,
         text_weight=0.5,
         limit_multiplier=1.5,
+        # Full pipeline: rerank + HyDE + graph augmentation, 2 iterations
+        use_reranking=True,
+        use_hyde=True,
+        use_graph=True,
+        agentic_iterations=2,
+        search_type="hybrid",
     ),
     QueryCategory.MULTI_PART: QueryPlan(
         category=QueryCategory.MULTI_PART,
         vector_weight=0.6,
         text_weight=0.4,
         limit_multiplier=2.0,
+        # Maximum depth: decompose + rerank + graph, 3 iterations
+        use_reranking=True,
+        use_hyde=True,
+        use_graph=True,
+        agentic_iterations=3,
+        search_type="hybrid",
     ),
 }
 

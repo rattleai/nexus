@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.embeddings import EmbeddingService
@@ -66,6 +68,22 @@ class ContentIndexer:
                     f"Tenant mismatch: datasource {data_source_id} belongs to "
                     f"{ds.tenant_id}, not {tenant_id}"
                 )
+
+        # Capture existing chunk IDs (tenant-scoped) for deletion AFTER new
+        # chunks are successfully persisted. This ensures that if indexing
+        # fails mid-way, old chunks remain intact. The tenant_id filter is
+        # critical: it defends against cross-tenant data destruction even if
+        # the ownership guard above is bypassed.
+        existing_rows = await db.execute(
+            text(
+                "SELECT id FROM data_source_chunks "
+                "WHERE data_source_id = :ds_id "
+                "AND tenant_id = :tenant_id "
+                "AND deleted_at IS NULL"
+            ),
+            {"ds_id": str(data_source_id), "tenant_id": str(tenant_id)},
+        )
+        stale_chunk_ids = [str(row[0]) for row in existing_rows]
 
         # Build chunks using pluggable strategy
         chunker = get_chunker(chunking_strategy)
@@ -164,6 +182,7 @@ class ContentIndexer:
                 data_source_id=data_source_id,
                 chunk_index=idx,
                 content=chunk_text,
+                content_hash=hashlib.sha256(chunk_text.encode()).hexdigest(),
                 # Write to JSONB (backward compat), full-precision vector, and halfvec
                 embedding=embedding,
                 embedding_vec=vec_str,
@@ -194,6 +213,29 @@ class ContentIndexer:
             )
 
         await db.flush()
+
+        # Delete stale chunks now that new ones are persisted. Tenant-scoped
+        # to prevent cross-tenant data destruction. Runs ONLY after successful
+        # flush so that any failure during chunking/embedding leaves the old
+        # chunks intact.
+        if stale_chunk_ids:
+            await db.execute(
+                text(
+                    "DELETE FROM data_source_chunks "
+                    "WHERE id = ANY(:ids) "
+                    "AND tenant_id = :tenant_id"
+                ),
+                {"ids": stale_chunk_ids, "tenant_id": str(tenant_id)},
+            )
+
+        # Invalidate semantic query cache for this tenant so stale cached
+        # results are not returned after re-indexing.
+        try:
+            from app.agents.query_cache import semantic_query_cache
+            await semantic_query_cache.invalidate(str(tenant_id))
+        except Exception:
+            logger.debug("query_cache_invalidation_failed", exc_info=True)
+
         logger.info(
             "content_indexed",
             data_source_id=str(data_source_id),
@@ -224,18 +266,11 @@ class ContentIndexer:
         created as 'standard') get reclassified and linked to their parent.
         """
         parent_chunker = get_chunker("fixed_size")
-        parent_size = settings.RAG_PARENT_CHUNK_SIZE
-
-        # Override chunk size temporarily for parent chunking
-        original_size = settings.RAG_CHUNK_SIZE
-        settings.RAG_CHUNK_SIZE = parent_size
-        settings.RAG_CHUNK_OVERLAP = 0
-
-        try:
-            parent_tuples = parent_chunker.chunk(raw_text)
-        finally:
-            settings.RAG_CHUNK_SIZE = original_size
-            settings.RAG_CHUNK_OVERLAP = 200
+        parent_tuples = parent_chunker.chunk(
+            raw_text,
+            chunk_size=settings.RAG_PARENT_CHUNK_SIZE,
+            chunk_overlap=0,
+        )
 
         parent_texts = [text for text, _ in parent_tuples]
         stored = 0

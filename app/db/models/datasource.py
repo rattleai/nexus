@@ -260,6 +260,12 @@ class DataSourceChunk(TimestampMixin, Base):
         String(20), nullable=True, server_default="standard",
     )
 
+    # Versioning — content_hash for incremental re-indexing, deleted_at for soft-delete
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+
     # Relationships
     data_source: Mapped[DataSource] = relationship(back_populates="chunks")
 

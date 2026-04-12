@@ -198,6 +198,9 @@ class Settings(BaseSettings):
 
     # ── RAG / Embedding Gateway ──────────────────────────────
     EMBEDDING_DEFAULT_PROVIDER: str = "openai"
+    # Default model: text-embedding-3-small (MTEB ~62). For higher quality:
+    #   voyage-4        (~67 MTEB, $0.06/1M tok, Matryoshka) — best cost/quality
+    #   gemini-embedding-001 (~68 MTEB, $0.15/1M tok) — highest overall quality
     EMBEDDING_DEFAULT_MODEL: str = "text-embedding-3-small"
     EMBEDDING_COHERE_API_KEY: str = ""
     EMBEDDING_VOYAGE_API_KEY: str = ""
@@ -223,6 +226,19 @@ class Settings(BaseSettings):
     # "diskann" = pgvectorscale StreamingDiskANN (10x+ throughput at 99% recall)
     VECTOR_INDEX_TYPE: str = "hnsw"
 
+    # HNSW index build parameters — used when creating/rebuilding indexes.
+    HNSW_M: int = 24              # edges per node (higher = better recall, larger index)
+    HNSW_EF_CONSTRUCTION: int = 128  # build-time search width (higher = better index quality)
+
+    # HNSW query-time tuning — controls recall vs. latency trade-off.
+    # ef_search: candidates evaluated per query (pgvector default 40, too low for 1536-dim).
+    # iterative_scan: re-enters index when filtered candidates are exhausted (pgvector >=0.8.0).
+    HNSW_EF_SEARCH: int = 100
+    PGVECTOR_ITERATIVE_SCAN: bool = True
+
+    # DiskANN query-time tuning — search list size for recall optimization.
+    DISKANN_QUERY_SEARCH_LIST_SIZE: int = 100
+
     # RAG Re-ranking
     RAG_RERANKER_PROVIDER: str = "none"  # none, cohere, cross_encoder
     RAG_RERANKER_MODEL: str = "rerank-v3.5"
@@ -244,9 +260,9 @@ class Settings(BaseSettings):
     RAG_QUERY_ROUTING_ENABLED: bool = False
     RAG_QUERY_DECOMPOSITION_ENABLED: bool = False
 
-    # Semantic query cache
+    # Semantic query cache (invalidated on data changes via event-driven mechanism)
     RAG_QUERY_CACHE_ENABLED: bool = False
-    RAG_QUERY_CACHE_TTL_SECONDS: int = 300
+    RAG_QUERY_CACHE_TTL_SECONDS: int = 1800  # 30 min (safe with event-driven invalidation)
     RAG_QUERY_CACHE_SIMILARITY_THRESHOLD: float = 0.95
 
     # Query analytics sampling rate (0.0-1.0, fraction of queries logged)
@@ -259,6 +275,9 @@ class Settings(BaseSettings):
     # Agentic RAG — multi-step retrieval with self-critique
     RAG_AGENTIC_ENABLED: bool = False
     RAG_AGENTIC_MAX_ITERATIONS: int = 3
+
+    # Corrective RAG (CRAG) — document-level grading and filtering
+    RAG_CRAG_ENABLED: bool = False
 
     # Graph RAG — knowledge graph extraction and retrieval
     RAG_GRAPH_ENABLED: bool = False

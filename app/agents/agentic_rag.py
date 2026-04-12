@@ -18,6 +18,7 @@ import uuid
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.query_router import QueryPlan, query_router
 from app.agents.reranker import reranker
 from app.agents.search import (
     HybridSearchEngine,
@@ -30,6 +31,22 @@ from app.agents.search import (
 from app.config import settings
 
 logger = structlog.stdlib.get_logger()
+
+
+def _safe_search_type(plan: QueryPlan | None) -> SearchType:
+    """Resolve a QueryPlan's search_type string to a SearchType enum.
+
+    Defaults to HYBRID when the plan is missing or contains an unrecognized
+    string (plans may come from external sources — API input, cached state —
+    where arbitrary values could appear).
+    """
+    if plan is None:
+        return SearchType.HYBRID
+    try:
+        return SearchType(plan.search_type)
+    except ValueError:
+        logger.warning("invalid_plan_search_type", value=plan.search_type)
+        return SearchType.HYBRID
 
 
 class AgenticRAGPipeline:
@@ -46,21 +63,41 @@ class AgenticRAGPipeline:
         db: AsyncSession,
         filters: SearchFilters | None = None,
         limit: int = 10,
+        plan: QueryPlan | None = None,
     ) -> list[SearchResult]:
-        """Execute multi-step agentic retrieval.
+        """Execute adaptive multi-step agentic retrieval.
+
+        When query routing is enabled, the QueryPlan controls pipeline depth:
+        simple queries skip re-ranking/HyDE/agentic steps, complex queries
+        get the full treatment.
 
         Returns deduplicated, re-ranked results from multiple iterations.
         """
+        # Build query plan (adaptive depth)
+        if plan is None and settings.RAG_QUERY_ROUTING_ENABLED:
+            plan = query_router.route(query)
+
         if not settings.RAG_AGENTIC_ENABLED:
+            search_type = _safe_search_type(plan)
             return await self._search.search(
                 query=query,
                 tenant_id=tenant_id,
                 db=db,
                 filters=filters,
                 limit=limit,
+                search_type=search_type,
+                vector_weight=plan.vector_weight if plan else 0.6,
+                text_weight=plan.text_weight if plan else 0.4,
             )
 
-        max_iterations = settings.RAG_AGENTIC_MAX_ITERATIONS
+        # Adaptive iteration count: plan overrides global config
+        max_iterations = (
+            plan.agentic_iterations if plan
+            else settings.RAG_AGENTIC_MAX_ITERATIONS
+        )
+        search_type = _safe_search_type(plan)
+        effective_limit = int(limit * (plan.limit_multiplier if plan else 1.0))
+
         all_results: dict[str, SearchResult] = {}  # Dedup by chunk ID
         current_query = query
 
@@ -70,9 +107,17 @@ class AgenticRAGPipeline:
                 tenant_id=tenant_id,
                 db=db,
                 filters=filters,
-                limit=limit * 2,  # Over-fetch for merging
-                search_type=SearchType.HYBRID,
+                limit=effective_limit * 2,  # Over-fetch for merging
+                search_type=search_type,
+                vector_weight=plan.vector_weight if plan else 0.6,
+                text_weight=plan.text_weight if plan else 0.4,
             )
+
+            # CRAG: grade documents and filter out irrelevant ones
+            if settings.RAG_CRAG_ENABLED:
+                from app.agents.corrective_rag import crag_evaluator
+                crag_outcome = await crag_evaluator.evaluate(query, results)
+                results = crag_outcome.kept_results
 
             # Merge with deduplication (keep highest score)
             for r in results:
@@ -108,10 +153,15 @@ class AgenticRAGPipeline:
         # Sort merged results and trim
         final = sorted(all_results.values(), key=lambda r: r.score, reverse=True)
 
-        # Apply final re-ranking if configured
-        if settings.RAG_RERANKER_PROVIDER != "none" and final:
-            documents = [r.content for r in final[:limit * 2]]
-            reranked = await reranker.rerank(query=query, documents=documents, top_k=limit)
+        # Apply re-ranking only when the plan says to (or always when no plan)
+        should_rerank = (
+            settings.RAG_RERANKER_PROVIDER != "none"
+            and final
+            and (plan is None or plan.use_reranking)
+        )
+        if should_rerank:
+            documents = [r.content for r in final[:effective_limit * 2]]
+            reranked = await reranker.rerank(query=query, documents=documents, top_k=effective_limit)
             reranked_results = []
             for rr in reranked:
                 if rr.index < len(final):
@@ -127,7 +177,7 @@ class AgenticRAGPipeline:
                     ))
             return reranked_results
 
-        return final[:limit]
+        return final[:effective_limit]
 
     async def _assess_sufficiency(
         self, query: str, top_contents: list[str],
