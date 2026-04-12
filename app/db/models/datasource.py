@@ -23,6 +23,15 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import UserDefinedType
+
+
+class VectorPrecision(enum.StrEnum):
+    """Vector storage precision modes for pgvector columns."""
+
+    FULL = "full"      # float32 vector(N) — 4 bytes/dim
+    HALF = "half"      # float16 halfvec(N) — 2 bytes/dim (50% savings)
+    BINARY = "binary"  # 1-bit bit(N) — 0.125 bytes/dim (97% savings)
 
 from app.db.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin
 
@@ -145,6 +154,63 @@ class DataSource(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
 # ── Data Source Chunk ────────────────────────────────────
 
 
+class VectorType(UserDefinedType):
+    """SQLAlchemy type for pgvector's vector column.
+
+    Handles serialization/deserialization between Python lists and
+    PostgreSQL vector types. The precision parameter determines the
+    underlying SQL type (vector, halfvec, or bit).
+    """
+
+    cache_ok = True
+
+    def __init__(
+        self,
+        dimensions: int = 1536,
+        precision: VectorPrecision | str = VectorPrecision.FULL,
+    ):
+        self.dimensions = dimensions
+        self.precision = VectorPrecision(precision)
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, VectorType)
+            and self.dimensions == other.dimensions
+            and self.precision == other.precision
+        )
+
+    def __hash__(self):
+        return hash((VectorType, self.dimensions, self.precision))
+
+    def get_col_spec(self) -> str:
+        if self.precision == VectorPrecision.HALF:
+            return f"halfvec({self.dimensions})"
+        if self.precision == VectorPrecision.BINARY:
+            return f"bit({self.dimensions})"
+        return f"vector({self.dimensions})"
+
+    def bind_expression(self, bindvalue):
+        return bindvalue
+
+    def result_processor(self, dialect, coltype):
+        """Parse pgvector string format '[1.0,2.0,3.0]' to Python list.
+
+        Always returns list[float] or None — never leaks raw driver strings.
+        """
+        def process(value):
+            if value is None:
+                return None
+            if isinstance(value, list):
+                return value
+            if isinstance(value, str):
+                stripped = value.strip("[]")
+                if not stripped:
+                    return []
+                return [float(x) for x in stripped.split(",") if x.strip()]
+            return None
+        return process
+
+
 class DataSourceChunk(TimestampMixin, Base):
     """A chunk of extracted content from a data source, with optional embedding."""
 
@@ -157,10 +223,48 @@ class DataSourceChunk(TimestampMixin, Base):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Legacy JSONB embedding column — kept for backward compatibility during transition.
+    # New code should use embedding_vec (native pgvector column) for storage and search.
     embedding: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     section_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     table_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Native pgvector column for hardware-accelerated similarity search (HNSW indexed).
+    # Full-precision float32: 6,144 bytes per 1536-dim vector.
+    embedding_vec: Mapped[list | None] = mapped_column(VectorType(1536), nullable=True)
+    # Half-precision float16 column: 3,072 bytes per 1536-dim vector (50% savings).
+    # Used as the primary search column when VECTOR_QUANTIZATION="half" is enabled.
+    # The full-precision column is kept for accuracy-sensitive operations.
+    embedding_halfvec: Mapped[list | None] = mapped_column(
+        VectorType(1536, precision="half"), nullable=True,
+    )
+    # Auto-maintained tsvector for full-text search (GIN indexed, trigger-updated).
+    # Column type is tsvector in PostgreSQL; mapped as Text here since SQLAlchemy
+    # doesn't have a native tsvector type. Reads return raw tsvector strings.
+    content_tsv: Mapped[str | None] = mapped_column("content_tsv", Text, nullable=True)
+    # Metadata for filtering
+    tags: Mapped[list | None] = mapped_column(JSONB, nullable=False, server_default="[]")
+    content_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Contextual retrieval — document-level context prepended to chunk before embedding
+    context_preamble: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_with_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Parent-child retrieval — small child chunks for matching, parent chunks for context
+    parent_chunk_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True,
+    )
+    chunk_level: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, server_default="standard",
+    )
+
+    # Versioning — content_hash for incremental re-indexing, deleted_at for soft-delete
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
 
     # Relationships
     data_source: Mapped[DataSource] = relationship(back_populates="chunks")

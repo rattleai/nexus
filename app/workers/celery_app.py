@@ -82,7 +82,7 @@ celery.conf.update(
     redbeat_redis_url=settings.REDIS_URL,
 )
 
-celery.autodiscover_tasks(["app.workers", "app.agents"])
+celery.autodiscover_tasks(["app.workers", "app.agents", "app.docprocessor"])
 
 # ── Plugin task discovery ──────────────────────────────────
 from app.plugins.registry import registry as _plugin_registry
