@@ -38,9 +38,6 @@ def do_run_migrations(connection):
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
-        # Use a wider column for alembic_version on new deployments so that
-        # revision identifiers longer than 32 chars never get truncated.
-        version_table_column_length=128,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -49,10 +46,26 @@ def do_run_migrations(connection):
 def widen_alembic_version_column(connection):
     """Ensure alembic_version.version_num is wide enough for long revisions.
 
-    Runs in a dedicated transaction BEFORE alembic takes over the connection,
-    so it's fully committed and visible to alembic's own UPDATE statements.
-    Idempotent: checks column length first, only alters if needed.
+    Runs in a dedicated transaction BEFORE alembic takes over the connection.
+    Pre-creates the alembic_version table with VARCHAR(128) so that alembic's
+    default CREATE TABLE (which uses VARCHAR(32)) is a no-op. Also widens the
+    column on legacy databases where the table already exists with the
+    narrow default.
+
+    Background: some revision identifiers (e.g. 0021_cardinality_check_constraints,
+    34 chars) exceed alembic's default VARCHAR(32). Without this fix, fresh
+    bootstraps fail at revision 0021 with StringDataRightTruncationError, and
+    legacy databases with the narrow column fail the same way during upgrade.
     """
+    # Fresh DB path: create the table upfront with the wider column so alembic
+    # sees it already exists and won't attempt its default VARCHAR(32) CREATE.
+    connection.exec_driver_sql(
+        "CREATE TABLE IF NOT EXISTS alembic_version ("
+        "    version_num VARCHAR(128) NOT NULL, "
+        "    CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)"
+        ")"
+    )
+    # Legacy DB path: table exists with VARCHAR(32) — widen it.
     connection.exec_driver_sql(
         "DO $$ BEGIN "
         "IF EXISTS (SELECT 1 FROM information_schema.columns "
