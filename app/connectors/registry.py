@@ -22,9 +22,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors.models import (
     AuthType,
+    BrokerType,
     ConnectorDefinition,
     ConnectorType,
+    TrustLevel,
 )
+
+# Fields that must never be stored in the global connector_definitions table.
+# They are per-tenant and live in connector_app_credentials, encrypted.
+_APP_SECRET_FIELDS = frozenset({"client_id", "client_secret", "webhook_secret"})
 
 logger = structlog.stdlib.get_logger()
 
@@ -98,17 +104,16 @@ class ConnectorRegistry:
         name: str,
         description: str = "",
         tenant_id: uuid.UUID | None = None,
+        trust_level: TrustLevel = TrustLevel.UNTRUSTED,
     ) -> ConnectorDefinition:
         """Register a custom remote MCP server as a connector definition."""
         from app.core.url_validation import validate_url
 
         validate_url(url)
 
-        # Generate a slug from the name
         slug = name.lower().replace(" ", "-").replace("_", "-")
         slug = "".join(c for c in slug if c.isalnum() or c == "-")
 
-        # Check for duplicate
         existing = await self.get_connector(db, slug)
         if existing:
             raise ValueError(f"Connector with slug '{slug}' already exists")
@@ -125,6 +130,8 @@ class ConnectorRegistry:
                 "server_url": url,
                 "transport": "streamable_http",
             },
+            trust_level=trust_level,
+            broker=BrokerType.IN_HOUSE,
             is_system=False,
             is_active=True,
         )
@@ -135,6 +142,7 @@ class ConnectorRegistry:
             "mcp_server_registered",
             slug=slug,
             url=url,
+            trust_level=trust_level.value,
         )
         return connector
 
@@ -170,7 +178,9 @@ class ConnectorRegistry:
         """Sync built-in YAML definitions to the database.
 
         Creates new definitions and updates existing ones.
-        Returns the number of definitions synced.
+        Strips any ``client_id`` / ``client_secret`` / ``webhook_secret``
+        keys from ``auth_config`` and ``webhook_config`` so secrets never
+        leak into the global catalog (P0.1).
         """
         definitions = self.load_builtins()
         synced = 0
@@ -181,40 +191,19 @@ class ConnectorRegistry:
                 logger.warning("builtin_connector_missing_slug", data=data)
                 continue
 
+            self._strip_secrets(data, slug)
+
             existing = await self.get_connector(db, slug)
 
             if existing:
-                # Update existing definition
-                for key, value in data.items():
-                    if key != "slug" and hasattr(existing, key):
-                        setattr(existing, key, value)
+                self._apply_yaml(existing, data)
                 existing.is_system = True
             else:
-                # Create new definition
-                connector = ConnectorDefinition(
-                    slug=slug,
-                    name=data.get("name", slug),
-                    description=data.get("description", ""),
-                    icon=data.get("icon", "Plug"),
-                    category=data.get("category", "custom"),
-                    connector_type=ConnectorType(data["connector_type"]),
-                    auth_type=AuthType(data["auth_type"]),
-                    auth_config=data.get("auth_config"),
-                    mcp_config=data.get("mcp_config"),
-                    tool_definitions=data.get("tool_definitions"),
-                    webhook_config=data.get("webhook_config"),
-                    capability_template=data.get("capability_template"),
-                    is_system=True,
-                    is_active=True,
-                    version=data.get("version", "1.0"),
-                    documentation_url=data.get("documentation_url"),
-                    tags=data.get("tags", []),
-                )
+                connector = self._build_definition(slug, data, is_system=True)
                 db.add(connector)
 
             synced += 1
 
-        # Also load plugin-contributed connector definitions
         try:
             from app.plugins.registry import registry as plugin_registry
 
@@ -224,23 +213,10 @@ class ConnectorRegistry:
                         pslug = cdata.get("slug")
                         if not pslug:
                             continue
+                        self._strip_secrets(cdata, pslug)
                         existing = await self.get_connector(db, pslug)
                         if not existing:
-                            connector = ConnectorDefinition(
-                                slug=pslug,
-                                name=cdata.get("name", pslug),
-                                description=cdata.get("description", ""),
-                                icon=cdata.get("icon", "Plug"),
-                                category=cdata.get("category", "custom"),
-                                connector_type=ConnectorType(cdata["connector_type"]),
-                                auth_type=AuthType(cdata["auth_type"]),
-                                auth_config=cdata.get("auth_config"),
-                                mcp_config=cdata.get("mcp_config"),
-                                tool_definitions=cdata.get("tool_definitions"),
-                                is_system=True,
-                                is_active=True,
-                            )
-                            db.add(connector)
+                            db.add(self._build_definition(pslug, cdata, is_system=True))
                             synced += 1
         except Exception:
             logger.debug("plugin_connector_load_skipped", exc_info=True)
@@ -250,6 +226,136 @@ class ConnectorRegistry:
 
         logger.info("connector_builtins_synced", count=synced)
         return synced
+
+    # ── YAML → Model helpers ─────────────────────────────────
+
+    def _strip_secrets(self, data: dict[str, Any], slug: str) -> None:
+        """Remove client_id / client_secret / webhook_secret from YAML data.
+
+        These live in per-tenant ``connector_app_credentials`` only. Logging
+        a warning if they appear in YAML makes it obvious during deployment.
+        """
+        auth = data.get("auth_config")
+        if isinstance(auth, dict):
+            for key in list(auth.keys()):
+                if key in _APP_SECRET_FIELDS:
+                    if auth[key]:
+                        logger.warning(
+                            "yaml_secret_stripped",
+                            slug=slug,
+                            field=f"auth_config.{key}",
+                        )
+                    auth.pop(key, None)
+
+        wh = data.get("webhook_config")
+        if isinstance(wh, dict) and "secret" in wh:
+            if wh["secret"]:
+                logger.warning(
+                    "yaml_secret_stripped",
+                    slug=slug,
+                    field="webhook_config.secret",
+                )
+            wh.pop("secret", None)
+
+    def _apply_yaml(
+        self,
+        existing: ConnectorDefinition,
+        data: dict[str, Any],
+    ) -> None:
+        """Apply YAML data onto an existing ConnectorDefinition row."""
+        existing.name = data.get("name", existing.name)
+        existing.description = data.get("description", existing.description or "")
+        existing.icon = data.get("icon", existing.icon)
+        existing.category = data.get("category", existing.category)
+        existing.connector_type = ConnectorType(
+            data.get("connector_type", existing.connector_type.value)
+        )
+        existing.auth_type = AuthType(
+            data.get("auth_type", existing.auth_type.value)
+        )
+        existing.auth_config = data.get("auth_config", existing.auth_config)
+        existing.mcp_config = data.get("mcp_config", existing.mcp_config)
+        existing.api_config = data.get("api_config", existing.api_config)
+        existing.tool_definitions = data.get(
+            "tool_definitions", existing.tool_definitions
+        )
+        existing.webhook_config = data.get("webhook_config", existing.webhook_config)
+        existing.capability_template = data.get(
+            "capability_template", existing.capability_template
+        )
+        existing.version = data.get("version", existing.version)
+        existing.documentation_url = data.get(
+            "documentation_url", existing.documentation_url
+        )
+        existing.tags = data.get("tags", existing.tags or [])
+        if "requires_app_credentials" in data:
+            existing.requires_app_credentials = bool(data["requires_app_credentials"])
+        if "trust_level" in data:
+            try:
+                existing.trust_level = TrustLevel(data["trust_level"])
+            except ValueError:
+                logger.warning(
+                    "yaml_invalid_trust_level",
+                    slug=existing.slug,
+                    value=data.get("trust_level"),
+                )
+        if "broker" in data:
+            try:
+                existing.broker = BrokerType(data["broker"])
+            except ValueError:
+                logger.warning(
+                    "yaml_invalid_broker",
+                    slug=existing.slug,
+                    value=data.get("broker"),
+                )
+
+    def _build_definition(
+        self,
+        slug: str,
+        data: dict[str, Any],
+        *,
+        is_system: bool,
+    ) -> ConnectorDefinition:
+        """Construct a new ConnectorDefinition row from YAML data."""
+        trust = TrustLevel.UNTRUSTED
+        try:
+            if "trust_level" in data:
+                trust = TrustLevel(data["trust_level"])
+            elif is_system:
+                trust = TrustLevel.VERIFIED
+        except ValueError:
+            pass
+
+        broker = BrokerType.IN_HOUSE
+        try:
+            if "broker" in data:
+                broker = BrokerType(data["broker"])
+        except ValueError:
+            pass
+
+        return ConnectorDefinition(
+            slug=slug,
+            name=data.get("name", slug),
+            description=data.get("description", ""),
+            icon=data.get("icon", "Plug"),
+            category=data.get("category", "custom"),
+            connector_type=ConnectorType(data["connector_type"]),
+            auth_type=AuthType(data["auth_type"]),
+            auth_config=data.get("auth_config"),
+            mcp_config=data.get("mcp_config"),
+            api_config=data.get("api_config"),
+            tool_definitions=data.get("tool_definitions"),
+            webhook_config=data.get("webhook_config"),
+            capability_template=data.get("capability_template"),
+            requires_app_credentials=bool(data.get("requires_app_credentials", False)),
+            trust_level=trust,
+            broker=broker,
+            is_system=is_system,
+            is_active=True,
+            version=data.get("version", "1.0"),
+            documentation_url=data.get("documentation_url"),
+            tags=data.get("tags", []),
+        )
 
 
 # Module-level singleton

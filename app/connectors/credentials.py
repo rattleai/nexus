@@ -1,9 +1,16 @@
 """Credential management for connector connections.
 
-Handles encrypted storage, transparent OAuth token refresh, and
-credential lifecycle (store, retrieve, refresh, revoke).
+Handles encrypted storage, transparent OAuth token refresh, and credential
+lifecycle (store, retrieve, refresh, revoke).
 
-Generalises the pattern from ``app.api.v1.cloud_connections._get_access_token``.
+Security hardening over PR #63:
+
+* **P0.1** — OAuth client_id / client_secret for refresh are looked up per-tenant
+  via ``ConnectorAppCredential`` instead of being read from the global
+  ``connector_definitions.auth_config`` JSONB.
+* **P0.4** — Token refresh is wrapped in a Redis distributed lock with a
+  double-check after acquisition, so concurrent ``get_valid_token`` callers
+  don't race each other into stale-refresh-token territory.
 """
 
 from __future__ import annotations
@@ -17,6 +24,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.connectors.app_credentials import (
+    AppCredentialError,
+    app_credential_manager,
+)
 from app.connectors.models import (
     ConnectorDefinition,
     CredentialType,
@@ -24,8 +35,14 @@ from app.connectors.models import (
     TenantCredential,
 )
 from app.core.encryption import decrypt, encrypt
+from app.core.redis import redis_pool
 
 logger = structlog.stdlib.get_logger()
+
+# Distributed refresh lock (P0.4)
+_REFRESH_LOCK_PREFIX = "connector:refresh_lock"
+_REFRESH_LOCK_TIMEOUT = 30  # lock auto-releases after N seconds
+_REFRESH_LOCK_BLOCKING_TIMEOUT = 20  # max seconds to wait for the lock
 
 
 class CredentialError(Exception):
@@ -129,7 +146,9 @@ class CredentialManager:
 
         For API key credentials, returns the decrypted API key.
         For OAuth2, refreshes the token if it has expired or is about
-        to expire within the configured buffer window.
+        to expire within the configured buffer window. Uses a Redis
+        distributed lock to ensure concurrent callers don't race each
+        other into stale-refresh-token territory (P0.4).
         """
         credential = connection.credential
         if credential is None:
@@ -140,7 +159,9 @@ class CredentialManager:
             )
             credential = result.scalar_one_or_none()
             if credential is None:
-                raise CredentialError(f"No credential found for connection {connection.id}")
+                raise CredentialError(
+                    f"No credential found for connection {connection.id}"
+                )
 
         if not credential.is_valid:
             raise CredentialError(
@@ -161,21 +182,80 @@ class CredentialManager:
 
         # OAuth2: check expiry and refresh if needed
         if credential.credential_type == CredentialType.OAUTH2:
-            now = datetime.now(UTC)
-            buffer = timedelta(seconds=settings.CONNECTOR_CREDENTIAL_REFRESH_BUFFER_SECONDS)
-
-            if (
-                credential.token_expires_at
-                and credential.token_expires_at < now + buffer
-                and credential.refresh_token_enc
-            ):
-                await self.refresh_oauth(credential, connector_def, db)
+            if self._needs_refresh(credential):
+                await self._refresh_with_lock(credential, connector_def, db)
 
             if not credential.access_token_enc:
                 raise CredentialError("OAuth access token is empty")
             return decrypt(credential.access_token_enc)
 
         raise CredentialError(f"Unknown credential type: {credential.credential_type}")
+
+    def _needs_refresh(self, credential: TenantCredential) -> bool:
+        """True when the OAuth access token is expired or nearly so."""
+        if not credential.token_expires_at:
+            return False
+        if not credential.refresh_token_enc:
+            return False
+        buffer = timedelta(
+            seconds=settings.CONNECTOR_CREDENTIAL_REFRESH_BUFFER_SECONDS
+        )
+        return credential.token_expires_at < datetime.now(UTC) + buffer
+
+    async def _refresh_with_lock(
+        self,
+        credential: TenantCredential,
+        connector_def: ConnectorDefinition,
+        db: AsyncSession,
+    ) -> None:
+        """Acquire a Redis lock, re-read the credential, then refresh if needed.
+
+        Double-check is essential: another worker may have refreshed the
+        credential while we were waiting for the lock.
+        """
+        lock_key = f"{_REFRESH_LOCK_PREFIX}:{credential.id}"
+        lock = redis_pool.lock(
+            lock_key,
+            timeout=_REFRESH_LOCK_TIMEOUT,
+            blocking_timeout=_REFRESH_LOCK_BLOCKING_TIMEOUT,
+        )
+
+        acquired = False
+        try:
+            acquired = await lock.acquire()
+        except Exception:
+            # Redis down — fail open so we at least attempt refresh
+            logger.warning(
+                "credential_refresh_lock_redis_error",
+                credential_id=str(credential.id),
+                exc_info=True,
+            )
+            acquired = False
+
+        if not acquired:
+            # Lock contention — rely on the other refresher. Re-read and check.
+            await db.refresh(credential)
+            if self._needs_refresh(credential):
+                raise CredentialError(
+                    "OAuth token refresh is contended; please retry shortly."
+                )
+            return
+
+        try:
+            await db.refresh(credential)
+            if not self._needs_refresh(credential):
+                # Another worker already refreshed it
+                return
+            await self.refresh_oauth(credential, connector_def, db)
+        finally:
+            try:
+                await lock.release()
+            except Exception:
+                logger.debug(
+                    "credential_refresh_lock_release_failed",
+                    credential_id=str(credential.id),
+                    exc_info=True,
+                )
 
     # ── Refresh ──────────────────────────────────────────────
 
@@ -187,7 +267,8 @@ class CredentialManager:
     ) -> None:
         """Refresh an OAuth2 access token using the stored refresh token.
 
-        Updates the credential in-place and flushes to DB.
+        Uses per-tenant OAuth app credentials (P0.1) — never reads
+        client_id / client_secret from the global connector definition.
         """
         if not credential.refresh_token_enc:
             credential.is_valid = False
@@ -195,16 +276,28 @@ class CredentialManager:
             await db.flush()
             raise CredentialError("No refresh token available for refresh")
 
-        auth_config = connector_def.auth_config or {}
+        from app.connectors.oauth_flow import _effective_auth_config
+
+        auth_config = _effective_auth_config(connector_def)
         token_url = auth_config.get("token_url")
         if not token_url:
             raise CredentialError(
-                f"Connector {connector_def.slug} has no token_url in auth_config"
+                f"Connector {connector_def.slug} has no token_url"
             )
 
+        try:
+            app_creds = await app_credential_manager.require(
+                tenant_id=credential.tenant_id,
+                connector_slug=connector_def.slug,
+                db=db,
+            )
+        except AppCredentialError as exc:
+            credential.is_valid = False
+            credential.refresh_error = str(exc)[:500]
+            await db.flush()
+            raise CredentialError(str(exc)) from exc
+
         refresh_token = decrypt(credential.refresh_token_enc)
-        client_id = auth_config.get("client_id", "")
-        client_secret = auth_config.get("client_secret", "")
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
@@ -213,8 +306,8 @@ class CredentialManager:
                     data={
                         "grant_type": "refresh_token",
                         "refresh_token": refresh_token,
-                        "client_id": client_id,
-                        "client_secret": client_secret,
+                        "client_id": app_creds.client_id or "",
+                        "client_secret": app_creds.client_secret or "",
                     },
                 )
             response.raise_for_status()
@@ -232,7 +325,6 @@ class CredentialManager:
                 "Token refresh failed. Please re-authenticate."
             ) from exc
 
-        # Update credential with new tokens
         now = datetime.now(UTC)
         credential.access_token_enc = encrypt(data["access_token"])
         if data.get("refresh_token"):
@@ -258,10 +350,11 @@ class CredentialManager:
         db: AsyncSession,
     ) -> None:
         """Best-effort revoke tokens at the provider, then clear stored secrets."""
-        auth_config = connector_def.auth_config or {}
+        from app.connectors.oauth_flow import _effective_auth_config
+
+        auth_config = _effective_auth_config(connector_def)
         revoke_url = auth_config.get("revoke_url")
 
-        # Best-effort revocation at the provider
         if revoke_url and credential.access_token_enc:
             try:
                 token = decrypt(credential.access_token_enc)
@@ -273,7 +366,6 @@ class CredentialManager:
                     connection_id=str(credential.connection_id),
                 )
 
-        # Defense-in-depth: clear all encrypted fields
         credential.access_token_enc = None
         credential.refresh_token_enc = None
         credential.api_key_enc = None
@@ -286,5 +378,4 @@ class CredentialManager:
         )
 
 
-# Module-level singleton
 credential_manager = CredentialManager()

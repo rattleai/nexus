@@ -1,7 +1,22 @@
 """Agent Bridge: integrates connector tools with the agent ToolRegistry.
 
-Provides ``ConnectorToolProvider`` which the ToolRegistry calls to
-list and invoke connector tools alongside built-in and tenant tools.
+Provides ``ConnectorToolProvider`` — the thin adapter between the agent
+runtime (``app.agents.tool_registry``) and connector execution.
+
+Hardened over PR #63:
+
+* **P0.2** — ``invoke`` requires ``actor_user_id`` and selects the
+  ``TenantConnection`` for the invoking user, not the first-connected user.
+  Prevents confused-deputy attacks where an agent triggered by user A
+  silently uses user B's OAuth token.
+* **P0.3** — ``list_tools`` and ``invoke`` optionally accept ``agent_id``
+  and filter tools through the agent's resolved capability set via
+  ``CapabilityResolver``. Unauthorized tool calls emit
+  ``AgentGovernanceViolation`` and return an explicit error.
+* **P1.4 / Cedar gate** — when Cedar is enabled, every invocation passes
+  through ``policy_gate.authorize`` before reaching the executor.
+* **P2.4** — invocation is routed through the broker router so Composio
+  or in-house broker can service the call transparently.
 """
 
 from __future__ import annotations
@@ -29,45 +44,64 @@ logger = structlog.stdlib.get_logger()
 
 
 class ConnectorToolProvider:
-    """Provides connector tools to the agent ToolRegistry.
-
-    Called by ``ToolRegistry.list_all_tools()`` and ``ToolRegistry.invoke()``
-    to include connector-sourced tools in the agent's available tool set.
-    """
+    """Provides connector tools to the agent ToolRegistry."""
 
     async def list_tools(
         self,
         tenant_id: uuid.UUID,
         db: AsyncSession,
+        *,
+        agent_id: uuid.UUID | None = None,
+        actor_user_id: uuid.UUID | None = None,
     ) -> list[dict[str, Any]]:
-        """Return all tools from the tenant's active connections.
+        """Return connector tools available to this agent + user.
 
-        First checks the Redis cache, then falls back to the database.
-        Each tool is returned in the platform format with a namespaced
-        name: ``connector:{slug}:{tool_name}``.
+        When ``agent_id`` is provided, tools are filtered through the
+        agent's resolved capability set — agents only see tools they have
+        been granted access to. When ``actor_user_id`` is provided,
+        connections without a matching ``connected_by_user_id`` are excluded.
         """
-        # Try Redis cache first
         from app.connectors.cache import connector_tool_cache
 
-        cached = await connector_tool_cache.get_tools(tenant_id)
+        # Scope cache by (agent, user) so per-agent filtering is cached
+        cache_key_parts = []
+        if agent_id:
+            cache_key_parts.append(f"agent:{agent_id}")
+        if actor_user_id:
+            cache_key_parts.append(f"user:{actor_user_id}")
+        cache_suffix = ":" + ":".join(cache_key_parts) if cache_key_parts else ""
+
+        cached = await connector_tool_cache.get_tools(
+            tenant_id,
+            suffix=cache_suffix,
+        )
         if cached is not None:
             return cached
 
-        # Cache miss — load from database
-        tools = await self._load_tools_from_db(tenant_id, db)
+        tools = await self._load_tools_from_db(
+            tenant_id,
+            db,
+            agent_id=agent_id,
+            actor_user_id=actor_user_id,
+        )
 
-        # Populate cache
-        await connector_tool_cache.set_tools(tenant_id, tools)
-
+        await connector_tool_cache.set_tools(
+            tenant_id,
+            tools,
+            suffix=cache_suffix,
+        )
         return tools
 
     async def _load_tools_from_db(
         self,
         tenant_id: uuid.UUID,
         db: AsyncSession,
+        *,
+        agent_id: uuid.UUID | None,
+        actor_user_id: uuid.UUID | None,
     ) -> list[dict[str, Any]]:
-        """Load tools from active connections in the database."""
-        result = await db.execute(
+        """Load tools from active connections, scoped by user + agent."""
+        stmt = (
             select(TenantConnection)
             .where(
                 TenantConnection.tenant_id == tenant_id,
@@ -76,6 +110,12 @@ class ConnectorToolProvider:
             )
             .options(joinedload(TenantConnection.connector_definition))
         )
+        if actor_user_id is not None:
+            stmt = stmt.where(
+                TenantConnection.connected_by_user_id == actor_user_id
+            )
+
+        result = await db.execute(stmt)
         connections = result.unique().scalars().all()
 
         all_tools: list[dict[str, Any]] = []
@@ -83,11 +123,45 @@ class ConnectorToolProvider:
             cd = conn.connector_definition
             if not cd or not cd.is_active:
                 continue
-
             tools = ConnectorToolAdapter.connection_tools_to_platform(conn, cd)
             all_tools.extend(tools)
 
+        if agent_id is not None:
+            allowed = await self._resolve_agent_allowed_tools(agent_id, tenant_id, db)
+            if allowed is not None:
+                all_tools = [t for t in all_tools if t["name"] in allowed]
+
         return all_tools
+
+    async def _resolve_agent_allowed_tools(
+        self,
+        agent_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        db: AsyncSession,
+    ) -> set[str] | None:
+        """Return the set of tool names allowed for this agent.
+
+        Returns ``None`` (meaning "don't filter") when the agent has no
+        configured capabilities — preserving the legacy "everything in
+        allowed_tools" behavior.
+        """
+        from app.agents.capabilities import capability_resolver
+        from app.agents.models import AgentDefinition
+
+        definition = await db.get(AgentDefinition, agent_id)
+        if definition is None:
+            return set()
+
+        capabilities = getattr(definition, "capabilities", None) or []
+        allowed_tools = getattr(definition, "allowed_tools", None) or []
+
+        if not capabilities and not allowed_tools:
+            return None
+
+        resolved = await capability_resolver.resolve_agent_tools_with_connectors(
+            definition, tenant_id, db,
+        )
+        return set(resolved)
 
     async def invoke(
         self,
@@ -96,21 +170,124 @@ class ConnectorToolProvider:
         arguments: dict[str, Any],
         tenant_id: uuid.UUID,
         db: AsyncSession,
+        actor_user_id: uuid.UUID | None = None,
+        agent_id: uuid.UUID | None = None,
         agent_instance_id: uuid.UUID | None = None,
+        idempotency_key: str | None = None,
     ) -> Any:
-        """Invoke a connector tool by its namespaced name.
-
-        Parses ``connector:{slug}:{tool}``, resolves the connection,
-        injects credentials, and delegates to the ConnectorExecutor.
-        """
-        # Parse the namespaced tool name
+        """Invoke a connector tool by its namespaced name."""
         try:
             connector_slug, original_tool = parse_tool_name(tool_name)
         except ValueError:
-            return {"error": f"Invalid connector tool name: {tool_name}"}
+            return {
+                "error": f"Invalid connector tool name: {tool_name}",
+                "is_error": True,
+            }
 
-        # Look up the connection
-        result = await db.execute(
+        # Per-agent authorization (P0.3)
+        if agent_id is not None:
+            allowed = await self._resolve_agent_allowed_tools(
+                agent_id, tenant_id, db,
+            )
+            if allowed is not None and tool_name not in allowed:
+                await self._emit_governance_violation(
+                    tenant_id=tenant_id,
+                    agent_id=agent_id,
+                    agent_instance_id=agent_instance_id,
+                    tool_name=tool_name,
+                    reason="not_in_capabilities",
+                )
+                return {
+                    "error": (
+                        f"Agent is not authorized to invoke '{tool_name}'. "
+                        f"Grant the matching capability to the agent definition."
+                    ),
+                    "is_error": True,
+                }
+
+        # Per-user connection resolution (P0.2)
+        connection = await self._resolve_connection(
+            connector_slug=connector_slug,
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            db=db,
+        )
+        if connection is None:
+            return {
+                "error": (
+                    f"No active connection for '{connector_slug}'. "
+                    f"The user must connect their account first."
+                ),
+                "is_error": True,
+            }
+
+        connector_def = connection.connector_definition
+
+        # Cedar / policy gate (P3.1) — no-op when Cedar disabled
+        try:
+            from app.connectors.policy_gate import (
+                PolicyDenied,
+                policy_gate,
+            )
+
+            await policy_gate.authorize(
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                agent_id=agent_id,
+                connector_def=connector_def,
+                tool_name=original_tool,
+                arguments=arguments,
+            )
+        except ImportError:
+            pass
+        except Exception as exc:
+            # PolicyDenied is the only expected failure mode; re-raise others
+            if "PolicyDenied" in type(exc).__name__:
+                await self._emit_governance_violation(
+                    tenant_id=tenant_id,
+                    agent_id=agent_id,
+                    agent_instance_id=agent_instance_id,
+                    tool_name=tool_name,
+                    reason=f"cedar_denied: {str(exc)[:200]}",
+                )
+                return {
+                    "error": f"Policy denies this tool call: {str(exc)[:200]}",
+                    "is_error": True,
+                }
+            raise
+
+        # Route through broker (P2.4). Broker router decides between
+        # Composio and in-house based on connector.broker.
+        from app.connectors.brokers.router import broker_router
+
+        broker = broker_router.for_connector(connector_def)
+        return await broker.invoke_tool(
+            connection=connection,
+            connector_def=connector_def,
+            tool_name=original_tool,
+            arguments=arguments,
+            tenant_id=tenant_id,
+            db=db,
+            actor_user_id=actor_user_id,
+            agent_instance_id=agent_instance_id,
+            idempotency_key=idempotency_key,
+        )
+
+    async def _resolve_connection(
+        self,
+        *,
+        connector_slug: str,
+        tenant_id: uuid.UUID,
+        actor_user_id: uuid.UUID | None,
+        db: AsyncSession,
+    ) -> TenantConnection | None:
+        """Find the active connection scoped to the invoking user.
+
+        Falls back to any active connection for the tenant ONLY when no
+        ``actor_user_id`` is provided (system-triggered agents with no
+        human initiator).
+        """
+        stmt = (
             select(TenantConnection)
             .join(ConnectorDefinition)
             .where(
@@ -124,30 +301,48 @@ class ConnectorToolProvider:
                 joinedload(TenantConnection.credential),
             )
         )
+        if actor_user_id is not None:
+            stmt = stmt.where(
+                TenantConnection.connected_by_user_id == actor_user_id
+            )
+
+        result = await db.execute(stmt)
         connection = result.unique().scalar_one_or_none()
 
-        if not connection:
-            return {
-                "error": f"No active connection for connector '{connector_slug}'. "
-                "The user may need to connect this service first.",
-            }
+        if connection is None and actor_user_id is not None:
+            logger.info(
+                "connector_per_user_connection_missing",
+                tenant_id=str(tenant_id),
+                actor_user_id=str(actor_user_id),
+                connector=connector_slug,
+            )
+        return connection
 
-        connector_def = connection.connector_definition
+    async def _emit_governance_violation(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        agent_id: uuid.UUID | None,
+        agent_instance_id: uuid.UUID | None,
+        tool_name: str,
+        reason: str,
+    ) -> None:
+        try:
+            from app.agents.events import AgentGovernanceViolation
+            from app.core.events import emit
 
-        # Delegate to the executor
-        from app.connectors.executor import connector_executor
+            await emit(
+                AgentGovernanceViolation(
+                    tenant_id=str(tenant_id),
+                    instance_id=str(agent_instance_id) if agent_instance_id else "",
+                    agent_id=str(agent_id) if agent_id else "",
+                    violation_type="denied_tool",
+                    details=f"{tool_name}: {reason}",
+                ),
+                durable=True,
+            )
+        except Exception:
+            logger.debug("governance_violation_emit_failed", exc_info=True)
 
-        return await connector_executor.invoke(
-            connection=connection,
-            connector_def=connector_def,
-            tool_name=original_tool,
-            arguments=arguments,
-            tenant_id=tenant_id,
-            db=db,
-            actor_type="agent",
-            agent_instance_id=agent_instance_id,
-        )
 
-
-# Module-level singleton
 connector_tool_provider = ConnectorToolProvider()

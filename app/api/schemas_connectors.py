@@ -127,3 +127,58 @@ class ConnectionTestResult(BaseModel):
     status: str  # "ok" | "error"
     message: str
     latency_ms: int | None = None
+
+
+# ── Per-Tenant OAuth App Credentials (P0.1) ─────────────────
+
+
+class AppCredentialsRegisterRequest(BaseModel):
+    """Register (or rotate) OAuth app credentials for a connector.
+
+    The client_id and client_secret are issued by the SaaS provider
+    (Slack, GitHub, etc.) when the tenant admin creates an OAuth app
+    in the provider's developer console. Both fields are encrypted at
+    rest before persistence.
+    """
+    client_id: str = Field(..., min_length=1, max_length=255)
+    client_secret: str = Field(..., min_length=1, max_length=2048)
+    webhook_secret: str | None = Field(
+        default=None, max_length=2048,
+        description="Optional shared secret for inbound webhook signatures",
+    )
+    redirect_uri_override: str | None = Field(
+        default=None, max_length=2048,
+        description="Optional redirect URI to override the system default (exact-match providers)",
+    )
+    extra_config: dict[str, Any] | None = None
+
+
+class AppCredentialsRead(BaseModel):
+    """Read-only view of app credential registration status.
+
+    Never exposes the raw secrets — only redacted metadata.
+    """
+    connector_slug: str
+    is_registered: bool
+    client_id_preview: str | None = None  # last 4 chars only
+    redirect_uri_override: str | None = None
+    has_webhook_secret: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+# ── Dynamic Client Registration (P1.2) ──────────────────────
+
+
+class DynamicClientRegisterRequest(BaseModel):
+    """Trigger RFC 7591 Dynamic Client Registration for a connector."""
+    client_name: str = Field(..., min_length=1, max_length=255)
+    redirect_uris: list[str] = Field(..., min_length=1)
+
+
+class DynamicClientRegisterResponse(BaseModel):
+    client_id: str
+    registration_endpoint: str
+    authorize_url: str
+    token_url: str
+    scopes_supported: list[str] | None = None

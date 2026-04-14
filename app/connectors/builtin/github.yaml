@@ -3,11 +3,14 @@ name: GitHub
 description: >-
   Connect to GitHub for repository management, issue tracking, pull requests,
   and code review. Provides access to repositories, organizations, and user
-  profile data.
+  profile data via the official GitHub MCP server.
 icon: Github
 category: developer_tools
 connector_type: mcp_server
 auth_type: oauth2
+broker: composio
+trust_level: verified
+requires_app_credentials: true
 version: "1.0.0"
 documentation_url: https://docs.github.com/en/developers/apps/building-oauth-apps
 
@@ -24,9 +27,6 @@ auth_config:
   token_url: https://github.com/login/oauth/access_token
   userinfo_url: https://api.github.com/user
   revoke_url: https://api.github.com/applications/{client_id}/token
-  redirect_uri: ""
-  client_id: ""
-  client_secret: ""
   pkce_required: false
   scopes:
     - repo
@@ -35,7 +35,7 @@ auth_config:
 
 mcp_config:
   transport: streamable_http
-  server_url: ""
+  server_url: https://api.githubcopilot.com/mcp/
 
 tool_definitions: []
 

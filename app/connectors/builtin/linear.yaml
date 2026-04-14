@@ -8,6 +8,9 @@ icon: Zap
 category: project_management
 connector_type: oauth_api
 auth_type: oauth2
+broker: composio
+trust_level: verified
+requires_app_credentials: true
 version: "1.0.0"
 documentation_url: https://developers.linear.app/docs
 
@@ -23,9 +26,6 @@ auth_config:
   token_url: https://api.linear.app/oauth/token
   userinfo_url: https://api.linear.app/graphql
   revoke_url: https://api.linear.app/oauth/revoke
-  redirect_uri: ""
-  client_id: ""
-  client_secret: ""
   pkce_required: true
   scopes:
     - read
@@ -34,11 +34,19 @@ auth_config:
   extra_authorize_params:
     prompt: consent
 
+api_config:
+  api_base_url: https://api.linear.app
+  default_headers:
+    Content-Type: application/json
+
 mcp_config: {}
 
 tool_definitions:
   - name: list_issues
     description: List issues with optional filters for team, project, or status
+    method: POST
+    path: /graphql
+    arg_location: json_body
     input_schema:
       type: object
       properties:
@@ -58,6 +66,9 @@ tool_definitions:
       required: []
   - name: create_issue
     description: Create a new issue in Linear
+    method: POST
+    path: /graphql
+    arg_location: json_body
     input_schema:
       type: object
       properties:
@@ -78,6 +89,9 @@ tool_definitions:
         - team_id
   - name: get_issue
     description: Get details of a specific issue by its identifier
+    method: POST
+    path: /graphql
+    arg_location: json_body
     input_schema:
       type: object
       properties:

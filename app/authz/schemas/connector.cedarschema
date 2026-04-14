@@ -1,0 +1,39 @@
+// Cedar schema for connector tool authorization (P3.1).
+//
+// Principals: User or Agent scoped to a Tenant.
+// Action: "invoke" — calling a connector tool.
+// Resource: ConnectorTool identified by "{slug}:{tool_name}".
+
+entity Tenant;
+
+entity User in [Tenant] {
+    email: String,
+    role: String,
+};
+
+entity Agent in [Tenant] {
+    slug: String,
+    created_by: User,
+};
+
+entity System {
+    name: String,
+};
+
+entity ConnectorTool {
+    slug: String,
+    connector: String,
+    risk: String,
+    trust_level: String,
+};
+
+action invoke appliesTo {
+    principal: [User, Agent, System],
+    resource: [ConnectorTool],
+    context: {
+        tenant_id: String,
+        connector: String,
+        trust_level: String,
+        arguments: { }
+    }
+};

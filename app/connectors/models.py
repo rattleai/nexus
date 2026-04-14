@@ -9,6 +9,7 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -60,6 +61,41 @@ class CredentialType(enum.StrEnum):
     CUSTOM = "custom"
 
 
+class TrustLevel(enum.StrEnum):
+    """Trust tier for a connector definition.
+
+    Determines whether a connector's tool descriptions are passed through
+    to the LLM verbatim (verified), with admin-approved overrides (trusted),
+    or replaced with generic stubs (untrusted) to prevent prompt injection.
+    """
+
+    VERIFIED = "verified"
+    TRUSTED = "trusted"
+    UNTRUSTED = "untrusted"
+
+
+class BrokerType(enum.StrEnum):
+    """Credential broker backing a connector.
+
+    Composio manages OAuth + rate limiting + the tool catalog; tokens never
+    enter the app runtime. In-house uses app.connectors.* directly with
+    per-tenant Vault/KMS-backed encrypted storage.
+    """
+
+    COMPOSIO = "composio"
+    IN_HOUSE = "in_house"
+
+
+class ConnectorTaskStatus(enum.StrEnum):
+    """MCP 2025-11-25 Tasks primitive — lifecycle states."""
+
+    WORKING = "working"
+    INPUT_REQUIRED = "input_required"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 # ── Connector Definition (global catalog) ──────────────────
 
 
@@ -96,23 +132,62 @@ class ConnectorDefinition(TimestampMixin, Base):
 
     # OAuth configuration (when auth_type = 'oauth2')
     # {authorize_url, token_url, scopes, pkce_required, token_endpoint_auth_method}
+    # NOTE: client_id / client_secret are NEVER stored here — they live in
+    # ConnectorAppCredential (per-tenant, encrypted). Keeping secrets in this
+    # global catalog would share them across every tenant.
     auth_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # MCP server configuration (when connector_type = 'mcp_server')
     # {server_url, transport: "streamable_http"|"stdio", command, args, env}
     mcp_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # HTTP API configuration (when connector_type = 'oauth_api' | 'api_key_api')
+    # {api_base_url, rate_limit_header, default_headers}
+    api_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     # Tool definitions for non-MCP connectors
-    # [{name, description, input_schema, method, path}]
+    # [{name, description, input_schema, method, path, arg_location}]
     tool_definitions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Webhook configuration (when connector_type = 'webhook')
     # {signature_header, signature_algo, events}
+    # NOTE: webhook secret is NEVER stored here — lives in ConnectorAppCredential.
     webhook_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Capability template for auto-generating capability domains
     # {groups: [{slug_suffix, label, tool_patterns: [...]}]}
     capability_template: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # RFC 9728/8414/7591 OAuth discovery cache
+    # {authorize_url, token_url, registration_endpoint, scopes_supported, ...}
+    discovery_cache: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    discovery_refreshed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+
+    # RFC 7591 Dynamic Client Registration endpoint (populated by discovery)
+    registration_endpoint: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+
+    # Trust tier — gates whether tool descriptions are passed through verbatim
+    trust_level: Mapped[TrustLevel] = mapped_column(
+        Enum(TrustLevel, name="trustlevel", values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+        server_default=TrustLevel.UNTRUSTED.value,
+    )
+
+    # Credential broker — routes OAuth + tool invocation through Composio or in-house
+    broker: Mapped[BrokerType] = mapped_column(
+        Enum(BrokerType, name="brokertype", values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+        server_default=BrokerType.IN_HOUSE.value,
+    )
+
+    # Whether this connector requires the tenant to register their own OAuth app
+    # (client_id / client_secret) before users can authenticate. Set True for
+    # providers that do not support RFC 7591 Dynamic Client Registration.
+    requires_app_credentials: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false",
+    )
 
     # Metadata
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -167,6 +242,8 @@ class TenantConnection(SoftDeleteMixin, TimestampMixin, Base):
     mcp_session_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     mcp_tools_cache: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     mcp_resources_cache: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    mcp_prompts_cache: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    mcp_capabilities: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     cache_refreshed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True,
     )
@@ -200,8 +277,9 @@ class TenantConnection(SoftDeleteMixin, TimestampMixin, Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "tenant_id", "connector_definition_id", "account_identifier",
-            name="uq_tenant_connection_account",
+            "tenant_id", "connector_definition_id", "connected_by_user_id",
+            "account_identifier",
+            name="uq_tenant_connection_user_account",
         ),
         Index("ix_tenant_connections_tenant_status", "tenant_id", "status"),
         Index(
@@ -316,4 +394,147 @@ class ConnectorAuditLog(Base):
             "ix_connector_audit_connection_time",
             "tenant_id", "connection_id", "occurred_at",
         ),
+    )
+
+
+# ── Per-Tenant OAuth App Credentials (P0.1) ─────────────────
+
+
+class ConnectorAppCredential(TimestampMixin, Base):
+    """Per-tenant OAuth app client_id / client_secret / webhook secret.
+
+    Replaces the insecure pattern of storing OAuth app credentials in the
+    global ``connector_definitions.auth_config`` JSONB. Each tenant registers
+    its own OAuth application for each connector slug; secrets are encrypted
+    at rest via ``app.core.encryption`` and isolated by RLS.
+    """
+
+    __tablename__ = "connector_app_credentials"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True,
+    )
+    connector_slug: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    # Encrypted secrets (Fernet v1 or AES-256-GCM v2, versioned)
+    client_id_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    webhook_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Optional per-tenant redirect URI override (for providers that need
+    # exact redirect URI matching)
+    redirect_uri_override: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+
+    # Additional connector-specific config (non-secret)
+    extra_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Audit: which user registered the app
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "connector_slug",
+            name="uq_connector_app_credentials_tenant_slug",
+        ),
+        Index("ix_connector_app_credentials_tenant", "tenant_id"),
+    )
+
+
+# ── Durable OAuth State (P0.5) ───────────────────────────────
+
+
+class ConnectorOAuthState(Base):
+    """Durable OAuth state token store.
+
+    OAuth state tokens survive Redis restart by being persisted here.
+    Redis remains a read-through cache; on miss, we fall back to this table.
+    """
+
+    __tablename__ = "connector_oauth_states"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False,
+    )
+    state_token: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    connector_slug: Mapped[str] = mapped_column(String(100), nullable=False)
+    payload_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+
+    __table_args__ = (
+        Index("ix_connector_oauth_states_tenant", "tenant_id"),
+        Index("ix_connector_oauth_states_expires", "expires_at"),
+    )
+
+
+# ── Async MCP Task Handles (P1.1) ────────────────────────────
+
+
+class ConnectorTask(TimestampMixin, Base):
+    """MCP 2025-11-25 Tasks primitive — async tool-call handles.
+
+    When an MCP server returns a task handle instead of an immediate result
+    (e.g., long-running operations), a row is created here and the agent
+    runtime polls via get_task_status or waits for a webhook push.
+    """
+
+    __tablename__ = "connector_tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False,
+    )
+    connection_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenant_connections.id", ondelete="CASCADE"), nullable=False,
+    )
+
+    # Handle issued by the MCP server
+    mcp_task_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    arguments: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Lifecycle
+    status: Mapped[ConnectorTaskStatus] = mapped_column(
+        Enum(
+            ConnectorTaskStatus,
+            name="connectortaskstatus",
+            values_callable=lambda e: [m.value for m in e],
+        ),
+        nullable=False,
+        server_default=ConnectorTaskStatus.WORKING.value,
+    )
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # When status is input_required, this holds the server-requested prompt
+    input_required: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Audit
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True,
+    )
+    agent_instance_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+
+    __table_args__ = (
+        Index("ix_connector_tasks_tenant_status", "tenant_id", "status"),
+        Index("ix_connector_tasks_connection", "connection_id"),
     )

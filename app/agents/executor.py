@@ -206,7 +206,9 @@ class AgentExecutor:
         messages = await self._resolve_datasource_mentions(messages, tenant_id)
 
         # Set up tool executor and governance (created once, not per-call)
-        tool_executor = self._build_tool_executor(definition, tenant_id)
+        tool_executor = self._build_tool_executor(
+            definition, tenant_id, agent_instance_id=instance.id,
+        )
         governance_checker = self._build_governance_checker(definition, tenant_id)
 
         # Run the agent
@@ -466,14 +468,25 @@ class AgentExecutor:
         self,
         definition: AgentDefinition,
         tenant_id: uuid.UUID,
+        *,
+        agent_instance_id: uuid.UUID | None = None,
+        actor_user_id: uuid.UUID | None = None,
     ):
         """Build a tool executor function that resolves and invokes tools.
 
-        Returns an async callable: (tool_name, arguments) → result
+        Returns an async callable: (tool_name, arguments) → result.
+        ``actor_user_id`` is threaded through so connector tools enforce
+        per-user confused-deputy prevention (P0.2).
         """
         from app.agents.setup import build_tool_executor
 
-        return build_tool_executor(definition, tenant_id, self.db)
+        return build_tool_executor(
+            definition,
+            tenant_id,
+            self.db,
+            actor_user_id=actor_user_id,
+            agent_instance_id=agent_instance_id,
+        )
 
     def _build_governance_checker(
         self,

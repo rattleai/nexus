@@ -49,14 +49,20 @@ from app.db.models.datasource import (
     DataSourceType,
 )
 from app.connectors.models import (
+    AuthType,
+    BrokerType,
+    ConnectionStatus,
+    ConnectorAppCredential,
     ConnectorAuditLog,
     ConnectorDefinition,
+    ConnectorOAuthState,
+    ConnectorTask,
+    ConnectorTaskStatus,
     ConnectorType,
-    AuthType,
-    ConnectionStatus,
     CredentialType,
     TenantConnection,
     TenantCredential,
+    TrustLevel,
 )
 from app.db.models.enterprise import (
     SSOConfiguration,
@@ -152,9 +158,15 @@ __all__ = [
     "ConnectorDefinition",
     "ConnectorType",
     "AuthType",
+    "BrokerType",
+    "TrustLevel",
     "ConnectionStatus",
     "CredentialType",
     "TenantConnection",
     "TenantCredential",
     "ConnectorAuditLog",
+    "ConnectorAppCredential",
+    "ConnectorOAuthState",
+    "ConnectorTask",
+    "ConnectorTaskStatus",
 ]

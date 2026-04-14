@@ -405,6 +405,11 @@ async def refresh_connection_tools(
     db: AsyncSession = Depends(get_db),
 ):
     """Force refresh the tool list for an MCP connection."""
+    from datetime import UTC, datetime
+
+    from app.connectors.cache import connector_tool_cache
+    from app.connectors.mcp_client import MCPClientError, mcp_client_pool
+
     conn = await _get_connection(connection_id, tenant, db)
     cd = conn.connector_definition
 
@@ -414,9 +419,30 @@ async def refresh_connection_tools(
             detail="Tool refresh is only supported for MCP server connectors",
         )
 
-    # TODO: Phase 2 — implement MCPClientPool.discover_tools()
-    # For now, return the cached tools
-    tools = conn.mcp_tools_cache or []
+    try:
+        tools = await mcp_client_pool.discover_tools(conn, cd)
+    except MCPClientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    try:
+        resources = await mcp_client_pool.discover_resources(conn, cd)
+    except Exception:
+        resources = []
+
+    try:
+        prompts = await mcp_client_pool.discover_prompts(conn, cd)
+    except Exception:
+        prompts = []
+
+    conn.mcp_tools_cache = tools
+    conn.mcp_resources_cache = resources
+    conn.mcp_prompts_cache = prompts
+    conn.cache_refreshed_at = datetime.now(UTC)
+    await db.commit()
+
+    # Invalidate Redis tool cache for this tenant
+    await connector_tool_cache.invalidate(tenant.id)
+
     return [
         ConnectionToolRead(
             name=t.get("name", ""),

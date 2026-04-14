@@ -8,6 +8,9 @@ icon: Mail
 category: productivity
 connector_type: mcp_server
 auth_type: oauth2
+broker: composio
+trust_level: verified
+requires_app_credentials: true
 version: "1.0.0"
 documentation_url: https://developers.google.com/workspace
 
@@ -25,9 +28,6 @@ auth_config:
   token_url: https://oauth2.googleapis.com/token
   userinfo_url: https://openidconnect.googleapis.com/v1/userinfo
   revoke_url: https://oauth2.googleapis.com/revoke
-  redirect_uri: ""
-  client_id: ""
-  client_secret: ""
   pkce_required: true
   scopes:
     - https://www.googleapis.com/auth/gmail.readonly

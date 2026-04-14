@@ -7,6 +7,9 @@ icon: MessageSquare
 category: communication
 connector_type: oauth_api
 auth_type: oauth2
+broker: composio
+trust_level: verified
+requires_app_credentials: true
 version: "1.0.0"
 documentation_url: https://api.slack.com/docs
 
@@ -22,9 +25,6 @@ auth_config:
   token_url: https://slack.com/api/oauth.v2.access
   userinfo_url: https://slack.com/api/auth.test
   revoke_url: https://slack.com/api/auth.revoke
-  redirect_uri: ""
-  client_id: ""
-  client_secret: ""
   pkce_required: false
   scopes:
     - channels:read
@@ -32,11 +32,20 @@ auth_config:
     - users:read
   extra_authorize_params: {}
 
+api_config:
+  api_base_url: https://slack.com/api
+  default_headers:
+    Content-Type: application/json; charset=utf-8
+  rate_limit_header: Retry-After
+
 mcp_config: {}
 
 tool_definitions:
   - name: list_channels
     description: List all public channels in the workspace
+    method: GET
+    path: /conversations.list
+    arg_location: query
     input_schema:
       type: object
       properties:
@@ -47,6 +56,9 @@ tool_definitions:
       required: []
   - name: send_message
     description: Send a message to a Slack channel
+    method: POST
+    path: /chat.postMessage
+    arg_location: json_body
     input_schema:
       type: object
       properties:
@@ -61,6 +73,9 @@ tool_definitions:
         - text
   - name: list_users
     description: List all users in the workspace
+    method: GET
+    path: /users.list
+    arg_location: query
     input_schema:
       type: object
       properties:

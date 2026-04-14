@@ -24,17 +24,27 @@ logger = structlog.stdlib.get_logger()
 _CACHE_KEY_PREFIX = "connector:tools"
 
 
-def _cache_key(tenant_id: uuid.UUID) -> str:
-    return f"{_CACHE_KEY_PREFIX}:{tenant_id}"
+def _cache_key(tenant_id: uuid.UUID, suffix: str = "") -> str:
+    return f"{_CACHE_KEY_PREFIX}:{tenant_id}{suffix}"
 
 
 class ConnectorToolCache:
-    """Redis-backed cache for per-tenant connector tool lists."""
+    """Redis-backed cache for per-tenant connector tool lists.
 
-    async def get_tools(self, tenant_id: uuid.UUID) -> list[dict[str, Any]] | None:
+    Supports optional ``suffix`` qualifiers so callers can cache separate
+    slices (e.g. filtered per-agent or per-user tool lists) without
+    clobbering each other.
+    """
+
+    async def get_tools(
+        self,
+        tenant_id: uuid.UUID,
+        *,
+        suffix: str = "",
+    ) -> list[dict[str, Any]] | None:
         """Get cached tools for a tenant. Returns None on cache miss."""
         try:
-            raw = await redis_pool.get(_cache_key(tenant_id))
+            raw = await redis_pool.get(_cache_key(tenant_id, suffix))
             if raw:
                 return json.loads(raw)
         except Exception:
@@ -45,12 +55,14 @@ class ConnectorToolCache:
         self,
         tenant_id: uuid.UUID,
         tools: list[dict[str, Any]],
+        *,
+        suffix: str = "",
     ) -> None:
         """Cache the tool list for a tenant with TTL."""
         try:
             ttl = settings.CONNECTOR_TOOL_CACHE_TTL_SECONDS
             await redis_pool.setex(
-                _cache_key(tenant_id),
+                _cache_key(tenant_id, suffix),
                 ttl,
                 json.dumps(tools, default=str),
             )
@@ -58,9 +70,14 @@ class ConnectorToolCache:
             logger.debug("connector_cache_set_failed", exc_info=True)
 
     async def invalidate(self, tenant_id: uuid.UUID) -> None:
-        """Invalidate the cached tools for a tenant."""
+        """Invalidate all cached tool variants for a tenant."""
         try:
-            await redis_pool.delete(_cache_key(tenant_id))
+            pattern = f"{_CACHE_KEY_PREFIX}:{tenant_id}*"
+            keys = []
+            async for key in redis_pool.scan_iter(pattern):
+                keys.append(key)
+            if keys:
+                await redis_pool.delete(*keys)
         except Exception:
             logger.debug("connector_cache_invalidate_failed", exc_info=True)
 

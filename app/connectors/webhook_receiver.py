@@ -1,7 +1,14 @@
 """Inbound webhook receiver for connector events.
 
-Receives webhooks from external services, verifies signatures,
-and routes events to matching workflow triggers or event handlers.
+Security hardening over PR #63:
+
+* **P0.1** — Webhook secrets are looked up per-tenant via
+  ``ConnectorAppCredential`` instead of being read from the global
+  ``connector_definitions.webhook_config`` JSONB.
+* **P0.9** — The webhook endpoint now carries a tenant ID in the URL path
+  (``/connectors/{slug}/webhook/{tenant_id}``) so signature verification
+  can use the correct per-tenant secret and audit rows reference the real
+  tenant instead of a placeholder UUID.
 """
 
 from __future__ import annotations
@@ -17,25 +24,31 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.connectors.app_credentials import app_credential_manager
 from app.connectors.models import ConnectorAuditLog, ConnectorDefinition
+from app.db.session import set_tenant_context
 
 logger = structlog.stdlib.get_logger()
 
 router = APIRouter()
 
 
-@router.post("/connectors/{slug}/webhook")
+@router.post("/connectors/{slug}/webhook/{tenant_id}")
 async def receive_webhook(
     slug: str,
+    tenant_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Receive and process an inbound webhook from a connector.
 
-    Verifies the webhook signature if configured, then dispatches
-    the event to registered handlers.
+    The URL path encodes the tenant so the correct per-tenant webhook secret
+    can be looked up and audit entries reference the actual tenant.
+    Providers include this URL as the webhook target when the tenant admin
+    registers the OAuth app.
     """
-    # Look up connector definition
+    await set_tenant_context(db, str(tenant_id))
+
     result = await db.execute(
         select(ConnectorDefinition).where(
             ConnectorDefinition.slug == slug,
@@ -54,7 +67,20 @@ async def receive_webhook(
     # Verify signature if configured
     signature_header = webhook_config.get("signature_header")
     signature_algo = webhook_config.get("signature_algo", "sha256")
-    webhook_secret = webhook_config.get("secret")
+
+    # Secret comes from per-tenant app credentials — never from the global
+    # connector definition (P0.1)
+    webhook_secret: str | None = None
+    try:
+        app_creds = await app_credential_manager.get(
+            tenant_id=tenant_id,
+            connector_slug=slug,
+            db=db,
+        )
+        if app_creds:
+            webhook_secret = app_creds.webhook_secret
+    except Exception:
+        logger.debug("webhook_app_creds_lookup_failed", exc_info=True)
 
     if signature_header and webhook_secret:
         received_sig = request.headers.get(signature_header, "")
@@ -62,9 +88,21 @@ async def receive_webhook(
             logger.warning(
                 "webhook_signature_invalid",
                 connector=slug,
+                tenant_id=str(tenant_id),
                 header=signature_header,
             )
             raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    elif signature_header and not webhook_secret:
+        # Signature required by config but no secret registered → reject.
+        logger.warning(
+            "webhook_secret_missing",
+            connector=slug,
+            tenant_id=str(tenant_id),
+        )
+        raise HTTPException(
+            status_code=401,
+            detail="Webhook signature required but no secret is registered for this tenant",
+        )
 
     # Parse the event
     try:
@@ -78,21 +116,22 @@ async def receive_webhook(
     logger.info(
         "webhook_received",
         connector=slug,
+        tenant_id=str(tenant_id),
         event_type=event_type,
         content_length=len(body),
     )
 
-    # Dispatch the event
     dispatched = await _dispatch_webhook_event(
         connector_slug=slug,
+        tenant_id=tenant_id,
         event_type=event_type,
         payload=payload,
         db=db,
     )
 
-    # Audit log
+    # Audit log with the real tenant, not a placeholder UUID
     audit = ConnectorAuditLog(
-        tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),  # System-level
+        tenant_id=tenant_id,
         action="webhook_receive",
         tool_name=event_type,
         status="success",
@@ -136,21 +175,13 @@ def _extract_event_type(
     payload: dict[str, Any],
     webhook_config: dict[str, Any],
 ) -> str:
-    """Extract the event type from the webhook request.
-
-    Tries:
-    1. A configured event_type_header (e.g. X-GitHub-Event)
-    2. Common payload fields (event, type, action, event_type)
-    3. Falls back to "unknown"
-    """
-    # From header
+    """Extract the event type from the webhook request."""
     event_header = webhook_config.get("event_type_header")
     if event_header:
         value = request.headers.get(event_header)
         if value:
             return value
 
-    # From payload
     for key in ("event", "type", "action", "event_type", "event_name"):
         if key in payload and isinstance(payload[key], str):
             return payload[key]
@@ -160,35 +191,32 @@ def _extract_event_type(
 
 async def _dispatch_webhook_event(
     connector_slug: str,
+    tenant_id: uuid.UUID,
     event_type: str,
     payload: dict[str, Any],
     db: AsyncSession,
 ) -> int:
-    """Dispatch a webhook event to registered handlers.
-
-    Currently emits a domain event that workflow triggers can match.
-    Returns the number of handlers dispatched to.
-    """
+    """Dispatch a webhook event via the domain event bus."""
     try:
-        from app.connectors.events import ConnectionStatusChanged
-        from app.core.events import emit
-
-        # Emit a generic webhook event that can be consumed by
-        # workflow triggers or custom event handlers
         from dataclasses import dataclass, field
-        from app.core.events import DomainEvent
+
+        from app.core.events import DomainEvent, emit
 
         @dataclass
         class ConnectorWebhookReceived(DomainEvent):
+            tenant_id: str = ""
             connector_slug: str = ""
             event_type: str = ""
             payload: dict = field(default_factory=dict)
 
-        await emit(ConnectorWebhookReceived(
-            connector_slug=connector_slug,
-            event_type=event_type,
-            payload=payload,
-        ))
+        await emit(
+            ConnectorWebhookReceived(
+                tenant_id=str(tenant_id),
+                connector_slug=connector_slug,
+                event_type=event_type,
+                payload=payload,
+            )
+        )
         return 1
     except Exception:
         logger.debug("webhook_dispatch_failed", exc_info=True)

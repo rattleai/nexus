@@ -7,6 +7,9 @@ icon: HardDrive
 category: cloud_storage
 connector_type: oauth_api
 auth_type: oauth2
+broker: composio
+trust_level: verified
+requires_app_credentials: true
 version: "1.0.0"
 documentation_url: https://www.dropbox.com/developers/documentation
 
@@ -22,9 +25,6 @@ auth_config:
   token_url: https://api.dropboxapi.com/oauth2/token
   userinfo_url: https://api.dropboxapi.com/2/users/get_current_account
   revoke_url: https://api.dropboxapi.com/2/auth/token/revoke
-  redirect_uri: ""
-  client_id: ""
-  client_secret: ""
   pkce_required: true
   scopes:
     - files.metadata.read
@@ -34,11 +34,19 @@ auth_config:
   extra_authorize_params:
     token_access_type: offline
 
+api_config:
+  api_base_url: https://api.dropboxapi.com/2
+  default_headers:
+    Content-Type: application/json
+
 mcp_config: {}
 
 tool_definitions:
   - name: list_folder
     description: List files and folders at a given path in Dropbox
+    method: POST
+    path: /files/list_folder
+    arg_location: json_body
     input_schema:
       type: object
       properties:
@@ -57,6 +65,9 @@ tool_definitions:
       required: []
   - name: download_file
     description: Download a file from Dropbox by path
+    method: POST
+    path: /files/download
+    arg_location: json_body
     input_schema:
       type: object
       properties:
@@ -67,6 +78,9 @@ tool_definitions:
         - path
   - name: search
     description: Search for files and folders in Dropbox
+    method: POST
+    path: /files/search_v2
+    arg_location: json_body
     input_schema:
       type: object
       properties:

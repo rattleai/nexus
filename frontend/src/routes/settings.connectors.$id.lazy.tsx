@@ -1,7 +1,7 @@
 import { createLazyFileRoute, Link, useParams } from "@tanstack/react-router"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
-import { ArrowLeft, Plug, RefreshCw, Trash2, TestTube, ExternalLink } from "lucide-react"
+import { ArrowLeft, RefreshCw, Trash2, TestTube } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,10 +9,12 @@ import { StatusDot } from "@/components/status-dot"
 import { LoadingState } from "@/components/loading-state"
 import { ErrorState } from "@/components/error-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { AppCredentialsForm } from "@/components/connectors/app-credentials-form"
 import {
   useConnection,
   useConnectionTools,
   useDeleteConnection,
+  useRefreshConnectionTools,
   useTestConnection,
 } from "@/hooks/use-connectors"
 import { parseApiError } from "@/lib/api-client"
@@ -38,6 +40,7 @@ function ConnectionDetailPage() {
   const { data: tools } = useConnectionTools(id)
   const testConn = useTestConnection()
   const deleteConn = useDeleteConnection()
+  const refreshTools = useRefreshConnectionTools()
 
   if (isLoading) return <LoadingState variant="skeleton" rows={5} />
   if (error || !connection) return <ErrorState message="Connection not found" />
@@ -55,6 +58,18 @@ function ConnectionDetailPage() {
       toast.error(e.detail)
     }
   }
+
+  const handleRefreshTools = async () => {
+    try {
+      const list = await refreshTools.mutateAsync(id)
+      toast.success(`Refreshed: ${list.length} tools discovered`)
+    } catch (err) {
+      const e = await parseApiError(err)
+      toast.error(e.detail)
+    }
+  }
+
+  const isMcpConnector = connection.connector_type === "mcp_server"
 
   return (
     <div className="space-y-6 p-6">
@@ -140,11 +155,36 @@ function ConnectionDetailPage() {
         </CardContent>
       </Card>
 
+      {/* OAuth App Credentials (per-tenant, P3.3) */}
+      {connection.connector_slug && (
+        <AppCredentialsForm
+          slug={connection.connector_slug}
+          connectorName={connection.connector_name || connection.connector_slug}
+        />
+      )}
+
       {/* Available Tools */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{t("available_tools")}</CardTitle>
-          <CardDescription>{t("tools_description")}</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base">{t("available_tools")}</CardTitle>
+              <CardDescription>{t("tools_description")}</CardDescription>
+            </div>
+            {isMcpConnector && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefreshTools}
+                disabled={refreshTools.isPending}
+              >
+                <RefreshCw
+                  className={`mr-2 h-4 w-4 ${refreshTools.isPending ? "animate-spin" : ""}`}
+                />
+                Refresh tools
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {!tools || tools.length === 0 ? (

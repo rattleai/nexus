@@ -157,3 +157,101 @@ export function useRegisterMCPServer() {
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.connectors.all }),
   })
 }
+
+// ── App Credentials (OAuth app registration per tenant) ────────────
+
+export interface AppCredentialsStatus {
+  connector_slug: string
+  is_registered: boolean
+  client_id_preview: string | null
+  redirect_uri_override: string | null
+  has_webhook_secret: boolean
+  created_at: string | null
+  updated_at: string | null
+}
+
+export function useAppCredentialsStatus(slug: string) {
+  return useQuery({
+    queryKey: ["connectors", "app-credentials", slug],
+    queryFn: ({ signal }) =>
+      api
+        .get(`connectors/${slug}/app-credentials`, { signal })
+        .json<AppCredentialsStatus>(),
+    enabled: !!slug,
+  })
+}
+
+export function useRegisterAppCredentials() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      slug,
+      body,
+    }: {
+      slug: string
+      body: {
+        client_id: string
+        client_secret: string
+        webhook_secret?: string
+        redirect_uri_override?: string
+      }
+    }) =>
+      api
+        .post(`connectors/${slug}/app-credentials`, { json: body })
+        .json<AppCredentialsStatus>(),
+    onSuccess: (_data, { slug }) =>
+      qc.invalidateQueries({ queryKey: ["connectors", "app-credentials", slug] }),
+  })
+}
+
+export function useDeleteAppCredentials() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (slug: string) =>
+      api.delete(`connectors/${slug}/app-credentials`),
+    onSuccess: (_data, slug) =>
+      qc.invalidateQueries({ queryKey: ["connectors", "app-credentials", slug] }),
+  })
+}
+
+// ── Dynamic Client Registration (RFC 7591) ─────────────────────────
+
+export interface DynamicClientRegisterResult {
+  client_id: string
+  registration_endpoint: string
+  authorize_url: string
+  token_url: string
+  scopes_supported: string[] | null
+}
+
+export function useRegisterOAuthClient() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      slug,
+      body,
+    }: {
+      slug: string
+      body: { client_name: string; redirect_uris: string[] }
+    }) =>
+      api
+        .post(`connectors/${slug}/register-client`, { json: body })
+        .json<DynamicClientRegisterResult>(),
+    onSuccess: (_data, { slug }) =>
+      qc.invalidateQueries({ queryKey: ["connectors", "app-credentials", slug] }),
+  })
+}
+
+// ── Refresh MCP tool discovery ─────────────────────────────────────
+
+export function useRefreshConnectionTools() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.post(`connections/${id}/refresh-tools`).json<ConnectionTool[]>(),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: queryKeys.connections.tools(id) })
+      qc.invalidateQueries({ queryKey: queryKeys.connections.detail(id) })
+    },
+  })
+}

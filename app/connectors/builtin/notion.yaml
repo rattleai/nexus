@@ -8,6 +8,9 @@ icon: FileText
 category: productivity
 connector_type: oauth_api
 auth_type: oauth2
+broker: composio
+trust_level: verified
+requires_app_credentials: true
 version: "1.0.0"
 documentation_url: https://developers.notion.com/docs
 
@@ -24,19 +27,25 @@ auth_config:
   token_url: https://api.notion.com/v1/oauth/token
   userinfo_url: https://api.notion.com/v1/users/me
   revoke_url: ""
-  redirect_uri: ""
-  client_id: ""
-  client_secret: ""
   pkce_required: false
   scopes: []
   extra_authorize_params:
     owner: user
+
+api_config:
+  api_base_url: https://api.notion.com/v1
+  default_headers:
+    Notion-Version: "2022-06-28"
+    Content-Type: application/json
 
 mcp_config: {}
 
 tool_definitions:
   - name: search
     description: Search for pages and databases in the Notion workspace
+    method: POST
+    path: /search
+    arg_location: json_body
     input_schema:
       type: object
       properties:
@@ -59,6 +68,9 @@ tool_definitions:
       required: []
   - name: get_page
     description: Retrieve a Notion page by its ID
+    method: GET
+    path: /pages/{page_id}
+    arg_location: path
     input_schema:
       type: object
       properties:
@@ -69,6 +81,9 @@ tool_definitions:
         - page_id
   - name: query_database
     description: Query a Notion database with optional filters and sorts
+    method: POST
+    path: /databases/{database_id}/query
+    arg_location: mixed
     input_schema:
       type: object
       properties:

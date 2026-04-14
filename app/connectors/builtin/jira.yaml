@@ -3,11 +3,14 @@ name: Jira
 description: >-
   Connect to Atlassian Jira for issue tracking, project management, and agile
   workflows. Access projects, issues, sprints, and boards across your
-  Atlassian Cloud instance.
+  Atlassian Cloud instance via the official Atlassian MCP server.
 icon: Bug
 category: project_management
 connector_type: mcp_server
 auth_type: oauth2
+broker: composio
+trust_level: verified
+requires_app_credentials: true
 version: "1.0.0"
 documentation_url: https://developer.atlassian.com/cloud/jira/platform/rest/v3/
 
@@ -24,9 +27,6 @@ auth_config:
   token_url: https://auth.atlassian.com/oauth/token
   userinfo_url: https://api.atlassian.com/me
   revoke_url: ""
-  redirect_uri: ""
-  client_id: ""
-  client_secret: ""
   pkce_required: true
   scopes:
     - read:jira-work
@@ -38,7 +38,7 @@ auth_config:
 
 mcp_config:
   transport: streamable_http
-  server_url: ""
+  server_url: https://mcp.atlassian.com/v1/sse
 
 tool_definitions: []
 
