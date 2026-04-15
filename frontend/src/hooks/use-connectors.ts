@@ -13,12 +13,14 @@ export interface ConnectorDefinition {
   category: string
   connector_type: string
   auth_type: string
+  source: "yaml" | "plugin" | "composio" | "tenant_mcp"
   is_system: boolean
   is_active: boolean
   version: string
   documentation_url: string | null
   tags: string[] | null
   tool_definitions: Record<string, unknown>[] | null
+  aliases: string[] | null
   created_at: string
   updated_at: string
 }

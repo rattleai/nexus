@@ -108,6 +108,30 @@ function ConnectionActions({ connection }: { connection: TenantConnection }) {
   )
 }
 
+// ── Source Badge ────────────────────────────────────────
+// Subtle pill indicating where a connector definition came from. Helps
+// operators distinguish platform-managed YAML connectors from auto-synced
+// managed-broker catalogs (Composio, etc.) without requiring extra clicks.
+
+function SourceBadge({ source }: { source: ConnectorDefinition["source"] }) {
+  const config: Record<
+    ConnectorDefinition["source"],
+    { label: string; className: string } | null
+  > = {
+    yaml: { label: "Platform", className: "bg-primary/10 text-primary border-primary/20" },
+    plugin: { label: "Plugin", className: "bg-primary/10 text-primary border-primary/20" },
+    composio: { label: "Composio", className: "bg-muted text-muted-foreground border-border" },
+    tenant_mcp: { label: "Custom MCP", className: "bg-muted text-muted-foreground border-border" },
+  }
+  const entry = config[source]
+  if (!entry) return null
+  return (
+    <Badge variant="outline" className={`text-[10px] uppercase tracking-wider ${entry.className}`}>
+      {entry.label}
+    </Badge>
+  )
+}
+
 // ── Connector Card (Marketplace) ────────────────────────
 
 function ConnectorCard({
@@ -138,6 +162,7 @@ function ConnectorCard({
       <CardFooter className="mt-auto pt-0 flex items-center justify-between">
         <div className="flex gap-1">
           <Badge variant="outline" className="text-xs">{connector.category.replace("_", " ")}</Badge>
+          <SourceBadge source={connector.source} />
         </div>
         <Button
           size="sm"

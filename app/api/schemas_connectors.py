@@ -21,6 +21,11 @@ class ConnectorDefinitionRead(BaseModel):
     category: str
     connector_type: str
     auth_type: str
+    # Which sync source wrote this row: yaml | plugin | composio | tenant_mcp.
+    # Exposed so operators + frontend can distinguish platform-managed
+    # connectors from managed-broker (Composio) entries. Safe to show to
+    # end users — it's a label, not a secret.
+    source: str = "yaml"
     is_system: bool
     is_active: bool
     version: str
@@ -29,6 +34,11 @@ class ConnectorDefinitionRead(BaseModel):
 
     # Only include tool_definitions for detail view
     tool_definitions: list[dict[str, Any]] | None = None
+
+    # Admin-only — aliases are operator internals. Regular callers see
+    # None. The API route decides whether to populate this based on the
+    # caller's scope.
+    aliases: list[str] | None = None
 
     created_at: datetime
     updated_at: datetime

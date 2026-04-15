@@ -141,9 +141,13 @@ async def test_sync_upserts_new_connectors(fake_apps):
     ):
         count = await connector_registry.sync_composio_catalog(db)
 
-    assert count == 3
+    # asana + trello are written; the fake 'slack' entry is skipped
+    # at the write layer because it collides with the YAML's slack slug
+    # (dedup is now enforced pre-write, not just at query time).
+    assert count == 2
     assert "asana" in db._rows
     assert "trello" in db._rows
+    assert "slack" not in db._rows  # YAML protects 'slack' from upstream
     asana = db._rows["asana"]
     assert asana.broker == BrokerType.COMPOSIO
     assert asana.trust_level == TrustLevel.VERIFIED
@@ -165,6 +169,8 @@ async def test_sync_never_clobbers_yaml_slug(fake_apps):
     db = _FakeDB()
 
     # Pre-populate the slack slug the way sync_builtins would have
+    from app.connectors.models import ConnectorSource
+
     local_slack = ConnectorDefinition(
         id=uuid.uuid4(),
         slug="slack",
@@ -176,6 +182,7 @@ async def test_sync_never_clobbers_yaml_slug(fake_apps):
         auth_type=AuthType.OAUTH2,
         trust_level=TrustLevel.VERIFIED,
         broker=BrokerType.COMPOSIO,
+        source=ConnectorSource.YAML,
         is_system=True,
         is_active=True,
         version="1.0.0",
@@ -236,4 +243,6 @@ async def test_sync_handles_dict_shaped_apps():
         count = await connector_registry.sync_composio_catalog(db)
 
     assert count == 1
-    assert "linear_composio" in db._rows
+    # Slug is normalized on write: linear_composio → linear-composio
+    assert "linear-composio" in db._rows
+    assert db._rows["linear-composio"].name == "Linear (via dict)"

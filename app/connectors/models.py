@@ -96,6 +96,22 @@ class ConnectorTaskStatus(enum.StrEnum):
     CANCELLED = "cancelled"
 
 
+class ConnectorSource(enum.StrEnum):
+    """Which sync source wrote this ``ConnectorDefinition`` row.
+
+    Used by:
+    - query-layer dedup (yaml > plugin > composio > tenant_mcp)
+    - operational debugging
+    - future multi-broker sync (Nango/Arcade become additional enum values,
+      not additional conditionals in the registry).
+    """
+
+    YAML = "yaml"
+    COMPOSIO = "composio"
+    TENANT_MCP = "tenant_mcp"
+    PLUGIN = "plugin"
+
+
 # ── Connector Definition (global catalog) ──────────────────
 
 
@@ -188,6 +204,25 @@ class ConnectorDefinition(TimestampMixin, Base):
     requires_app_credentials: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false",
     )
+
+    # Which sync source wrote this row. Drives query-layer dedup priority
+    # (yaml > plugin > composio > tenant_mcp) when multiple sources collide
+    # on a normalized slug.
+    source: Mapped[ConnectorSource] = mapped_column(
+        Enum(
+            ConnectorSource,
+            name="connectorsource",
+            values_callable=lambda e: [m.value for m in e],
+        ),
+        nullable=False,
+        server_default=ConnectorSource.YAML.value,
+    )
+
+    # Alternative names this connector is known by. Used by the Composio
+    # catalog sync to skip apps whose normalized key matches any alias of
+    # a locally-defined YAML entry (e.g., Composio's ``gsuite`` app maps
+    # to our ``google-workspace`` connector).
+    aliases: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     # Metadata
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -56,6 +56,7 @@ from app.connectors.models import (
     ConnectorAuditLog,
     ConnectorDefinition,
     ConnectorOAuthState,
+    ConnectorSource,
     ConnectorTask,
     ConnectorTaskStatus,
     ConnectorType,
@@ -167,6 +168,7 @@ __all__ = [
     "ConnectorAuditLog",
     "ConnectorAppCredential",
     "ConnectorOAuthState",
+    "ConnectorSource",
     "ConnectorTask",
     "ConnectorTaskStatus",
 ]

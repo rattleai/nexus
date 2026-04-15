@@ -11,6 +11,7 @@ so they can be queried uniformly.
 
 from __future__ import annotations
 
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ from app.connectors.models import (
     AuthType,
     BrokerType,
     ConnectorDefinition,
+    ConnectorSource,
     ConnectorType,
     TrustLevel,
 )
@@ -35,6 +37,79 @@ _APP_SECRET_FIELDS = frozenset({"client_id", "client_secret", "webhook_secret"})
 logger = structlog.stdlib.get_logger()
 
 BUILTIN_DIR = Path(__file__).parent / "builtin"
+
+# ── Slug canonicalization ───────────────────────────────────
+
+_SLUG_WORD_SEP = re.compile(r"[\s_]+")
+_SLUG_ALNUM_HYPHEN = re.compile(r"[^a-z0-9-]")
+_SLUG_COLLAPSE_HYPHENS = re.compile(r"-{2,}")
+
+
+def normalize_slug(raw: str) -> str:
+    """Canonicalize a connector slug for collision checks.
+
+    * Lowercases.
+    * Collapses any run of whitespace or underscores into a single hyphen
+      (so ``"My Custom Tool"`` → ``"my-custom-tool"`` and ``"SLACK_v2"`` →
+      ``"slack-v2"``).
+    * Drops any remaining non-alphanumeric, non-hyphen character.
+    * Collapses runs of hyphens and trims leading/trailing hyphens.
+
+    Empty input returns ``""``.
+    """
+    if not raw:
+        return ""
+    s = raw.strip().lower()
+    # Internal whitespace and underscores become hyphens (word separators)
+    s = _SLUG_WORD_SEP.sub("-", s)
+    # Drop anything not alphanumeric or hyphen
+    s = _SLUG_ALNUM_HYPHEN.sub("", s)
+    # Collapse consecutive hyphens and trim
+    s = _SLUG_COLLAPSE_HYPHENS.sub("-", s).strip("-")
+    return s
+
+
+# Source priority for query-layer dedup: lower number = higher priority.
+# yaml wins over plugin wins over composio wins over tenant_mcp.
+_SOURCE_PRIORITY: dict[str, int] = {
+    ConnectorSource.YAML.value: 0,
+    ConnectorSource.PLUGIN.value: 1,
+    ConnectorSource.COMPOSIO.value: 2,
+    ConnectorSource.TENANT_MCP.value: 3,
+}
+
+
+def _dedup_by_source_priority(
+    rows: list[ConnectorDefinition],
+) -> list[ConnectorDefinition]:
+    """Return at most one row per normalized slug, preferring higher priority.
+
+    The write-path already prevents collisions, but we defend in depth here
+    so a pre-existing data load or a bug never leaks duplicate cards into
+    the marketplace UI.
+    """
+    best: dict[str, ConnectorDefinition] = {}
+    for row in rows:
+        canonical = normalize_slug(row.slug)
+        if not canonical:
+            continue
+        current = best.get(canonical)
+        if current is None:
+            best[canonical] = row
+            continue
+        current_pri = _SOURCE_PRIORITY.get(
+            current.source.value if hasattr(current.source, "value") else str(current.source),
+            99,
+        )
+        new_pri = _SOURCE_PRIORITY.get(
+            row.source.value if hasattr(row.source, "value") else str(row.source),
+            99,
+        )
+        if new_pri < current_pri:
+            best[canonical] = row
+    # Preserve the original ordering (by name) — sort by first-seen position
+    original_index = {id(r): i for i, r in enumerate(rows)}
+    return sorted(best.values(), key=lambda r: original_index.get(id(r), 0))
 
 
 class ConnectorRegistry:
@@ -54,7 +129,13 @@ class ConnectorRegistry:
         search: str | None = None,
         include_inactive: bool = False,
     ) -> list[ConnectorDefinition]:
-        """List available connector definitions with optional filters."""
+        """List available connector definitions with optional filters.
+
+        Applies a query-layer dedup pass as defense-in-depth: if two rows
+        share a normalized slug (should be prevented at write time, but we
+        guard anyway), the higher-priority ``source`` wins. Priority order
+        is ``yaml > plugin > composio > tenant_mcp``.
+        """
         stmt = select(ConnectorDefinition)
 
         if not include_inactive:
@@ -73,7 +154,8 @@ class ConnectorRegistry:
 
         stmt = stmt.order_by(ConnectorDefinition.name)
         result = await db.execute(stmt)
-        return list(result.scalars().all())
+        rows = list(result.scalars().all())
+        return _dedup_by_source_priority(rows)
 
     async def get_connector(
         self,
@@ -111,15 +193,31 @@ class ConnectorRegistry:
 
         validate_url(url)
 
-        slug = name.lower().replace(" ", "-").replace("_", "-")
-        slug = "".join(c for c in slug if c.isalnum() or c == "-")
+        canonical = normalize_slug(name)
+        if not canonical:
+            raise ValueError(
+                "Connector name must contain at least one alphanumeric character"
+            )
 
-        existing = await self.get_connector(db, slug)
+        # Can't shadow a YAML/plugin/Composio-owned connector by name
+        if canonical in self._yaml_canonical_slugs():
+            raise ValueError(
+                f"Connector name '{name}' collides with built-in slug '{canonical}'. "
+                f"Pick a different name."
+            )
+        if canonical in self._yaml_aliases():
+            owner = self._yaml_aliases()[canonical]
+            raise ValueError(
+                f"Connector name '{name}' collides with built-in connector "
+                f"'{owner}' (via alias). Pick a different name."
+            )
+
+        existing = await self.get_connector(db, canonical)
         if existing:
-            raise ValueError(f"Connector with slug '{slug}' already exists")
+            raise ValueError(f"Connector with slug '{canonical}' already exists")
 
         connector = ConnectorDefinition(
-            slug=slug,
+            slug=canonical,
             name=name,
             description=description,
             icon="Server",
@@ -132,6 +230,7 @@ class ConnectorRegistry:
             },
             trust_level=trust_level,
             broker=BrokerType.IN_HOUSE,
+            source=ConnectorSource.TENANT_MCP,
             is_system=False,
             is_active=True,
         )
@@ -140,7 +239,7 @@ class ConnectorRegistry:
 
         logger.info(
             "mcp_server_registered",
-            slug=slug,
+            slug=canonical,
             url=url,
             trust_level=trust_level.value,
         )
@@ -226,18 +325,68 @@ class ConnectorRegistry:
         else:
             items = list(apps)
 
+        yaml_canonical = self._yaml_canonical_slugs()
+        yaml_aliases = self._yaml_aliases()
+        seen_this_sync: set[str] = set()
+
         synced = 0
+        skipped_yaml = 0
+        skipped_alias = 0
+        skipped_intra = 0
         for app in items:
-            slug = self._get_attr(app, "key") or self._get_attr(app, "app_key")
-            if not slug:
+            raw_slug = self._get_attr(app, "key") or self._get_attr(app, "app_key")
+            if not raw_slug:
                 continue
 
-            existing = await self.get_connector(db, slug)
-            # Protect locally-defined connectors — the YAML always wins.
-            if existing is not None and existing.is_system and slug in self._yaml_slugs():
+            canonical = normalize_slug(str(raw_slug))
+            if not canonical:
                 continue
 
-            name = self._get_attr(app, "name") or slug.title()
+            # Local YAML wins
+            if canonical in yaml_canonical:
+                skipped_yaml += 1
+                logger.debug(
+                    "composio_catalog_skipped_yaml_wins",
+                    raw_slug=raw_slug,
+                    canonical=canonical,
+                )
+                continue
+
+            # Explicit alias match
+            if canonical in yaml_aliases:
+                skipped_alias += 1
+                logger.debug(
+                    "composio_catalog_skipped_alias",
+                    raw_slug=raw_slug,
+                    canonical=canonical,
+                    yaml_slug=yaml_aliases[canonical],
+                )
+                continue
+
+            # Intra-sync dedup — first seen wins
+            if canonical in seen_this_sync:
+                skipped_intra += 1
+                logger.debug(
+                    "composio_catalog_skipped_intra_sync_dup",
+                    raw_slug=raw_slug,
+                    canonical=canonical,
+                )
+                continue
+            seen_this_sync.add(canonical)
+
+            existing = await self.get_connector(db, canonical)
+            # Only overwrite rows we own. YAML/plugin/tenant_mcp rows are
+            # foreign and must not be clobbered by a Composio sync.
+            if existing is not None and existing.source != ConnectorSource.COMPOSIO:
+                skipped_yaml += 1
+                logger.debug(
+                    "composio_catalog_skipped_foreign_source",
+                    canonical=canonical,
+                    source=existing.source.value if hasattr(existing.source, "value") else existing.source,
+                )
+                continue
+
+            name = self._get_attr(app, "name") or canonical.replace("-", " ").title()
             description = self._get_attr(app, "description") or f"{name} via Composio"
             icon = self._get_attr(app, "logo") or "Plug"
             category = self._get_attr(app, "categories")
@@ -252,7 +401,7 @@ class ConnectorRegistry:
             ) if auth_schemes else True
 
             data = {
-                "slug": slug,
+                "slug": canonical,
                 "name": str(name),
                 "description": str(description),
                 "icon": str(icon),
@@ -270,16 +419,25 @@ class ConnectorRegistry:
             }
 
             if existing is None:
-                db.add(self._build_definition(slug, data, is_system=True))
+                new_row = self._build_definition(canonical, data, is_system=True)
+                new_row.source = ConnectorSource.COMPOSIO
+                db.add(new_row)
             else:
                 # Refresh the catalog metadata but keep local overrides
                 self._apply_yaml(existing, data)
                 existing.is_system = True
+                existing.source = ConnectorSource.COMPOSIO
 
             synced += 1
 
         await db.flush()
-        logger.info("composio_catalog_synced", count=synced)
+        logger.info(
+            "composio_catalog_synced",
+            count=synced,
+            skipped_yaml=skipped_yaml,
+            skipped_alias=skipped_alias,
+            skipped_intra=skipped_intra,
+        )
         return synced
 
     @staticmethod
@@ -291,45 +449,111 @@ class ConnectorRegistry:
             return obj.get(name)
         return getattr(obj, name, None)
 
-    def _yaml_slugs(self) -> set[str]:
-        """Slugs defined by hand in ``app/connectors/builtin/*.yaml``.
+    def _yaml_canonical_slugs(self) -> dict[str, str]:
+        """Return ``{normalized_slug: original_slug}`` for every built-in YAML.
 
-        Cached for the process lifetime — YAML files are deploy-time artifacts.
+        Cached for the process lifetime — YAML files are deploy-time
+        artifacts. Callers use this map both to detect slug collisions
+        (via ``normalized_slug in self._yaml_canonical_slugs()``) and to
+        look up the YAML's canonical form when a Composio app matches.
         """
-        if not hasattr(self, "_cached_yaml_slugs"):
-            self._cached_yaml_slugs = {
-                d.get("slug")
-                for d in self.load_builtins()
-                if d.get("slug")
-            }
-        return self._cached_yaml_slugs  # type: ignore[attr-defined]
+        if not hasattr(self, "_cached_yaml_canonical_slugs"):
+            mapping: dict[str, str] = {}
+            for d in self.load_builtins():
+                raw_slug = d.get("slug")
+                if not raw_slug:
+                    continue
+                canonical = normalize_slug(raw_slug)
+                if not canonical:
+                    continue
+                if canonical in mapping and mapping[canonical] != raw_slug:
+                    # Two YAML files normalize to the same slug — that's a
+                    # deploy-time configuration bug, not runtime drift.
+                    raise RuntimeError(
+                        f"Duplicate normalized YAML slug '{canonical}' "
+                        f"between '{mapping[canonical]}' and '{raw_slug}'"
+                    )
+                mapping[canonical] = raw_slug
+            self._cached_yaml_canonical_slugs = mapping
+        return self._cached_yaml_canonical_slugs  # type: ignore[attr-defined]
+
+    def _yaml_aliases(self) -> dict[str, str]:
+        """Return ``{normalized_alias: canonical_yaml_slug}`` for all YAMLs.
+
+        Lets Composio apps whose key matches a local alias be deduplicated
+        against the YAML owning that alias. Example::
+
+            google-workspace.yaml:
+              slug: google-workspace
+              aliases: [google_workspace, gsuite, googleworkspace]
+
+        ⇒ ``{"google-workspace": "google-workspace", "gsuite": "google-workspace",
+             "googleworkspace": "google-workspace"}``
+        """
+        if not hasattr(self, "_cached_yaml_aliases"):
+            mapping: dict[str, str] = {}
+            for d in self.load_builtins():
+                raw_slug = d.get("slug")
+                if not raw_slug:
+                    continue
+                canonical = normalize_slug(raw_slug)
+                for alias in d.get("aliases") or []:
+                    normalized_alias = normalize_slug(str(alias))
+                    if not normalized_alias:
+                        continue
+                    if (
+                        normalized_alias in mapping
+                        and mapping[normalized_alias] != canonical
+                    ):
+                        logger.warning(
+                            "yaml_alias_collision",
+                            alias=normalized_alias,
+                            existing=mapping[normalized_alias],
+                            new=canonical,
+                        )
+                        continue
+                    mapping[normalized_alias] = canonical
+            self._cached_yaml_aliases = mapping
+        return self._cached_yaml_aliases  # type: ignore[attr-defined]
 
     async def sync_builtins(self, db: AsyncSession) -> int:
         """Sync built-in YAML definitions to the database.
 
-        Creates new definitions and updates existing ones.
-        Strips any ``client_id`` / ``client_secret`` / ``webhook_secret``
-        keys from ``auth_config`` and ``webhook_config`` so secrets never
-        leak into the global catalog (P0.1).
+        Normalizes each YAML slug, ensures no two YAMLs collide after
+        normalization (`_yaml_canonical_slugs` raises at load time if they
+        do), strips any ``client_id`` / ``client_secret`` / ``webhook_secret``
+        keys so secrets never leak into the global catalog, and marks every
+        row with ``source=ConnectorSource.YAML`` so query-layer dedup can
+        give them top priority.
         """
         definitions = self.load_builtins()
         synced = 0
 
         for data in definitions:
-            slug = data.get("slug")
-            if not slug:
+            raw_slug = data.get("slug")
+            if not raw_slug:
                 logger.warning("builtin_connector_missing_slug", data=data)
                 continue
 
-            self._strip_secrets(data, slug)
+            canonical = normalize_slug(raw_slug)
+            if not canonical:
+                logger.warning("builtin_connector_empty_slug", raw=raw_slug)
+                continue
 
-            existing = await self.get_connector(db, slug)
+            # Canonicalize in-place so downstream helpers see the
+            # normalized form.
+            data["slug"] = canonical
+            self._strip_secrets(data, canonical)
+
+            existing = await self.get_connector(db, canonical)
 
             if existing:
                 self._apply_yaml(existing, data)
                 existing.is_system = True
+                existing.source = ConnectorSource.YAML
             else:
-                connector = self._build_definition(slug, data, is_system=True)
+                connector = self._build_definition(canonical, data, is_system=True)
+                connector.source = ConnectorSource.YAML
                 db.add(connector)
 
             synced += 1
@@ -340,14 +564,29 @@ class ConnectorRegistry:
             for plugin in plugin_registry:
                 if hasattr(plugin, "get_connector_definitions"):
                     for cdata in plugin.get_connector_definitions():
-                        pslug = cdata.get("slug")
+                        raw_pslug = cdata.get("slug")
+                        if not raw_pslug:
+                            continue
+                        pslug = normalize_slug(raw_pslug)
                         if not pslug:
                             continue
+                        cdata["slug"] = pslug
                         self._strip_secrets(cdata, pslug)
                         existing = await self.get_connector(db, pslug)
                         if not existing:
-                            db.add(self._build_definition(pslug, cdata, is_system=True))
+                            row = self._build_definition(pslug, cdata, is_system=True)
+                            row.source = ConnectorSource.PLUGIN
+                            db.add(row)
                             synced += 1
+                        else:
+                            # A plugin can register an enrichment for an
+                            # existing row (e.g. update description), but
+                            # never silently downgrade source priority.
+                            if existing.source in (
+                                ConnectorSource.YAML,
+                                ConnectorSource.PLUGIN,
+                            ):
+                                self._apply_yaml(existing, cdata)
         except Exception:
             logger.debug("plugin_connector_load_skipped", exc_info=True)
 
@@ -418,6 +657,11 @@ class ConnectorRegistry:
             "documentation_url", existing.documentation_url
         )
         existing.tags = data.get("tags", existing.tags or [])
+        if "aliases" in data:
+            existing.aliases = [
+                normalize_slug(str(a)) for a in data.get("aliases") or []
+                if normalize_slug(str(a))
+            ] or None
         if "requires_app_credentials" in data:
             existing.requires_app_credentials = bool(data["requires_app_credentials"])
         if "trust_level" in data:
@@ -472,6 +716,11 @@ class ConnectorRegistry:
         except ValueError:
             pass
 
+        normalized_aliases = [
+            normalize_slug(str(a)) for a in data.get("aliases") or []
+            if normalize_slug(str(a))
+        ] or None
+
         return ConnectorDefinition(
             slug=slug,
             name=data.get("name", slug),
@@ -489,6 +738,7 @@ class ConnectorRegistry:
             requires_app_credentials=bool(data.get("requires_app_credentials", False)),
             trust_level=trust,
             broker=broker,
+            aliases=normalized_aliases,
             is_system=is_system,
             is_active=True,
             version=data.get("version", "1.0"),
