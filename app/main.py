@@ -117,6 +117,14 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.warning("connector_builtin_sync_failed", exc_info=True)
 
+        # Broker posture: warn if Composio is the default but not usable
+        try:
+            from app.connectors.brokers.router import broker_router
+
+            broker_router.log_startup_status()
+        except Exception:
+            logger.debug("broker_router_status_failed", exc_info=True)
+
     yield
 
     # Graceful shutdown — dispose resources in reverse init order with timeouts

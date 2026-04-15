@@ -317,6 +317,8 @@ class ConnectorRegistry:
         is_system: bool,
     ) -> ConnectorDefinition:
         """Construct a new ConnectorDefinition row from YAML data."""
+        from app.config import settings as _settings
+
         trust = TrustLevel.UNTRUSTED
         try:
             if "trust_level" in data:
@@ -326,7 +328,14 @@ class ConnectorRegistry:
         except ValueError:
             pass
 
-        broker = BrokerType.IN_HOUSE
+        # When YAML omits `broker`, fall back to the platform default.
+        # Composio is recommended; in-house is the compliance/self-hosted path.
+        try:
+            default_broker = BrokerType(_settings.CONNECTOR_DEFAULT_BROKER)
+        except ValueError:
+            default_broker = BrokerType.IN_HOUSE
+
+        broker = default_broker
         try:
             if "broker" in data:
                 broker = BrokerType(data["broker"])

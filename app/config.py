@@ -104,7 +104,12 @@ class Settings(BaseSettings):
     # Composio broker (P2.2)
     COMPOSIO_API_KEY: str = ""
     COMPOSIO_BASE_URL: str = "https://backend.composio.dev"
-    CONNECTOR_DEFAULT_BROKER: str = "in_house"  # "composio" | "in_house"
+    # Default broker for connectors whose YAML does not specify one.
+    # Composio is the recommended default: it gives tenants 500+ pre-integrated
+    # SaaS tools with managed OAuth + refresh, and tokens never enter the
+    # agent runtime. When COMPOSIO_API_KEY is unset, BrokerRouter falls back
+    # to the in-house broker transparently so nothing breaks in dev.
+    CONNECTOR_DEFAULT_BROKER: str = "composio"  # "composio" | "in_house"
 
     # HashiCorp Vault for in-house credentials (P2.3, optional)
     VAULT_ADDR: str = ""
