@@ -113,6 +113,16 @@ async def lifespan(app: FastAPI):
 
             async with async_session_factory() as _db:
                 await connector_registry.sync_builtins(_db)
+                # Pull Composio's managed catalog on top of the YAML
+                # definitions. Hand-maintained slugs always win; the
+                # Composio sync is a no-op when the SDK / API key is
+                # absent, so dev and CI boot unchanged.
+                try:
+                    await connector_registry.sync_composio_catalog(_db)
+                except Exception:
+                    logger.warning(
+                        "composio_catalog_sync_failed", exc_info=True,
+                    )
                 await _db.commit()
         except Exception:
             logger.warning("connector_builtin_sync_failed", exc_info=True)

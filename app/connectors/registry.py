@@ -174,6 +174,136 @@ class ConnectorRegistry:
 
         return definitions
 
+    # ── Composio Catalog Sync ────────────────────────────────
+
+    async def sync_composio_catalog(self, db: AsyncSession) -> int:
+        """Pull Composio's 500+ app catalog into ``connector_definitions``.
+
+        Upserts one row per Composio app with ``broker=composio`` and
+        ``trust_level=verified`` (Composio vets the apps it hosts).
+        Hand-maintained YAML manifests take precedence by slug — this
+        method never clobbers a row that's already marked ``is_system``
+        by ``sync_builtins``, so internal / compliance / sensitive
+        connectors stay under local control.
+
+        No-ops when Composio is not configured / installed. Call this
+        from the lifespan right after ``sync_builtins`` and from the
+        ``/connectors/sync-composio`` admin endpoint to pull fresh
+        apps without a restart.
+        """
+        from app.connectors.brokers.composio import (
+            _call_async,
+            composio_broker,
+        )
+
+        if not composio_broker.is_available():
+            logger.debug("composio_catalog_sync_skipped_unavailable")
+            return 0
+
+        client = composio_broker._client
+        if client is None:
+            return 0
+
+        try:
+            apps = await _call_async(
+                getattr(client.apps, "get", client.apps.list),
+            )
+        except Exception as exc:
+            logger.warning(
+                "composio_catalog_fetch_failed",
+                error=str(exc)[:200],
+            )
+            return 0
+
+        if apps is None:
+            return 0
+
+        # The SDK occasionally returns an object with .items instead of a list
+        if hasattr(apps, "items") and callable(apps.items):
+            items = list(apps.items())
+        elif hasattr(apps, "items"):
+            items = list(apps.items)
+        else:
+            items = list(apps)
+
+        synced = 0
+        for app in items:
+            slug = self._get_attr(app, "key") or self._get_attr(app, "app_key")
+            if not slug:
+                continue
+
+            existing = await self.get_connector(db, slug)
+            # Protect locally-defined connectors — the YAML always wins.
+            if existing is not None and existing.is_system and slug in self._yaml_slugs():
+                continue
+
+            name = self._get_attr(app, "name") or slug.title()
+            description = self._get_attr(app, "description") or f"{name} via Composio"
+            icon = self._get_attr(app, "logo") or "Plug"
+            category = self._get_attr(app, "categories")
+            if isinstance(category, list) and category:
+                category = str(category[0])
+            elif not isinstance(category, str):
+                category = "productivity"
+
+            auth_schemes = self._get_attr(app, "auth_schemes") or []
+            supports_oauth = any(
+                "OAUTH" in str(s).upper() for s in auth_schemes
+            ) if auth_schemes else True
+
+            data = {
+                "slug": slug,
+                "name": str(name),
+                "description": str(description),
+                "icon": str(icon),
+                "category": str(category),
+                "connector_type": "oauth_api",
+                "auth_type": "oauth2" if supports_oauth else "api_key",
+                "broker": "composio",
+                "trust_level": "verified",
+                # Composio manages the shared OAuth apps by default;
+                # tenants only register their own if they want dedicated apps.
+                "requires_app_credentials": False,
+                "version": str(self._get_attr(app, "version") or "1.0"),
+                "documentation_url": self._get_attr(app, "docs_url"),
+                "tags": self._get_attr(app, "tags") or [],
+            }
+
+            if existing is None:
+                db.add(self._build_definition(slug, data, is_system=True))
+            else:
+                # Refresh the catalog metadata but keep local overrides
+                self._apply_yaml(existing, data)
+                existing.is_system = True
+
+            synced += 1
+
+        await db.flush()
+        logger.info("composio_catalog_synced", count=synced)
+        return synced
+
+    @staticmethod
+    def _get_attr(obj: Any, name: str) -> Any:
+        """Dict-or-object field accessor — Composio SDK types shift over versions."""
+        if obj is None:
+            return None
+        if isinstance(obj, dict):
+            return obj.get(name)
+        return getattr(obj, name, None)
+
+    def _yaml_slugs(self) -> set[str]:
+        """Slugs defined by hand in ``app/connectors/builtin/*.yaml``.
+
+        Cached for the process lifetime — YAML files are deploy-time artifacts.
+        """
+        if not hasattr(self, "_cached_yaml_slugs"):
+            self._cached_yaml_slugs = {
+                d.get("slug")
+                for d in self.load_builtins()
+                if d.get("slug")
+            }
+        return self._cached_yaml_slugs  # type: ignore[attr-defined]
+
     async def sync_builtins(self, db: AsyncSession) -> int:
         """Sync built-in YAML definitions to the database.
 

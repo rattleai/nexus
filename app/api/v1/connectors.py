@@ -297,6 +297,46 @@ async def register_oauth_client(
     )
 
 
+# ── Composio Catalog Sync ───────────────────────────────
+
+
+@router.post(
+    "/sync-composio",
+    dependencies=[Depends(RequireScopes("connections:admin"))],
+)
+async def sync_composio_catalog(
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Pull Composio's managed catalog into ``connector_definitions``.
+
+    Composio ships new apps weekly — this endpoint refreshes without a
+    restart. Hand-maintained YAML slugs are never clobbered; only
+    Composio-managed rows are upserted. Idempotent.
+    """
+    from app.connectors.registry import connector_registry
+
+    try:
+        count = await connector_registry.sync_composio_catalog(db)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Composio catalog sync failed: {str(exc)[:200]}",
+        ) from exc
+
+    await emit_audit_event(
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="connector_definitions",
+        resource_id="composio",
+        tenant_id=tenant.id,
+        changes={"synced": count},
+    )
+    await db.commit()
+
+    return {"synced": count}
+
+
 # ── MCP Server Registration ─────────────────────────────
 
 
