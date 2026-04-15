@@ -40,6 +40,8 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 -- Allow the app to use set_config for RLS tenant context
 GRANT EXECUTE ON FUNCTION set_config(text, text, boolean) TO app_user;
 
--- Audit log immutability: revoke mutation permissions (defense-in-depth)
--- The trigger in migration 0008 provides the primary enforcement.
-REVOKE UPDATE, DELETE ON audit_logs FROM app_user;
+-- NOTE: Audit log immutability (REVOKE UPDATE, DELETE ON audit_logs) is
+-- handled by scripts/ensure_app_user.py, which runs AFTER alembic migrations
+-- create the table. Do NOT add that REVOKE here — audit_logs does not exist
+-- when this init script runs, and the statement would fail hard, marking
+-- the PostgreSQL data directory as interrupted.

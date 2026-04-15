@@ -267,12 +267,14 @@ def cleanup_stale_instances() -> dict:
     async def _run():
         from app.agents.models import AgentInstance, InstanceStatus
         from app.config import settings
-        from app.db.session import async_session_factory
+        from app.db.session import admin_async_session_factory
 
         now = datetime.now(UTC)
 
-        async with async_session_factory() as db:
-            await db.execute(text("SET LOCAL row_security = off"))
+        # Platform-wide sweep across all tenants — use the admin session
+        # which connects as the DB superuser and bypasses RLS. Regular
+        # application code must NOT use this factory.
+        async with admin_async_session_factory() as db:
 
             # Tier 1: PENDING longer than threshold — task never started
             pending_cutoff = now - timedelta(seconds=settings.AGENT_PENDING_STALE_SECONDS)

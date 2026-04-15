@@ -26,6 +26,23 @@ _sync_engine = create_engine(
 _SyncSession = sessionmaker(_sync_engine)
 
 
+def _admin_sync_url() -> str:
+    """Return a psycopg2-compatible URL for the DB superuser connection.
+
+    Derived from ``DATABASE_MIGRATION_URL`` (async dialect) with the
+    asyncpg driver stripped. Falls back to the regular sync URL.
+    """
+    url = settings.DATABASE_MIGRATION_URL or settings.sync_database_url
+    return url.replace("+asyncpg", "")
+
+
+# Admin sync engine — bypasses RLS, for platform sweep tasks only.
+_admin_sync_engine = create_engine(
+    _admin_sync_url(), pool_size=2, max_overflow=3, pool_pre_ping=True, pool_recycle=300,
+)
+_AdminSyncSession = sessionmaker(_admin_sync_engine)
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 

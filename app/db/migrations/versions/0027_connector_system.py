@@ -12,7 +12,7 @@ Create Date: 2026-03-31
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM, JSONB, UUID
 
 revision = "0027_connector_system"
 down_revision = "0026_cpq_rls_with_check"
@@ -40,28 +40,38 @@ def _drop_rls(table: str) -> None:
 
 def upgrade() -> None:
     # ── 1. Create enum types ──────────────────────────────────────────
+    # Use ``postgresql.ENUM`` with ``create_type=False`` so SQLAlchemy's
+    # DDL emitter never auto-creates the types when they're referenced in
+    # column definitions. We create them exactly once per migration via
+    # explicit ``.create(checkfirst=True)`` calls below — this avoids the
+    # "type connectortype already exists" DuplicateObjectError that
+    # sa.Enum() triggers when the same instance is reused in create_table.
 
-    connector_type_enum = sa.Enum(
+    connector_type_enum = PG_ENUM(
         "mcp_server", "oauth_api", "api_key_api", "webhook",
         name="connectortype",
+        create_type=False,
     )
     connector_type_enum.create(op.get_bind(), checkfirst=True)
 
-    auth_type_enum = sa.Enum(
+    auth_type_enum = PG_ENUM(
         "oauth2", "api_key", "bearer_token", "none",
         name="authtype",
+        create_type=False,
     )
     auth_type_enum.create(op.get_bind(), checkfirst=True)
 
-    connection_status_enum = sa.Enum(
+    connection_status_enum = PG_ENUM(
         "active", "degraded", "expired", "disconnected", "error",
         name="connectionstatus",
+        create_type=False,
     )
     connection_status_enum.create(op.get_bind(), checkfirst=True)
 
-    credential_type_enum = sa.Enum(
+    credential_type_enum = PG_ENUM(
         "oauth2", "api_key", "bearer_token", "custom",
         name="credentialtype",
+        create_type=False,
     )
     credential_type_enum.create(op.get_bind(), checkfirst=True)
 

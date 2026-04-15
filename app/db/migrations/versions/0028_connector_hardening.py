@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM, JSONB, UUID
 
 revision = "0028_connector_hardening"
 down_revision = "0027_connector_system"
@@ -62,6 +62,31 @@ def _drop_rls(table: str) -> None:
 
 
 def upgrade() -> None:
+    # ── 0. Create new enum types for P0.9 / P1.1 / P2.4 ──────────────
+    # Same ``create_type=False`` pattern as 0027 so SQLAlchemy doesn't
+    # auto-create these types inside create_table/add_column.
+
+    trust_level_enum = PG_ENUM(
+        "verified", "trusted", "untrusted",
+        name="trustlevel",
+        create_type=False,
+    )
+    trust_level_enum.create(op.get_bind(), checkfirst=True)
+
+    broker_type_enum = PG_ENUM(
+        "composio", "in_house",
+        name="brokertype",
+        create_type=False,
+    )
+    broker_type_enum.create(op.get_bind(), checkfirst=True)
+
+    connector_task_status_enum = PG_ENUM(
+        "working", "input_required", "completed", "failed", "cancelled",
+        name="connectortaskstatus",
+        create_type=False,
+    )
+    connector_task_status_enum.create(op.get_bind(), checkfirst=True)
+
     # ── 1. Per-tenant OAuth app credentials (P0.1) ────────────────────
     # Each tenant provides its own OAuth app (client_id + client_secret) for
     # a given connector slug. This replaces the insecure pattern of storing
@@ -132,7 +157,7 @@ def upgrade() -> None:
         sa.Column("mcp_task_id", sa.String(255), nullable=False),
         sa.Column("tool_name", sa.String(255), nullable=False),
         sa.Column("arguments", JSONB, nullable=True),
-        sa.Column("status", sa.String(32), nullable=False, server_default="working"),
+        sa.Column("status", connector_task_status_enum, nullable=False, server_default="working"),
         sa.Column("result", JSONB, nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
         sa.Column("input_required", JSONB, nullable=True),
@@ -170,11 +195,21 @@ def upgrade() -> None:
     )
     op.add_column(
         "connector_definitions",
-        sa.Column("trust_level", sa.String(20), nullable=False, server_default="untrusted"),
+        sa.Column(
+            "trust_level",
+            trust_level_enum,
+            nullable=False,
+            server_default="untrusted",
+        ),
     )
     op.add_column(
         "connector_definitions",
-        sa.Column("broker", sa.String(20), nullable=False, server_default="in_house"),
+        sa.Column(
+            "broker",
+            broker_type_enum,
+            nullable=False,
+            server_default="in_house",
+        ),
     )
     op.add_column(
         "connector_definitions",
@@ -247,3 +282,8 @@ def downgrade() -> None:
 
     _drop_rls("connector_app_credentials")
     op.drop_table("connector_app_credentials")
+
+    # Drop new enum types
+    sa.Enum(name="connectortaskstatus").drop(op.get_bind(), checkfirst=True)
+    sa.Enum(name="brokertype").drop(op.get_bind(), checkfirst=True)
+    sa.Enum(name="trustlevel").drop(op.get_bind(), checkfirst=True)

@@ -46,6 +46,30 @@ async_engine = create_async_engine(
 async_session_factory = async_sessionmaker(async_engine, expire_on_commit=False)
 
 
+# ── Admin session factory (bypasses RLS) ──────────────────
+# Connects as the database superuser via ``DATABASE_MIGRATION_URL`` so
+# platform-wide sweep tasks (stale-instance cleanup, retention enforcement,
+# cross-tenant reporting) can see every row without fighting RLS.
+#
+# Use ONLY for explicit admin operations. Regular application code must
+# stick to ``async_session_factory`` + ``set_tenant_context`` so RLS
+# isolation is enforced.
+_admin_url = settings.DATABASE_MIGRATION_URL or settings.DATABASE_URL
+admin_async_engine = create_async_engine(
+    _admin_url,
+    echo=False,
+    pool_size=2,
+    max_overflow=3,
+    pool_pre_ping=True,
+    pool_recycle=300,
+    pool_timeout=30,
+    connect_args=_connect_args,
+)
+admin_async_session_factory = async_sessionmaker(
+    admin_async_engine, expire_on_commit=False,
+)
+
+
 # ── Connection pool monitoring (P0-8) ──────────────────────
 # Emit metrics for pool utilization to detect silent pool exhaustion.
 

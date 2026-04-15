@@ -130,6 +130,11 @@ services:
     environment:
       - PYTHONPATH=/app
       - DATABASE_URL=postgresql+asyncpg://app_user:change-me-in-production@pgbouncer:6432/app
+      # Superuser connection for platform-wide admin tasks (stale cleanup,
+      # retention sweeps, cross-tenant reporting). Read from
+      # app.db.session.admin_async_session_factory — must never be used by
+      # application request handlers.
+      - DATABASE_MIGRATION_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
     volumes:
       - .:/app
     depends_on:
@@ -158,6 +163,7 @@ services:
     environment:
       - PYTHONPATH=/app
       - DATABASE_URL=postgresql+asyncpg://app_user:change-me-in-production@pgbouncer:6432/app
+      - DATABASE_MIGRATION_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
     volumes:
       - .:/app
     depends_on:
@@ -166,6 +172,16 @@ services:
       redis:
         condition: service_healthy
     command: celery -A app.workers.celery_app beat --loglevel=info
+    # Beat is a scheduler, not an HTTP service, so the Dockerfile's
+    # curl-to-health/live healthcheck never passes. Check PID 1 cmdline
+    # instead — PID 1 is the celery beat process because command: above
+    # runs it directly (no sh wrapper).
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q celery /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     stop_grace_period: 10s
     restart: unless-stopped
     profiles: ["async"]
@@ -177,6 +193,7 @@ services:
       - PYTHONPATH=/app
       - AGENT_EXECUTION_ENABLED=true
       - DATABASE_URL=postgresql+asyncpg://app_user:change-me-in-production@pgbouncer:6432/app
+      - DATABASE_MIGRATION_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
     volumes:
       - .:/app
     depends_on:
@@ -210,6 +227,7 @@ services:
       - MCP_ENABLED=true
       - MCP_TRANSPORT=http
       - DATABASE_URL=postgresql+asyncpg://app_user:change-me-in-production@pgbouncer:6432/app
+      - DATABASE_MIGRATION_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
     volumes:
       - .:/app
     depends_on:

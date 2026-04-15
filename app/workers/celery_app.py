@@ -84,6 +84,24 @@ celery.conf.update(
 
 celery.autodiscover_tasks(["app.workers", "app.agents"])
 
+# autodiscover_tasks only imports each package's ``tasks`` submodule. Beat
+# schedules reference tasks in other modules (app.workers.periodic,
+# app.workers.event_consumer, app.workers.webhook_delivery, app.agents.tasks,
+# app.connectors.tasks) that must also be imported so the worker process
+# registers them on the Celery task registry — otherwise beat enqueues
+# tasks that workers raise ``Received unregistered task of type`` for.
+import app.workers.periodic  # noqa: F401, E402
+import app.workers.webhook_delivery  # noqa: F401, E402
+import app.workers.event_consumer  # noqa: F401, E402
+try:
+    import app.agents.tasks  # noqa: F401, E402
+except Exception:  # pragma: no cover — agents module optional
+    pass
+try:
+    import app.connectors.tasks  # noqa: F401, E402
+except Exception:  # pragma: no cover — connectors optional
+    pass
+
 # ── Plugin task discovery ──────────────────────────────────
 from app.plugins.registry import registry as _plugin_registry
 
