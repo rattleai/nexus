@@ -1,0 +1,29 @@
+services:
+  api:
+    ports: !override
+      - "127.0.0.1:8003:8000"
+
+  frontend:
+    ports: !override
+      - "127.0.0.1:3001:3000"
+
+  db:
+    ports: !override
+      - "127.0.0.1:5435:5432"
+
+  pgbouncer:
+    ports: !override
+      - "127.0.0.1:6433:6432"
+
+  redis:
+    ports: !override
+      - "127.0.0.1:6380:6379"
+
+  mcp:
+    ports: !override
+      - "127.0.0.1:8004:8001"
+
+  jaeger:
+    ports: !override
+      - "127.0.0.1:16687:16686"
+      - "127.0.0.1:4318:4317"
