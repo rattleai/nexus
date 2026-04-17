@@ -220,6 +220,20 @@ async def get_tenant_db(
 # ── JWT auth (new, opt-in via AUTH_ENABLED) ──────────────
 
 
+async def get_current_user_optional(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """Return the JWT user if the request carries one, else None.
+
+    Unlike ``get_current_user_from_token``, does not raise when the header
+    is absent. Useful for endpoints that accept either JWT (UI) or API-key
+    auth and want to record the JWT actor when available (e.g. for
+    per-user connector resolution in Celery tasks).
+    """
+    return await _resolve_user_from_jwt(request, db)
+
+
 async def get_current_user_from_token(
     request: Request,
     db: AsyncSession = Depends(get_db),

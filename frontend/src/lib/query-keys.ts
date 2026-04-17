@@ -157,6 +157,12 @@ export const queryKeys = {
     tools: (id: string) => ["connections", "tools", id] as const,
   },
 
+  cloudDrive: {
+    all: ["cloud-drive"] as const,
+    listing: (connectionId: string, path: string, cursor?: string | null) =>
+      ["cloud-drive", "listing", connectionId, path, cursor ?? null] as const,
+  },
+
   pricingRules: {
     all: ["pricing-rules"] as const,
     list: (productId?: string) => ["pricing-rules", "list", productId] as const,

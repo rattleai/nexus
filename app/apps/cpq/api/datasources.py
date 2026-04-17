@@ -10,7 +10,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import RequireScopes, get_current_tenant, get_db
+from app.api.deps import (
+    RequireScopes,
+    get_current_tenant,
+    get_current_user_optional,
+    get_db,
+)
+from app.db.models import User
 from app.api.rate_limit import ApiKeyRateLimiter
 from app.apps.cpq.api.schemas_datasource import (
     DataSourceChunkRead,
@@ -18,6 +24,8 @@ from app.apps.cpq.api.schemas_datasource import (
     DataSourceRead,
     DataSourceSearchRequest,
     DataSourceSearchResult,
+    DriveItemRead,
+    DriveListingRead,
     ExtractionPreview,
 )
 from app.config import settings
@@ -73,6 +81,7 @@ def _sanitize_filename(name: str) -> str:
 async def create_datasource(
     body: DataSourceCreate,
     tenant: Tenant = Depends(get_current_tenant),
+    user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new data source from a URL, cloud drive reference, or pasted text.
@@ -104,6 +113,7 @@ async def create_datasource(
         connector_slug=body.cloud_provider,
         connection_id=body.cloud_connection_id,
         cloud_file_id=body.cloud_file_id,
+        created_by_user_id=user.id if user else None,
         metadata_=body.metadata or {},
     )
 
@@ -158,6 +168,7 @@ async def upload_datasource(
     file: UploadFile,
     name: str = Query(..., min_length=1, max_length=255),
     tenant: Tenant = Depends(get_current_tenant),
+    user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a data source by uploading a file.
@@ -187,6 +198,7 @@ async def upload_datasource(
         filename=safe_name,
         mime_type=file.content_type or "application/octet-stream",
         file_size=total_size,
+        created_by_user_id=user.id if user else None,
         metadata_={},
     )
     db.add(ds)
@@ -213,6 +225,100 @@ async def upload_datasource(
         size=total_size,
     )
     return ds
+
+
+# ── Cloud-drive browse ───────────────────────────────────
+
+
+@router.get(
+    "/browse",
+    response_model=DriveListingRead,
+    dependencies=[Depends(RequireScopes("datasources:write"))],
+)
+async def browse_cloud_drive(
+    connection_id: uuid.UUID = Query(
+        ..., description="TenantConnection id (must belong to the caller's tenant)",
+    ),
+    path: str = Query(
+        "",
+        max_length=500,
+        description="Provider-specific folder reference: empty/'' for root, "
+                    "Dropbox path like '/Reports', or a Google Drive / "
+                    "OneDrive parent ID.",
+    ),
+    cursor: str | None = Query(
+        None,
+        max_length=2048,
+        description="Pagination cursor returned by a previous browse call.",
+    ),
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """List folders and files on a connected cloud drive.
+
+    Used by the frontend picker to let a user select a file for ingest.
+    Requires an in-house-brokered drive connection owned by the caller's
+    tenant; Composio-brokered drives return HTTP 501 until the follow-up
+    PR lands. Supported connectors: Dropbox, Google Drive, OneDrive.
+    """
+    from app.connectors.drive import (
+        ComposioNotSupportedError,
+        DriveAdapterError,
+        DriveFileNotFoundError,
+        resolve_adapter,
+    )
+    from app.connectors.models import ConnectorDefinition, TenantConnection
+
+    # Resolve the connection under the caller's tenant.
+    conn_result = await db.execute(
+        tenant_query(select(TenantConnection), tenant).where(
+            TenantConnection.id == connection_id,
+            TenantConnection.deleted_at.is_(None),
+        )
+    )
+    connection = conn_result.scalar_one_or_none()
+    if connection is None:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def_result = await db.execute(
+        select(ConnectorDefinition).where(
+            ConnectorDefinition.id == connection.connector_definition_id,
+        )
+    )
+    connector_def = def_result.scalar_one_or_none()
+    if connector_def is None:
+        raise HTTPException(status_code=404, detail="Connector definition missing")
+
+    try:
+        adapter = resolve_adapter(connector_def.slug)
+    except DriveAdapterError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        listing = await adapter.list(
+            connection=connection,
+            connector_def=connector_def,
+            db=db,
+            path=path,
+            cursor=cursor,
+        )
+    except ComposioNotSupportedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except DriveFileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except DriveAdapterError as exc:
+        logger.warning(
+            "drive_browse_failed",
+            connection_id=str(connection_id),
+            slug=connector_def.slug,
+            error=str(exc)[:200],
+        )
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return DriveListingRead(
+        items=[DriveItemRead(**vars(item)) for item in listing.items],
+        cursor=listing.cursor,
+    )
 
 
 # ── List ─────────────────────────────────────────────────

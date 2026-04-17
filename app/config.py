@@ -120,6 +120,10 @@ class Settings(BaseSettings):
     CONNECTOR_CEDAR_ENABLED: bool = False
     CONNECTOR_CEDAR_POLICY_DIR: str = "app/authz/policies"
 
+    # Cloud-drive ingest (Dropbox / Google Drive / OneDrive → RAG)
+    CLOUD_DRIVE_MAX_FILE_SIZE_MB: int = 50
+    CLOUD_DRIVE_LIST_PAGE_SIZE: int = 100
+
     # A2A (P3.2)
     CONNECTOR_A2A_ENABLED: bool = False
 
