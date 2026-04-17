@@ -17,5 +17,7 @@ tests
 .env.*
 !.env.example
 .agents
+.claude
+docker-compose*.yml
 .gitignore
 .gitattributes

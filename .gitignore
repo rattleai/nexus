@@ -78,6 +78,15 @@ openapi.json
 docker-compose.override.yml
 
 # ──────────────────────────────────────────────
+# Claude Code
+# ──────────────────────────────────────────────
+# Ignore local/agent state; track shared skills, agents, and commands only
+.claude/*
+!.claude/skills/
+!.claude/agents/
+!.claude/commands/
+
+# ──────────────────────────────────────────────
 # Database
 # ──────────────────────────────────────────────
 *.sqlite3
