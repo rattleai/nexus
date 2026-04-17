@@ -38,8 +38,8 @@ def do_run_migrations(connection):
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
-        # Use a wider column for alembic_version on new deployments so that
-        # revision identifiers longer than 32 chars never get truncated.
+        # Wider column for alembic_version on new deployments so revision
+        # identifiers longer than 32 chars never get truncated.
         version_table_column_length=128,
     )
     with context.begin_transaction():
@@ -51,12 +51,25 @@ def widen_alembic_version_column(connection):
 
     Runs in a dedicated transaction BEFORE alembic takes over the connection
     so it's fully committed and visible to alembic's own UPDATE statements.
-    Idempotent: checks the column length first and only alters if needed.
 
-    Ported from commit 67b7f56 (main). Required because multiple revision IDs
-    on this branch (e.g. ``0021_cardinality_check_constraints``,
-    ``0028_connector_hardening``) exceed alembic's default VARCHAR(32).
+    Fresh-DB path: pre-create alembic_version with VARCHAR(128) so alembic's
+    default CREATE TABLE (VARCHAR(32)) becomes a no-op.
+
+    Legacy-DB path: idempotently widen the column when an existing database
+    still has the narrow default.
+
+    Required because several revision IDs on this branch (e.g.
+    ``0021_cardinality_check_constraints``, ``0028_connector_hardening``)
+    exceed alembic's default VARCHAR(32).
     """
+    # Fresh-DB path: create the table with the wider column upfront.
+    connection.exec_driver_sql(
+        "CREATE TABLE IF NOT EXISTS alembic_version ("
+        "    version_num VARCHAR(128) NOT NULL, "
+        "    CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)"
+        ")"
+    )
+    # Legacy-DB path: widen narrow column in place.
     connection.exec_driver_sql(
         "DO $$ BEGIN "
         "IF EXISTS (SELECT 1 FROM information_schema.columns "

@@ -82,7 +82,7 @@ celery.conf.update(
     redbeat_redis_url=settings.REDIS_URL,
 )
 
-celery.autodiscover_tasks(["app.workers", "app.agents"])
+celery.autodiscover_tasks(["app.workers", "app.agents", "app.docprocessor"])
 
 # autodiscover_tasks only imports each package's ``tasks`` submodule. Beat
 # schedules reference tasks in other modules (app.workers.periodic,

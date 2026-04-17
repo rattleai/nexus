@@ -235,6 +235,95 @@ class Settings(BaseSettings):
     AGENT_MEMORY_VECTOR_ENABLED: bool = False  # Requires pgvector extension
     AGENT_MEMORY_VECTOR_DIMENSIONS: int = 1536
 
+    # ── RAG / Embedding Gateway ──────────────────────────────
+    EMBEDDING_DEFAULT_PROVIDER: str = "openai"
+    # Default model: text-embedding-3-small (MTEB ~62). For higher quality:
+    #   voyage-4        (~67 MTEB, $0.06/1M tok, Matryoshka) — best cost/quality
+    #   gemini-embedding-001 (~68 MTEB, $0.15/1M tok) — highest overall quality
+    EMBEDDING_DEFAULT_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_COHERE_API_KEY: str = ""
+    EMBEDDING_VOYAGE_API_KEY: str = ""
+    EMBEDDING_LOCAL_URL: str = ""  # e.g., http://localhost:8080 for local models
+    EMBEDDING_CACHE_ENABLED: bool = True
+    EMBEDDING_CACHE_TTL_SECONDS: int = 86400  # 24 hours
+
+    # RAG Chunking
+    RAG_CHUNKING_STRATEGY: str = "fixed_size"  # fixed_size, recursive, markdown, semantic
+    RAG_CHUNK_SIZE: int = 1000
+    RAG_CHUNK_OVERLAP: int = 200
+    RAG_SEMANTIC_SIMILARITY_THRESHOLD: float = 0.5
+
+    # Vector quantization — controls which column is used for search.
+    # Valid values (see VectorPrecision enum in app/db/models/datasource.py):
+    #   "full"   = float32 vector(1536) — highest accuracy, 6 KB/vector
+    #   "half"   = float16 halfvec(1536) — near-zero loss, 3 KB/vector (recommended)
+    #   "binary" = 1-bit bit(1536) — 97% smaller but lower recall, 192 bytes/vector
+    VECTOR_QUANTIZATION: str = "half"
+
+    # Vector index type — controls which index is used for ANN search.
+    # "hnsw"    = pgvector HNSW (default, no extra extension needed)
+    # "diskann" = pgvectorscale StreamingDiskANN (10x+ throughput at 99% recall)
+    VECTOR_INDEX_TYPE: str = "hnsw"
+
+    # HNSW index build parameters — used when creating/rebuilding indexes.
+    HNSW_M: int = 24              # edges per node (higher = better recall, larger index)
+    HNSW_EF_CONSTRUCTION: int = 128  # build-time search width (higher = better index quality)
+
+    # HNSW query-time tuning — controls recall vs. latency trade-off.
+    # ef_search: candidates evaluated per query (pgvector default 40, too low for 1536-dim).
+    # iterative_scan: re-enters index when filtered candidates are exhausted (pgvector >=0.8.0).
+    HNSW_EF_SEARCH: int = 100
+    PGVECTOR_ITERATIVE_SCAN: bool = True
+
+    # DiskANN query-time tuning — search list size for recall optimization.
+    DISKANN_QUERY_SEARCH_LIST_SIZE: int = 100
+
+    # RAG Re-ranking
+    RAG_RERANKER_PROVIDER: str = "none"  # none, cohere, cross_encoder
+    RAG_RERANKER_MODEL: str = "rerank-v3.5"
+    RAG_RERANKER_API_KEY: str = ""
+    RAG_RERANKER_LOCAL_URL: str = ""
+    RAG_RERANKER_TOP_K: int = 5
+
+    # ── Advanced RAG Features ────────────────────────────────
+    # Contextual Retrieval (Anthropic method) — prepend document context to chunks
+    RAG_CONTEXTUAL_RETRIEVAL_ENABLED: bool = False
+    RAG_CONTEXTUAL_MODEL: str = "claude-haiku-4-5-20251001"
+
+    # Parent-child document retrieval — index small chunks, return parent context
+    RAG_PARENT_CHILD_ENABLED: bool = False
+    RAG_PARENT_CHUNK_SIZE: int = 2000
+    RAG_CHILD_CHUNK_SIZE: int = 500
+
+    # Query routing and decomposition
+    RAG_QUERY_ROUTING_ENABLED: bool = False
+    RAG_QUERY_DECOMPOSITION_ENABLED: bool = False
+
+    # Semantic query cache (invalidated on data changes via event-driven mechanism)
+    RAG_QUERY_CACHE_ENABLED: bool = False
+    RAG_QUERY_CACHE_TTL_SECONDS: int = 1800  # 30 min (safe with event-driven invalidation)
+    RAG_QUERY_CACHE_SIMILARITY_THRESHOLD: float = 0.95
+
+    # Query analytics sampling rate (0.0-1.0, fraction of queries logged)
+    RAG_QUERY_LOG_SAMPLE_RATE: float = 0.1
+
+    # HyDE (Hypothetical Document Embeddings)
+    RAG_HYDE_ENABLED: bool = False
+    RAG_HYDE_MODEL: str = "claude-haiku-4-5-20251001"
+
+    # Agentic RAG — multi-step retrieval with self-critique
+    RAG_AGENTIC_ENABLED: bool = False
+    RAG_AGENTIC_MAX_ITERATIONS: int = 3
+
+    # Corrective RAG (CRAG) — document-level grading and filtering
+    RAG_CRAG_ENABLED: bool = False
+
+    # Graph RAG — knowledge graph extraction and retrieval
+    RAG_GRAPH_ENABLED: bool = False
+
+    # Late chunking (Jina-style) — requires LOCAL/Jina embedding provider
+    RAG_LATE_CHUNKING_ENABLED: bool = False
+
     # ── Agent Security (Phase 0-2) ──────────────────────────
     # Phase 0 — DB Gateway
     AGENT_DB_MAX_QUERIES_PER_MINUTE: int = 60
@@ -454,6 +543,34 @@ def validate_settings() -> None:
 def _validate_security_config() -> None:
     """Validate agent security configuration at startup."""
     errors: list[str] = []
+
+    # ── RAG / Vector config validation ────────────────────────
+    if settings.VECTOR_QUANTIZATION not in ("full", "half", "binary"):
+        errors.append(
+            f"VECTOR_QUANTIZATION must be 'full', 'half', or 'binary', "
+            f"got '{settings.VECTOR_QUANTIZATION}'"
+        )
+    if settings.RAG_CHUNKING_STRATEGY not in (
+        "fixed_size", "recursive", "markdown", "semantic", "late",
+    ):
+        errors.append(
+            f"RAG_CHUNKING_STRATEGY must be fixed_size|recursive|markdown|semantic|late, "
+            f"got '{settings.RAG_CHUNKING_STRATEGY}'"
+        )
+    if settings.RAG_RERANKER_PROVIDER not in ("none", "cohere", "cross_encoder"):
+        errors.append(
+            f"RAG_RERANKER_PROVIDER must be none|cohere|cross_encoder, "
+            f"got '{settings.RAG_RERANKER_PROVIDER}'"
+        )
+    if settings.VECTOR_INDEX_TYPE not in ("hnsw", "diskann"):
+        errors.append(
+            f"VECTOR_INDEX_TYPE must be 'hnsw' or 'diskann', "
+            f"got '{settings.VECTOR_INDEX_TYPE}'"
+        )
+    if not (0.0 <= settings.RAG_QUERY_LOG_SAMPLE_RATE <= 1.0):
+        errors.append("RAG_QUERY_LOG_SAMPLE_RATE must be between 0.0 and 1.0")
+    if not (0.0 < settings.RAG_QUERY_CACHE_SIMILARITY_THRESHOLD <= 1.0):
+        errors.append("RAG_QUERY_CACHE_SIMILARITY_THRESHOLD must be between 0.0 and 1.0")
 
     # Validate enum values
     if settings.PROMPT_FIREWALL_FAIL_MODE not in ("log", "block"):

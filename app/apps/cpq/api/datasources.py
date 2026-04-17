@@ -135,10 +135,11 @@ async def create_datasource(
         await db.commit()
         await db.refresh(ds)
 
-    # TODO: Trigger async extraction via Celery for non-paste sources
-    # if ds.source_type != DataSourceType.PASTE:
-    #     from app.tasks.extraction import extract_datasource
-    #     extract_datasource.delay(str(ds.id))
+    # Trigger async extraction via Celery for non-paste sources
+    if ds.source_type != DataSourceType.PASTE:
+        from app.docprocessor.tasks import extract_datasource
+
+        extract_datasource.delay(str(ds.id))
 
     logger.info("datasource_created", tenant_id=str(tenant.id), datasource_id=str(ds.id), source_type=ds.source_type)
     return ds
@@ -199,9 +200,10 @@ async def upload_datasource(
     await db.commit()
     await db.refresh(ds)
 
-    # TODO: Trigger async extraction via Celery
-    # from app.tasks.extraction import extract_datasource
-    # extract_datasource.delay(str(ds.id))
+    # Trigger async extraction → chunking → embedding → vectorization
+    from app.docprocessor.tasks import extract_datasource
+
+    extract_datasource.delay(str(ds.id))
 
     logger.info(
         "datasource_uploaded",
@@ -379,9 +381,10 @@ async def reprocess_datasource(
     await db.commit()
     await db.refresh(ds)
 
-    # TODO: Trigger async extraction via Celery
-    # from app.tasks.extraction import extract_datasource
-    # extract_datasource.delay(str(ds.id))
+    # Trigger async extraction → chunking → embedding → vectorization
+    from app.docprocessor.tasks import extract_datasource
+
+    extract_datasource.delay(str(ds.id))
 
     logger.info("datasource_reprocess", tenant_id=str(tenant.id), datasource_id=str(ds.id))
     return ds

@@ -93,6 +93,20 @@ async def lifespan(app: FastAPI):
                     )
             else:
                 logger.info("rls_verified", db_user=row[0] if row else "unknown")
+
+            # Verify pgvectorscale availability when DiskANN is configured
+            if settings.VECTOR_INDEX_TYPE == "diskann":
+                ext_check = await conn.execute(
+                    sa_text("SELECT 1 FROM pg_extension WHERE extname = 'vectorscale'")
+                )
+                if ext_check.scalar() is None:
+                    logger.warning(
+                        "diskann_extension_missing",
+                        detail="VECTOR_INDEX_TYPE is 'diskann' but pgvectorscale extension "
+                        "is not installed. Falling back to HNSW indexes.",
+                    )
+                else:
+                    logger.info("diskann_verified", index_type="diskann")
     except RuntimeError:
         raise
     except Exception:

@@ -1,4 +1,4 @@
-"""Tests for RLS WITH CHECK policies (migration 0007).
+"""Tests for RLS WITH CHECK policies.
 
 Verifies that tenant_isolation policies correctly block cross-tenant
 INSERTs via WITH CHECK, and that FORCE ROW LEVEL SECURITY is active.

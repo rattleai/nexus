@@ -173,15 +173,15 @@ services:
         condition: service_healthy
     command: celery -A app.workers.celery_app beat --loglevel=info
     # Beat is a scheduler, not an HTTP service, so the Dockerfile's
-    # curl-to-health/live healthcheck never passes. Check PID 1 cmdline
-    # instead — PID 1 is the celery beat process because command: above
-    # runs it directly (no sh wrapper).
+    # curl-based healthcheck never passes. `command:` above runs celery
+    # beat directly, so PID 1's cmdline is the beat process — grep it.
+    # grep is in the slim image; no dependency on pgrep/ps/python.
     healthcheck:
-      test: ["CMD-SHELL", "grep -q celery /proc/1/cmdline"]
+      test: ["CMD-SHELL", "grep -q celery /proc/1/cmdline && grep -q beat /proc/1/cmdline"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 20s
     stop_grace_period: 10s
     restart: unless-stopped
     profiles: ["async"]

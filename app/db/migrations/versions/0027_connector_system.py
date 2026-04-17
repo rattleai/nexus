@@ -6,7 +6,7 @@ Creates: connector_definitions, tenant_connections, tenant_credentials,
 Updates data_sources to reference tenant_connections instead.
 
 Revision ID: 0027_connector_system
-Revises: 0026_cpq_rls_with_check
+Revises: 0001_basic_schema
 Create Date: 2026-03-31
 """
 
@@ -15,7 +15,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM, JSONB, UUID
 
 revision = "0027_connector_system"
-down_revision = "0026_cpq_rls_with_check"
+down_revision = "0001_basic_schema"
 branch_labels = None
 depends_on = None
 
