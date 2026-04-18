@@ -801,9 +801,12 @@ jobs:
       - name: Boot the image and run a minimal sanity check
         run: |
           set -euo pipefail
-          # Run with a throw-away SECRET_KEY so settings validation passes.
+          # Run with throw-away SECRET_KEY so settings validation passes.
           # We don't connect to a DB — just verify the Python entrypoint
-          # imports, the ASGI app object exists, and the Alembic env loads.
+          # imports, the ASGI app object exists, and plugin discovery
+          # completes without duplicates. `alembic env` requires alembic's
+          # runtime context and can't be imported as a plain module, so
+          # we test its presence as a file instead.
           docker run --rm \
             -e SECRET_KEY=ci-test-secret-key-min-32-chars-long \
             -e ADMIN_KEY=ci-test-admin-key-min-32-chars-long \
@@ -811,12 +814,17 @@ jobs:
             -e DEBUG=true \
             saas-platform:smoke \
             python -c "
-          import importlib
+          import importlib, os
           mod = importlib.import_module('app.main')
           assert hasattr(mod, 'app'), 'app.main must export ASGI `app`'
           assert mod.app.openapi_schema is None or isinstance(mod.app.openapi_schema, dict)
-          # Confirm migration env can be imported without contacting the DB.
-          importlib.import_module('app.db.migrations.env')
+          # Plugin registry must be populated — a duplicate or failed import
+          # would have raised by now.
+          from app.plugins.registry import registry
+          assert len(registry) >= 1, 'at least one plugin should load (cpq)'
+          # Alembic migration env.py has to be present in the image; it
+          # can't be imported as a plain module (needs alembic context).
+          assert os.path.exists('/app/app/db/migrations/env.py'), 'alembic env.py missing from image'
           print('Container smoke: OK')
           "
 
