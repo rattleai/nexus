@@ -29,20 +29,20 @@ resource "aws_secretsmanager_secret_version" "app_config" {
   secret_id = aws_secretsmanager_secret.app_config.id
 
   secret_string = jsonencode({
-    SECRET_KEY             = var.app_secret_key
-    ENCRYPTION_KEY         = var.app_encryption_key
-    WEBHOOK_SIGNING_KEY    = var.app_webhook_signing_key
-    ADMIN_KEY              = var.app_admin_key
-    DB_APP_USER_PASSWORD   = random_password.db_app_user.result
-    DB_MASTER_PASSWORD     = random_password.db_master.result
+    SECRET_KEY           = var.app_secret_key
+    ENCRYPTION_KEY       = var.app_encryption_key
+    WEBHOOK_SIGNING_KEY  = var.app_webhook_signing_key
+    ADMIN_KEY            = var.app_admin_key
+    DB_APP_USER_PASSWORD = random_password.db_app_user.result
+    DB_MASTER_PASSWORD   = random_password.db_master.result
     # Full connection URLs with credentials — kept in Secrets Manager, never in env vars
-    DATABASE_URL           = "postgresql+asyncpg://app_user:${random_password.db_app_user.result}@${aws_db_instance.main.endpoint}/${var.db_name}?ssl=require"
-    DATABASE_SYNC_URL      = "postgresql://app_user:${random_password.db_app_user.result}@${aws_db_instance.main.endpoint}/${var.db_name}?sslmode=require"
-    REDIS_URL              = "rediss://:${random_password.redis_auth.result}@${aws_elasticache_replication_group.main.primary_endpoint_address}:6379/0"
-    STRIPE_SECRET_KEY      = var.stripe_secret_key
-    STRIPE_WEBHOOK_SECRET  = var.stripe_webhook_secret
-    BREVO_API_KEY          = var.brevo_api_key
-    REDIS_AUTH_TOKEN       = random_password.redis_auth.result
+    DATABASE_URL          = "postgresql+asyncpg://app_user:${random_password.db_app_user.result}@${aws_db_instance.main.endpoint}/${var.db_name}?ssl=require"
+    DATABASE_SYNC_URL     = "postgresql://app_user:${random_password.db_app_user.result}@${aws_db_instance.main.endpoint}/${var.db_name}?sslmode=require"
+    REDIS_URL             = "rediss://:${random_password.redis_auth.result}@${aws_elasticache_replication_group.main.primary_endpoint_address}:6379/0"
+    STRIPE_SECRET_KEY     = var.stripe_secret_key
+    STRIPE_WEBHOOK_SECRET = var.stripe_webhook_secret
+    BREVO_API_KEY         = var.brevo_api_key
+    REDIS_AUTH_TOKEN      = random_password.redis_auth.result
   })
 
   lifecycle {
@@ -76,8 +76,8 @@ resource "aws_iam_role" "secret_rotation_lambda" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
       Principal = { Service = "lambda.amazonaws.com" }
     }]
   })
@@ -164,14 +164,14 @@ resource "aws_lambda_function" "secret_rotation" {
   # back through `try()` to a sentinel that satisfies the type check.
   # Apply still fails loudly if the zip is missing because `filename`
   # is checked at plan/apply time without any try() wrapper.
-  filename         = "${path.module}/lambda/secret_rotation.zip"
+  filename = "${path.module}/lambda/secret_rotation.zip"
   source_code_hash = try(
     filebase64sha256("${path.module}/lambda/secret_rotation.zip"),
     "validate-only-placeholder",
   )
 
   vpc_config {
-    subnet_ids         = aws_subnet.private[*].id
+    subnet_ids = aws_subnet.private[*].id
     # Lambda needs its own SG — not the RDS SG — with no inbound rules
     # and outbound restricted to RDS (5432) and Secrets Manager (443).
     security_group_ids = [aws_security_group.secret_rotation_lambda.id]

@@ -122,7 +122,7 @@ output "lock_table_arn" {
 
 output "backend_config" {
   description = "Backend configuration to paste into root main.tf"
-  value = <<-EOT
+  value       = <<-EOT
     backend "s3" {
       bucket         = "${var.bucket_name}"
       key            = "prod/terraform.tfstate"
