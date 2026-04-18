@@ -108,11 +108,13 @@ class ConnectorToolAdapter:
         tools: list[dict[str, Any]] = []
 
         if connector_def.connector_type == ConnectorType.MCP_SERVER:
-            cached = connection.mcp_tools_cache or []
+            raw_mcp: Any = connection.mcp_tools_cache
+            cached: list[dict[str, Any]] = list(raw_mcp) if raw_mcp else []
             for mcp_tool in cached:
                 tools.append(adapter.mcp_tool_to_platform(mcp_tool, connection, connector_def))
         else:
-            tool_defs = connector_def.tool_definitions or []
+            raw_tools: Any = connector_def.tool_definitions
+            tool_defs: list[dict[str, Any]] = list(raw_tools) if raw_tools else []
             for api_tool in tool_defs:
                 tools.append(adapter.api_tool_to_platform(api_tool, connection, connector_def))
 

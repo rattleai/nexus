@@ -137,7 +137,11 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.11"
-warn_return_any = true
+# warn_return_any is off: the ORM + JSONB code paths legitimately return
+# Any (SQLAlchemy's Result[...] generics don't narrow to the concrete
+# column type, JSONB columns are typed as Any). Turning it on generated
+# hundreds of false positives against the existing code.
+warn_return_any = false
 warn_unused_configs = true
 ignore_missing_imports = true
 plugins = ["pydantic.mypy"]

@@ -8,7 +8,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import get_current_tenant, get_db
-from app.db.models import ProductStatus
+from app.apps.cpq.models.product import ProductStatus
 from app.main import create_app
 
 

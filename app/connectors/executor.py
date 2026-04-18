@@ -223,7 +223,8 @@ class ConnectorExecutor:
         """
         token = await credential_manager.get_valid_token(connection, connector_def, db)
 
-        tool_defs = connector_def.tool_definitions or []
+        raw_tool_defs: Any = connector_def.tool_definitions
+        tool_defs: list[dict[str, Any]] = list(raw_tool_defs) if raw_tool_defs else []
         tool_def = next((t for t in tool_defs if t.get("name") == tool_name), None)
         if not tool_def:
             return {

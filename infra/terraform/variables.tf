@@ -10,6 +10,16 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
+variable "dr_region" {
+  description = <<-EOT
+    Secondary AWS region for disaster-recovery cross-region replication
+    (RDS automated backups, S3 replica buckets). Leave empty ("") to
+    disable all DR resources — they are gated on `var.dr_region != ""`.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "environment" {
   description = "Deployment environment (prod, staging)"
   type        = string
