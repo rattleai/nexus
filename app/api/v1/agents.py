@@ -19,14 +19,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.agents.events import (
     AgentDefinitionCreated,
     AgentDefinitionUpdated,
+    ConversationEnded,
     ConversationStarted,
     ConversationTurnCompleted,
-    ConversationEnded,
 )
 from app.agents.models import (
     AgentDefinition,
@@ -64,7 +63,7 @@ from app.agents.schemas import (
     WorkflowRunCreate,
     WorkflowRunResponse,
 )
-from app.api.deps import RequireScopes, get_current_api_key, get_current_api_key_optional, get_current_tenant, get_db
+from app.api.deps import RequireScopes, get_current_api_key_optional, get_current_tenant, get_db
 from app.core.events import emit
 from app.db.models import ApiKey, Tenant
 from app.db.session import set_tenant_context
@@ -78,7 +77,9 @@ router = APIRouter(prefix="/agents")
 
 
 async def _enforce_concurrent_limit(
-    db: AsyncSession, agent: AgentDefinition, tenant_id: uuid.UUID,
+    db: AsyncSession,
+    agent: AgentDefinition,
+    tenant_id: uuid.UUID,
 ) -> None:
     """Atomically enforce max_concurrent_instances via row-level lock.
 
@@ -89,13 +90,15 @@ async def _enforce_concurrent_limit(
     if agent.max_concurrent_instances <= 0:
         return
     # Lock the definition row — concurrent callers block here until we commit
-    await db.execute(
-        select(AgentDefinition).where(AgentDefinition.id == agent.id).with_for_update()
-    )
-    active_count_stmt = select(func.count()).select_from(AgentInstance).where(
-        AgentInstance.tenant_id == tenant_id,
-        AgentInstance.definition_id == agent.id,
-        AgentInstance.status.in_([InstanceStatus.PENDING, InstanceStatus.RUNNING]),
+    await db.execute(select(AgentDefinition).where(AgentDefinition.id == agent.id).with_for_update())
+    active_count_stmt = (
+        select(func.count())
+        .select_from(AgentInstance)
+        .where(
+            AgentInstance.tenant_id == tenant_id,
+            AgentInstance.definition_id == agent.id,
+            AgentInstance.status.in_([InstanceStatus.PENDING, InstanceStatus.RUNNING]),
+        )
     )
     active_count = (await db.execute(active_count_stmt)).scalar() or 0
     if active_count >= agent.max_concurrent_instances:
@@ -127,8 +130,10 @@ async def create_agent_definition(
     # Resolve capabilities from preset if provided
     capabilities = body.capabilities
     if body.capability_preset_id and not capabilities:
-        from app.agents.models import CapabilityPreset
         from sqlalchemy import or_
+
+        from app.agents.models import CapabilityPreset
+
         preset_stmt = select(CapabilityPreset).where(
             CapabilityPreset.id == body.capability_preset_id,
             CapabilityPreset.deleted_at.is_(None),
@@ -273,11 +278,27 @@ async def update_agent_definition(
 
     # Allowlist of mutable fields to prevent mass-assignment of sensitive columns
     _MUTABLE_FIELDS = {
-        "name", "slug", "description", "status", "system_prompt", "model",
-        "temperature", "max_tokens", "allowed_tools", "capabilities", "tool_versions",
-        "max_steps_per_run", "max_duration_seconds", "max_tokens_per_run",
-        "sandbox_enabled", "parallel_tool_execution", "max_concurrent_instances",
-        "memory_config", "output_schema", "governance_policy", "metadata",
+        "name",
+        "slug",
+        "description",
+        "status",
+        "system_prompt",
+        "model",
+        "temperature",
+        "max_tokens",
+        "allowed_tools",
+        "capabilities",
+        "tool_versions",
+        "max_steps_per_run",
+        "max_duration_seconds",
+        "max_tokens_per_run",
+        "sandbox_enabled",
+        "parallel_tool_execution",
+        "max_concurrent_instances",
+        "memory_config",
+        "output_schema",
+        "governance_policy",
+        "metadata",
     }
     changes = {}
     update_data = body.model_dump(exclude_unset=True)
@@ -375,12 +396,12 @@ async def get_capability_catalog(
 
 @router.post("/capabilities/resolve")
 async def resolve_capabilities(
-    body: "CapabilityResolveRequest",
+    body: CapabilityResolveRequest,
     tenant: Tenant = Depends(get_current_tenant),
 ):
     """Preview which tools a set of capabilities resolves to."""
     from app.agents.capabilities import capability_resolver
-    from app.agents.schemas import CapabilityResolveRequest, CapabilityResolveResponse
+    from app.agents.schemas import CapabilityResolveResponse
 
     tools = sorted(capability_resolver.resolve(body.capabilities))
     return CapabilityResolveResponse(tools=tools, count=len(tools))
@@ -399,10 +420,14 @@ async def list_capability_presets(
     from app.agents.schemas import CapabilityPresetResponse
 
     await set_tenant_context(db, str(tenant.id))
-    stmt = select(CapabilityPreset).where(
-        CapabilityPreset.deleted_at.is_(None),
-        (CapabilityPreset.tenant_id == tenant.id) | (CapabilityPreset.tenant_id.is_(None)),
-    ).order_by(CapabilityPreset.is_system.desc(), CapabilityPreset.name)
+    stmt = (
+        select(CapabilityPreset)
+        .where(
+            CapabilityPreset.deleted_at.is_(None),
+            (CapabilityPreset.tenant_id == tenant.id) | (CapabilityPreset.tenant_id.is_(None)),
+        )
+        .order_by(CapabilityPreset.is_system.desc(), CapabilityPreset.name)
+    )
     result = await db.execute(stmt)
     presets = result.scalars().all()
     return [CapabilityPresetResponse.model_validate(p) for p in presets]
@@ -414,13 +439,13 @@ async def list_capability_presets(
     dependencies=[Depends(RequireScopes("agents:write"))],
 )
 async def create_capability_preset(
-    body: "CapabilityPresetCreate",
+    body: CapabilityPresetCreate,
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a tenant-scoped capability preset."""
     from app.agents.models import CapabilityPreset
-    from app.agents.schemas import CapabilityPresetCreate, CapabilityPresetResponse
+    from app.agents.schemas import CapabilityPresetResponse
 
     await set_tenant_context(db, str(tenant.id))
     preset = CapabilityPreset(
@@ -536,7 +561,8 @@ async def create_agent_instance(
     """Spawn a new agent instance (async execution via Celery)."""
     await set_tenant_context(db, str(tenant.id))
 
-    from app.billing.entitlements import entitlements, EntitlementDenied
+    from app.billing.entitlements import EntitlementDenied, entitlements
+
     try:
         await entitlements.require_feature(tenant.id, "agents:execute", db=db)
     except EntitlementDenied:
@@ -564,8 +590,7 @@ async def create_agent_instance(
             if existing_instance.status == InstanceStatus.FAILED:
                 raise HTTPException(
                     409,
-                    "Previous execution with this idempotency key failed. "
-                    "Use a new key to retry.",
+                    "Previous execution with this idempotency key failed. Use a new key to retry.",
                 )
             return existing_instance
 
@@ -595,6 +620,7 @@ async def create_agent_instance(
     # Dispatch to Celery for async execution.
     # Use instance.id as the Celery task_id so stop_agent_instance can revoke it.
     from app.agents.tasks import execute_agent_run
+
     execute_agent_run.apply_async(
         kwargs={
             "definition_id": str(agent.id),
@@ -732,6 +758,7 @@ async def stop_agent_instance(
 ):
     """Stop a running agent instance."""
     from app.agents.executor import AgentExecutor
+
     await set_tenant_context(db, str(tenant.id))
     executor = AgentExecutor(db)
     instance = await executor.stop(
@@ -742,6 +769,7 @@ async def stop_agent_instance(
     # Revoke the Celery task to stop worker-side execution
     try:
         from app.workers.celery_app import celery_app
+
         celery_app.control.revoke(str(instance_id), terminate=True, signal="SIGTERM")
     except Exception:
         logger.warning("celery_revoke_failed", instance_id=str(instance_id), exc_info=True)
@@ -775,7 +803,8 @@ async def run_agent_stream(
 
     await set_tenant_context(db, str(tenant.id))
 
-    from app.billing.entitlements import entitlements, EntitlementDenied
+    from app.billing.entitlements import EntitlementDenied, entitlements
+
     try:
         await entitlements.require_feature(tenant.id, "agents:execute", db=db)
     except EntitlementDenied:
@@ -790,16 +819,19 @@ async def run_agent_stream(
     await _enforce_concurrent_limit(db, agent, tenant.id)
 
     # Resolve API key for the runtime
-    from app.core.encryption import decrypt
     from sqlalchemy import select as _select
+
+    from app.core.encryption import decrypt
     from app.db.models.ai import TenantAIProviderKey
 
     # Use platform key resolution
     provider_key_result = await db.execute(
-        _select(TenantAIProviderKey).where(
+        _select(TenantAIProviderKey)
+        .where(
             TenantAIProviderKey.tenant_id == tenant.id,
             TenantAIProviderKey.is_active.is_(True),
-        ).limit(1)
+        )
+        .limit(1)
     )
     provider_key = provider_key_result.scalar_one_or_none()
     resolved_api_key = decrypt(provider_key.encrypted_api_key) if provider_key else ""
@@ -814,7 +846,8 @@ async def run_agent_stream(
         key_source="platform",
     )
 
-    from datetime import UTC, datetime as _dt
+    from datetime import UTC
+    from datetime import datetime as _dt
 
     instance_id = uuid.uuid4()
 
@@ -839,7 +872,7 @@ async def run_agent_stream(
 
     # Build tool executor and governance checker so agents can actually
     # invoke tools (CPQ, built-in, tenant-custom) during the streaming run.
-    from app.agents.setup import build_tool_executor, build_governance_checker, resolve_datasource_mentions
+    from app.agents.setup import build_governance_checker, build_tool_executor, resolve_datasource_mentions
 
     tool_executor = build_tool_executor(
         agent,
@@ -885,6 +918,7 @@ async def run_agent_stream(
                 yield f"event: {event_type}\ndata: {_json.dumps(event_data, default=str)}\n\n"
         except Exception as exc:
             import json as _json2
+
             logger.error("agent_stream_error", error=str(exc), exc_info=True)
             yield f"event: error\ndata: {_json2.dumps({'message': 'An internal error occurred. Please try again.'})}\n\n"
         finally:
@@ -998,7 +1032,7 @@ async def stream_agent_instance(
                 continue
 
             if messages:
-                for stream_name, entries in messages:
+                for _stream_name, entries in messages:
                     for entry_id, fields in entries:
                         last_id = entry_id if isinstance(entry_id, str) else entry_id.decode()
 
@@ -1114,7 +1148,8 @@ async def start_conversation(
     streaming SSE events in real-time. The session_id is returned in
     the first SSE event for use in subsequent reply calls.
     """
-    from datetime import UTC, datetime as _dt
+    from datetime import UTC
+    from datetime import datetime as _dt
 
     from starlette.responses import StreamingResponse
 
@@ -1124,6 +1159,7 @@ async def start_conversation(
     await set_tenant_context(db, str(tenant.id))
 
     from app.billing.entitlements import EntitlementDenied, entitlements
+
     try:
         await entitlements.require_feature(tenant.id, "agents:execute", db=db)
     except EntitlementDenied:
@@ -1137,6 +1173,7 @@ async def start_conversation(
 
     # Rate limit: max 10 session creations per minute per tenant
     from app.core.redis import redis_pool as _redis
+
     _rate_key = f"agent:conv:create:rate:{tenant.id}"
     try:
         _pipe = _redis.pipeline()
@@ -1153,15 +1190,18 @@ async def start_conversation(
             raise HTTPException(503, "Rate limiting service unavailable") from None
 
     # Resolve API key
-    from app.core.encryption import decrypt
-    from app.db.models.ai import TenantAIProviderKey
     from sqlalchemy import select as _select
 
+    from app.core.encryption import decrypt
+    from app.db.models.ai import TenantAIProviderKey
+
     provider_key_result = await db.execute(
-        _select(TenantAIProviderKey).where(
+        _select(TenantAIProviderKey)
+        .where(
             TenantAIProviderKey.tenant_id == tenant.id,
             TenantAIProviderKey.is_active.is_(True),
-        ).limit(1)
+        )
+        .limit(1)
     )
     provider_key = provider_key_result.scalar_one_or_none()
     resolved_api_key = decrypt(provider_key.encrypted_api_key) if provider_key else ""
@@ -1183,6 +1223,7 @@ async def start_conversation(
 
     # Create interactive session
     from datetime import timedelta as _timedelta
+
     session = AgentSession(
         id=session_id,
         tenant_id=tenant.id,
@@ -1212,9 +1253,13 @@ async def start_conversation(
     await db.refresh(instance)
     await db.refresh(session)
 
-    await emit(ConversationStarted(
-        tenant_id=str(tenant.id), session_id=str(session_id), agent_id=str(agent.id),
-    ))
+    await emit(
+        ConversationStarted(
+            tenant_id=str(tenant.id),
+            session_id=str(session_id),
+            agent_id=str(agent.id),
+        )
+    )
 
     messages = body.input_data.get("messages", [])
     if not messages and "prompt" in body.input_data:
@@ -1252,18 +1297,22 @@ async def start_conversation(
                     _completed_normally = True
                     _final_data = event_data
                     if event_data.get("output"):
-                        _assistant_messages.append({
-                            "role": "assistant",
-                            "content": str(event_data["output"]),
-                        })
+                        _assistant_messages.append(
+                            {
+                                "role": "assistant",
+                                "content": str(event_data["output"]),
+                            }
+                        )
 
                 yield f"event: {event_type}\ndata: {_json.dumps(event_data, default=str)}\n\n"
         except HTTPException as exc:
             import json as _json2
+
             logger.error("conversation_stream_error", error=exc.detail, exc_info=True)
             yield f"event: error\ndata: {_json2.dumps({'message': exc.detail})}\n\n"
         except Exception:
             import json as _json2
+
             logger.error("conversation_stream_error", exc_info=True)
             yield f"event: error\ndata: {_json2.dumps({'message': 'An internal error occurred. Please try again.'})}\n\n"
         finally:
@@ -1350,7 +1399,8 @@ async def conversation_reply(
     Validates the session is still active and not locked by another reply,
     then creates a new AgentInstance for this turn and streams SSE events.
     """
-    from datetime import UTC, datetime as _dt
+    from datetime import UTC
+    from datetime import datetime as _dt
 
     from starlette.responses import StreamingResponse
 
@@ -1374,6 +1424,7 @@ async def conversation_reply(
         raise HTTPException(410, "Session has expired")
     if session.last_activity_at:
         from datetime import timedelta
+
         idle_deadline = session.last_activity_at + timedelta(seconds=session.idle_timeout_seconds)
         if now > idle_deadline:
             session.status = SessionStatus.EXPIRED
@@ -1382,6 +1433,7 @@ async def conversation_reply(
 
     # Rate limit: max 20 replies per minute per session
     from app.core.redis import redis_pool as _redis_reply
+
     _reply_rate_key = f"agent:conv:reply:rate:{session_id}"
     try:
         _pipe = _redis_reply.pipeline()
@@ -1406,6 +1458,7 @@ async def conversation_reply(
 
     # Acquire Redis distributed lock to prevent concurrent replies
     from app.core.redis import redis_pool
+
     lock_key = f"agent:session:lock:{session_id}"
     lock = redis_pool.lock(lock_key, timeout=settings.AGENT_CONVERSATION_LOCK_TIMEOUT, blocking_timeout=0)
     if not await lock.acquire():
@@ -1431,15 +1484,18 @@ async def conversation_reply(
         await _enforce_concurrent_limit(db, agent, tenant.id)
 
         # Resolve API key
-        from app.core.encryption import decrypt
-        from app.db.models.ai import TenantAIProviderKey
         from sqlalchemy import select as _select
 
+        from app.core.encryption import decrypt
+        from app.db.models.ai import TenantAIProviderKey
+
         provider_key_result = await db.execute(
-            _select(TenantAIProviderKey).where(
+            _select(TenantAIProviderKey)
+            .where(
                 TenantAIProviderKey.tenant_id == tenant.id,
                 TenantAIProviderKey.is_active.is_(True),
-            ).limit(1)
+            )
+            .limit(1)
         )
         provider_key = provider_key_result.scalar_one_or_none()
         resolved_api_key = decrypt(provider_key.encrypted_api_key) if provider_key else ""
@@ -1511,18 +1567,22 @@ async def conversation_reply(
                     _completed_normally = True
                     _final_data = event_data
                     if event_data.get("output"):
-                        _assistant_messages.append({
-                            "role": "assistant",
-                            "content": str(event_data["output"]),
-                        })
+                        _assistant_messages.append(
+                            {
+                                "role": "assistant",
+                                "content": str(event_data["output"]),
+                            }
+                        )
 
                 yield f"event: {event_type}\ndata: {_json.dumps(event_data, default=str)}\n\n"
         except HTTPException as exc:
             import json as _json2
+
             logger.error("conversation_reply_error", error=exc.detail, exc_info=True)
             yield f"event: error\ndata: {_json2.dumps({'message': exc.detail})}\n\n"
         except Exception:
             import json as _json2
+
             logger.error("conversation_reply_error", exc_info=True)
             yield f"event: error\ndata: {_json2.dumps({'message': 'An internal error occurred. Please try again.'})}\n\n"
         finally:
@@ -1562,19 +1622,22 @@ async def conversation_reply(
                     # Sliding TTL: extend expiry on each turn
                     if settings.AGENT_SESSION_SLIDING_TTL:
                         from datetime import timedelta
+
                         sess.expires_at = _dt.now(UTC) + timedelta(seconds=sess.idle_timeout_seconds)
 
                 await db.commit()
 
                 if _completed_normally:
-                    await emit(ConversationTurnCompleted(
-                        tenant_id=str(tenant.id),
-                        session_id=str(session_id),
-                        instance_id=str(instance_id),
-                        turn_number=turn_number,
-                        tokens_used=_final_data.get("total_tokens", 0),
-                        cost_usd=float(_final_data.get("total_cost_usd", 0)),
-                    ))
+                    await emit(
+                        ConversationTurnCompleted(
+                            tenant_id=str(tenant.id),
+                            session_id=str(session_id),
+                            instance_id=str(instance_id),
+                            turn_number=turn_number,
+                            tokens_used=_final_data.get("total_tokens", 0),
+                            cost_usd=float(_final_data.get("total_cost_usd", 0)),
+                        )
+                    )
             except Exception:
                 logger.error(
                     "conversation_reply_cleanup_failed",
@@ -1653,13 +1716,15 @@ async def close_session(
     await db.commit()
     await db.refresh(session)
 
-    await emit(ConversationEnded(
-        tenant_id=str(tenant.id),
-        session_id=str(session_id),
-        total_turns=session.turn_count,
-        total_tokens=session.total_tokens or 0,
-        total_cost_usd=float(session.total_cost_usd or 0),
-    ))
+    await emit(
+        ConversationEnded(
+            tenant_id=str(tenant.id),
+            session_id=str(session_id),
+            total_turns=session.turn_count,
+            total_tokens=session.total_tokens or 0,
+            total_cost_usd=float(session.total_cost_usd or 0),
+        )
+    )
 
     return ConversationSessionResponse.model_validate(session)
 
@@ -1727,6 +1792,7 @@ async def read_agent_memory(
 ):
     """Read agent memory entries."""
     from app.agents.memory import AgentMemoryManager
+
     await set_tenant_context(db, str(tenant.id))
     await _verify_instance_ownership(db, instance_id, tenant.id)
     memory = AgentMemoryManager(db)
@@ -1738,10 +1804,7 @@ async def read_agent_memory(
         return {"namespace": namespace, "key": key, "value": value}
     else:
         entries = await memory.list_long_term(instance_id, tenant.id, namespace)
-        return [
-            {"namespace": e.namespace, "key": e.key, "value": e.value}
-            for e in entries
-        ]
+        return [{"namespace": e.namespace, "key": e.key, "value": e.value} for e in entries]
 
 
 @router.put(
@@ -1782,7 +1845,11 @@ async def write_agent_memory(
     memory = AgentMemoryManager(db)
 
     entry = await memory.set_long_term(
-        instance_id, tenant.id, body.key, body.value, namespace=body.namespace,
+        instance_id,
+        tenant.id,
+        body.key,
+        body.value,
+        namespace=body.namespace,
     )
     await db.commit()
     return {"namespace": entry.namespace, "key": entry.key, "value": entry.value}
@@ -1802,6 +1869,7 @@ async def clear_agent_memory(
 ):
     """Clear agent memory."""
     from app.agents.memory import AgentMemoryManager
+
     await set_tenant_context(db, str(tenant.id))
     await _verify_instance_ownership(db, instance_id, tenant.id)
     memory = AgentMemoryManager(db)
@@ -1825,6 +1893,7 @@ async def read_definition_memory(
 ):
     """Read definition-scoped shared memory (accessible by all instances)."""
     from app.agents.memory import AgentMemoryManager
+
     await set_tenant_context(db, str(tenant.id))
     await _get_agent_or_404(db, agent_id, tenant.id)
     memory = AgentMemoryManager(db)
@@ -1836,10 +1905,7 @@ async def read_definition_memory(
         return {"namespace": namespace, "key": key, "value": value}
     else:
         entries = await memory.list_definition_memory(agent_id, tenant.id, namespace)
-        return [
-            {"namespace": e.namespace, "key": e.key, "value": e.value}
-            for e in entries
-        ]
+        return [{"namespace": e.namespace, "key": e.key, "value": e.value} for e in entries]
 
 
 @router.put(
@@ -1856,6 +1922,7 @@ async def write_definition_memory(
     """Write to definition-scoped shared memory (accessible by all instances)."""
     from app.agents.memory import AgentMemoryManager
     from app.core.redis import redis_pool
+
     await set_tenant_context(db, str(tenant.id))
     await _get_agent_or_404(db, agent_id, tenant.id)
 
@@ -1878,7 +1945,11 @@ async def write_definition_memory(
     memory = AgentMemoryManager(db)
 
     entry = await memory.set_definition_memory(
-        agent_id, tenant.id, body.key, body.value, namespace=body.namespace,
+        agent_id,
+        tenant.id,
+        body.key,
+        body.value,
+        namespace=body.namespace,
     )
     await db.commit()
     return {"namespace": entry.namespace, "key": entry.key, "value": entry.value}
@@ -1899,6 +1970,7 @@ async def clear_definition_memory(
 ):
     """Clear definition-scoped shared memory."""
     from app.agents.memory import AgentMemoryManager
+
     await set_tenant_context(db, str(tenant.id))
     await _get_agent_or_404(db, agent_id, tenant.id)
     memory = AgentMemoryManager(db)
@@ -1908,7 +1980,9 @@ async def clear_definition_memory(
     else:
         # Clear all entries in namespace (or all namespaces)
         from sqlalchemy import delete as sql_delete
+
         from app.agents.models import AgentDefinitionMemoryEntry
+
         conditions = [
             AgentDefinitionMemoryEntry.definition_id == agent_id,
             AgentDefinitionMemoryEntry.tenant_id == tenant.id,
@@ -2013,7 +2087,8 @@ async def run_workflow(
     """Execute a workflow (async via Celery)."""
     await set_tenant_context(db, str(tenant.id))
 
-    from app.billing.entitlements import entitlements, EntitlementDenied
+    from app.billing.entitlements import EntitlementDenied, entitlements
+
     try:
         await entitlements.require_feature(tenant.id, "agents:workflow", db=db)
     except EntitlementDenied:
@@ -2042,6 +2117,7 @@ async def run_workflow(
 
     # Dispatch to Celery
     from app.agents.tasks import execute_workflow_run
+
     execute_workflow_run.delay(
         workflow_id=str(workflow_id),
         tenant_id=str(tenant.id),
@@ -2114,6 +2190,7 @@ async def register_tenant_tool(
     encrypted_auth_config = dict(body.auth_config) if body.auth_config else {}
     if encrypted_auth_config:
         from app.core.encryption import encrypt
+
         for field_name in _AUTH_SENSITIVE_KEYS:
             if encrypted_auth_config.get(field_name):
                 encrypted_auth_config[field_name] = encrypt(encrypted_auth_config[field_name])
@@ -2194,6 +2271,7 @@ async def remove_tenant_tool(
 ):
     """Remove a custom tool."""
     from datetime import UTC, datetime
+
     await set_tenant_context(db, str(tenant.id))
     tool = await db.get(TenantTool, tool_id)
     if not tool or tool.tenant_id != tenant.id or tool.deleted_at:
@@ -2215,6 +2293,7 @@ async def list_pending_approvals(
 ):
     """List pending agent approval requests for the current tenant."""
     from app.agents.governance import GovernanceEngine
+
     approvals = await GovernanceEngine.list_pending_approvals(tenant.id)
     return {"approvals": approvals, "count": len(approvals)}
 
@@ -2233,10 +2312,11 @@ async def resolve_approval(
 
     Body: {"decision": "approved" | "denied"}
     """
+    import re as _re
+
     from app.agents.governance import GovernanceEngine
 
-    import re as _re
-    if not _re.match(r'^[a-f0-9]{32}$', approval_id):
+    if not _re.match(r"^[a-f0-9]{32}$", approval_id):
         raise HTTPException(400, "Invalid approval ID format")
 
     decision = body.get("decision")
@@ -2246,6 +2326,7 @@ async def resolve_approval(
     # Verify tenant ownership BEFORE resolving to prevent TOCTOU where
     # state is mutated before the ownership check rejects the caller.
     import json as _json
+
     from app.core.redis import redis_pool as _redis
 
     _approval_key = f"agent:gov:approval:{approval_id}"
@@ -2400,9 +2481,7 @@ async def get_agent_analytics(
         .where(*conditions)
         .group_by(AgentInstance.status)
     )
-    status_breakdown = {
-        r[0].value: r[1] for r in status_result.all()
-    }
+    status_breakdown = {r[0].value: r[1] for r in status_result.all()}
 
     # Top agents by cost
     top_agents_result = await db.execute(

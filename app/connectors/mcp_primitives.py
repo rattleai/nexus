@@ -97,7 +97,8 @@ async def update_task_status(
 
 
 async def get_task(
-    task_id: uuid.UUID, db: AsyncSession,
+    task_id: uuid.UUID,
+    db: AsyncSession,
 ) -> ConnectorTask | None:
     return await db.get(ConnectorTask, task_id)
 
@@ -151,9 +152,7 @@ async def _call_task_status(session: Any, mcp_task_id: str) -> Any:
     if hasattr(session, "get_task_status"):
         return await session.get_task_status(mcp_task_id)
     if hasattr(session, "send_request"):
-        return await session.send_request(
-            {"method": "tasks/status", "params": {"task_id": mcp_task_id}}
-        )
+        return await session.send_request({"method": "tasks/status", "params": {"task_id": mcp_task_id}})
     raise NotImplementedError("MCP client SDK does not expose task-status")
 
 
@@ -179,9 +178,7 @@ async def wait_for_task(
             return task
 
         # Refresh from the server
-        result = await db.execute(
-            select(TenantConnection).where(TenantConnection.id == task.connection_id)
-        )
+        result = await db.execute(select(TenantConnection).where(TenantConnection.id == task.connection_id))
         connection = result.scalar_one_or_none()
         if connection is not None:
             await poll_mcp_task(task, connection=connection, db=db)
@@ -267,9 +264,7 @@ async def handle_sampling(
         return {"role": "assistant", "content": {"type": "text", "text": ""}}
 
     gateway = AIGateway()
-    model = (
-        (model_preferences or {}).get("preferred_model") or "claude-sonnet-4-6"
-    )
+    model = (model_preferences or {}).get("preferred_model") or "claude-sonnet-4-6"
 
     prompt_messages: list[dict[str, Any]] = []
     if system_prompt:

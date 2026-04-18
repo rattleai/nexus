@@ -50,7 +50,7 @@ class BOMHeader(SoftDeleteMixin, AuditMixin, VersionMixin, TimestampMixin, Base)
     effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, default=dict)
 
-    product: Mapped["Product"] = relationship(  # noqa: F821
+    product: Mapped[Product] = relationship(  # noqa: F821
         back_populates="bom_headers", foreign_keys=[product_id]
     )
     items: Mapped[list[BOMItem]] = relationship(
@@ -80,9 +80,7 @@ class BOMItem(SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     bom_header_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bom_headers.id"), nullable=False, index=True)
-    parent_item_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("bom_items.id"), nullable=True, index=True
-    )
+    parent_item_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("bom_items.id"), nullable=True, index=True)
 
     item_type: Mapped[BOMItemType] = mapped_column(
         Enum(BOMItemType, values_callable=lambda e: [m.value for m in e], create_type=False),
@@ -96,9 +94,7 @@ class BOMItem(SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
     quantity_expression: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     unit_of_measure: Mapped[str] = mapped_column(String(20), default="EA")
 
-    sub_product_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("products.id"), nullable=True, index=True
-    )
+    sub_product_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("products.id"), nullable=True, index=True)
 
     # JSONB AST evaluated against configuration selections; null = always included
     selection_condition: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

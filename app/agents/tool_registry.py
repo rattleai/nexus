@@ -99,8 +99,8 @@ _BUILTIN_TOOLS: dict[str, dict[str, Any]] = {
     },
     "code_execute": {
         "description": "Execute Python code in a secure sandbox with resource limits. "
-                       "Use this to perform calculations, data processing, or run algorithms. "
-                       "The sandbox blocks network access, filesystem writes, and dangerous imports.",
+        "Use this to perform calculations, data processing, or run algorithms. "
+        "The sandbox blocks network access, filesystem writes, and dangerous imports.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -161,6 +161,8 @@ _BUILTIN_TOOLS: dict[str, dict[str, Any]] = {
 }
 
 
+import contextlib
+
 from app.plugins.base import CapabilityDomain, ToolCapability
 
 PLATFORM_CAPABILITIES = CapabilityDomain(
@@ -215,6 +217,7 @@ def _get_all_builtin_tools() -> dict[str, dict[str, Any]]:
     """Return infra tools merged with plugin-contributed tool definitions."""
     all_tools = _BUILTIN_TOOLS.copy()
     from app.plugins.registry import registry as _plugin_registry
+
     for _plugin in _plugin_registry:
         all_tools.update(_plugin.get_agent_tool_definitions())
     return all_tools
@@ -259,22 +262,26 @@ class ToolRegistry:
         # Built-in tools (infra + plugins)
         all_builtin = _get_all_builtin_tools()
         for name, info in all_builtin.items():
-            tools.append({
-                "name": name,
-                "source": "builtin",
-                "description": info["description"],
-                "input_schema": info["input_schema"],
-            })
+            tools.append(
+                {
+                    "name": name,
+                    "source": "builtin",
+                    "description": info["description"],
+                    "input_schema": info["input_schema"],
+                }
+            )
 
         # Tenant tools
         tenant_tools = await self.list_tenant_tools(tenant_id, db)
         for tool in tenant_tools:
-            tools.append({
-                "name": tool.tool_name,
-                "source": tool.source.value,
-                "description": tool.description,
-                "input_schema": tool.input_schema,
-            })
+            tools.append(
+                {
+                    "name": tool.tool_name,
+                    "source": tool.source.value,
+                    "description": tool.description,
+                    "input_schema": tool.input_schema,
+                }
+            )
 
         # Connector tools (from active connections)
         if settings.CONNECTOR_ENABLED:
@@ -370,17 +377,20 @@ class ToolRegistry:
         tenant = None
         if db is not None:
             from app.db.models import Tenant
+
             tenant = await db.get(Tenant, tenant_id)
 
         if tenant is None:
             # Build a minimal tenant-like object if DB is unavailable
             from types import SimpleNamespace
+
             tenant = SimpleNamespace(id=tenant_id)
 
         # Dispatch table: built-in tool name → (handler, kwarg mapping)
         try:
             if tool_name == "ai_complete":
                 from app.mcp.tools.ai import ai_complete
+
                 return await ai_complete(
                     model=arguments.get("model", "gpt-4o"),
                     messages=arguments.get("messages", []),
@@ -391,15 +401,16 @@ class ToolRegistry:
                 )
             elif tool_name == "ai_list_models":
                 from app.mcp.tools.ai import ai_list_models
+
                 return await ai_list_models(tenant=tenant, db=db)
             elif tool_name == "rag_search":
+                from app.agents.reranker import reranker as _reranker
                 from app.agents.search import (
                     SearchFilters,
                     SearchSource,
                     SearchType,
                     hybrid_search_engine,
                 )
-                from app.agents.reranker import reranker as _reranker
                 from app.db.session import set_tenant_context
 
                 await set_tenant_context(db, str(tenant_id))
@@ -440,6 +451,7 @@ class ToolRegistry:
                 ]
             elif tool_name == "file_upload":
                 from app.mcp.tools.files import file_upload
+
                 return await file_upload(
                     filename=arguments.get("filename", ""),
                     content_base64=arguments.get("content", ""),
@@ -448,9 +460,11 @@ class ToolRegistry:
                 )
             elif tool_name == "file_list":
                 from app.mcp.tools.files import file_list
+
                 return await file_list(tenant=tenant, db=db)
             elif tool_name == "job_create":
                 from app.mcp.tools.jobs import job_create
+
                 return await job_create(
                     job_type=arguments.get("job_type", ""),
                     payload=arguments.get("payload"),
@@ -459,9 +473,11 @@ class ToolRegistry:
                 )
             elif tool_name == "job_list":
                 from app.mcp.tools.jobs import job_list
+
                 return await job_list(tenant=tenant, db=db)
             elif tool_name == "webhook_create":
                 from app.mcp.tools.webhooks import webhook_create
+
                 return await webhook_create(
                     url=arguments.get("url", ""),
                     events=arguments.get("events", []),
@@ -504,7 +520,10 @@ class ToolRegistry:
                 )
                 try:
                     result = await plugin.invoke_tool(
-                        tool_name, arguments, tenant=tenant, db=db,
+                        tool_name,
+                        arguments,
+                        tenant=tenant,
+                        db=db,
                     )
                     if result is not None:
                         return result
@@ -525,10 +544,8 @@ class ToolRegistry:
                     )
                     # Roll back the dirty session so subsequent tool calls
                     # don't cascade-fail with PendingRollbackError.
-                    try:
+                    with contextlib.suppress(Exception):
                         await db.rollback()
-                    except Exception:
-                        pass
                     return {"error": f"Plugin tool '{tool_name}' failed unexpectedly"}
 
         return {"error": f"Built-in tool '{tool_name}' has no handler"}
@@ -611,6 +628,7 @@ class ToolRegistry:
                 if token:
                     try:
                         from app.core.encryption import decrypt
+
                         token = decrypt(token)
                     except Exception:
                         logger.error("tool_auth_token_decrypt_failed", tool_name=tool.tool_name)
@@ -622,12 +640,14 @@ class ToolRegistry:
                 if key:
                     try:
                         from app.core.encryption import decrypt
+
                         key = decrypt(key)
                     except Exception:
                         logger.error("tool_auth_key_decrypt_failed", tool_name=tool.tool_name)
                         return {"error": f"Tool '{tool.tool_name}' has invalid authentication credentials"}
                 # Validate header name to prevent HTTP header injection
                 import re
+
                 _SAFE_HEADER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9\-]*$")
                 _DENIED_HEADERS = {"host", "content-length", "transfer-encoding", "connection", "authorization"}
                 if not _SAFE_HEADER_RE.match(header_name) or header_name.lower() in _DENIED_HEADERS:
@@ -680,10 +700,14 @@ class ToolRegistry:
     @staticmethod
     def compute_schema_hash(tool: TenantTool) -> str:
         """Compute a deterministic hash of a tool's input/output schema."""
-        schema_data = json.dumps({
-            "input_schema": tool.input_schema or {},
-            "output_schema": tool.output_schema or {},
-        }, sort_keys=True, separators=(",", ":"))
+        schema_data = json.dumps(
+            {
+                "input_schema": tool.input_schema or {},
+                "output_schema": tool.output_schema or {},
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         return hashlib.sha256(schema_data.encode()).hexdigest()[:16]
 
     async def verify_tool_schema(
@@ -717,6 +741,7 @@ class ToolRegistry:
             try:
                 from app.agents.events import ToolSchemaViolation
                 from app.core.events import emit
+
                 await emit(
                     ToolSchemaViolation(
                         tenant_id=str(tool.tenant_id),
@@ -744,13 +769,16 @@ class ToolRegistry:
 
         try:
             from app.core.encryption import decrypt
+
             secret = decrypt(tool.tool_signature_secret_encrypted)
         except Exception:
             logger.warning("tool_signature_secret_decrypt_failed", tool_name=tool.tool_name)
             return False
 
         expected = hmac.new(
-            secret.encode(), response_body, hashlib.sha256,
+            secret.encode(),
+            response_body,
+            hashlib.sha256,
         ).hexdigest()
         return hmac.compare_digest(expected, signature_header)
 
@@ -768,15 +796,18 @@ class ToolRegistry:
             return
 
         behavior_key = _TOOL_BEHAVIOR_KEY.format(
-            tenant_id=tenant_id, tool_name=tool_name,
+            tenant_id=tenant_id,
+            tool_name=tool_name,
         )
         try:
-            entry = json.dumps({
-                "ts": time.time(),
-                "latency_ms": latency_ms,
-                "size": response_size,
-                "ok": success,
-            })
+            entry = json.dumps(
+                {
+                    "ts": time.time(),
+                    "latency_ms": latency_ms,
+                    "size": response_size,
+                    "ok": success,
+                }
+            )
             pipe = redis_pool.pipeline()
             pipe.lpush(behavior_key, entry)
             pipe.ltrim(behavior_key, 0, 99)  # Keep last 100 entries
@@ -799,7 +830,8 @@ class ToolRegistry:
             return False
 
         behavior_key = _TOOL_BEHAVIOR_KEY.format(
-            tenant_id=tenant_id, tool_name=tool_name,
+            tenant_id=tenant_id,
+            tool_name=tool_name,
         )
         try:
             entries_raw = await redis_pool.lrange(behavior_key, 0, 49)
@@ -849,6 +881,7 @@ class ToolRegistry:
 
         # Validate URL to prevent SSRF (same as _invoke_external)
         from app.core.url_validation import validate_url
+
         try:
             validate_url(tool.health_check_url)
         except ValueError as exc:

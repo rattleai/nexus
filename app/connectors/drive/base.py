@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 import structlog
@@ -89,7 +89,7 @@ class DriveAdapter(ABC):
     slug: str = "abstract"
     # Preferred MIME when the provider returns a native doc that needs export.
     # Overridden only by the Google Drive adapter.
-    export_mime_overrides: dict[str, tuple[str, str]] = {}
+    export_mime_overrides: ClassVar[dict[str, tuple[str, str]]] = {}
 
     def __init__(self, credential_manager: CredentialManager | None = None) -> None:
         self._credentials = credential_manager or CredentialManager()
@@ -142,7 +142,9 @@ class DriveAdapter(ABC):
                 "is not yet supported. Use an in-house-brokered connection."
             )
         return await self._credentials.get_valid_token(
-            connection, connector_def, db,
+            connection,
+            connector_def,
+            db,
         )
 
     def _check_size_limit(self, size: int | None, filename: str) -> None:
@@ -157,8 +159,7 @@ class DriveAdapter(ABC):
         cap_bytes = settings.CLOUD_DRIVE_MAX_FILE_SIZE_MB * 1024 * 1024
         if size > cap_bytes:
             raise DriveFileTooLargeError(
-                f"File '{filename}' is {size} bytes, exceeds the "
-                f"{settings.CLOUD_DRIVE_MAX_FILE_SIZE_MB} MB limit"
+                f"File '{filename}' is {size} bytes, exceeds the {settings.CLOUD_DRIVE_MAX_FILE_SIZE_MB} MB limit"
             )
 
     def _enforce_post_download_size(self, content: bytes, filename: str) -> None:

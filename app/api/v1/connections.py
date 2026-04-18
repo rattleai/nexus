@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -31,9 +31,7 @@ from app.api.schemas_connectors import (
 from app.connectors.models import (
     AuthType,
     ConnectionStatus,
-    ConnectorDefinition,
     TenantConnection,
-    TenantCredential,
 )
 from app.core.audit import AuditAction, emit_audit_event
 from app.core.tenant import tenant_query
@@ -333,7 +331,9 @@ async def test_connection(
                 conn.health_checked_at = datetime.now(UTC)
                 await db.commit()
                 return ConnectionTestResult(
-                    status="error", message=str(exc), latency_ms=latency,
+                    status="error",
+                    message=str(exc),
+                    latency_ms=latency,
                 )
 
         latency = int((time.monotonic() - start) * 1000)

@@ -56,7 +56,7 @@ class _FakeDB:
             row.id = uuid.uuid4()
         self._rows[row.slug] = row
 
-    async def execute(self, stmt):  # noqa: ANN001
+    async def execute(self, stmt):
         result = MagicMock()
 
         # Parse slug from stmt params

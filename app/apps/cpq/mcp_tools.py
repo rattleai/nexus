@@ -82,7 +82,14 @@ async def config_create_product(
         status=ProductStatus.DRAFT,
     )
     db.add(product)
-    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="product", resource_id=str(product.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.CREATE,
+        resource_type="product",
+        resource_id=str(product.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     await db.refresh(product)
 
@@ -116,10 +123,7 @@ async def config_list_products(
     products = result.scalars().all()
 
     return {
-        "products": [
-            {"id": str(p.id), "name": p.name, "slug": p.slug, "status": p.status.value}
-            for p in products
-        ],
+        "products": [{"id": str(p.id), "name": p.name, "slug": p.slug, "status": p.status.value} for p in products],
         "count": len(products),
     }
 
@@ -210,10 +214,7 @@ async def config_get_product(
             }
             for r in rules
         ],
-        "boms": [
-            {"id": str(b.id), "name": b.name, "is_primary": b.is_primary}
-            for b in boms
-        ],
+        "boms": [{"id": str(b.id), "name": b.name, "is_primary": b.is_primary} for b in boms],
     }
 
 
@@ -287,13 +288,22 @@ async def config_create_characteristic(
                 label=val_data.get("label", val_data["value"]),
                 description=val_data.get("description", ""),
                 is_default=val_data.get("is_default", False),
-                price_adjustment=Decimal(str(val_data["price_adjustment"])) if val_data.get("price_adjustment") else None,
+                price_adjustment=Decimal(str(val_data["price_adjustment"]))
+                if val_data.get("price_adjustment")
+                else None,
                 display_order=i,
             )
             db.add(cv)
             created_values.append({"value": cv.value, "label": cv.label})
 
-    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="characteristic", resource_id=str(char.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.CREATE,
+        resource_type="characteristic",
+        resource_id=str(char.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     await db.refresh(char)
 
@@ -399,7 +409,7 @@ async def config_list_characteristics(
     db: AsyncSession,
 ) -> dict:
     """List characteristics, optionally filtered by product."""
-    from app.apps.cpq.models.product import Characteristic, CharacteristicAssignment, CharacteristicValue
+    from app.apps.cpq.models.product import Characteristic, CharacteristicAssignment
 
     if product_id:
         pid = _parse_uuid(product_id, "product_id")
@@ -408,10 +418,7 @@ async def config_list_characteristics(
         # List characteristics assigned to this product
         stmt = (
             select(CharacteristicAssignment)
-            .options(
-                selectinload(CharacteristicAssignment.characteristic)
-                .selectinload(Characteristic.values)
-            )
+            .options(selectinload(CharacteristicAssignment.characteristic).selectinload(Characteristic.values))
             .where(
                 CharacteristicAssignment.product_id == pid,
                 CharacteristicAssignment.tenant_id == tenant.id,
@@ -432,7 +439,9 @@ async def config_list_characteristics(
                     "values": [
                         {"value": v.value, "label": v.label}
                         for v in sorted(a.characteristic.values, key=lambda x: x.display_order)
-                    ] if a.characteristic.char_type.value == "enum" else [],
+                    ]
+                    if a.characteristic.char_type.value == "enum"
+                    else [],
                 }
                 for a in assignments
                 if a.characteristic
@@ -461,9 +470,10 @@ async def config_list_characteristics(
                     "slug": c.slug,
                     "char_type": c.char_type.value,
                     "values": [
-                        {"value": v.value, "label": v.label}
-                        for v in sorted(c.values, key=lambda x: x.display_order)
-                    ] if c.char_type.value == "enum" else [],
+                        {"value": v.value, "label": v.label} for v in sorted(c.values, key=lambda x: x.display_order)
+                    ]
+                    if c.char_type.value == "enum"
+                    else [],
                 }
                 for c in chars
             ],
@@ -495,7 +505,14 @@ async def config_create_constraint_group(
         description=description,
     )
     db.add(group)
-    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="constraint_group", resource_id=str(group.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.CREATE,
+        resource_type="constraint_group",
+        resource_id=str(group.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     await db.refresh(group)
 
@@ -541,7 +558,14 @@ async def config_create_constraint_rule(
         is_active=True,
     )
     db.add(rule)
-    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="constraint_rule", resource_id=str(rule.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.CREATE,
+        resource_type="constraint_rule",
+        resource_id=str(rule.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     await db.refresh(rule)
 
@@ -670,7 +694,14 @@ async def config_create_bom_header(
         is_primary=is_primary,
     )
     db.add(bom)
-    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="bom_header", resource_id=str(bom.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.CREATE,
+        resource_type="bom_header",
+        resource_id=str(bom.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     await db.refresh(bom)
 
@@ -795,7 +826,14 @@ async def config_create_bom_items_batch(
             db.add(item)
             created.append({"part_number": item.part_number, "part_name": item.part_name})
 
-        await emit_audit_event(db, action=AuditAction.CREATE, resource_type="bom_items_batch", resource_id=str(header.id), tenant_id=tenant.id, changes={"source": "agent_tool", "count": len(created)})
+        await emit_audit_event(
+            db,
+            action=AuditAction.CREATE,
+            resource_type="bom_items_batch",
+            resource_id=str(header.id),
+            tenant_id=tenant.id,
+            changes={"source": "agent_tool", "count": len(created)},
+        )
         await db.commit()
     except Exception as exc:
         await db.rollback()
@@ -868,7 +906,14 @@ async def config_create_variant_table(
         output_columns=output_columns,
     )
     db.add(table)
-    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="variant_table", resource_id=str(table.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.CREATE,
+        resource_type="variant_table",
+        resource_id=str(table.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     await db.refresh(table)
 
@@ -955,7 +1000,14 @@ async def config_create_pricing_rule(
         is_active=True,
     )
     db.add(rule)
-    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="pricing_rule", resource_id=str(rule.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.CREATE,
+        resource_type="pricing_rule",
+        resource_id=str(rule.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     await db.refresh(rule)
 
@@ -1088,9 +1140,8 @@ async def config_search_datasources(
     db: AsyncSession,
 ) -> dict:
     """Search across tenant data sources using chunk content."""
-    from app.db.models.datasource import DataSource, DataSourceChunk
-
     from app.core.query_utils import escape_like
+    from app.db.models.datasource import DataSource, DataSourceChunk
 
     # Text-based search (semantic search requires embeddings which may not be available)
     escaped_query = escape_like(query)
@@ -1162,7 +1213,14 @@ async def config_update_product(
             return s
         product.status = s
 
-    await emit_audit_event(db, action=AuditAction.UPDATE, resource_type="product", resource_id=str(product.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="product",
+        resource_id=str(product.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     await db.refresh(product)
     return {"id": str(product.id), "name": product.name, "status": product.status.value}
@@ -1190,7 +1248,14 @@ async def config_delete_product(
         return {"error": f"Product {product_id} not found"}
 
     product.deleted_at = datetime.now(UTC)
-    await emit_audit_event(db, action=AuditAction.DELETE, resource_type="product", resource_id=str(product.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.DELETE,
+        resource_type="product",
+        resource_id=str(product.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     return {"deleted": True, "id": product_id}
 
@@ -1212,7 +1277,9 @@ async def config_update_constraint_rule(
     if isinstance(rid, dict):
         return rid
 
-    stmt = select(ConstraintRule).where(ConstraintRule.id == rid, ConstraintRule.tenant_id == tenant.id, ConstraintRule.deleted_at.is_(None))
+    stmt = select(ConstraintRule).where(
+        ConstraintRule.id == rid, ConstraintRule.tenant_id == tenant.id, ConstraintRule.deleted_at.is_(None)
+    )
     result = await db.execute(stmt)
     rule = result.scalar_one_or_none()
     if not rule:
@@ -1227,7 +1294,14 @@ async def config_update_constraint_rule(
     if is_active is not None:
         rule.is_active = is_active
 
-    await emit_audit_event(db, action=AuditAction.UPDATE, resource_type="constraint_rule", resource_id=str(rule.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="constraint_rule",
+        resource_id=str(rule.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     await db.refresh(rule)
     return {"id": str(rule.id), "name": rule.name, "priority": rule.priority, "is_active": rule.is_active}
@@ -1248,14 +1322,23 @@ async def config_delete_constraint_rule(
     if isinstance(rid, dict):
         return rid
 
-    stmt = select(ConstraintRule).where(ConstraintRule.id == rid, ConstraintRule.tenant_id == tenant.id, ConstraintRule.deleted_at.is_(None))
+    stmt = select(ConstraintRule).where(
+        ConstraintRule.id == rid, ConstraintRule.tenant_id == tenant.id, ConstraintRule.deleted_at.is_(None)
+    )
     result = await db.execute(stmt)
     rule = result.scalar_one_or_none()
     if not rule:
         return {"error": f"Constraint rule {rule_id} not found"}
 
     rule.deleted_at = datetime.now(UTC)
-    await emit_audit_event(db, action=AuditAction.DELETE, resource_type="constraint_rule", resource_id=str(rule.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.DELETE,
+        resource_type="constraint_rule",
+        resource_id=str(rule.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     return {"deleted": True, "id": rule_id}
 
@@ -1277,7 +1360,9 @@ async def config_update_pricing_rule(
     if isinstance(rid, dict):
         return rid
 
-    stmt = select(PricingRule).where(PricingRule.id == rid, PricingRule.tenant_id == tenant.id, PricingRule.deleted_at.is_(None))
+    stmt = select(PricingRule).where(
+        PricingRule.id == rid, PricingRule.tenant_id == tenant.id, PricingRule.deleted_at.is_(None)
+    )
     result = await db.execute(stmt)
     rule = result.scalar_one_or_none()
     if not rule:
@@ -1292,7 +1377,14 @@ async def config_update_pricing_rule(
     if is_active is not None:
         rule.is_active = is_active
 
-    await emit_audit_event(db, action=AuditAction.UPDATE, resource_type="pricing_rule", resource_id=str(rule.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="pricing_rule",
+        resource_id=str(rule.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     await db.refresh(rule)
     return {"id": str(rule.id), "name": rule.name, "is_active": rule.is_active}
@@ -1313,14 +1405,23 @@ async def config_delete_pricing_rule(
     if isinstance(rid, dict):
         return rid
 
-    stmt = select(PricingRule).where(PricingRule.id == rid, PricingRule.tenant_id == tenant.id, PricingRule.deleted_at.is_(None))
+    stmt = select(PricingRule).where(
+        PricingRule.id == rid, PricingRule.tenant_id == tenant.id, PricingRule.deleted_at.is_(None)
+    )
     result = await db.execute(stmt)
     rule = result.scalar_one_or_none()
     if not rule:
         return {"error": f"Pricing rule {rule_id} not found"}
 
     rule.deleted_at = datetime.now(UTC)
-    await emit_audit_event(db, action=AuditAction.DELETE, resource_type="pricing_rule", resource_id=str(rule.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.DELETE,
+        resource_type="pricing_rule",
+        resource_id=str(rule.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     return {"deleted": True, "id": rule_id}
 
@@ -1338,16 +1439,26 @@ async def config_list_variant_tables(
     if isinstance(pid, dict):
         return pid
 
-    stmt = select(VariantTable).where(
-        VariantTable.product_id == pid,
-        VariantTable.tenant_id == tenant.id,
-        VariantTable.deleted_at.is_(None),
-    ).order_by(VariantTable.created_at.desc())
+    stmt = (
+        select(VariantTable)
+        .where(
+            VariantTable.product_id == pid,
+            VariantTable.tenant_id == tenant.id,
+            VariantTable.deleted_at.is_(None),
+        )
+        .order_by(VariantTable.created_at.desc())
+    )
     result = await db.execute(stmt)
     tables = result.scalars().all()
     return {
         "variant_tables": [
-            {"id": str(t.id), "name": t.name, "row_count": len(t.rows or []), "input_columns": t.input_columns, "output_columns": t.output_columns}
+            {
+                "id": str(t.id),
+                "name": t.name,
+                "row_count": len(t.rows or []),
+                "input_columns": t.input_columns,
+                "output_columns": t.output_columns,
+            }
             for t in tables
         ],
         "count": len(tables),
@@ -1375,7 +1486,14 @@ async def config_create_product_family(
         description=description,
     )
     db.add(family)
-    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="product_family", resource_id=str(family.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.CREATE,
+        resource_type="product_family",
+        resource_id=str(family.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     await db.refresh(family)
     return {"id": str(family.id), "name": family.name, "slug": family.slug}
@@ -1391,10 +1509,15 @@ async def config_list_product_families(
     from app.apps.cpq.models.product import ProductFamily
 
     limit = _clamp_limit(limit)
-    stmt = select(ProductFamily).where(
-        ProductFamily.tenant_id == tenant.id,
-        ProductFamily.deleted_at.is_(None),
-    ).order_by(ProductFamily.name).limit(limit)
+    stmt = (
+        select(ProductFamily)
+        .where(
+            ProductFamily.tenant_id == tenant.id,
+            ProductFamily.deleted_at.is_(None),
+        )
+        .order_by(ProductFamily.name)
+        .limit(limit)
+    )
     result = await db.execute(stmt)
     families = result.scalars().all()
     return {
@@ -1424,7 +1547,14 @@ async def config_create_characteristic_group(
         display_order=display_order,
     )
     db.add(group)
-    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="characteristic_group", resource_id=str(group.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.CREATE,
+        resource_type="characteristic_group",
+        resource_id=str(group.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     await db.refresh(group)
     return {"id": str(group.id), "name": group.name, "display_order": group.display_order}
@@ -1440,10 +1570,15 @@ async def config_list_characteristic_groups(
     from app.apps.cpq.models.product import CharacteristicGroup
 
     limit = _clamp_limit(limit)
-    stmt = select(CharacteristicGroup).where(
-        CharacteristicGroup.tenant_id == tenant.id,
-        CharacteristicGroup.deleted_at.is_(None),
-    ).order_by(CharacteristicGroup.display_order).limit(limit)
+    stmt = (
+        select(CharacteristicGroup)
+        .where(
+            CharacteristicGroup.tenant_id == tenant.id,
+            CharacteristicGroup.deleted_at.is_(None),
+        )
+        .order_by(CharacteristicGroup.display_order)
+        .limit(limit)
+    )
     result = await db.execute(stmt)
     groups = result.scalars().all()
     return {
@@ -1480,10 +1615,21 @@ async def config_create_session(
         product_version_id=vid,
     )
     db.add(session)
-    await emit_audit_event(db, action=AuditAction.CREATE, resource_type="configuration_session", resource_id=str(session.id), tenant_id=tenant.id, changes={"source": "agent_tool"})
+    await emit_audit_event(
+        db,
+        action=AuditAction.CREATE,
+        resource_type="configuration_session",
+        resource_id=str(session.id),
+        tenant_id=tenant.id,
+        changes={"source": "agent_tool"},
+    )
     await db.commit()
     await db.refresh(session)
-    return {"id": str(session.id), "product_id": product_id, "status": session.status.value if hasattr(session.status, "value") else str(session.status)}
+    return {
+        "id": str(session.id),
+        "product_id": product_id,
+        "status": session.status.value if hasattr(session.status, "value") else str(session.status),
+    }
 
 
 async def config_get_session(
@@ -1594,16 +1740,27 @@ def register_cpq_tools(mcp, get_context) -> None:
 
     def _log(tool: str, tid: str) -> None:
         from app.config import settings as _s
+
         if _s.MCP_LOG_TOOL_CALLS:
             logger.info("mcp_tool_call", tool=tool, tenant_id=tid)
 
     @mcp.tool(tags={"configurator"})
-    async def mcp_config_create_product(name: str, slug: str, description: str = "", sku_prefix: str = "", family_id: str = "") -> str:
+    async def mcp_config_create_product(
+        name: str, slug: str, description: str = "", sku_prefix: str = "", family_id: str = ""
+    ) -> str:
         """Create a configurable product. Returns the product ID, name, and slug."""
         api_key, tenant, db = await get_context()
         try:
             check_scopes(api_key, "configurator:write")
-            result = await config_create_product(name=name, slug=slug, description=description, sku_prefix=sku_prefix, family_id=family_id or None, tenant=tenant, db=db)
+            result = await config_create_product(
+                name=name,
+                slug=slug,
+                description=description,
+                sku_prefix=sku_prefix,
+                family_id=family_id or None,
+                tenant=tenant,
+                db=db,
+            )
             _log("config_create_product", str(tenant.id))
             return _json.dumps(result)
         finally:
@@ -1635,10 +1792,19 @@ def register_cpq_tools(mcp, get_context) -> None:
 
     @mcp.tool(tags={"configurator"})
     async def mcp_config_create_characteristic(
-        name: str, slug: str, char_type: str, group_id: str = "", values: str = "[]",
-        numeric_min: float | None = None, numeric_max: float | None = None,
-        numeric_step: float | None = None, unit: str = "", is_required: bool = False,
-        is_multi_select: bool = False, default_value: str = "", description: str = "",
+        name: str,
+        slug: str,
+        char_type: str,
+        group_id: str = "",
+        values: str = "[]",
+        numeric_min: float | None = None,
+        numeric_max: float | None = None,
+        numeric_step: float | None = None,
+        unit: str = "",
+        is_required: bool = False,
+        is_multi_select: bool = False,
+        default_value: str = "",
+        description: str = "",
     ) -> str:
         """Create a characteristic (configurable option). char_type: enum, numeric, boolean, text."""
         api_key, tenant, db = await get_context()
@@ -1646,11 +1812,21 @@ def register_cpq_tools(mcp, get_context) -> None:
             check_scopes(api_key, "configurator:write")
             parsed_values = _json.loads(values) if values and values != "[]" else []
             result = await config_create_characteristic(
-                name=name, slug=slug, char_type=char_type, group_id=group_id or None,
-                values=parsed_values, numeric_min=numeric_min, numeric_max=numeric_max,
-                numeric_step=numeric_step, unit=unit or None, is_required=is_required,
-                is_multi_select=is_multi_select, default_value=default_value or None,
-                description=description, tenant=tenant, db=db,
+                name=name,
+                slug=slug,
+                char_type=char_type,
+                group_id=group_id or None,
+                values=parsed_values,
+                numeric_min=numeric_min,
+                numeric_max=numeric_max,
+                numeric_step=numeric_step,
+                unit=unit or None,
+                is_required=is_required,
+                is_multi_select=is_multi_select,
+                default_value=default_value or None,
+                description=description,
+                tenant=tenant,
+                db=db,
             )
             _log("config_create_characteristic", str(tenant.id))
             return _json.dumps(result)
@@ -1658,12 +1834,26 @@ def register_cpq_tools(mcp, get_context) -> None:
             await db.close()
 
     @mcp.tool(tags={"configurator"})
-    async def mcp_config_assign_characteristic(product_id: str, characteristic_id: str, display_order: int = 0, is_required: bool | None = None, default_value: str = "") -> str:
+    async def mcp_config_assign_characteristic(
+        product_id: str,
+        characteristic_id: str,
+        display_order: int = 0,
+        is_required: bool | None = None,
+        default_value: str = "",
+    ) -> str:
         """Assign a characteristic to a product with optional overrides."""
         api_key, tenant, db = await get_context()
         try:
             check_scopes(api_key, "configurator:write")
-            result = await config_assign_characteristic(product_id=product_id, characteristic_id=characteristic_id, display_order=display_order, is_required=is_required, default_value=default_value or None, tenant=tenant, db=db)
+            result = await config_assign_characteristic(
+                product_id=product_id,
+                characteristic_id=characteristic_id,
+                display_order=display_order,
+                is_required=is_required,
+                default_value=default_value or None,
+                tenant=tenant,
+                db=db,
+            )
             _log("config_assign_characteristic", str(tenant.id))
             return _json.dumps(result)
         finally:
@@ -1683,14 +1873,29 @@ def register_cpq_tools(mcp, get_context) -> None:
 
     @mcp.tool(tags={"configurator"})
     async def mcp_config_create_constraint_rule(
-        product_id: str, name: str, constraint_type: str, expression: str,
-        group_id: str = "", description: str = "", priority: int = 10,
+        product_id: str,
+        name: str,
+        constraint_type: str,
+        expression: str,
+        group_id: str = "",
+        description: str = "",
+        priority: int = 10,
     ) -> str:
         """Create a constraint rule with JSONB AST expression."""
         api_key, tenant, db = await get_context()
         try:
             check_scopes(api_key, "configurator:write")
-            result = await config_create_constraint_rule(product_id=product_id, name=name, constraint_type=constraint_type, expression=_json.loads(expression), group_id=group_id or None, description=description, priority=priority, tenant=tenant, db=db)
+            result = await config_create_constraint_rule(
+                product_id=product_id,
+                name=name,
+                constraint_type=constraint_type,
+                expression=_json.loads(expression),
+                group_id=group_id or None,
+                description=description,
+                priority=priority,
+                tenant=tenant,
+                db=db,
+            )
             _log("config_create_constraint_rule", str(tenant.id))
             return _json.dumps(result)
         finally:
@@ -1714,19 +1919,31 @@ def register_cpq_tools(mcp, get_context) -> None:
         api_key, tenant, db = await get_context()
         try:
             check_scopes(api_key, "configurator:read")
-            result = await config_simulate_configuration(product_id=product_id, selections=_json.loads(selections), tenant=tenant, db=db)
+            result = await config_simulate_configuration(
+                product_id=product_id, selections=_json.loads(selections), tenant=tenant, db=db
+            )
             _log("config_simulate_configuration", str(tenant.id))
             return _json.dumps(result)
         finally:
             await db.close()
 
     @mcp.tool(tags={"configurator"})
-    async def mcp_config_create_bom_header(product_id: str, name: str, description: str = "", bom_type: str = "manufacturing", is_primary: bool = True) -> str:
+    async def mcp_config_create_bom_header(
+        product_id: str, name: str, description: str = "", bom_type: str = "manufacturing", is_primary: bool = True
+    ) -> str:
         """Create a 150%% super BOM header for a product."""
         api_key, tenant, db = await get_context()
         try:
             check_scopes(api_key, "configurator:write")
-            result = await config_create_bom_header(product_id=product_id, name=name, description=description, bom_type=bom_type, is_primary=is_primary, tenant=tenant, db=db)
+            result = await config_create_bom_header(
+                product_id=product_id,
+                name=name,
+                description=description,
+                bom_type=bom_type,
+                is_primary=is_primary,
+                tenant=tenant,
+                db=db,
+            )
             _log("config_create_bom_header", str(tenant.id))
             return _json.dumps(result)
         finally:
@@ -1734,9 +1951,15 @@ def register_cpq_tools(mcp, get_context) -> None:
 
     @mcp.tool(tags={"configurator"})
     async def mcp_config_create_bom_item(
-        bom_header_id: str, part_number: str, part_name: str, quantity: float = 1.0,
-        selection_condition: str = "", item_type: str = "component",
-        parent_item_id: str = "", description: str = "", unit_of_measure: str = "EA",
+        bom_header_id: str,
+        part_number: str,
+        part_name: str,
+        quantity: float = 1.0,
+        selection_condition: str = "",
+        item_type: str = "component",
+        parent_item_id: str = "",
+        description: str = "",
+        unit_of_measure: str = "EA",
         unit_cost: float | None = None,
     ) -> str:
         """Add a BOM item with optional selection_condition AST."""
@@ -1745,10 +1968,18 @@ def register_cpq_tools(mcp, get_context) -> None:
             check_scopes(api_key, "configurator:write")
             parsed_condition = _json.loads(selection_condition) if selection_condition else None
             result = await config_create_bom_item(
-                bom_header_id=bom_header_id, part_number=part_number, part_name=part_name,
-                quantity=quantity, selection_condition=parsed_condition, item_type=item_type,
-                parent_item_id=parent_item_id or None, description=description,
-                unit_of_measure=unit_of_measure, unit_cost=unit_cost, tenant=tenant, db=db,
+                bom_header_id=bom_header_id,
+                part_number=part_number,
+                part_name=part_name,
+                quantity=quantity,
+                selection_condition=parsed_condition,
+                item_type=item_type,
+                parent_item_id=parent_item_id or None,
+                description=description,
+                unit_of_measure=unit_of_measure,
+                unit_cost=unit_cost,
+                tenant=tenant,
+                db=db,
             )
             _log("config_create_bom_item", str(tenant.id))
             return _json.dumps(result)
@@ -1761,7 +1992,9 @@ def register_cpq_tools(mcp, get_context) -> None:
         api_key, tenant, db = await get_context()
         try:
             check_scopes(api_key, "configurator:write")
-            result = await config_create_bom_items_batch(bom_header_id=bom_header_id, items=_json.loads(items), tenant=tenant, db=db)
+            result = await config_create_bom_items_batch(
+                bom_header_id=bom_header_id, items=_json.loads(items), tenant=tenant, db=db
+            )
             _log("config_create_bom_items_batch", str(tenant.id))
             return _json.dumps(result)
         finally:
@@ -1769,18 +2002,28 @@ def register_cpq_tools(mcp, get_context) -> None:
 
     @mcp.tool(tags={"configurator"})
     async def mcp_config_create_variant_table(
-        product_id: str, name: str, columns: str, rows: str,
-        input_columns: str, output_columns: str, description: str = "",
+        product_id: str,
+        name: str,
+        columns: str,
+        rows: str,
+        input_columns: str,
+        output_columns: str,
+        description: str = "",
     ) -> str:
         """Create a variant table for tabular constraint lookups."""
         api_key, tenant, db = await get_context()
         try:
             check_scopes(api_key, "configurator:write")
             result = await config_create_variant_table(
-                product_id=product_id, name=name, columns=_json.loads(columns),
-                rows=_json.loads(rows), input_columns=_json.loads(input_columns),
-                output_columns=_json.loads(output_columns), description=description,
-                tenant=tenant, db=db,
+                product_id=product_id,
+                name=name,
+                columns=_json.loads(columns),
+                rows=_json.loads(rows),
+                input_columns=_json.loads(input_columns),
+                output_columns=_json.loads(output_columns),
+                description=description,
+                tenant=tenant,
+                db=db,
             )
             _log("config_create_variant_table", str(tenant.id))
             return _json.dumps(result)
@@ -1789,17 +2032,28 @@ def register_cpq_tools(mcp, get_context) -> None:
 
     @mcp.tool(tags={"configurator"})
     async def mcp_config_create_pricing_rule(
-        product_id: str, name: str, rule_type: str, expression: str,
-        priority: int = 10, currency: str = "EUR", description: str = "",
+        product_id: str,
+        name: str,
+        rule_type: str,
+        expression: str,
+        priority: int = 10,
+        currency: str = "EUR",
+        description: str = "",
     ) -> str:
         """Create a pricing rule."""
         api_key, tenant, db = await get_context()
         try:
             check_scopes(api_key, "configurator:write")
             result = await config_create_pricing_rule(
-                product_id=product_id, name=name, rule_type=rule_type,
-                expression=_json.loads(expression), priority=priority,
-                currency=currency, description=description, tenant=tenant, db=db,
+                product_id=product_id,
+                name=name,
+                rule_type=rule_type,
+                expression=_json.loads(expression),
+                priority=priority,
+                currency=currency,
+                description=description,
+                tenant=tenant,
+                db=db,
             )
             _log("config_create_pricing_rule", str(tenant.id))
             return _json.dumps(result)

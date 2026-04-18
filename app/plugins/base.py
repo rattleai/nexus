@@ -15,15 +15,12 @@ Import direction contract:
 from __future__ import annotations
 
 import abc
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from typing import Callable
-
 if TYPE_CHECKING:
     from fastapi import APIRouter
-    from fastapi import Request
-    from fastapi.responses import JSONResponse
     from fastmcp import FastMCP
     from sqlalchemy.ext.asyncio import AsyncSession
 

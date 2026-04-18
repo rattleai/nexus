@@ -17,8 +17,8 @@ References:
 
 from __future__ import annotations
 
+import asyncio
 import base64
-import hashlib
 import re
 import secrets
 import unicodedata
@@ -46,7 +46,9 @@ _EXTENDED_BLOCKED_PATTERNS: dict[str, re.Pattern] = {
     ),
     # Multilingual injection patterns
     "ignore_instructions_es": re.compile(r"ignora\s+(todas?\s+)?las?\s+instrucciones?\s+anteriores?", re.IGNORECASE),
-    "ignore_instructions_fr": re.compile(r"ignore[rz]?\s+(toutes?\s+)?les?\s+instructions?\s+pr[eé]c[eé]dentes?", re.IGNORECASE),
+    "ignore_instructions_fr": re.compile(
+        r"ignore[rz]?\s+(toutes?\s+)?les?\s+instructions?\s+pr[eé]c[eé]dentes?", re.IGNORECASE
+    ),
     "ignore_instructions_de": re.compile(r"ignoriere\s+(alle\s+)?vorherigen\s+anweisungen", re.IGNORECASE),
     "ignore_instructions_zh": re.compile(r"忽略.{0,5}(之前|以前|先前).{0,5}(指令|指示|说明)"),
     "ignore_instructions_ja": re.compile(r"(以前|前)の(指示|命令|指令)を(無視|忘れ)"),
@@ -71,21 +73,23 @@ _EXTENDED_BLOCKED_PATTERNS: dict[str, re.Pattern] = {
 }
 
 # Characters commonly used for Unicode obfuscation
-_HOMOGLYPH_MAP = str.maketrans({
-    "\u0430": "a",  # Cyrillic а → Latin a
-    "\u0435": "e",  # Cyrillic е → Latin e
-    "\u043e": "o",  # Cyrillic о → Latin o
-    "\u0440": "p",  # Cyrillic р → Latin p
-    "\u0441": "c",  # Cyrillic с → Latin c
-    "\u0443": "y",  # Cyrillic у → Latin y
-    "\u0445": "x",  # Cyrillic х → Latin x
-    "\uff49": "i",  # Fullwidth i
-    "\uff47": "g",  # Fullwidth g
-    "\uff4e": "n",  # Fullwidth n
-    "\uff4f": "o",  # Fullwidth o
-    "\uff52": "r",  # Fullwidth r
-    "\uff45": "e",  # Fullwidth e
-})
+_HOMOGLYPH_MAP = str.maketrans(
+    {
+        "\u0430": "a",  # Cyrillic а → Latin a
+        "\u0435": "e",  # Cyrillic е → Latin e
+        "\u043e": "o",  # Cyrillic о → Latin o
+        "\u0440": "p",  # Cyrillic р → Latin p
+        "\u0441": "c",  # Cyrillic с → Latin c
+        "\u0443": "y",  # Cyrillic у → Latin y
+        "\u0445": "x",  # Cyrillic х → Latin x
+        "\uff49": "i",  # Fullwidth i
+        "\uff47": "g",  # Fullwidth g
+        "\uff4e": "n",  # Fullwidth n
+        "\uff4f": "o",  # Fullwidth o
+        "\uff52": "r",  # Fullwidth r
+        "\uff45": "e",  # Fullwidth e
+    }
+)
 
 
 def _normalize_text(text: str) -> str:
@@ -160,6 +164,7 @@ def wrap_tool_output(content: str) -> str:
 
 # ── Layer 3: Canary Token Injection ─────────────────────────────────
 
+
 def generate_canary_token() -> str:
     """Generate a unique per-request canary string."""
     return f"CANARY-{secrets.token_hex(16)}"
@@ -209,13 +214,14 @@ _CROSS_AGENT_INJECTION_PATTERNS: dict[str, re.Pattern] = {
         re.IGNORECASE,
     ),
     "xml_tool_call": re.compile(
-        r'<(?:tool_use|function_call|tool_call|tool_result)\b',
+        r"<(?:tool_use|function_call|tool_call|tool_result)\b",
         re.IGNORECASE,
     ),
 }
 
 
 # ── FirewallResult ───────────────────────────────────────────────────
+
 
 @dataclass
 class FirewallResult:
@@ -235,6 +241,7 @@ class FirewallResult:
 
 
 # ── Main Firewall Class ─────────────────────────────────────────────
+
 
 class PromptFirewall:
     """Multi-layered prompt injection defense system.
@@ -262,6 +269,9 @@ class PromptFirewall:
         self.agent_id = agent_id
         self.instance_id = instance_id
         self.firewall_level = firewall_level
+        # Holds references to fire-and-forget event-emit tasks so they
+        # are not garbage-collected before the loop runs them.
+        self._pending_tasks: set[asyncio.Task[Any]] = set()
 
     def scan_input(self, messages: list[dict[str, Any]]) -> FirewallResult:
         """Run all input firewall layers on the messages."""
@@ -338,20 +348,24 @@ class PromptFirewall:
 
         # Layer 3: Canary leak detection
         if canary and check_canary_leak(output, canary):
-            result.violations.append({
-                "layer": "canary_leak",
-                "detail": "System prompt canary token detected in output (OWASP LLM07)",
-            })
+            result.violations.append(
+                {
+                    "layer": "canary_leak",
+                    "detail": "System prompt canary token detected in output (OWASP LLM07)",
+                }
+            )
             result.risk_score = max(result.risk_score, 0.95)
 
         # Layer 5: Cross-agent injection detection (for A2A messages or tool outputs)
         if target_agent:
             for name, pattern in _CROSS_AGENT_INJECTION_PATTERNS.items():
                 if pattern.search(output):
-                    result.violations.append({
-                        "layer": "cross_agent_injection",
-                        "detail": f"Output contains potential cross-agent injection pattern: {name}",
-                    })
+                    result.violations.append(
+                        {
+                            "layer": "cross_agent_injection",
+                            "detail": f"Output contains potential cross-agent injection pattern: {name}",
+                        }
+                    )
                     result.risk_score = max(result.risk_score, 0.8)
 
             # Structural JSON check: detect tool-call-like JSON structures
@@ -376,10 +390,12 @@ class PromptFirewall:
 
         for name, pattern in _EXTENDED_BLOCKED_PATTERNS.items():
             if pattern.search(normalized):
-                violations.append({
-                    "layer": "structural",
-                    "detail": f"Blocked pattern matched: {name}",
-                })
+                violations.append(
+                    {
+                        "layer": "structural",
+                        "detail": f"Blocked pattern matched: {name}",
+                    }
+                )
                 # Report all violations for full visibility (no early break)
 
         return violations
@@ -389,6 +405,7 @@ class PromptFirewall:
         """Detect tool-call-like JSON structures in output regardless of formatting."""
         violations: list[dict[str, str]] = []
         import json as _json
+
         try:
             data = _json.loads(output)
             if isinstance(data, dict):
@@ -402,10 +419,12 @@ class PromptFirewall:
                 ]
                 for indicator in tool_call_indicators:
                     if indicator.issubset(keys):
-                        violations.append({
-                            "layer": "structural_injection",
-                            "detail": f"Output JSON resembles a tool call (keys: {indicator})",
-                        })
+                        violations.append(
+                            {
+                                "layer": "structural_injection",
+                                "detail": f"Output JSON resembles a tool call (keys: {indicator})",
+                            }
+                        )
                         break
         except (_json.JSONDecodeError, TypeError, ValueError):
             pass
@@ -427,9 +446,10 @@ class PromptFirewall:
 
         # Emit security event (best-effort)
         try:
+            import asyncio
+
             from app.agents.events import PromptInjectionDetected
             from app.core.events import emit
-            import asyncio
 
             event = PromptInjectionDetected(
                 tenant_id=self.tenant_id,
@@ -443,7 +463,12 @@ class PromptFirewall:
             # to avoid deprecated get_event_loop() behavior in Python 3.10+
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(emit(event, durable=True))
+                # Reference is intentionally fire-and-forget; the firewall must
+                # never block on event emission. Hold the task on the firewall
+                # to keep ruff/asyncio happy and prevent GC of the pending coro.
+                task = loop.create_task(emit(event, durable=True))
+                self._pending_tasks.add(task)
+                task.add_done_callback(self._pending_tasks.discard)
             except RuntimeError:
                 # No running event loop (sync context / threaded call)
                 logger.debug("prompt_firewall_event_skipped_no_loop")

@@ -53,19 +53,14 @@ class BrokerRouter:
 
     def for_connector(self, connector_def: ConnectorDefinition) -> CredentialBroker:
         """Pick the broker for a connector, with fallback to in-house."""
-        broker_key = (
-            connector_def.broker.value
-            if hasattr(connector_def.broker, "value")
-            else str(connector_def.broker)
-        )
+        broker_key = connector_def.broker.value if hasattr(connector_def.broker, "value") else str(connector_def.broker)
 
-        if broker_key == BrokerType.COMPOSIO.value:
-            if not composio_broker.is_available():
-                logger.debug(
-                    "broker_router_composio_unavailable_fallback",
-                    connector=connector_def.slug,
-                )
-                return in_house_broker
+        if broker_key == BrokerType.COMPOSIO.value and not composio_broker.is_available():
+            logger.debug(
+                "broker_router_composio_unavailable_fallback",
+                connector=connector_def.slug,
+            )
+            return in_house_broker
 
         return self._brokers.get(broker_key, in_house_broker)
 
@@ -96,10 +91,7 @@ class BrokerRouter:
         is unavailable — that's the classic silent-fallback footgun.
         """
         s = self.status()
-        if (
-            s.default_broker == BrokerType.COMPOSIO.value
-            and not s.composio_available
-        ):
+        if s.default_broker == BrokerType.COMPOSIO.value and not s.composio_available:
             logger.warning(
                 "connector_broker_composio_unavailable",
                 default_broker=s.default_broker,

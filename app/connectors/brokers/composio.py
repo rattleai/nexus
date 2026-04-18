@@ -27,7 +27,6 @@ from app.connectors.brokers.base import (
     AuthorizationStart,
     CredentialBroker,
     ToolDescriptor,
-    ToolResult,
 )
 from app.connectors.models import (
     ConnectionStatus,
@@ -105,10 +104,7 @@ class ComposioBroker(CredentialBroker):
     ) -> AuthorizationStart:
         client = self._ensure_client()
         if client is None:
-            raise RuntimeError(
-                "Composio broker is not available. Install composio-core and "
-                "set COMPOSIO_API_KEY."
-            )
+            raise RuntimeError("Composio broker is not available. Install composio-core and set COMPOSIO_API_KEY.")
 
         entity = _entity_id(tenant_id, actor_user_id)
         # Composio SDK call surface has shifted across versions; use the
@@ -121,9 +117,7 @@ class ComposioBroker(CredentialBroker):
                 redirect_uri=redirect_uri,
             )
         except Exception as exc:
-            raise RuntimeError(
-                f"Composio authorization initiate failed: {str(exc)[:200]}"
-            ) from exc
+            raise RuntimeError(f"Composio authorization initiate failed: {str(exc)[:200]}") from exc
 
         return AuthorizationStart(
             auth_url=getattr(conn_request, "redirect_url", ""),
@@ -179,7 +173,9 @@ class ComposioBroker(CredentialBroker):
         entity = _entity_id(tenant_id, actor_user_id)
         try:
             result = await _call_async(
-                client.tools.get, entity_id=entity, app=connector_def.slug,
+                client.tools.get,
+                entity_id=entity,
+                app=connector_def.slug,
             )
         except Exception:
             logger.debug("composio_tools_fetch_failed", exc_info=True)

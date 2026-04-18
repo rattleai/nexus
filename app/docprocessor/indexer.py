@@ -65,8 +65,7 @@ class ContentIndexer:
             ds = await db.get(DataSource, data_source_id)
             if ds and str(ds.tenant_id) != str(tenant_id):
                 raise ValueError(
-                    f"Tenant mismatch: datasource {data_source_id} belongs to "
-                    f"{ds.tenant_id}, not {tenant_id}"
+                    f"Tenant mismatch: datasource {data_source_id} belongs to {ds.tenant_id}, not {tenant_id}"
                 )
 
         # Capture existing chunk IDs (tenant-scoped) for deletion AFTER new
@@ -149,11 +148,7 @@ class ContentIndexer:
 
         # Pair each section's content with its title once, so the title-match
         # loop only pays the Python attribute cost per section once.
-        section_pairs = [
-            (section.content, section.title)
-            for section in extraction.sections
-            if section.content
-        ]
+        section_pairs = [(section.content, section.title) for section in extraction.sections if section.content]
 
         stored = 0
         now = datetime.now(UTC)
@@ -220,11 +215,7 @@ class ContentIndexer:
         # chunks intact.
         if stale_chunk_ids:
             await db.execute(
-                text(
-                    "DELETE FROM data_source_chunks "
-                    "WHERE id = ANY(:ids) "
-                    "AND tenant_id = :tenant_id"
-                ),
+                text("DELETE FROM data_source_chunks WHERE id = ANY(:ids) AND tenant_id = :tenant_id"),
                 {"ids": stale_chunk_ids, "tenant_id": str(tenant_id)},
             )
 
@@ -232,6 +223,7 @@ class ContentIndexer:
         # results are not returned after re-indexing.
         try:
             from app.agents.query_cache import semantic_query_cache
+
             await semantic_query_cache.invalidate(str(tenant_id))
         except Exception:
             logger.debug("query_cache_invalidation_failed", exc_info=True)
@@ -351,6 +343,10 @@ class ContentIndexer:
         ]
         for row in table.rows:
             # Pad or truncate row to match header length
-            padded = row + [""] * (len(table.headers) - len(row)) if len(row) < len(table.headers) else row[:len(table.headers)]
+            padded = (
+                row + [""] * (len(table.headers) - len(row))
+                if len(row) < len(table.headers)
+                else row[: len(table.headers)]
+            )
             lines.append("| " + " | ".join(padded) + " |")
         return "\n".join(lines)

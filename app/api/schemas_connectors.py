@@ -8,7 +8,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-
 # ── Connector Definition (catalog) ──────────────────────
 
 
@@ -70,6 +69,7 @@ class OAuthStartResponse(BaseModel):
 
 class ConnectionCreateRequest(BaseModel):
     """Create a connection for API key / bearer token / no-auth connectors."""
+
     connector_slug: str = Field(..., min_length=1, max_length=100)
     display_name: str = Field(..., min_length=1, max_length=255)
     api_key: str | None = Field(default=None, description="API key (for api_key_api connectors)")
@@ -110,6 +110,7 @@ class ConnectionRead(BaseModel):
 
 class ConnectionDetailRead(ConnectionRead):
     """Extended connection view including cached tools and health."""
+
     health_status: dict[str, Any] | None = None
     health_checked_at: datetime | None = None
     cache_refreshed_at: datetime | None = None
@@ -150,14 +151,17 @@ class AppCredentialsRegisterRequest(BaseModel):
     in the provider's developer console. Both fields are encrypted at
     rest before persistence.
     """
+
     client_id: str = Field(..., min_length=1, max_length=255)
     client_secret: str = Field(..., min_length=1, max_length=2048)
     webhook_secret: str | None = Field(
-        default=None, max_length=2048,
+        default=None,
+        max_length=2048,
         description="Optional shared secret for inbound webhook signatures",
     )
     redirect_uri_override: str | None = Field(
-        default=None, max_length=2048,
+        default=None,
+        max_length=2048,
         description="Optional redirect URI to override the system default (exact-match providers)",
     )
     extra_config: dict[str, Any] | None = None
@@ -168,6 +172,7 @@ class AppCredentialsRead(BaseModel):
 
     Never exposes the raw secrets — only redacted metadata.
     """
+
     connector_slug: str
     is_registered: bool
     client_id_preview: str | None = None  # last 4 chars only
@@ -182,6 +187,7 @@ class AppCredentialsRead(BaseModel):
 
 class DynamicClientRegisterRequest(BaseModel):
     """Trigger RFC 7591 Dynamic Client Registration for a connector."""
+
     client_name: str = Field(..., min_length=1, max_length=255)
     redirect_uris: list[str] = Field(..., min_length=1)
 

@@ -163,9 +163,7 @@ class ConnectorRegistry:
         slug: str,
     ) -> ConnectorDefinition | None:
         """Get a single connector definition by slug."""
-        result = await db.execute(
-            select(ConnectorDefinition).where(ConnectorDefinition.slug == slug)
-        )
+        result = await db.execute(select(ConnectorDefinition).where(ConnectorDefinition.slug == slug))
         return result.scalar_one_or_none()
 
     async def get_connector_by_id(
@@ -195,15 +193,12 @@ class ConnectorRegistry:
 
         canonical = normalize_slug(name)
         if not canonical:
-            raise ValueError(
-                "Connector name must contain at least one alphanumeric character"
-            )
+            raise ValueError("Connector name must contain at least one alphanumeric character")
 
         # Can't shadow a YAML/plugin/Composio-owned connector by name
         if canonical in self._yaml_canonical_slugs():
             raise ValueError(
-                f"Connector name '{name}' collides with built-in slug '{canonical}'. "
-                f"Pick a different name."
+                f"Connector name '{name}' collides with built-in slug '{canonical}'. Pick a different name."
             )
         if canonical in self._yaml_aliases():
             owner = self._yaml_aliases()[canonical]
@@ -396,9 +391,7 @@ class ConnectorRegistry:
                 category = "productivity"
 
             auth_schemes = self._get_attr(app, "auth_schemes") or []
-            supports_oauth = any(
-                "OAUTH" in str(s).upper() for s in auth_schemes
-            ) if auth_schemes else True
+            supports_oauth = any("OAUTH" in str(s).upper() for s in auth_schemes) if auth_schemes else True
 
             data = {
                 "slug": canonical,
@@ -470,8 +463,7 @@ class ConnectorRegistry:
                     # Two YAML files normalize to the same slug — that's a
                     # deploy-time configuration bug, not runtime drift.
                     raise RuntimeError(
-                        f"Duplicate normalized YAML slug '{canonical}' "
-                        f"between '{mapping[canonical]}' and '{raw_slug}'"
+                        f"Duplicate normalized YAML slug '{canonical}' between '{mapping[canonical]}' and '{raw_slug}'"
                     )
                 mapping[canonical] = raw_slug
             self._cached_yaml_canonical_slugs = mapping
@@ -501,10 +493,7 @@ class ConnectorRegistry:
                     normalized_alias = normalize_slug(str(alias))
                     if not normalized_alias:
                         continue
-                    if (
-                        normalized_alias in mapping
-                        and mapping[normalized_alias] != canonical
-                    ):
+                    if normalized_alias in mapping and mapping[normalized_alias] != canonical:
                         logger.warning(
                             "yaml_alias_collision",
                             alias=normalized_alias,
@@ -636,31 +625,20 @@ class ConnectorRegistry:
         existing.description = data.get("description", existing.description or "")
         existing.icon = data.get("icon", existing.icon)
         existing.category = data.get("category", existing.category)
-        existing.connector_type = ConnectorType(
-            data.get("connector_type", existing.connector_type.value)
-        )
-        existing.auth_type = AuthType(
-            data.get("auth_type", existing.auth_type.value)
-        )
+        existing.connector_type = ConnectorType(data.get("connector_type", existing.connector_type.value))
+        existing.auth_type = AuthType(data.get("auth_type", existing.auth_type.value))
         existing.auth_config = data.get("auth_config", existing.auth_config)
         existing.mcp_config = data.get("mcp_config", existing.mcp_config)
         existing.api_config = data.get("api_config", existing.api_config)
-        existing.tool_definitions = data.get(
-            "tool_definitions", existing.tool_definitions
-        )
+        existing.tool_definitions = data.get("tool_definitions", existing.tool_definitions)
         existing.webhook_config = data.get("webhook_config", existing.webhook_config)
-        existing.capability_template = data.get(
-            "capability_template", existing.capability_template
-        )
+        existing.capability_template = data.get("capability_template", existing.capability_template)
         existing.version = data.get("version", existing.version)
-        existing.documentation_url = data.get(
-            "documentation_url", existing.documentation_url
-        )
+        existing.documentation_url = data.get("documentation_url", existing.documentation_url)
         existing.tags = data.get("tags", existing.tags or [])
         if "aliases" in data:
             existing.aliases = [
-                normalize_slug(str(a)) for a in data.get("aliases") or []
-                if normalize_slug(str(a))
+                normalize_slug(str(a)) for a in data.get("aliases") or [] if normalize_slug(str(a))
             ] or None
         if "requires_app_credentials" in data:
             existing.requires_app_credentials = bool(data["requires_app_credentials"])
@@ -717,8 +695,7 @@ class ConnectorRegistry:
             pass
 
         normalized_aliases = [
-            normalize_slug(str(a)) for a in data.get("aliases") or []
-            if normalize_slug(str(a))
+            normalize_slug(str(a)) for a in data.get("aliases") or [] if normalize_slug(str(a))
         ] or None
 
         return ConnectorDefinition(

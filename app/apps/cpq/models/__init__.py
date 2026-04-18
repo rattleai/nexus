@@ -71,34 +71,34 @@ ALL_MODELS: list[type] = [
 
 __all__ = [
     "ALL_MODELS",
-    # Product
-    "ProductFamily",
-    "Product",
-    "ProductVersion",
-    "ProductStatus",
-    "CharacteristicGroup",
-    "Characteristic",
-    "CharacteristicType",
-    "CharacteristicValue",
-    "CharacteristicAssignment",
-    "ConstraintGroup",
-    "ConstraintRule",
-    "ConstraintType",
-    "VariantTable",
-    "ProductMedia",
     # BOM
     "BOMHeader",
     "BOMItem",
     "BOMItemType",
+    "Characteristic",
+    "CharacteristicAssignment",
+    "CharacteristicGroup",
+    "CharacteristicType",
+    "CharacteristicValue",
+    # Data Sources (CPQ-specific)
+    "ConfigItemProvenance",
+    "ConfigurationPricing",
+    "ConfigurationSelection",
     # Configurator
     "ConfigurationSession",
     "ConfigurationStatus",
-    "ConfigurationSelection",
     "ConfigurationTemplate",
     "ConfiguredBOM",
+    "ConstraintGroup",
+    "ConstraintRule",
+    "ConstraintType",
     "PricingRule",
     "PricingRuleType",
-    "ConfigurationPricing",
-    # Data Sources (CPQ-specific)
-    "ConfigItemProvenance",
+    "Product",
+    # Product
+    "ProductFamily",
+    "ProductMedia",
+    "ProductStatus",
+    "ProductVersion",
+    "VariantTable",
 ]

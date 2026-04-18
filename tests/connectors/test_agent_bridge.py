@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.connectors.agent_bridge import ConnectorToolProvider
-from app.connectors.models import ConnectionStatus
 from tests.connectors.conftest import make_connection
 
 
@@ -40,7 +39,7 @@ class _FakeResult:
 def _build_db_with_connections(user_to_connection: dict):
     """Return a mock DB whose execute() filters by connected_by_user_id."""
 
-    def _execute(stmt):  # noqa: ANN001
+    def _execute(stmt):
         # Peek at the compiled SQL to see if there's a user filter
         compiled_sql = str(stmt).lower()
         has_user_filter = "connected_by_user_id" in compiled_sql
@@ -70,7 +69,10 @@ def _build_db_with_connections(user_to_connection: dict):
 
 @pytest.mark.asyncio
 async def test_list_tools_filters_by_user(
-    tenant_id, user_a_id, user_b_id, slack_oauth_connector,
+    tenant_id,
+    user_a_id,
+    user_b_id,
+    slack_oauth_connector,
 ):
     conn_a = make_connection(tenant_id, slack_oauth_connector, user_a_id, "alice@x.com")
     conn_b = make_connection(tenant_id, slack_oauth_connector, user_b_id, "bob@x.com")
@@ -79,27 +81,33 @@ async def test_list_tools_filters_by_user(
     provider = ConnectorToolProvider()
 
     # Patch the Redis cache so every call hits the DB path
-    with patch("app.connectors.cache.connector_tool_cache.get_tools", new=AsyncMock(return_value=None)), \
-         patch("app.connectors.cache.connector_tool_cache.set_tools", new=AsyncMock()):
-
+    with (
+        patch("app.connectors.cache.connector_tool_cache.get_tools", new=AsyncMock(return_value=None)),
+        patch("app.connectors.cache.connector_tool_cache.set_tools", new=AsyncMock()),
+    ):
         tools_a = await provider.list_tools(
-            tenant_id, db, actor_user_id=user_a_id,
+            tenant_id,
+            db,
+            actor_user_id=user_a_id,
         )
         tools_b = await provider.list_tools(
-            tenant_id, db, actor_user_id=user_b_id,
+            tenant_id,
+            db,
+            actor_user_id=user_b_id,
         )
 
-    assert all(
-        t["connection_id"] == str(conn_a.id) for t in tools_a
-    ), "Alice should only see her own connection's tools"
-    assert all(
-        t["connection_id"] == str(conn_b.id) for t in tools_b
-    ), "Bob should only see his own connection's tools"
+    assert all(t["connection_id"] == str(conn_a.id) for t in tools_a), (
+        "Alice should only see her own connection's tools"
+    )
+    assert all(t["connection_id"] == str(conn_b.id) for t in tools_b), "Bob should only see his own connection's tools"
 
 
 @pytest.mark.asyncio
 async def test_invoke_uses_invoking_user_connection(
-    tenant_id, user_a_id, user_b_id, slack_oauth_connector,
+    tenant_id,
+    user_a_id,
+    user_b_id,
+    slack_oauth_connector,
 ):
     conn_a = make_connection(tenant_id, slack_oauth_connector, user_a_id, "alice@x.com")
     conn_b = make_connection(tenant_id, slack_oauth_connector, user_b_id, "bob@x.com")
@@ -134,7 +142,10 @@ async def test_invoke_uses_invoking_user_connection(
 
 @pytest.mark.asyncio
 async def test_invoke_errors_when_user_has_no_connection(
-    tenant_id, user_a_id, user_b_id, slack_oauth_connector,
+    tenant_id,
+    user_a_id,
+    user_b_id,
+    slack_oauth_connector,
 ):
     conn_a = make_connection(tenant_id, slack_oauth_connector, user_a_id, "alice@x.com")
 

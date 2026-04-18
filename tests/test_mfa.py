@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from datetime import timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -13,18 +13,23 @@ from app.core.security import create_access_token
 
 def test_create_mfa_pending_token():
     """MFA pending token should have type=mfa_pending and amr=["pwd"]."""
-    from app.core.security import create_access_token, decode_access_token
+    from app.core.security import create_access_token
 
-    token = create_access_token({
-        "sub": str(uuid.uuid4()),
-        "tenant_id": str(uuid.uuid4()),
-        "type": "mfa_pending",
-        "amr": ["pwd"],
-    }, expires_delta=timedelta(minutes=5))
+    token = create_access_token(
+        {
+            "sub": str(uuid.uuid4()),
+            "tenant_id": str(uuid.uuid4()),
+            "type": "mfa_pending",
+            "amr": ["pwd"],
+        },
+        expires_delta=timedelta(minutes=5),
+    )
 
     # Decode with type override since it's not "access"
     import jwt
+
     from app.core.security import _get_effective_algorithm, _get_jwt_verification_key
+
     payload = jwt.decode(
         token,
         _get_jwt_verification_key(),
@@ -40,11 +45,13 @@ def test_access_token_with_mfa_amr():
     """Full access token should carry amr=["pwd", "mfa"] after MFA verification."""
     from app.core.security import create_access_token, decode_access_token
 
-    token = create_access_token({
-        "sub": str(uuid.uuid4()),
-        "tenant_id": str(uuid.uuid4()),
-        "amr": ["pwd", "mfa"],
-    })
+    token = create_access_token(
+        {
+            "sub": str(uuid.uuid4()),
+            "tenant_id": str(uuid.uuid4()),
+            "amr": ["pwd", "mfa"],
+        }
+    )
 
     payload = decode_access_token(token)
     assert "mfa" in payload["amr"]
@@ -55,11 +62,13 @@ def test_webauthn_token_amr():
     """WebAuthn-only login should have amr=["hwk"]."""
     from app.core.security import create_access_token, decode_access_token
 
-    token = create_access_token({
-        "sub": str(uuid.uuid4()),
-        "tenant_id": str(uuid.uuid4()),
-        "amr": ["hwk"],
-    })
+    token = create_access_token(
+        {
+            "sub": str(uuid.uuid4()),
+            "tenant_id": str(uuid.uuid4()),
+            "amr": ["hwk"],
+        }
+    )
 
     payload = decode_access_token(token)
     assert payload["amr"] == ["hwk"]

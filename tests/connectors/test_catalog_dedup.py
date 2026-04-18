@@ -27,7 +27,6 @@ from app.connectors.registry import (
     normalize_slug,
 )
 
-
 # ── Pure helper tests ─────────────────────────────────────
 
 
@@ -48,12 +47,7 @@ class TestNormalizeSlug:
         assert normalize_slug("my.cool/tool") == "mycooltool"
 
     def test_variants_collide(self):
-        assert (
-            normalize_slug("SLACK_v2")
-            == normalize_slug("slack-v2")
-            == normalize_slug("slack_v2")
-            == "slack-v2"
-        )
+        assert normalize_slug("SLACK_v2") == normalize_slug("slack-v2") == normalize_slug("slack_v2") == "slack-v2"
 
     def test_empty_input(self):
         assert normalize_slug("") == ""
@@ -86,7 +80,7 @@ def test_yaml_canonical_slugs_contains_all_builtins():
 def test_yaml_canonical_slugs_is_normalized():
     """Keys must all be post-normalize form."""
     canonical = connector_registry._yaml_canonical_slugs()
-    for key in canonical.keys():
+    for key in canonical:
         assert key == normalize_slug(key)
 
 
@@ -170,7 +164,7 @@ class _FakeDB:
             row.id = uuid.uuid4()
         self._rows[row.slug] = row
 
-    async def execute(self, stmt):  # noqa: ANN001
+    async def execute(self, stmt):
         result = MagicMock()
         slug = None
         try:

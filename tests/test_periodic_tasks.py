@@ -12,13 +12,15 @@ import pytest
 _mock_engine = MagicMock()
 _mock_session_cls = MagicMock()
 
-with patch("sqlalchemy.create_engine", return_value=_mock_engine), \
-     patch("sqlalchemy.orm.sessionmaker", return_value=_mock_session_cls):
+with (
+    patch("sqlalchemy.create_engine", return_value=_mock_engine),
+    patch("sqlalchemy.orm.sessionmaker", return_value=_mock_session_cls),
+):
     # Drop cached modules so they get re-imported with the patches active
     sys.modules.pop("app.workers.tasks", None)
     sys.modules.pop("app.workers.periodic", None)
     import app.workers.periodic
-    import app.workers.tasks  # noqa: F401 — imported for side-effect
+    import app.workers.tasks
 
 
 @pytest.fixture

@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import mimetypes
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 from uuid import UUID
 
 import structlog
@@ -29,7 +28,7 @@ logger = structlog.stdlib.get_logger()
 class DocumentProcessor:
     """Unified document processor that dispatches to format-specific parsers."""
 
-    MIME_MAP: dict[str, type] = {
+    MIME_MAP: ClassVar[dict[str, type]] = {
         "application/pdf": PDFParser,
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ExcelParser,
         "application/vnd.ms-excel": ExcelParser,
@@ -40,7 +39,7 @@ class DocumentProcessor:
     }
 
     # Extension fallbacks for when MIME detection fails
-    _EXT_MAP: dict[str, type] = {
+    _EXT_MAP: ClassVar[dict[str, type]] = {
         ".pdf": PDFParser,
         ".xlsx": ExcelParser,
         ".xls": ExcelParser,
@@ -167,8 +166,8 @@ class DocumentProcessor:
 
     async def process_data_source(
         self,
-        ds: "DataSource",
-        db: "AsyncSession",
+        ds: DataSource,
+        db: AsyncSession,
     ) -> ExtractionResult:
         """Dispatch extraction based on ``ds.source_type``.
 
@@ -191,9 +190,7 @@ class DocumentProcessor:
 
         if ds.source_type == DataSourceType.UPLOAD:
             if not ds.file_key:
-                raise ValueError(
-                    f"UPLOAD DataSource {ds.id} has no file_key"
-                )
+                raise ValueError(f"UPLOAD DataSource {ds.id} has no file_key")
             return await self.process(ds.file_key, ds.tenant_id)
 
         if ds.source_type == DataSourceType.URL:
@@ -210,19 +207,16 @@ class DocumentProcessor:
                 source_name=ds.name,
                 raw_text="",
                 metadata={
-                    "note": "paste content materialized at create time; "
-                    "extraction task is a no-op",
+                    "note": "paste content materialized at create time; extraction task is a no-op",
                 },
             )
 
-        raise ValueError(
-            f"Unsupported DataSource.source_type: {ds.source_type}"
-        )
+        raise ValueError(f"Unsupported DataSource.source_type: {ds.source_type}")
 
     async def _process_cloud_drive(
         self,
-        ds: "DataSource",
-        db: "AsyncSession",
+        ds: DataSource,
+        db: AsyncSession,
     ) -> ExtractionResult:
         """Fetch a cloud-drive file via the connector system, then extract."""
         from sqlalchemy import select as sa_select
@@ -231,10 +225,7 @@ class DocumentProcessor:
         from app.connectors.models import ConnectorDefinition, TenantConnection
 
         if not ds.connection_id or not ds.connector_slug or not ds.cloud_file_id:
-            raise ValueError(
-                f"CLOUD_DRIVE DataSource {ds.id} missing connection_id, "
-                "connector_slug, or cloud_file_id"
-            )
+            raise ValueError(f"CLOUD_DRIVE DataSource {ds.id} missing connection_id, connector_slug, or cloud_file_id")
 
         # Load the connection and its definition; tenant isolation is
         # enforced in the create endpoint, but the worker session also
@@ -247,10 +238,7 @@ class DocumentProcessor:
         )
         connection = conn_result.scalar_one_or_none()
         if connection is None:
-            raise ValueError(
-                f"TenantConnection {ds.connection_id} not found for "
-                f"DataSource {ds.id}"
-            )
+            raise ValueError(f"TenantConnection {ds.connection_id} not found for DataSource {ds.id}")
 
         def_result = await db.execute(
             sa_select(ConnectorDefinition).where(
@@ -259,9 +247,7 @@ class DocumentProcessor:
         )
         connector_def = def_result.scalar_one_or_none()
         if connector_def is None:
-            raise ValueError(
-                f"ConnectorDefinition missing for connection {connection.id}"
-            )
+            raise ValueError(f"ConnectorDefinition missing for connection {connection.id}")
 
         adapter = resolve_adapter(ds.connector_slug)
         drive_file = await adapter.download(

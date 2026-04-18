@@ -49,9 +49,7 @@ GOOGLE_NATIVE_EXPORTS: dict[str, tuple[str, str]] = {
 }
 
 # Fields returned on listing — minimal but sufficient for the picker.
-_LIST_FIELDS = (
-    "files(id,name,mimeType,size,modifiedTime,parents),nextPageToken"
-)
+_LIST_FIELDS = "files(id,name,mimeType,size,modifiedTime,parents),nextPageToken"
 
 
 class GoogleDriveAdapter(DriveAdapter):
@@ -70,7 +68,9 @@ class GoogleDriveAdapter(DriveAdapter):
         cursor: str | None = None,
     ) -> DriveListing:
         token = await self._access_token(
-            connection=connection, connector_def=connector_def, db=db,
+            connection=connection,
+            connector_def=connector_def,
+            db=db,
         )
 
         # ``path`` here is actually a parent folder ID (Google Drive has no
@@ -90,14 +90,13 @@ class GoogleDriveAdapter(DriveAdapter):
             params["pageToken"] = cursor
 
         async with self._client(
-            base_url=GOOGLE_API_BASE, access_token=token,
+            base_url=GOOGLE_API_BASE,
+            access_token=token,
         ) as client:
             response = await client.get("/drive/v3/files", params=params)
 
         if response.status_code == 404:
-            raise DriveFileNotFoundError(
-                f"Google Drive folder '{parent_id}' not found"
-            )
+            raise DriveFileNotFoundError(f"Google Drive folder '{parent_id}' not found")
         response.raise_for_status()
         payload = response.json()
 
@@ -114,13 +113,16 @@ class GoogleDriveAdapter(DriveAdapter):
         db: AsyncSession,
     ) -> DriveFile:
         token = await self._access_token(
-            connection=connection, connector_def=connector_def, db=db,
+            connection=connection,
+            connector_def=connector_def,
+            db=db,
         )
 
         # First fetch metadata so we know whether to ``?alt=media`` or
         # ``/export?mimeType=...`` and what filename to use.
         async with self._client(
-            base_url=GOOGLE_API_BASE, access_token=token,
+            base_url=GOOGLE_API_BASE,
+            access_token=token,
         ) as client:
             meta_resp = await client.get(
                 f"/drive/v3/files/{file_id}",
@@ -130,9 +132,7 @@ class GoogleDriveAdapter(DriveAdapter):
                 },
             )
             if meta_resp.status_code == 404:
-                raise DriveFileNotFoundError(
-                    f"Google Drive file '{file_id}' not found"
-                )
+                raise DriveFileNotFoundError(f"Google Drive file '{file_id}' not found")
             meta_resp.raise_for_status()
             meta = meta_resp.json()
 
@@ -157,9 +157,7 @@ class GoogleDriveAdapter(DriveAdapter):
                     f"/drive/v3/files/{file_id}",
                     params={"alt": "media", "supportsAllDrives": "true"},
                 )
-                final_mime = mime_type or (
-                    mimetypes.guess_type(filename)[0] or "application/octet-stream"
-                )
+                final_mime = mime_type or (mimetypes.guess_type(filename)[0] or "application/octet-stream")
 
             content_resp.raise_for_status()
             content = content_resp.content

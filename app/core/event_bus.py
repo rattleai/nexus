@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from dataclasses import dataclass
+from typing import Any
 
 import structlog
 
@@ -121,7 +121,10 @@ class EventBus:
         """
         try:
             await redis_pool.xgroup_create(
-                stream_key, group, id="$", mkstream=True,
+                stream_key,
+                group,
+                id="$",
+                mkstream=True,
             )
         except Exception as exc:
             # BUSYGROUP = group already exists — that's fine
@@ -144,12 +147,15 @@ class EventBus:
         Returns a batch of events. The caller must ack each event after
         successful processing via `ack()`.
         """
-        stream_ids = {s: ">" for s in streams}
+        stream_ids = dict.fromkeys(streams, ">")
 
         try:
             results = await redis_pool.xreadgroup(
-                group, consumer, stream_ids,
-                count=count, block=block_ms,
+                group,
+                consumer,
+                stream_ids,
+                count=count,
+                block=block_ms,
             )
         except Exception:
             logger.error("event_bus_consume_failed", group=group, exc_info=True)
@@ -170,13 +176,15 @@ class EventBus:
                 except (json.JSONDecodeError, TypeError):
                     data = {"raw": raw_data}
 
-                events.append(StreamEvent(
-                    id=mid,
-                    stream=sk,
-                    event_type=event_type,
-                    data=data,
-                    timestamp=ts,
-                ))
+                events.append(
+                    StreamEvent(
+                        id=mid,
+                        stream=sk,
+                        event_type=event_type,
+                        data=data,
+                        timestamp=ts,
+                    )
+                )
 
         return events
 
@@ -209,13 +217,15 @@ class EventBus:
             except (json.JSONDecodeError, TypeError):
                 data = {"raw": raw_data}
 
-            events.append(StreamEvent(
-                id=mid,
-                stream=stream_key,
-                event_type=event_type,
-                data=data,
-                timestamp=ts,
-            ))
+            events.append(
+                StreamEvent(
+                    id=mid,
+                    stream=stream_key,
+                    event_type=event_type,
+                    data=data,
+                    timestamp=ts,
+                )
+            )
         return events
 
     async def pending_summary(self, group: str, stream_key: str) -> dict[str, Any]:

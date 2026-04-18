@@ -91,7 +91,9 @@ async def _read_idempotent_result(key: str) -> dict[str, Any] | None:
 async def _write_idempotent_result(key: str, result: dict[str, Any]) -> None:
     try:
         await redis_pool.setex(
-            key, _IDEMPOTENCY_TTL_SECONDS, json.dumps(result, default=str),
+            key,
+            _IDEMPOTENCY_TTL_SECONDS,
+            json.dumps(result, default=str),
         )
     except Exception:
         logger.debug("idempotency_write_failed", exc_info=True)

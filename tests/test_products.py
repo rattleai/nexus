@@ -14,7 +14,11 @@ from app.main import create_app
 
 def _make_tenant():
     return MagicMock(
-        id=uuid.uuid4(), name="Test", slug="test", plan="free", is_active=True,
+        id=uuid.uuid4(),
+        name="Test",
+        slug="test",
+        plan="free",
+        is_active=True,
     )
 
 
@@ -86,9 +90,14 @@ async def product_client():
 @pytest.mark.asyncio
 async def test_create_product_requires_auth(product_client):
     client, _ = product_client
-    response = await client.post("/api/v1/products", json={
-        "name": "Test", "slug": "test", "status": "draft",
-    })
+    response = await client.post(
+        "/api/v1/products",
+        json={
+            "name": "Test",
+            "slug": "test",
+            "status": "draft",
+        },
+    )
     assert response.status_code == 401
 
 
@@ -102,9 +111,13 @@ async def test_list_products_requires_auth(product_client):
 @pytest.mark.asyncio
 async def test_create_family_requires_auth(product_client):
     client, _ = product_client
-    response = await client.post("/api/v1/products/families", json={
-        "name": "Test Family", "slug": "test-family",
-    })
+    response = await client.post(
+        "/api/v1/products/families",
+        json={
+            "name": "Test Family",
+            "slug": "test-family",
+        },
+    )
     assert response.status_code == 401
 
 

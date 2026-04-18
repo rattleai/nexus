@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.dependencies import AIQuotaEnforcer, RequireWalletBalance, require_ai_enabled
-from app.ai.events import AIProviderKeyCreated, AIProviderKeyDeleted, WalletBalanceLow, WalletTopupCompleted
+from app.ai.events import AIProviderKeyCreated, AIProviderKeyDeleted, WalletBalanceLow
 from app.ai.gateway import AIAuthenticationError, AIGatewayError, AIProviderUnavailableError, ai_gateway
 from app.ai.guardrails import validate_input
 from app.ai.key_resolver import NoAPIKeyError, resolve_api_key
@@ -180,11 +180,13 @@ async def create_completion(
                     AI_WALLET_BALANCE.labels(tenant_id=str(tenant.id)).set(float(new_balance))
 
                     if float(new_balance) < settings.AI_WALLET_LOW_BALANCE_THRESHOLD:
-                        await emit(WalletBalanceLow(
-                            tenant_id=str(tenant.id),
-                            balance_usd=float(new_balance),
-                            threshold_usd=settings.AI_WALLET_LOW_BALANCE_THRESHOLD,
-                        ))
+                        await emit(
+                            WalletBalanceLow(
+                                tenant_id=str(tenant.id),
+                                balance_usd=float(new_balance),
+                                threshold_usd=settings.AI_WALLET_LOW_BALANCE_THRESHOLD,
+                            )
+                        )
 
                     # Check auto-refill
                     await wallet_service.check_auto_refill(tenant.id, new_balance, stream_db)
@@ -274,11 +276,13 @@ async def create_completion(
 
     # Check low balance warning
     if float(new_balance) < settings.AI_WALLET_LOW_BALANCE_THRESHOLD:
-        await emit(WalletBalanceLow(
-            tenant_id=str(tenant.id),
-            balance_usd=float(new_balance),
-            threshold_usd=settings.AI_WALLET_LOW_BALANCE_THRESHOLD,
-        ))
+        await emit(
+            WalletBalanceLow(
+                tenant_id=str(tenant.id),
+                balance_usd=float(new_balance),
+                threshold_usd=settings.AI_WALLET_LOW_BALANCE_THRESHOLD,
+            )
+        )
 
     # Check auto-refill
     await wallet_service.check_auto_refill(tenant.id, new_balance, db)
@@ -411,17 +415,19 @@ async def list_models(
 
         available, _source = await check_key_availability(tenant.id, info.provider, db)
 
-        models.append(ModelInfoResponse(
-            model_id=model_id,
-            provider=info.provider.value,
-            display_name=info.display_name,
-            max_input_tokens=info.max_input_tokens,
-            max_output_tokens=info.max_output_tokens,
-            supports_streaming=info.supports_streaming,
-            supports_function_calling=info.supports_function_calling,
-            supports_vision=info.supports_vision,
-            available=available,
-        ))
+        models.append(
+            ModelInfoResponse(
+                model_id=model_id,
+                provider=info.provider.value,
+                display_name=info.display_name,
+                max_input_tokens=info.max_input_tokens,
+                max_output_tokens=info.max_output_tokens,
+                supports_streaming=info.supports_streaming,
+                supports_function_calling=info.supports_function_calling,
+                supports_vision=info.supports_vision,
+                available=available,
+            )
+        )
 
     return models
 
@@ -468,11 +474,13 @@ async def create_provider_key(
     await db.refresh(key_record)
     await db.commit()
 
-    await emit(AIProviderKeyCreated(
-        tenant_id=str(tenant.id),
-        provider=body.provider,
-        key_id=str(key_record.id),
-    ))
+    await emit(
+        AIProviderKeyCreated(
+            tenant_id=str(tenant.id),
+            provider=body.provider,
+            key_id=str(key_record.id),
+        )
+    )
 
     logger.info("ai_provider_key_created", tenant_id=str(tenant.id), provider=body.provider)
     return ProviderKeyResponse.model_validate(key_record)
@@ -521,11 +529,13 @@ async def delete_provider_key(
     await db.delete(key_record)
     await db.commit()
 
-    await emit(AIProviderKeyDeleted(
-        tenant_id=str(tenant.id),
-        provider=provider.value if hasattr(provider, "value") else str(provider),
-        key_id=str(key_id),
-    ))
+    await emit(
+        AIProviderKeyDeleted(
+            tenant_id=str(tenant.id),
+            provider=provider.value if hasattr(provider, "value") else str(provider),
+            key_id=str(key_id),
+        )
+    )
 
 
 # ── Wallet ────────────────────────────────────────────────

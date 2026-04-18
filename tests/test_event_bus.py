@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.core.event_bus import EventBus, StreamEvent
+from app.core.event_bus import EventBus
 
 
 @pytest.fixture
@@ -51,18 +51,28 @@ class TestEventBusConsume:
     @pytest.mark.asyncio
     async def test_consume_returns_stream_events(self, bus):
         with patch("app.core.event_bus.redis_pool") as mock_redis:
-            mock_redis.xreadgroup = AsyncMock(return_value=[
-                ("test_events:agent", [
-                    ("1234-0", {
-                        "type": "agent.started",
-                        "data": '{"agent_id": "abc"}',
-                        "ts": "1234567890.0",
-                    }),
-                ]),
-            ])
+            mock_redis.xreadgroup = AsyncMock(
+                return_value=[
+                    (
+                        "test_events:agent",
+                        [
+                            (
+                                "1234-0",
+                                {
+                                    "type": "agent.started",
+                                    "data": '{"agent_id": "abc"}',
+                                    "ts": "1234567890.0",
+                                },
+                            ),
+                        ],
+                    ),
+                ]
+            )
 
             events = await bus.consume(
-                "group1", "consumer1", ["test_events:agent"],
+                "group1",
+                "consumer1",
+                ["test_events:agent"],
             )
 
             assert len(events) == 1
@@ -83,10 +93,12 @@ class TestEventBusReplay:
     @pytest.mark.asyncio
     async def test_replay_returns_events(self, bus):
         with patch("app.core.event_bus.redis_pool") as mock_redis:
-            mock_redis.xrange = AsyncMock(return_value=[
-                ("1000-0", {"type": "agent.started", "data": '{"a": 1}', "ts": "1000"}),
-                ("1001-0", {"type": "agent.completed", "data": '{"a": 2}', "ts": "1001"}),
-            ])
+            mock_redis.xrange = AsyncMock(
+                return_value=[
+                    ("1000-0", {"type": "agent.started", "data": '{"a": 1}', "ts": "1000"}),
+                    ("1001-0", {"type": "agent.completed", "data": '{"a": 2}', "ts": "1001"}),
+                ]
+            )
 
             events = await bus.replay("test_events:agent", count=10)
 

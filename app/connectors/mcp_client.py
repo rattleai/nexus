@@ -48,14 +48,14 @@ class _ManagedSession:
     """Wraps a ClientSession with lifecycle + refcounting metadata."""
 
     __slots__ = (
-        "session",
-        "transport_ctx",
+        "capabilities",
         "connector_slug",
         "created_at",
-        "last_used",
         "in_flight",
         "is_alive",
-        "capabilities",
+        "last_used",
+        "session",
+        "transport_ctx",
     )
 
     def __init__(
@@ -155,13 +155,9 @@ class MCPClientPool:
         transport = mcp_config.get("transport", "streamable_http")
 
         if transport == "streamable_http":
-            return await self._create_http_session(
-                connection, connector_def, mcp_config
-            )
+            return await self._create_http_session(connection, connector_def, mcp_config)
         if transport == "stdio":
-            return await self._create_stdio_session(
-                connection, connector_def, mcp_config
-            )
+            return await self._create_stdio_session(connection, connector_def, mcp_config)
         raise MCPClientError(f"Unsupported MCP transport: {transport}")
 
     async def _create_http_session(
@@ -172,11 +168,10 @@ class MCPClientPool:
     ) -> _ManagedSession:
         server_url = mcp_config.get("server_url", "")
         if not server_url:
-            raise MCPClientError(
-                f"MCP server URL not configured for connector '{connector_def.slug}'"
-            )
+            raise MCPClientError(f"MCP server URL not configured for connector '{connector_def.slug}'")
 
         from app.core.url_validation import validate_url
+
         validate_url(server_url)
 
         timeout = settings.CONNECTOR_MCP_CONNECT_TIMEOUT_SECONDS
@@ -210,9 +205,7 @@ class MCPClientPool:
                 transport="streamable_http",
                 error=str(exc)[:200],
             )
-            raise MCPClientError(
-                f"Failed to connect to MCP server for '{connector_def.slug}': {exc}"
-            ) from exc
+            raise MCPClientError(f"Failed to connect to MCP server for '{connector_def.slug}': {exc}") from exc
 
     async def _create_stdio_session(
         self,
@@ -225,13 +218,13 @@ class MCPClientPool:
         env = mcp_config.get("env")
 
         if not command:
-            raise MCPClientError(
-                f"MCP command not configured for connector '{connector_def.slug}'"
-            )
+            raise MCPClientError(f"MCP command not configured for connector '{connector_def.slug}'")
 
         try:
             server_params = StdioServerParameters(
-                command=command, args=args, env=env,
+                command=command,
+                args=args,
+                env=env,
             )
             ctx = stdio_client(server_params)
             streams = await ctx.__aenter__()
@@ -261,9 +254,7 @@ class MCPClientPool:
                 transport="stdio",
                 error=str(exc)[:200],
             )
-            raise MCPClientError(
-                f"Failed to start MCP server for '{connector_def.slug}': {exc}"
-            ) from exc
+            raise MCPClientError(f"Failed to start MCP server for '{connector_def.slug}': {exc}") from exc
 
     async def _close_session_locked(
         self,
@@ -295,9 +286,7 @@ class MCPClientPool:
                 {
                     "name": tool.name,
                     "description": tool.description or "",
-                    "inputSchema": tool.inputSchema
-                    if hasattr(tool, "inputSchema")
-                    else {},
+                    "inputSchema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
                 }
             )
 
@@ -396,9 +385,7 @@ class MCPClientPool:
                 if hasattr(block, "text"):
                     parts.append(block.text)
                 elif hasattr(block, "data"):
-                    parts.append(
-                        f"[binary: {getattr(block, 'mimeType', 'unknown')}]"
-                    )
+                    parts.append(f"[binary: {getattr(block, 'mimeType', 'unknown')}]")
                 else:
                     parts.append(str(block))
 
@@ -410,9 +397,7 @@ class MCPClientPool:
 
             return {
                 "content": output,
-                "is_error": result.isError
-                if hasattr(result, "isError")
-                else False,
+                "is_error": result.isError if hasattr(result, "isError") else False,
             }
 
         return {"content": "", "is_error": False}
@@ -431,9 +416,7 @@ class MCPClientPool:
             if hasattr(item, "text"):
                 contents.append({"type": "text", "text": item.text})
             elif hasattr(item, "blob"):
-                contents.append(
-                    {"type": "blob", "mimeType": getattr(item, "mimeType", "")}
-                )
+                contents.append({"type": "blob", "mimeType": getattr(item, "mimeType", "")})
         return {"contents": contents}
 
     async def get_prompt(
@@ -485,10 +468,7 @@ class MCPClientPool:
 
         async with self._lock:
             for key, managed in self._sessions.items():
-                if (
-                    managed.in_flight == 0
-                    and now - managed.last_used > max_idle
-                ):
+                if managed.in_flight == 0 and now - managed.last_used > max_idle:
                     to_close.append(key)
 
             for key in to_close:

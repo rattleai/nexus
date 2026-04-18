@@ -12,7 +12,11 @@ from app.main import create_app
 
 def _make_tenant():
     return MagicMock(
-        id=uuid.uuid4(), name="Test", slug="test", plan="free", is_active=True,
+        id=uuid.uuid4(),
+        name="Test",
+        slug="test",
+        plan="free",
+        is_active=True,
     )
 
 
@@ -41,9 +45,14 @@ async def char_client():
 @pytest.mark.asyncio
 async def test_create_characteristic_requires_auth(char_client):
     client, _ = char_client
-    response = await client.post("/api/v1/characteristics", json={
-        "name": "Color", "slug": "color", "char_type": "enum",
-    })
+    response = await client.post(
+        "/api/v1/characteristics",
+        json={
+            "name": "Color",
+            "slug": "color",
+            "char_type": "enum",
+        },
+    )
     assert response.status_code == 401
 
 
@@ -57,9 +66,13 @@ async def test_list_characteristics_requires_auth(char_client):
 @pytest.mark.asyncio
 async def test_create_group_requires_auth(char_client):
     client, _ = char_client
-    response = await client.post("/api/v1/characteristics/groups", json={
-        "name": "Exterior", "slug": "exterior",
-    })
+    response = await client.post(
+        "/api/v1/characteristics/groups",
+        json={
+            "name": "Exterior",
+            "slug": "exterior",
+        },
+    )
     assert response.status_code == 401
 
 
@@ -91,8 +104,11 @@ async def test_get_characteristic_not_found(char_client):
 @pytest.mark.asyncio
 async def test_assign_characteristic_requires_auth(char_client):
     client, _ = char_client
-    response = await client.post("/api/v1/characteristics/assign", json={
-        "product_id": str(uuid.uuid4()),
-        "characteristic_id": str(uuid.uuid4()),
-    })
+    response = await client.post(
+        "/api/v1/characteristics/assign",
+        json={
+            "product_id": str(uuid.uuid4()),
+            "characteristic_id": str(uuid.uuid4()),
+        },
+    )
     assert response.status_code == 401

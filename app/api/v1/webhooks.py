@@ -151,7 +151,11 @@ async def list_webhook_endpoints(
     db: AsyncSession = Depends(get_db),
 ):
     """List all webhook endpoints for the tenant."""
-    stmt = tenant_query(select(WebhookEndpoint), tenant).where(WebhookEndpoint.active.is_(True)).order_by(WebhookEndpoint.created_at.desc())
+    stmt = (
+        tenant_query(select(WebhookEndpoint), tenant)
+        .where(WebhookEndpoint.active.is_(True))
+        .order_by(WebhookEndpoint.created_at.desc())
+    )
     result = await db.execute(stmt)
     endpoints = result.scalars().all()
     return endpoints

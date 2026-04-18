@@ -61,7 +61,9 @@ class LLMJudge:
         """
         context = "\n\n---\n\n".join(context_chunks[:10])  # Cap context
         prompt = _FAITHFULNESS_PROMPT.format(
-            context=context, query=query, answer=generated_answer,
+            context=context,
+            query=query,
+            answer=generated_answer,
         )
         return await self._score(prompt)
 

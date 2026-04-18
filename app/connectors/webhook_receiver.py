@@ -107,6 +107,7 @@ async def receive_webhook(
     # Parse the event
     try:
         import json
+
         payload = json.loads(body)
     except Exception:
         payload = {"raw": body.decode("utf-8", errors="replace")[:10000]}
@@ -153,11 +154,15 @@ def _verify_signature(
     """Verify a webhook signature using HMAC."""
     if algorithm == "sha256":
         expected = hmac.new(
-            secret.encode(), body, hashlib.sha256,
+            secret.encode(),
+            body,
+            hashlib.sha256,
         ).hexdigest()
     elif algorithm == "sha1":
         expected = hmac.new(
-            secret.encode(), body, hashlib.sha1,
+            secret.encode(),
+            body,
+            hashlib.sha1,
         ).hexdigest()
     else:
         logger.warning("webhook_unsupported_algo", algorithm=algorithm)

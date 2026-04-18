@@ -92,7 +92,9 @@ class CapabilityResolver:
         # Assign all three atomically (single-statement swap) so that a
         # concurrent resolve() never sees a partially-built index.
         self._slug_to_tools, self._tool_to_slug, self._domains = (
-            slug_to_tools, tool_to_slug, domains,
+            slug_to_tools,
+            tool_to_slug,
+            domains,
         )
 
     def _ensure_index(self) -> None:
@@ -403,9 +405,7 @@ class CapabilityManager:
         # Cache previous key version for rotation grace period
         self._previous_keys: list[bytes] = []
         if self._CURRENT_KEY_VERSION > 1:
-            self._previous_keys.append(
-                self._derive_signing_key(self._CURRENT_KEY_VERSION - 1)
-            )
+            self._previous_keys.append(self._derive_signing_key(self._CURRENT_KEY_VERSION - 1))
 
     @staticmethod
     def _derive_signing_key(version: int = 1) -> bytes:
@@ -414,11 +414,7 @@ class CapabilityManager:
         Uses HKDF-SHA256 with a versioned info string for key rotation support.
         """
         # Try version-specific key first, fall back to primary
-        source = (
-            getattr(settings, f"ENCRYPTION_KEY_V{version}", "")
-            or settings.ENCRYPTION_KEY
-            or settings.SECRET_KEY
-        )
+        source = getattr(settings, f"ENCRYPTION_KEY_V{version}", "") or settings.ENCRYPTION_KEY or settings.SECRET_KEY
         # Deterministic salt provides better key separation than salt=None
         # (RFC 5869 recommends a non-secret random value or application-specific constant)
         salt = hashlib.sha256(b"cadprice-capability-salt-v1").digest()
@@ -506,8 +502,7 @@ class CapabilityManager:
         for prev_key in self._previous_keys:
             expected_sig = self._sign(token, signing_key=prev_key)
             if hmac.compare_digest(token.signature, expected_sig):
-                logger.info("capability_token_verified_with_previous_key",
-                            token_id=token.token_id)
+                logger.info("capability_token_verified_with_previous_key", token_id=token.token_id)
                 return True
         return False
 
@@ -592,16 +587,20 @@ class CapabilityManager:
     def _sign(self, token: CapabilityToken, *, signing_key: bytes | None = None) -> str:
         """Create HMAC-SHA256 signature for a capability token."""
         key = signing_key or self._signing_key
-        payload = json.dumps({
-            "token_id": token.token_id,
-            "instance_id": token.instance_id,
-            "tenant_id": token.tenant_id,
-            "agent_id": token.agent_id,
-            "scope": token.scope.to_dict(),
-            "issued_at": token.issued_at,
-            "expires_at": token.expires_at,
-            "parent_token_id": token.parent_token_id,
-        }, sort_keys=True, separators=(",", ":"))
+        payload = json.dumps(
+            {
+                "token_id": token.token_id,
+                "instance_id": token.instance_id,
+                "tenant_id": token.tenant_id,
+                "agent_id": token.agent_id,
+                "scope": token.scope.to_dict(),
+                "issued_at": token.issued_at,
+                "expires_at": token.expires_at,
+                "parent_token_id": token.parent_token_id,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         return hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()
 
 

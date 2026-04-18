@@ -30,7 +30,7 @@ class FakeDB:
     async def delete(self, row: ConnectorAppCredential) -> None:
         self._rows = [r for r in self._rows if r.id != row.id]
 
-    async def execute(self, stmt):  # noqa: ANN001
+    async def execute(self, stmt):
         result = MagicMock()
         tenant_id, slug = _stmt_tenant_slug(stmt)
         for row in self._rows:
@@ -41,11 +41,11 @@ class FakeDB:
         return result
 
 
-def _stmt_tenant_slug(stmt) -> tuple[uuid.UUID, str]:  # noqa: ANN001
+def _stmt_tenant_slug(stmt) -> tuple[uuid.UUID, str]:
     # The manager always filters by (tenant_id, connector_slug).
     # Extract them from the compiled clause.
     compiled = stmt.compile(compile_kwargs={"literal_binds": True})
-    text = str(compiled)
+    str(compiled)
     # This is test-only parsing — keep it simple
     params = stmt.compile().params
     tid = params.get("tenant_id_1") or params.get("tenant_id")
@@ -72,7 +72,9 @@ async def test_register_and_get_roundtrips_encryption():
     assert row.client_secret_enc and row.client_secret_enc != "s3cret!"
 
     got = await app_credential_manager.get(
-        tenant_id=tenant, connector_slug="slack", db=db,
+        tenant_id=tenant,
+        connector_slug="slack",
+        db=db,
     )
     assert isinstance(got, DecryptedAppCredentials)
     assert got.client_id == "my-client-id"
@@ -92,7 +94,7 @@ async def test_register_again_rotates_secrets():
         client_secret="old-secret",
         db=db,
     )
-    row = await app_credential_manager.register(
+    await app_credential_manager.register(
         tenant_id=tenant,
         connector_slug="slack",
         client_id="new",
@@ -101,7 +103,9 @@ async def test_register_again_rotates_secrets():
     )
 
     got = await app_credential_manager.get(
-        tenant_id=tenant, connector_slug="slack", db=db,
+        tenant_id=tenant,
+        connector_slug="slack",
+        db=db,
     )
     assert got.client_id == "new"
     assert got.client_secret == "new-secret"
@@ -113,7 +117,9 @@ async def test_require_raises_when_missing():
     tenant = uuid.uuid4()
     with pytest.raises(AppCredentialError):
         await app_credential_manager.require(
-            tenant_id=tenant, connector_slug="slack", db=db,
+            tenant_id=tenant,
+            connector_slug="slack",
+            db=db,
         )
 
 
@@ -139,10 +145,14 @@ async def test_tenant_isolation():
     )
 
     got_a = await app_credential_manager.get(
-        tenant_id=tenant_a, connector_slug="slack", db=db,
+        tenant_id=tenant_a,
+        connector_slug="slack",
+        db=db,
     )
     got_b = await app_credential_manager.get(
-        tenant_id=tenant_b, connector_slug="slack", db=db,
+        tenant_id=tenant_b,
+        connector_slug="slack",
+        db=db,
     )
 
     assert got_a.client_id == "alice-client"
@@ -163,10 +173,14 @@ async def test_delete_removes_row():
         db=db,
     )
     removed = await app_credential_manager.delete(
-        tenant_id=tenant, connector_slug="slack", db=db,
+        tenant_id=tenant,
+        connector_slug="slack",
+        db=db,
     )
     assert removed is True
     got = await app_credential_manager.get(
-        tenant_id=tenant, connector_slug="slack", db=db,
+        tenant_id=tenant,
+        connector_slug="slack",
+        db=db,
     )
     assert got is None

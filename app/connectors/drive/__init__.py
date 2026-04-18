@@ -21,6 +21,7 @@ from app.connectors.drive.base import (
 )
 
 __all__ = [
+    "ComposioNotSupportedError",
     "DriveAdapter",
     "DriveAdapterError",
     "DriveFile",
@@ -28,6 +29,5 @@ __all__ = [
     "DriveFileTooLargeError",
     "DriveItem",
     "DriveListing",
-    "ComposioNotSupportedError",
     "resolve_adapter",
 ]

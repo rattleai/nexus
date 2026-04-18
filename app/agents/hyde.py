@@ -35,16 +35,18 @@ class HyDEGenerator:
 
             response = await ai_gateway.complete(
                 model=settings.RAG_HYDE_MODEL,
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        "Write a short, factual document passage that would "
-                        "directly answer this question. Write as if you are "
-                        "writing the actual source document, not an answer. "
-                        "Keep it under 200 words.\n\n"
-                        f"Question: {query}"
-                    ),
-                }],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            "Write a short, factual document passage that would "
+                            "directly answer this question. Write as if you are "
+                            "writing the actual source document, not an answer. "
+                            "Keep it under 200 words.\n\n"
+                            f"Question: {query}"
+                        ),
+                    }
+                ],
                 max_tokens=300,
                 temperature=0.0,
             )

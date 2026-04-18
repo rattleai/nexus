@@ -61,6 +61,7 @@ def _can_reach_provider() -> bool:
     """Check if the provider URL is reachable."""
     try:
         import httpx
+
         httpx.get(f"{PROVIDER_URL}/api/v1/health/live", timeout=2)
         return True
     except Exception:

@@ -34,12 +34,14 @@ async def test_rls_with_check_blocks_cross_tenant_insert(db: AsyncSession):
     tenant_b = uuid.uuid4()
 
     # Create tenants
-    await db.execute(text(
-        "INSERT INTO tenants (id, name, slug) VALUES (:id, :name, :slug)"
-    ), {"id": str(tenant_a), "name": "Tenant A", "slug": f"tenant-a-{tenant_a.hex[:8]}"})
-    await db.execute(text(
-        "INSERT INTO tenants (id, name, slug) VALUES (:id, :name, :slug)"
-    ), {"id": str(tenant_b), "name": "Tenant B", "slug": f"tenant-b-{tenant_b.hex[:8]}"})
+    await db.execute(
+        text("INSERT INTO tenants (id, name, slug) VALUES (:id, :name, :slug)"),
+        {"id": str(tenant_a), "name": "Tenant A", "slug": f"tenant-a-{tenant_a.hex[:8]}"},
+    )
+    await db.execute(
+        text("INSERT INTO tenants (id, name, slug) VALUES (:id, :name, :slug)"),
+        {"id": str(tenant_b), "name": "Tenant B", "slug": f"tenant-b-{tenant_b.hex[:8]}"},
+    )
     await db.flush()
 
     # Set RLS context to tenant A
@@ -47,18 +49,18 @@ async def test_rls_with_check_blocks_cross_tenant_insert(db: AsyncSession):
 
     # INSERT with tenant A's ID should succeed
     key_id_a = uuid.uuid4()
-    await db.execute(text(
-        "INSERT INTO api_keys (id, tenant_id, key_hash, name) "
-        "VALUES (:id, :tid, :hash, 'test')"
-    ), {"id": str(key_id_a), "tid": str(tenant_a), "hash": uuid.uuid4().hex})
+    await db.execute(
+        text("INSERT INTO api_keys (id, tenant_id, key_hash, name) VALUES (:id, :tid, :hash, 'test')"),
+        {"id": str(key_id_a), "tid": str(tenant_a), "hash": uuid.uuid4().hex},
+    )
 
     # INSERT with tenant B's ID should be rejected by WITH CHECK
     key_id_b = uuid.uuid4()
     with pytest.raises(Exception):
-        await db.execute(text(
-            "INSERT INTO api_keys (id, tenant_id, key_hash, name) "
-            "VALUES (:id, :tid, :hash, 'cross-tenant')"
-        ), {"id": str(key_id_b), "tid": str(tenant_b), "hash": uuid.uuid4().hex})
+        await db.execute(
+            text("INSERT INTO api_keys (id, tenant_id, key_hash, name) VALUES (:id, :tid, :hash, 'cross-tenant')"),
+            {"id": str(key_id_b), "tid": str(tenant_b), "hash": uuid.uuid4().hex},
+        )
 
     await db.rollback()
 
@@ -70,23 +72,25 @@ async def test_rls_using_filters_select(db: AsyncSession):
     tenant_b = uuid.uuid4()
 
     # Create tenants
-    await db.execute(text(
-        "INSERT INTO tenants (id, name, slug) VALUES (:id, :name, :slug)"
-    ), {"id": str(tenant_a), "name": "Tenant A", "slug": f"rls-a-{tenant_a.hex[:8]}"})
-    await db.execute(text(
-        "INSERT INTO tenants (id, name, slug) VALUES (:id, :name, :slug)"
-    ), {"id": str(tenant_b), "name": "Tenant B", "slug": f"rls-b-{tenant_b.hex[:8]}"})
+    await db.execute(
+        text("INSERT INTO tenants (id, name, slug) VALUES (:id, :name, :slug)"),
+        {"id": str(tenant_a), "name": "Tenant A", "slug": f"rls-a-{tenant_a.hex[:8]}"},
+    )
+    await db.execute(
+        text("INSERT INTO tenants (id, name, slug) VALUES (:id, :name, :slug)"),
+        {"id": str(tenant_b), "name": "Tenant B", "slug": f"rls-b-{tenant_b.hex[:8]}"},
+    )
 
     # Insert keys for both tenants (as superuser, bypassing RLS for setup)
     await db.execute(text("SELECT set_config('app.tenant_id', '', true)"))
-    await db.execute(text(
-        "INSERT INTO api_keys (id, tenant_id, key_hash, name) "
-        "VALUES (:id, :tid, :hash, 'key-a')"
-    ), {"id": str(uuid.uuid4()), "tid": str(tenant_a), "hash": uuid.uuid4().hex})
-    await db.execute(text(
-        "INSERT INTO api_keys (id, tenant_id, key_hash, name) "
-        "VALUES (:id, :tid, :hash, 'key-b')"
-    ), {"id": str(uuid.uuid4()), "tid": str(tenant_b), "hash": uuid.uuid4().hex})
+    await db.execute(
+        text("INSERT INTO api_keys (id, tenant_id, key_hash, name) VALUES (:id, :tid, :hash, 'key-a')"),
+        {"id": str(uuid.uuid4()), "tid": str(tenant_a), "hash": uuid.uuid4().hex},
+    )
+    await db.execute(
+        text("INSERT INTO api_keys (id, tenant_id, key_hash, name) VALUES (:id, :tid, :hash, 'key-b')"),
+        {"id": str(uuid.uuid4()), "tid": str(tenant_b), "hash": uuid.uuid4().hex},
+    )
     await db.flush()
 
     # Set context to tenant A and verify isolation

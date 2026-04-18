@@ -150,9 +150,7 @@ async def request_account_deletion(
         .values(revoked=True)
     )
     # Delete OAuth accounts (contain encrypted tokens)
-    await db.execute(
-        delete(OAuthAccount).where(OAuthAccount.user_id == user.id)
-    )
+    await db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user.id))
 
     await db.commit()
 

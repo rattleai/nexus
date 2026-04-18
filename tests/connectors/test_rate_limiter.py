@@ -15,7 +15,7 @@ class _FakeRedis:
         self._state: dict[str, dict[str, str]] = {}
         self._ttl: dict[str, int] = {}
 
-    def pipeline(self, transaction=True):  # noqa: ARG002
+    def pipeline(self, transaction=True):
         outer = self
 
         class _Pipe:

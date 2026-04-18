@@ -67,10 +67,12 @@ class OutputValidator:
         # 1. Size check
         max_len = self.policy.get("max_output_length", _MAX_OUTPUT_LENGTH)
         if len(output) > max_len:
-            errors.append(ValidationError(
-                "output_too_long",
-                f"Output exceeds maximum length ({len(output)} > {max_len})",
-            ))
+            errors.append(
+                ValidationError(
+                    "output_too_long",
+                    f"Output exceeds maximum length ({len(output)} > {max_len})",
+                )
+            )
 
         # 2. JSON schema validation
         if output_schema:
@@ -91,27 +93,33 @@ class OutputValidator:
                     future = pool.submit(pattern.search, output)
                     match = future.result(timeout=1.0)  # 1 second timeout
             except (concurrent.futures.TimeoutError, Exception):
-                errors.append(ValidationError(
-                    "prohibited_pattern_timeout",
-                    f"Pattern check timed out (possible ReDoS): {pattern_str[:50]}",
-                    severity="warning",
-                ))
+                errors.append(
+                    ValidationError(
+                        "prohibited_pattern_timeout",
+                        f"Pattern check timed out (possible ReDoS): {pattern_str[:50]}",
+                        severity="warning",
+                    )
+                )
                 continue
             if match:
-                errors.append(ValidationError(
-                    "prohibited_content",
-                    f"Output contains prohibited pattern: {pattern_str[:50]}",
-                ))
+                errors.append(
+                    ValidationError(
+                        "prohibited_content",
+                        f"Output contains prohibited pattern: {pattern_str[:50]}",
+                    )
+                )
 
         # 5. Required keywords (must contain certain phrases)
         required = self.policy.get("required_keywords", [])
         for keyword in required:
             if keyword.lower() not in output.lower():
-                errors.append(ValidationError(
-                    "missing_required_keyword",
-                    f"Output is missing required keyword: {keyword}",
-                    severity="warning",
-                ))
+                errors.append(
+                    ValidationError(
+                        "missing_required_keyword",
+                        f"Output is missing required keyword: {keyword}",
+                        severity="warning",
+                    )
+                )
 
         return errors
 
@@ -124,14 +132,17 @@ class OutputValidator:
         except (json.JSONDecodeError, TypeError):
             # Output is not JSON — check if schema requires JSON
             if schema.get("type") in ("object", "array"):
-                return [ValidationError(
-                    "invalid_json",
-                    "Output must be valid JSON according to the output schema",
-                )]
+                return [
+                    ValidationError(
+                        "invalid_json",
+                        "Output must be valid JSON according to the output schema",
+                    )
+                ]
             return []
 
         try:
             import jsonschema
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(jsonschema.validate, data, schema)
                 future.result(timeout=2.0)
@@ -141,10 +152,12 @@ class OutputValidator:
             logger.debug("jsonschema_not_installed_skipping_validation")
             return []
         except jsonschema.ValidationError as exc:
-            return [ValidationError(
-                "schema_violation",
-                f"Output does not match schema: {exc.message[:200]}",
-            )]
+            return [
+                ValidationError(
+                    "schema_violation",
+                    f"Output does not match schema: {exc.message[:200]}",
+                )
+            ]
         except jsonschema.SchemaError as exc:
             logger.warning("invalid_output_schema", error=str(exc)[:200])
             return []
@@ -155,10 +168,12 @@ class OutputValidator:
         for pii_type, pattern in _PII_PATTERNS.items():
             matches = pattern.findall(output)
             if matches:
-                errors.append(ValidationError(
-                    "pii_detected",
-                    f"Potential {pii_type} detected in output ({len(matches)} occurrence(s))",
-                ))
+                errors.append(
+                    ValidationError(
+                        "pii_detected",
+                        f"Potential {pii_type} detected in output ({len(matches)} occurrence(s))",
+                    )
+                )
         return errors
 
     def sanitize(self, output: str) -> str:
@@ -174,7 +189,6 @@ class OutputValidator:
 
         return sanitized
 
-
     def validate_with_classification(
         self,
         output: str,
@@ -188,18 +202,20 @@ class OutputValidator:
         """
         errors = self.validate(output, output_schema=output_schema)
 
-        from app.agents.data_classification import DataClassifier, DataLevel, DLPEnforcer
+        from app.agents.data_classification import DataClassifier, DataLevel
 
         classifier = DataClassifier()
         result = classifier.classify_text(output)
         agent_level = DataLevel.from_str(max_data_level)
 
         if result.level > agent_level:
-            errors.append(ValidationError(
-                "data_classification_violation",
-                f"Output contains {result.level.name} data (agent max: {agent_level.name}): "
-                f"{', '.join(result.reasons[:3])}",
-            ))
+            errors.append(
+                ValidationError(
+                    "data_classification_violation",
+                    f"Output contains {result.level.name} data (agent max: {agent_level.name}): "
+                    f"{', '.join(result.reasons[:3])}",
+                )
+            )
 
         return errors
 
@@ -240,7 +256,9 @@ def validate_agent_output(
     max_data_level = policy.get("max_data_classification", "")
     if max_data_level:
         errors = validator.validate_with_classification(
-            output, max_data_level=max_data_level, output_schema=output_schema,
+            output,
+            max_data_level=max_data_level,
+            output_schema=output_schema,
         )
     else:
         errors = validator.validate(output, output_schema=output_schema)

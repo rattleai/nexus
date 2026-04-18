@@ -58,6 +58,7 @@ async def create_job(
     input_hash = None
     if x_idempotency_key:
         import hashlib
+
         input_hash = hashlib.sha256(f"{tenant.id}:{x_idempotency_key}".encode()).hexdigest()
         existing = await db.execute(
             select(Job).where(Job.tenant_id == tenant.id, Job.input_hash == input_hash, Job.deleted_at.is_(None))
@@ -164,6 +165,7 @@ async def cancel_job(
 
     # Use optimistic locking to prevent race with worker completion
     from sqlalchemy import update
+
     cancel_result = await db.execute(
         update(Job)
         .where(Job.id == job_id, Job.version == job.version)

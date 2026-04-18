@@ -112,7 +112,9 @@ class PolicyGate:
         principal = (
             f'Agent::"{agent_id}"'
             if agent_id
-            else f'User::"{actor_user_id}"' if actor_user_id else 'System::"anonymous"'
+            else f'User::"{actor_user_id}"'
+            if actor_user_id
+            else 'System::"anonymous"'
         )
         resource = f'ConnectorTool::"{connector_def.slug}:{tool_name}"'
 

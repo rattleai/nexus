@@ -10,14 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.rate_limit import ApiKeyRateLimiter
-from app.apps.cpq.engine.engine import ConfiguratorEngine, NumericInterval
-from app.core.audit import AuditAction, emit_audit_event
 from app.apps.cpq.api.schemas_configurator import (
+    CharacteristicImpactResponse,
     ConstraintAnalysisRequest,
     ConstraintAnalysisResponse,
     ConstraintGroupCreate,
     ConstraintGroupResponse,
-    ConstraintGroupUpdate,
     ConstraintImpactRequest,
     ConstraintImpactResponse,
     ConstraintRuleCreate,
@@ -27,7 +25,6 @@ from app.apps.cpq.api.schemas_configurator import (
     ConstraintSimulationResponse,
     ConstraintValidateRequest,
     ConstraintValidateResponse,
-    CharacteristicImpactResponse,
     CoverageGapResponse,
     CycleInfoResponse,
     DeadValueResponse,
@@ -35,9 +32,7 @@ from app.apps.cpq.api.schemas_configurator import (
     VariantTableResponse,
     VariantTableUpdate,
 )
-from app.core.pagination import CursorPage, paginate
-from app.core.tenant import tenant_query
-from app.db.base import optimistic_version_bump
+from app.apps.cpq.engine.engine import ConfiguratorEngine, NumericInterval
 from app.apps.cpq.models.product import (
     ConstraintGroup,
     ConstraintRule,
@@ -45,6 +40,10 @@ from app.apps.cpq.models.product import (
     Product,
     VariantTable,
 )
+from app.core.audit import AuditAction, emit_audit_event
+from app.core.pagination import CursorPage, paginate
+from app.core.tenant import tenant_query
+from app.db.base import optimistic_version_bump
 from app.db.models import Tenant
 
 _api_key_rate_limit = ApiKeyRateLimiter()
@@ -113,9 +112,7 @@ async def create_constraint_group(
 ):
     # Validate product exists
     product_result = await db.execute(
-        tenant_query(select(Product), tenant).where(
-            Product.id == body.product_id, Product.deleted_at.is_(None)
-        )
+        tenant_query(select(Product), tenant).where(Product.id == body.product_id, Product.deleted_at.is_(None))
     )
     if not product_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Product not found")
@@ -129,8 +126,11 @@ async def create_constraint_group(
     )
     db.add(group)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="constraint_group",
-        resource_id=str(group.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="constraint_group",
+        resource_id=str(group.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(group)
@@ -150,9 +150,8 @@ async def list_constraint_groups(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = (
-        tenant_query(select(ConstraintGroup), tenant)
-        .where(ConstraintGroup.product_id == product_id, ConstraintGroup.deleted_at.is_(None))
+    stmt = tenant_query(select(ConstraintGroup), tenant).where(
+        ConstraintGroup.product_id == product_id, ConstraintGroup.deleted_at.is_(None)
     )
     return await paginate(db, stmt, ConstraintGroup.created_at, limit=limit, cursor=cursor, descending=True)
 
@@ -173,9 +172,7 @@ async def create_constraint_rule(
 ):
     # Validate product exists
     product_result = await db.execute(
-        tenant_query(select(Product), tenant).where(
-            Product.id == body.product_id, Product.deleted_at.is_(None)
-        )
+        tenant_query(select(Product), tenant).where(Product.id == body.product_id, Product.deleted_at.is_(None))
     )
     if not product_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Product not found")
@@ -199,8 +196,11 @@ async def create_constraint_rule(
     )
     db.add(rule)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="constraint_rule",
-        resource_id=str(rule.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="constraint_rule",
+        resource_id=str(rule.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(rule)
@@ -223,9 +223,8 @@ async def list_constraint_rules(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = (
-        tenant_query(select(ConstraintRule), tenant)
-        .where(ConstraintRule.product_id == product_id, ConstraintRule.deleted_at.is_(None))
+    stmt = tenant_query(select(ConstraintRule), tenant).where(
+        ConstraintRule.product_id == product_id, ConstraintRule.deleted_at.is_(None)
     )
     if constraint_type:
         stmt = stmt.where(ConstraintRule.constraint_type == ConstraintType(constraint_type))
@@ -285,8 +284,12 @@ async def update_constraint_rule(
         setattr(rule, field, value)
     await optimistic_version_bump(db, rule)
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="constraint_rule",
-        resource_id=str(rule.id), tenant_id=tenant.id, changes=update_data,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="constraint_rule",
+        resource_id=str(rule.id),
+        tenant_id=tenant.id,
+        changes=update_data,
     )
     await db.flush()
     await db.refresh(rule)
@@ -315,8 +318,11 @@ async def delete_constraint_rule(
         raise HTTPException(status_code=404, detail="Constraint rule not found")
     rule.deleted_at = datetime.now(UTC)
     await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="constraint_rule",
-        resource_id=str(rule.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.DELETE,
+        resource_type="constraint_rule",
+        resource_id=str(rule.id),
+        tenant_id=tenant.id,
     )
     await db.commit()
     ConfiguratorEngine.invalidate_product_cache(rule.product_id, tenant.id)
@@ -358,8 +364,11 @@ async def create_variant_table(
     )
     db.add(table)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="variant_table",
-        resource_id=str(table.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="variant_table",
+        resource_id=str(table.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(table)
@@ -395,9 +404,7 @@ async def update_variant_table(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        tenant_query(select(VariantTable), tenant).where(VariantTable.id == table_id)
-    )
+    result = await db.execute(tenant_query(select(VariantTable), tenant).where(VariantTable.id == table_id))
     table = result.scalar_one_or_none()
     if not table:
         raise HTTPException(status_code=404, detail="Variant table not found")
@@ -405,8 +412,12 @@ async def update_variant_table(
     for field, value in changes.items():
         setattr(table, field, value)
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="variant_table",
-        resource_id=str(table.id), tenant_id=tenant.id, changes=changes,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="variant_table",
+        resource_id=str(table.id),
+        tenant_id=tenant.id,
+        changes=changes,
     )
     await db.flush()
     await db.refresh(table)
@@ -425,16 +436,17 @@ async def delete_variant_table(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        tenant_query(select(VariantTable), tenant).where(VariantTable.id == table_id)
-    )
+    result = await db.execute(tenant_query(select(VariantTable), tenant).where(VariantTable.id == table_id))
     table = result.scalar_one_or_none()
     if not table:
         raise HTTPException(status_code=404, detail="Variant table not found")
     product_id = table.product_id
     await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="variant_table",
-        resource_id=str(table.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.DELETE,
+        resource_type="variant_table",
+        resource_id=str(table.id),
+        tenant_id=tenant.id,
     )
     await db.delete(table)
     await db.commit()
@@ -467,15 +479,25 @@ async def analyze_constraints(
 
     return ConstraintAnalysisResponse(
         cycles=[CycleInfoResponse(path=c.path, involved_rules=c.involved_rules) for c in result.cycles],
-        dead_values=[DeadValueResponse(
-            characteristic=d.characteristic, value=d.value,
-            reason=d.reason, excluding_rules=d.excluding_rules,
-        ) for d in result.dead_values],
-        coverage_gaps=[CoverageGapResponse(
-            characteristic=g.characteristic, is_required=g.is_required,
-            has_default=g.has_default, reachable_via_constraints=g.reachable_via_constraints,
-            gap_description=g.gap_description,
-        ) for g in result.coverage_gaps],
+        dead_values=[
+            DeadValueResponse(
+                characteristic=d.characteristic,
+                value=d.value,
+                reason=d.reason,
+                excluding_rules=d.excluding_rules,
+            )
+            for d in result.dead_values
+        ],
+        coverage_gaps=[
+            CoverageGapResponse(
+                characteristic=g.characteristic,
+                is_required=g.is_required,
+                has_default=g.has_default,
+                reachable_via_constraints=g.reachable_via_constraints,
+                gap_description=g.gap_description,
+            )
+            for g in result.coverage_gaps
+        ],
         is_satisfiable=result.is_satisfiable,
         satisfiability_note=result.satisfiability_note,
         analysis_duration_ms=result.analysis_duration_ms,
@@ -507,9 +529,7 @@ async def simulate_constraints(
             raise HTTPException(status_code=422, detail=f"Unknown characteristic: {slug}")
 
     domains = engine._build_initial_domains(char_map)
-    result = engine._propagate(
-        domains, body.selections, constraints, variant_tables, set(body.selections.keys())
-    )
+    result = engine._propagate(domains, body.selections, constraints, variant_tables, set(body.selections.keys()))
 
     is_valid = len(result.contradictions) == 0
     is_complete = engine._check_completeness(char_map, body.selections, result.auto_set)
@@ -565,7 +585,9 @@ async def analyze_impact(
 
     if body.rule_expression and body.rule_constraint_type:
         # Create an inline simulated rule
-        from dataclasses import dataclass as _dc, field as _field
+        from dataclasses import dataclass as _dc
+        from dataclasses import field as _field
+
         from app.apps.cpq.models.product import ConstraintType as _CT
 
         @_dc
@@ -579,7 +601,7 @@ async def analyze_impact(
             expression: dict = _field(default_factory=dict)
 
         sim_rule = _SimRule(expression=body.rule_expression)
-        constraints_with = constraints + [sim_rule]
+        constraints_with = [*constraints, sim_rule]
         constraints_without = constraints
     elif target_rule_id:
         constraints_without = [c for c in constraints if str(c.id) != target_rule_id]
@@ -615,13 +637,15 @@ async def analyze_impact(
                 pruned = [f"narrowed from [{dom_before.min},{dom_before.max}] to [{dom_after.min},{dom_after.max}]"]
 
         total_pruned += len(pruned)
-        affected.append(CharacteristicImpactResponse(
-            characteristic=slug,
-            values_pruned=pruned,
-            domain_before=serialized_before.get(slug),
-            domain_after=serialized_after.get(slug),
-            was_auto_set=slug in result_with.auto_set and slug not in result_without.auto_set,
-        ))
+        affected.append(
+            CharacteristicImpactResponse(
+                characteristic=slug,
+                values_pruned=pruned,
+                domain_before=serialized_before.get(slug),
+                domain_after=serialized_after.get(slug),
+                was_auto_set=slug in result_with.auto_set and slug not in result_without.auto_set,
+            )
+        )
 
     new_contradictions = [c for c in result_with.contradictions if c not in result_without.contradictions]
     new_auto_sets = {k: v for k, v in result_with.auto_set.items() if k not in result_without.auto_set}

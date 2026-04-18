@@ -7,6 +7,7 @@ Each operation loads the current state, computes, and returns the result.
 from __future__ import annotations
 
 import ast
+import contextlib
 import math
 import operator
 import time as _time
@@ -14,19 +15,13 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from typing import ClassVar
 
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.metrics import (
-    CONFIGURATOR_CONSTRAINT_EVALUATIONS,
-    CONFIGURATOR_CONTRADICTIONS,
-    CONFIGURATOR_PROPAGATION_DURATION,
-    CONFIGURATOR_PROPAGATION_ITERATIONS,
-)
 from app.apps.cpq.models.configurator import (
     ConfigurationSelection,
     ConfigurationSession,
@@ -35,10 +30,14 @@ from app.apps.cpq.models.configurator import (
 from app.apps.cpq.models.product import (
     Characteristic,
     CharacteristicAssignment,
-    CharacteristicValue,
     ConstraintRule,
     ConstraintType,
     VariantTable,
+)
+from app.core.metrics import (
+    CONFIGURATOR_CONTRADICTIONS,
+    CONFIGURATOR_PROPAGATION_DURATION,
+    CONFIGURATOR_PROPAGATION_ITERATIONS,
 )
 
 logger = structlog.stdlib.get_logger()
@@ -52,7 +51,7 @@ class CharacteristicInfo:
     work without changes.
     """
 
-    __slots__ = ("characteristic", "min_select", "max_select")
+    __slots__ = ("characteristic", "max_select", "min_select")
 
     def __init__(
         self,
@@ -72,8 +71,8 @@ class CharacteristicInfo:
 class NumericInterval:
     """Represents a numeric domain as a bounded interval with optional step."""
 
-    min: float | None = None   # None = unbounded below
-    max: float | None = None   # None = unbounded above
+    min: float | None = None  # None = unbounded below
+    max: float | None = None  # None = unbounded above
     step: float | None = None  # None = continuous
 
     def is_empty(self) -> bool:
@@ -86,7 +85,7 @@ class NumericInterval:
             return math.isclose(self.min, self.max, rel_tol=1e-9, abs_tol=1e-9)
         return False
 
-    def intersect(self, other: "NumericInterval") -> "NumericInterval":
+    def intersect(self, other: NumericInterval) -> NumericInterval:
         new_min = self.min
         if other.min is not None:
             new_min = other.min if new_min is None else max(new_min, other.min)
@@ -120,14 +119,18 @@ SNAPSHOT_SCHEMA_VERSION = 1
 
 class _CharTypeProxy:
     """Mimics CharacteristicType enum for snapshot-loaded chars."""
+
     __slots__ = ("value",)
+
     def __init__(self, value: str):
         self.value = value
 
 
 class _ValueProxy:
     """Mimics CharacteristicValue for snapshot-loaded chars."""
+
     __slots__ = ("value",)
+
     def __init__(self, value: str):
         self.value = value
 
@@ -135,6 +138,7 @@ class _ValueProxy:
 @dataclass
 class SnapshotCharacteristic:
     """Lightweight characteristic from a pre-compiled snapshot."""
+
     id: str
     slug: str
     name: str
@@ -153,6 +157,7 @@ class SnapshotCharacteristic:
 @dataclass
 class SnapshotConstraint:
     """Lightweight constraint from a pre-compiled snapshot."""
+
     id: str
     name: str
     constraint_type: ConstraintType
@@ -175,6 +180,7 @@ class ValidationError:
 @dataclass
 class ConflictStep:
     """One step in the conflict explanation trace."""
+
     rule_id: str | None
     rule_name: str | None
     constraint_type: str
@@ -186,6 +192,7 @@ class ConflictStep:
 @dataclass
 class ConflictExplanation:
     """Full explanation of why a characteristic's domain became empty."""
+
     characteristic: str
     trace: list[ConflictStep] = field(default_factory=list)
     contributing_selections: dict[str, str] = field(default_factory=dict)
@@ -205,6 +212,7 @@ class SelectionResult:
 @dataclass
 class DomainPruneRecord:
     """Records a single domain pruning event during propagation."""
+
     rule_id: str | None
     rule_name: str | None
     constraint_type: str
@@ -243,6 +251,7 @@ class _ProductDataCache:
         if entry is None:
             return False
         import time
+
         return (time.monotonic() - entry[0]) < self._ttl
 
     def get_chars(self, product_id: uuid.UUID, tenant_id: uuid.UUID):
@@ -251,6 +260,7 @@ class _ProductDataCache:
 
     def set_chars(self, product_id: uuid.UUID, tenant_id: uuid.UUID, data):
         import time
+
         self._chars[self._key(product_id, tenant_id)] = (time.monotonic(), data)
 
     def get_constraints(self, product_id: uuid.UUID, tenant_id: uuid.UUID):
@@ -259,6 +269,7 @@ class _ProductDataCache:
 
     def set_constraints(self, product_id: uuid.UUID, tenant_id: uuid.UUID, data):
         import time
+
         self._constraints[self._key(product_id, tenant_id)] = (time.monotonic(), data)
 
     def get_vtables(self, product_id: uuid.UUID, tenant_id: uuid.UUID):
@@ -267,6 +278,7 @@ class _ProductDataCache:
 
     def set_vtables(self, product_id: uuid.UUID, tenant_id: uuid.UUID, data):
         import time
+
         self._vtables[self._key(product_id, tenant_id)] = (time.monotonic(), data)
 
     def invalidate(self, product_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
@@ -333,10 +345,14 @@ class ConfiguratorEngine:
         """Apply a user selection and propagate constraints."""
         session = await self._load_session(db, session_id, for_update=True)
         if not session:
-            return SelectionResult(validation_errors=[ValidationError(error_type="not_found", message="Session not found")])
+            return SelectionResult(
+                validation_errors=[ValidationError(error_type="not_found", message="Session not found")]
+            )
 
         if session.status == ConfigurationStatus.LOCKED:
-            return SelectionResult(validation_errors=[ValidationError(error_type="locked", message="Session is locked")])
+            return SelectionResult(
+                validation_errors=[ValidationError(error_type="locked", message="Session is locked")]
+            )
 
         # Load product characteristics and constraints
         char_map = await self._load_characteristics(db, session.product_id, session.tenant_id)
@@ -346,11 +362,13 @@ class ConfiguratorEngine:
         # Resolve characteristic
         if characteristic_slug not in char_map:
             return SelectionResult(
-                validation_errors=[ValidationError(
-                    characteristic_slug=characteristic_slug,
-                    error_type="unknown_characteristic",
-                    message=f"Characteristic '{characteristic_slug}' not found on this product",
-                )]
+                validation_errors=[
+                    ValidationError(
+                        characteristic_slug=characteristic_slug,
+                        error_type="unknown_characteristic",
+                        message=f"Characteristic '{characteristic_slug}' not found on this product",
+                    )
+                ]
             )
 
         char = char_map[characteristic_slug]
@@ -360,38 +378,46 @@ class ConfiguratorEngine:
             allowed = {v.value for v in char.values}
             if value not in allowed:
                 return SelectionResult(
-                    validation_errors=[ValidationError(
-                        characteristic_slug=characteristic_slug,
-                        error_type="invalid_value",
-                        message=f"Value '{value}' is not allowed for '{characteristic_slug}'",
-                    )]
+                    validation_errors=[
+                        ValidationError(
+                            characteristic_slug=characteristic_slug,
+                            error_type="invalid_value",
+                            message=f"Value '{value}' is not allowed for '{characteristic_slug}'",
+                        )
+                    ]
                 )
         elif char.char_type.value == "numeric":
             try:
                 num_val = float(value)
             except ValueError:
                 return SelectionResult(
-                    validation_errors=[ValidationError(
-                        characteristic_slug=characteristic_slug,
-                        error_type="invalid_value",
-                        message=f"Value '{value}' is not a valid number",
-                    )]
+                    validation_errors=[
+                        ValidationError(
+                            characteristic_slug=characteristic_slug,
+                            error_type="invalid_value",
+                            message=f"Value '{value}' is not a valid number",
+                        )
+                    ]
                 )
             if char.numeric_min is not None and num_val < char.numeric_min:
                 return SelectionResult(
-                    validation_errors=[ValidationError(
-                        characteristic_slug=characteristic_slug,
-                        error_type="out_of_range",
-                        message=f"Value {num_val} is below minimum {char.numeric_min}",
-                    )]
+                    validation_errors=[
+                        ValidationError(
+                            characteristic_slug=characteristic_slug,
+                            error_type="out_of_range",
+                            message=f"Value {num_val} is below minimum {char.numeric_min}",
+                        )
+                    ]
                 )
             if char.numeric_max is not None and num_val > char.numeric_max:
                 return SelectionResult(
-                    validation_errors=[ValidationError(
-                        characteristic_slug=characteristic_slug,
-                        error_type="out_of_range",
-                        message=f"Value {num_val} is above maximum {char.numeric_max}",
-                    )]
+                    validation_errors=[
+                        ValidationError(
+                            characteristic_slug=characteristic_slug,
+                            error_type="out_of_range",
+                            message=f"Value {num_val} is above maximum {char.numeric_max}",
+                        )
+                    ]
                 )
 
         # Upsert selection (remove existing for single-select, add for multi-select)
@@ -404,16 +430,17 @@ class ConfiguratorEngine:
             char_info = char_map[characteristic_slug]
             if char_info.max_select is not None:
                 existing_count = sum(
-                    1 for s in session.selections
-                    if s.characteristic_id == char.id and not s.is_auto_set
+                    1 for s in session.selections if s.characteristic_id == char.id and not s.is_auto_set
                 )
                 if existing_count >= char_info.max_select:
                     return SelectionResult(
-                        validation_errors=[ValidationError(
-                            characteristic_slug=characteristic_slug,
-                            error_type="max_cardinality_exceeded",
-                            message=f"Maximum {char_info.max_select} selections allowed for '{characteristic_slug}', already have {existing_count}",
-                        )]
+                        validation_errors=[
+                            ValidationError(
+                                characteristic_slug=characteristic_slug,
+                                error_type="max_cardinality_exceeded",
+                                message=f"Maximum {char_info.max_select} selections allowed for '{characteristic_slug}', already have {existing_count}",
+                            )
+                        ]
                     )
 
         new_selection = ConfigurationSelection(
@@ -459,11 +486,13 @@ class ConfiguratorEngine:
             if explanation.contributing_selections:
                 sel_parts = [f"{k}={v}" for k, v in explanation.contributing_selections.items()]
                 detail += f". Contributing selections: {', '.join(sel_parts)}"
-            errors.append(ValidationError(
-                characteristic_slug=explanation.characteristic,
-                error_type="domain_empty",
-                message=detail,
-            ))
+            errors.append(
+                ValidationError(
+                    characteristic_slug=explanation.characteristic,
+                    error_type="domain_empty",
+                    message=detail,
+                )
+            )
 
         # Check completeness
         is_complete = self._check_completeness(char_map, selections, result.auto_set)
@@ -511,10 +540,14 @@ class ConfiguratorEngine:
         """
         session = await self._load_session(db, session_id, for_update=True)
         if not session:
-            return SelectionResult(validation_errors=[ValidationError(error_type="not_found", message="Session not found")])
+            return SelectionResult(
+                validation_errors=[ValidationError(error_type="not_found", message="Session not found")]
+            )
 
         if session.status == ConfigurationStatus.LOCKED:
-            return SelectionResult(validation_errors=[ValidationError(error_type="locked", message="Session is locked")])
+            return SelectionResult(
+                validation_errors=[ValidationError(error_type="locked", message="Session is locked")]
+            )
 
         char_map = await self._load_characteristics(db, session.product_id, session.tenant_id)
         constraints = await self._load_constraints(db, session.product_id, session.tenant_id)
@@ -542,13 +575,15 @@ class ConfiguratorEngine:
                 # Enforce max_select cardinality for multi-select
                 if char.max_select is not None:
                     existing_count = sum(
-                        1 for s in session.selections
-                        if s.characteristic_id == char.id and not s.is_auto_set
+                        1 for s in session.selections if s.characteristic_id == char.id and not s.is_auto_set
                     )
                     if existing_count >= char.max_select:
-                        logger.warning("batch_apply_cardinality_exceeded",
-                                       slug=slug, max_select=char.max_select,
-                                       existing=existing_count)
+                        logger.warning(
+                            "batch_apply_cardinality_exceeded",
+                            slug=slug,
+                            max_select=char.max_select,
+                            existing=existing_count,
+                        )
                         continue
 
             new_sel = ConfigurationSelection(
@@ -592,11 +627,13 @@ class ConfiguratorEngine:
             if explanation.contributing_selections:
                 sel_parts = [f"{k}={v}" for k, v in explanation.contributing_selections.items()]
                 detail += f". Contributing selections: {', '.join(sel_parts)}"
-            errors.append(ValidationError(
-                characteristic_slug=explanation.characteristic,
-                error_type="domain_empty",
-                message=detail,
-            ))
+            errors.append(
+                ValidationError(
+                    characteristic_slug=explanation.characteristic,
+                    error_type="domain_empty",
+                    message=detail,
+                )
+            )
 
         is_complete = self._check_completeness(char_map, selections, result.auto_set)
         is_valid = len(errors) == 0
@@ -638,7 +675,9 @@ class ConfiguratorEngine:
         """Remove a selection and re-propagate from scratch."""
         session = await self._load_session(db, session_id, for_update=True)
         if not session:
-            return SelectionResult(validation_errors=[ValidationError(error_type="not_found", message="Session not found")])
+            return SelectionResult(
+                validation_errors=[ValidationError(error_type="not_found", message="Session not found")]
+            )
 
         # Remove user selection(s) for this characteristic
         to_remove = [s for s in session.selections if s.characteristic_id == characteristic_id and not s.is_auto_set]
@@ -686,11 +725,13 @@ class ConfiguratorEngine:
             if explanation.contributing_selections:
                 sel_parts = [f"{k}={v}" for k, v in explanation.contributing_selections.items()]
                 detail += f". Contributing selections: {', '.join(sel_parts)}"
-            errors.append(ValidationError(
-                characteristic_slug=explanation.characteristic,
-                error_type="domain_empty",
-                message=detail,
-            ))
+            errors.append(
+                ValidationError(
+                    characteristic_slug=explanation.characteristic,
+                    error_type="domain_empty",
+                    message=detail,
+                )
+            )
 
         is_complete = self._check_completeness(char_map, selections, result.auto_set)
         is_valid = len(errors) == 0
@@ -703,8 +744,10 @@ class ConfiguratorEngine:
             for e in errors
         ]
         session.status = (
-            ConfigurationStatus.COMPLETE if is_valid and is_complete
-            else ConfigurationStatus.INVALID if not is_valid
+            ConfigurationStatus.COMPLETE
+            if is_valid and is_complete
+            else ConfigurationStatus.INVALID
+            if not is_valid
             else ConfigurationStatus.IN_PROGRESS
         )
 
@@ -811,12 +854,20 @@ class ConfiguratorEngine:
                                 except (ValueError, TypeError):
                                     pass
                                 if narrowed != target_domain:
-                                    prune_history.append(DomainPruneRecord(
-                                        rule_id=rule_id, rule_name=rule_name,
-                                        constraint_type="requires", target_char=target_char,
-                                        removed_values=[f"narrowed from [{target_domain.min},{target_domain.max}] to [{narrowed.min},{narrowed.max}]"],
-                                        triggered_by=self._extract_triggering_selections(expr.get("if", {}), selections),
-                                    ))
+                                    prune_history.append(
+                                        DomainPruneRecord(
+                                            rule_id=rule_id,
+                                            rule_name=rule_name,
+                                            constraint_type="requires",
+                                            target_char=target_char,
+                                            removed_values=[
+                                                f"narrowed from [{target_domain.min},{target_domain.max}] to [{narrowed.min},{narrowed.max}]"
+                                            ],
+                                            triggered_by=self._extract_triggering_selections(
+                                                expr.get("if", {}), selections
+                                            ),
+                                        )
+                                    )
                                     domains[target_char] = narrowed
                                     queue.add(target_char)
                             else:
@@ -829,12 +880,18 @@ class ConfiguratorEngine:
                                     new = old & set(required_values)
                                     if new != old:
                                         removed = sorted(old - new)
-                                        prune_history.append(DomainPruneRecord(
-                                            rule_id=rule_id, rule_name=rule_name,
-                                            constraint_type="requires", target_char=target_char,
-                                            removed_values=removed,
-                                            triggered_by=self._extract_triggering_selections(expr.get("if", {}), selections),
-                                        ))
+                                        prune_history.append(
+                                            DomainPruneRecord(
+                                                rule_id=rule_id,
+                                                rule_name=rule_name,
+                                                constraint_type="requires",
+                                                target_char=target_char,
+                                                removed_values=removed,
+                                                triggered_by=self._extract_triggering_selections(
+                                                    expr.get("if", {}), selections
+                                                ),
+                                            )
+                                        )
                                         domains[target_char] = new
                                         queue.add(target_char)
 
@@ -851,12 +908,18 @@ class ConfiguratorEngine:
                                 new = old - set(excluded_values)
                                 if new != old:
                                     removed = sorted(old - new)
-                                    prune_history.append(DomainPruneRecord(
-                                        rule_id=rule_id, rule_name=rule_name,
-                                        constraint_type="excludes", target_char=target_char,
-                                        removed_values=removed,
-                                        triggered_by=self._extract_triggering_selections(expr.get("if", {}), selections),
-                                    ))
+                                    prune_history.append(
+                                        DomainPruneRecord(
+                                            rule_id=rule_id,
+                                            rule_name=rule_name,
+                                            constraint_type="excludes",
+                                            target_char=target_char,
+                                            removed_values=removed,
+                                            triggered_by=self._extract_triggering_selections(
+                                                expr.get("if", {}), selections
+                                            ),
+                                        )
+                                    )
                                     excluded[target_char].extend(excluded_values)
                                     domains[target_char] = new
                                     queue.add(target_char)
@@ -867,16 +930,25 @@ class ConfiguratorEngine:
                         target = expr.get("target", {})
                         target_char = target.get("char")
                         target_value = target.get("value")
-                        if target_char and target_value and target_char in domains and isinstance(domains[target_char], set):
+                        if (
+                            target_char
+                            and target_value
+                            and target_char in domains
+                            and isinstance(domains[target_char], set)
+                        ):
                             old = domains[target_char]
                             new = old - {target_value}
                             if new != old:
-                                prune_history.append(DomainPruneRecord(
-                                    rule_id=rule_id, rule_name=rule_name,
-                                    constraint_type="selection_condition", target_char=target_char,
-                                    removed_values=[target_value],
-                                    triggered_by=self._extract_triggering_selections(condition, selections),
-                                ))
+                                prune_history.append(
+                                    DomainPruneRecord(
+                                        rule_id=rule_id,
+                                        rule_name=rule_name,
+                                        constraint_type="selection_condition",
+                                        target_char=target_char,
+                                        removed_values=[target_value],
+                                        triggered_by=self._extract_triggering_selections(condition, selections),
+                                    )
+                                )
                                 excluded[target_char].append(target_value)
                                 domains[target_char] = new
                                 queue.add(target_char)
@@ -925,12 +997,16 @@ class ConfiguratorEngine:
                                 new = old & set(out_vals)
                                 if new != old:
                                     removed = sorted(old - new)
-                                    prune_history.append(DomainPruneRecord(
-                                        rule_id=rule_id, rule_name=rule_name,
-                                        constraint_type="table", target_char=out_char,
-                                        removed_values=removed,
-                                        triggered_by=self._extract_triggering_selections(expr, selections),
-                                    ))
+                                    prune_history.append(
+                                        DomainPruneRecord(
+                                            rule_id=rule_id,
+                                            rule_name=rule_name,
+                                            constraint_type="table",
+                                            target_char=out_char,
+                                            removed_values=removed,
+                                            triggered_by=self._extract_triggering_selections(expr, selections),
+                                        )
+                                    )
                                     domains[out_char] = new
                                     queue.add(out_char)
 
@@ -972,9 +1048,7 @@ class ConfiguratorEngine:
             conflict_explanations=conflict_explanations,
         )
 
-    def _extract_triggering_selections(
-        self, condition: dict, selections: dict[str, str | list[str]]
-    ) -> dict[str, str]:
+    def _extract_triggering_selections(self, condition: dict, selections: dict[str, str | list[str]]) -> dict[str, str]:
         """Extract the selection values that caused a condition to fire."""
         triggers: dict[str, str] = {}
         if not condition:
@@ -1023,9 +1097,7 @@ class ConfiguratorEngine:
             contributing_selections=contributing,
         )
 
-    def _evaluate_condition(
-        self, condition: dict, selections: dict[str, str | list[str]]
-    ) -> bool:
+    def _evaluate_condition(self, condition: dict, selections: dict[str, str | list[str]]) -> bool:
         """Evaluate a JSONB condition expression against current selections."""
         if not condition:
             return True
@@ -1105,9 +1177,8 @@ class ConfiguratorEngine:
         chars = set()
         if "char" in expression:
             chars.add(expression["char"])
-        if "target" in expression and isinstance(expression["target"], dict):
-            if "char" in expression["target"]:
-                chars.add(expression["target"]["char"])
+        if "target" in expression and isinstance(expression["target"], dict) and "char" in expression["target"]:
+            chars.add(expression["target"]["char"])
         for key in ("if", "then", "condition"):
             if key in expression and isinstance(expression[key], dict):
                 chars |= self._extract_referenced_chars(expression[key])
@@ -1119,7 +1190,7 @@ class ConfiguratorEngine:
         return chars
 
     # Allowed operators for safe arithmetic evaluation
-    _SAFE_OPS: dict[type, object] = {
+    _SAFE_OPS: ClassVar[dict[type, object]] = {
         ast.Add: operator.add,
         ast.Sub: operator.sub,
         ast.Mult: operator.mul,
@@ -1163,9 +1234,7 @@ class ConfiguratorEngine:
             return op_func(self._safe_eval_ast(node.operand, variables))
         raise ValueError(f"Disallowed AST node: {type(node).__name__}")
 
-    def _evaluate_formula(
-        self, expr: dict, selections: dict[str, str | list[str]]
-    ) -> str | None:
+    def _evaluate_formula(self, expr: dict, selections: dict[str, str | list[str]]) -> str | None:
         """Evaluate a FORMULA constraint expression.
 
         Supports two modes:
@@ -1237,13 +1306,16 @@ class ConfiguratorEngine:
 
     def _load_from_snapshot(
         self, snapshot: dict
-    ) -> tuple[
-        dict[str, CharacteristicInfo],
-        list[SnapshotConstraint],
-        dict[str, SnapshotCharacteristic],
-        dict[str, list[SnapshotConstraint]],
-        DomainMap,
-    ] | None:
+    ) -> (
+        tuple[
+            dict[str, CharacteristicInfo],
+            list[SnapshotConstraint],
+            dict[str, SnapshotCharacteristic],
+            dict[str, list[SnapshotConstraint]],
+            DomainMap,
+        ]
+        | None
+    ):
         """Reconstruct product data from a pre-compiled snapshot.
 
         Returns (char_map, constraints, variant_tables, prebuilt_index, initial_domains)
@@ -1282,16 +1354,12 @@ class ConfiguratorEngine:
         for cdata in snapshot.get("constraints", []):
             eff_from = None
             if cdata.get("effective_from"):
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     eff_from = datetime.fromisoformat(cdata["effective_from"])
-                except (ValueError, TypeError):
-                    pass
             eff_to = None
             if cdata.get("effective_to"):
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     eff_to = datetime.fromisoformat(cdata["effective_to"])
-                except (ValueError, TypeError):
-                    pass
 
             sc = SnapshotConstraint(
                 id=cdata["id"],
@@ -1309,11 +1377,13 @@ class ConfiguratorEngine:
         # Reconstruct variant tables (as dicts — _lookup_variant_table uses .rows, .input_columns, .output_columns)
         variant_tables = {}
         for tid, tdata in snapshot.get("variant_tables", {}).items():
+
             @dataclass
             class _VTProxy:
                 rows: list
                 input_columns: list
                 output_columns: list
+
             variant_tables[tid] = _VTProxy(
                 rows=tdata.get("rows", []),
                 input_columns=tdata.get("input_columns", []),
@@ -1408,9 +1478,7 @@ class ConfiguratorEngine:
         if cached is not None:
             return cached
         result = await db.execute(
-            select(VariantTable).where(
-                VariantTable.product_id == product_id, VariantTable.tenant_id == tenant_id
-            )
+            select(VariantTable).where(VariantTable.product_id == product_id, VariantTable.tenant_id == tenant_id)
         )
         vtables = {str(t.id): t for t in result.scalars().all()}
         _product_cache.set_vtables(product_id, tenant_id, vtables)

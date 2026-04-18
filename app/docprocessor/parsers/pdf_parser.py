@@ -8,7 +8,7 @@ from typing import Any
 
 import structlog
 
-from app.docprocessor.base import ExtractionResult, ExtractedSection, ExtractedTable
+from app.docprocessor.base import ExtractedSection, ExtractedTable, ExtractionResult
 
 logger = structlog.stdlib.get_logger()
 
@@ -81,7 +81,7 @@ class PDFParser:
                     if pdf.metadata.get(key):
                         metadata[key.lower()] = pdf.metadata[key]
 
-            for page_num, page in enumerate(pdf.pages[:self.MAX_PAGES], start=1):
+            for page_num, page in enumerate(pdf.pages[: self.MAX_PAGES], start=1):
                 # Extract tables from this page
                 page_tables = self._extract_page_tables(page, page_num)
                 tables.extend(page_tables)
@@ -116,11 +116,7 @@ class PDFParser:
 
             # First row as headers, rest as data
             headers = [str(cell or "").strip() for cell in raw_table[0]]
-            rows = [
-                [str(cell or "").strip() for cell in row]
-                for row in raw_table[1:]
-                if any(cell for cell in row)
-            ]
+            rows = [[str(cell or "").strip() for cell in row] for row in raw_table[1:] if any(cell for cell in row)]
 
             if headers or rows:
                 extracted.append(
@@ -147,10 +143,7 @@ class PDFParser:
         all_text_parts: list[str] = []
         metadata: dict[str, Any] = {}
 
-        if file_path:
-            doc = fitz.open(file_path)
-        else:
-            doc = fitz.open(stream=file_bytes, filetype="pdf")
+        doc = fitz.open(file_path) if file_path else fitz.open(stream=file_bytes, filetype="pdf")
 
         try:
             metadata["page_count"] = len(doc)

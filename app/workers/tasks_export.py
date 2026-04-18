@@ -26,21 +26,15 @@ def export_tenant_data(self, tenant_id: str, user_id: str, export_id: str, forma
             return {"status": "error", "detail": "Tenant not found"}
 
         # Collect all tenant data
-        users = db.execute(
-            select(User).where(User.tenant_id == tid, User.deleted_at.is_(None))
-        ).scalars().all()
+        users = db.execute(select(User).where(User.tenant_id == tid, User.deleted_at.is_(None))).scalars().all()
 
-        jobs = db.execute(
-            select(Job).where(Job.tenant_id == tid, Job.deleted_at.is_(None)).yield_per(500)
-        ).scalars().all()
+        jobs = (
+            db.execute(select(Job).where(Job.tenant_id == tid, Job.deleted_at.is_(None)).yield_per(500)).scalars().all()
+        )
 
-        api_keys = db.execute(
-            select(ApiKey).where(ApiKey.tenant_id == tid)
-        ).scalars().all()
+        api_keys = db.execute(select(ApiKey).where(ApiKey.tenant_id == tid)).scalars().all()
 
-        memberships = db.execute(
-            select(TenantMembership).where(TenantMembership.tenant_id == tid)
-        ).scalars().all()
+        memberships = db.execute(select(TenantMembership).where(TenantMembership.tenant_id == tid)).scalars().all()
 
     export_data = {
         "export_id": export_id,
@@ -128,12 +122,16 @@ def export_tenant_data(self, tenant_id: str, user_id: str, export_id: str, forma
             with _SyncSession() as webhook_db:
                 from app.db.models import WebhookEndpoint
 
-                endpoints = webhook_db.execute(
-                    select(WebhookEndpoint).where(
-                        WebhookEndpoint.tenant_id == tid,
-                        WebhookEndpoint.active.is_(True),
+                endpoints = (
+                    webhook_db.execute(
+                        select(WebhookEndpoint).where(
+                            WebhookEndpoint.tenant_id == tid,
+                            WebhookEndpoint.active.is_(True),
+                        )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
                 for ep in endpoints:
                     if "export.completed" in (ep.events or []):
                         deliver_webhook.delay(
@@ -166,13 +164,9 @@ def export_user_data(self, user_id: str, export_id: str, format: str = "json") -
         if not user:
             return {"status": "error", "detail": "User not found"}
 
-        memberships = db.execute(
-            select(TenantMembership).where(TenantMembership.user_id == uid)
-        ).scalars().all()
+        memberships = db.execute(select(TenantMembership).where(TenantMembership.user_id == uid)).scalars().all()
 
-        oauth_accounts = db.execute(
-            select(OAuthAccount).where(OAuthAccount.user_id == uid)
-        ).scalars().all()
+        oauth_accounts = db.execute(select(OAuthAccount).where(OAuthAccount.user_id == uid)).scalars().all()
 
     export_data = {
         "export_id": export_id,
@@ -184,14 +178,8 @@ def export_user_data(self, user_id: str, export_id: str, format: str = "json") -
             "created_at": str(user.created_at),
             "last_login_at": str(user.last_login_at) if user.last_login_at else None,
         },
-        "memberships": [
-            {"tenant_id": str(m.tenant_id), "role": m.role.value}
-            for m in memberships
-        ],
-        "oauth_accounts": [
-            {"provider": oa.provider, "provider_user_id": oa.provider_user_id}
-            for oa in oauth_accounts
-        ],
+        "memberships": [{"tenant_id": str(m.tenant_id), "role": m.role.value} for m in memberships],
+        "oauth_accounts": [{"provider": oa.provider, "provider_user_id": oa.provider_user_id} for oa in oauth_accounts],
     }
 
     try:

@@ -38,7 +38,11 @@ def _admin_sync_url() -> str:
 
 # Admin sync engine — bypasses RLS, for platform sweep tasks only.
 _admin_sync_engine = create_engine(
-    _admin_sync_url(), pool_size=2, max_overflow=3, pool_pre_ping=True, pool_recycle=300,
+    _admin_sync_url(),
+    pool_size=2,
+    max_overflow=3,
+    pool_pre_ping=True,
+    pool_recycle=300,
 )
 _AdminSyncSession = sessionmaker(_admin_sync_engine)
 
@@ -262,9 +266,7 @@ def _record_webhook_failure(url: str, payload: dict, error: str, attempts: int, 
 
 
 @celery.task(name="app.workers.deliver_webhook", bind=True, max_retries=5, soft_time_limit=30, time_limit=60)
-def deliver_webhook(
-    self, url: str, payload: dict, endpoint_id: str | None = None
-) -> dict:
+def deliver_webhook(self, url: str, payload: dict, endpoint_id: str | None = None) -> dict:
     """Deliver a webhook with HMAC-SHA256 signature, circuit breaker, and exponential backoff."""
     import httpx
 
@@ -321,12 +323,17 @@ def deliver_webhook(
                 response.raise_for_status()
             elif response.status_code >= 400:
                 logger.warning(
-                    "webhook_client_error", url=url, status=response.status_code,
+                    "webhook_client_error",
+                    url=url,
+                    status=response.status_code,
                     body=response.text[:200],
                 )
                 _record_webhook_failure(
-                    url, payload, f"Client error {response.status_code}",
-                    self.request.retries + 1, endpoint_id,
+                    url,
+                    payload,
+                    f"Client error {response.status_code}",
+                    self.request.retries + 1,
+                    endpoint_id,
                 )
                 WEBHOOK_DELIVERIES_TOTAL.labels(status="client_error").inc()
                 return {"status": "client_error", "url": url, "code": response.status_code}
@@ -338,8 +345,11 @@ def deliver_webhook(
         _webhook_breaker.record_failure(host_key)
         is_final = self.request.retries >= self.max_retries
         logger.warning(
-            "webhook_delivery_failed", url=url, error=str(exc),
-            attempt=self.request.retries + 1, final=is_final,
+            "webhook_delivery_failed",
+            url=url,
+            error=str(exc),
+            attempt=self.request.retries + 1,
+            final=is_final,
         )
         if is_final:
             WEBHOOK_DELIVERIES_TOTAL.labels(status="failed").inc()

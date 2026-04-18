@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.connectors.registry import connector_registry
 
 

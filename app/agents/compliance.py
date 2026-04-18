@@ -15,9 +15,7 @@ Integrates with:
 
 from __future__ import annotations
 
-import json
 import time
-import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -206,60 +204,69 @@ class ComplianceEngine:
         agent_name = definition.get("name", "unknown")
 
         # LLM01: Prompt Injection
-        checks.append(ComplianceCheck(
-            framework="owasp_llm",
-            check_id="LLM01",
-            description=f"[{agent_name}] Prompt injection defense",
-            status="pass" if settings.PROMPT_FIREWALL_ENABLED else "fail",
-            article="LLM01: Prompt Injection",
-            recommendation="Enable PROMPT_FIREWALL_ENABLED" if not settings.PROMPT_FIREWALL_ENABLED else "",
-        ))
+        checks.append(
+            ComplianceCheck(
+                framework="owasp_llm",
+                check_id="LLM01",
+                description=f"[{agent_name}] Prompt injection defense",
+                status="pass" if settings.PROMPT_FIREWALL_ENABLED else "fail",
+                article="LLM01: Prompt Injection",
+                recommendation="Enable PROMPT_FIREWALL_ENABLED" if not settings.PROMPT_FIREWALL_ENABLED else "",
+            )
+        )
 
         # LLM02: Insecure Output Handling
         has_output_validation = bool(policy.get("output_validation"))
-        checks.append(ComplianceCheck(
-            framework="owasp_llm",
-            check_id="LLM02",
-            description=f"[{agent_name}] Output validation",
-            status="pass" if has_output_validation else "warning",
-            article="LLM02: Insecure Output Handling",
-            recommendation="Add output_validation to governance policy" if not has_output_validation else "",
-        ))
+        checks.append(
+            ComplianceCheck(
+                framework="owasp_llm",
+                check_id="LLM02",
+                description=f"[{agent_name}] Output validation",
+                status="pass" if has_output_validation else "warning",
+                article="LLM02: Insecure Output Handling",
+                recommendation="Add output_validation to governance policy" if not has_output_validation else "",
+            )
+        )
 
         # LLM06: Excessive Agency
-        has_tool_restrictions = bool(policy.get("denied_tools") or policy.get("allowed_tools") or definition.get("allowed_tools"))
-        checks.append(ComplianceCheck(
-            framework="owasp_llm",
-            check_id="LLM06",
-            description=f"[{agent_name}] Tool access control",
-            status="pass" if has_tool_restrictions else "fail",
-            article="LLM06: Excessive Agency",
-            recommendation="Define allowed_tools or denied_tools" if not has_tool_restrictions else "",
-        ))
+        has_tool_restrictions = bool(
+            policy.get("denied_tools") or policy.get("allowed_tools") or definition.get("allowed_tools")
+        )
+        checks.append(
+            ComplianceCheck(
+                framework="owasp_llm",
+                check_id="LLM06",
+                description=f"[{agent_name}] Tool access control",
+                status="pass" if has_tool_restrictions else "fail",
+                article="LLM06: Excessive Agency",
+                recommendation="Define allowed_tools or denied_tools" if not has_tool_restrictions else "",
+            )
+        )
 
         # LLM07: System Prompt Leakage
-        checks.append(ComplianceCheck(
-            framework="owasp_llm",
-            check_id="LLM07",
-            description=f"[{agent_name}] System prompt leak prevention",
-            status="pass" if settings.PROMPT_FIREWALL_CANARY_ENABLED else "warning",
-            article="LLM07: System Prompt Leakage",
-            recommendation="Enable canary tokens" if not settings.PROMPT_FIREWALL_CANARY_ENABLED else "",
-        ))
+        checks.append(
+            ComplianceCheck(
+                framework="owasp_llm",
+                check_id="LLM07",
+                description=f"[{agent_name}] System prompt leak prevention",
+                status="pass" if settings.PROMPT_FIREWALL_CANARY_ENABLED else "warning",
+                article="LLM07: System Prompt Leakage",
+                recommendation="Enable canary tokens" if not settings.PROMPT_FIREWALL_CANARY_ENABLED else "",
+            )
+        )
 
         # LLM10: Unbounded Consumption
-        has_limits = bool(
-            policy.get("max_spend_per_run_usd")
-            or policy.get("max_requests_per_minute")
+        has_limits = bool(policy.get("max_spend_per_run_usd") or policy.get("max_requests_per_minute"))
+        checks.append(
+            ComplianceCheck(
+                framework="owasp_llm",
+                check_id="LLM10",
+                description=f"[{agent_name}] Resource consumption limits",
+                status="pass" if has_limits else "fail",
+                article="LLM10: Unbounded Consumption",
+                recommendation="Set max_spend_per_run_usd and max_requests_per_minute" if not has_limits else "",
+            )
         )
-        checks.append(ComplianceCheck(
-            framework="owasp_llm",
-            check_id="LLM10",
-            description=f"[{agent_name}] Resource consumption limits",
-            status="pass" if has_limits else "fail",
-            article="LLM10: Unbounded Consumption",
-            recommendation="Set max_spend_per_run_usd and max_requests_per_minute" if not has_limits else "",
-        ))
 
         return checks
 
@@ -274,34 +281,42 @@ class ComplianceEngine:
 
         # GOVERN 1.4: Human oversight
         has_approval = bool(policy.get("require_approval_for"))
-        checks.append(ComplianceCheck(
-            framework="nist_ai_rmf",
-            check_id="GOVERN_1_4",
-            description=f"[{agent_name}] Human oversight mechanism",
-            status="pass" if has_approval else "warning",
-            article="GOVERN 1.4",
-            recommendation="Configure require_approval_for for high-risk actions" if not has_approval else "",
-        ))
+        checks.append(
+            ComplianceCheck(
+                framework="nist_ai_rmf",
+                check_id="GOVERN_1_4",
+                description=f"[{agent_name}] Human oversight mechanism",
+                status="pass" if has_approval else "warning",
+                article="GOVERN 1.4",
+                recommendation="Configure require_approval_for for high-risk actions" if not has_approval else "",
+            )
+        )
 
         # MAP 1.1: Risk identification
         has_sandbox = definition.get("sandbox_enabled", False)
-        checks.append(ComplianceCheck(
-            framework="nist_ai_rmf",
-            check_id="MAP_1_1",
-            description=f"[{agent_name}] Code execution isolation",
-            status="pass" if has_sandbox or "code_execute" not in (definition.get("allowed_tools") or []) else "warning",
-            article="MAP 1.1",
-        ))
+        checks.append(
+            ComplianceCheck(
+                framework="nist_ai_rmf",
+                check_id="MAP_1_1",
+                description=f"[{agent_name}] Code execution isolation",
+                status="pass"
+                if has_sandbox or "code_execute" not in (definition.get("allowed_tools") or [])
+                else "warning",
+                article="MAP 1.1",
+            )
+        )
 
         # MEASURE 2.6: Output quality
         has_output_check = bool(policy.get("output_validation") or definition.get("output_schema"))
-        checks.append(ComplianceCheck(
-            framework="nist_ai_rmf",
-            check_id="MEASURE_2_6",
-            description=f"[{agent_name}] Output quality assurance",
-            status="pass" if has_output_check else "warning",
-            article="MEASURE 2.6",
-        ))
+        checks.append(
+            ComplianceCheck(
+                framework="nist_ai_rmf",
+                check_id="MEASURE_2_6",
+                description=f"[{agent_name}] Output quality assurance",
+                status="pass" if has_output_check else "warning",
+                article="MEASURE 2.6",
+            )
+        )
 
         return checks
 
@@ -320,49 +335,54 @@ class ComplianceEngine:
             and definition.get("max_steps_per_run")
             and definition.get("max_duration_seconds")
         )
-        checks.append(ComplianceCheck(
-            framework="eu_ai_act",
-            check_id="ART_9",
-            description=f"[{agent_name}] Risk management measures",
-            status="pass" if has_limits else "fail",
-            article="Article 9: Risk Management System",
-            recommendation="Set comprehensive execution limits" if not has_limits else "",
-        ))
+        checks.append(
+            ComplianceCheck(
+                framework="eu_ai_act",
+                check_id="ART_9",
+                description=f"[{agent_name}] Risk management measures",
+                status="pass" if has_limits else "fail",
+                article="Article 9: Risk Management System",
+                recommendation="Set comprehensive execution limits" if not has_limits else "",
+            )
+        )
 
         # Article 13: Transparency
         has_description = bool(definition.get("description"))
-        checks.append(ComplianceCheck(
-            framework="eu_ai_act",
-            check_id="ART_13",
-            description=f"[{agent_name}] Transparency documentation",
-            status="pass" if has_description else "warning",
-            article="Article 13: Transparency and Provision of Information",
-            recommendation="Add agent description and generate agent card" if not has_description else "",
-        ))
+        checks.append(
+            ComplianceCheck(
+                framework="eu_ai_act",
+                check_id="ART_13",
+                description=f"[{agent_name}] Transparency documentation",
+                status="pass" if has_description else "warning",
+                article="Article 13: Transparency and Provision of Information",
+                recommendation="Add agent description and generate agent card" if not has_description else "",
+            )
+        )
 
         # Article 14: Human Oversight
         has_approval = bool(policy.get("require_approval_for"))
-        checks.append(ComplianceCheck(
-            framework="eu_ai_act",
-            check_id="ART_14",
-            description=f"[{agent_name}] Human oversight capability",
-            status="pass" if has_approval else "warning",
-            article="Article 14: Human Oversight",
-            recommendation="Configure human-in-the-loop approval" if not has_approval else "",
-        ))
+        checks.append(
+            ComplianceCheck(
+                framework="eu_ai_act",
+                check_id="ART_14",
+                description=f"[{agent_name}] Human oversight capability",
+                status="pass" if has_approval else "warning",
+                article="Article 14: Human Oversight",
+                recommendation="Configure human-in-the-loop approval" if not has_approval else "",
+            )
+        )
 
         # Article 15: Accuracy, Robustness, Cybersecurity
-        has_security = bool(
-            settings.PROMPT_FIREWALL_ENABLED
-            and settings.AGENT_THREAT_DETECTION_ENABLED
+        has_security = bool(settings.PROMPT_FIREWALL_ENABLED and settings.AGENT_THREAT_DETECTION_ENABLED)
+        checks.append(
+            ComplianceCheck(
+                framework="eu_ai_act",
+                check_id="ART_15",
+                description=f"[{agent_name}] Accuracy, robustness, cybersecurity",
+                status="pass" if has_security else "warning",
+                article="Article 15: Accuracy, Robustness, Cybersecurity",
+            )
         )
-        checks.append(ComplianceCheck(
-            framework="eu_ai_act",
-            check_id="ART_15",
-            description=f"[{agent_name}] Accuracy, robustness, cybersecurity",
-            status="pass" if has_security else "warning",
-            article="Article 15: Accuracy, Robustness, Cybersecurity",
-        ))
 
         return checks
 

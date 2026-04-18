@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -15,14 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.apps.cpq.engine.engine import ConfiguratorEngine
-from app.core.metrics import CONFIGURATOR_BOM_RESOLUTION_DURATION
-from app.apps.cpq.models.bom import BOMHeader, BOMItem, BOMItemType
+from app.apps.cpq.models.bom import BOMHeader, BOMItem
 from app.apps.cpq.models.configurator import (
     ConfigurationPricing,
     ConfigurationSession,
     ConfiguredBOM,
     PricingRule,
 )
+from app.core.metrics import CONFIGURATOR_BOM_RESOLUTION_DURATION
 
 logger = structlog.stdlib.get_logger()
 
@@ -65,9 +66,7 @@ class BOMResolver:
     def __init__(self):
         self._engine = ConfiguratorEngine()
 
-    async def resolve(
-        self, db: AsyncSession, session_id: uuid.UUID, max_depth: int = 5
-    ) -> ConfiguredBOM:
+    async def resolve(self, db: AsyncSession, session_id: uuid.UUID, max_depth: int = 5) -> ConfiguredBOM:
         """Full BOM resolution pipeline."""
         start = time.monotonic()
 
@@ -124,8 +123,7 @@ class BOMResolver:
 
         # Delete existing resolved BOM if any (lock row to prevent concurrent race)
         existing = await db.execute(
-            select(ConfiguredBOM).where(ConfiguredBOM.session_id == session_id)
-            .with_for_update(skip_locked=False)
+            select(ConfiguredBOM).where(ConfiguredBOM.session_id == session_id).with_for_update(skip_locked=False)
         )
         existing_bom = existing.scalar_one_or_none()
         if existing_bom:
@@ -178,21 +176,24 @@ class BOMResolver:
                 if not self._engine._evaluate_condition(item.selection_condition, selections):
                     continue
 
-            resolved.append(ResolvedItem(
-                part_number=item.part_number,
-                part_name=item.part_name,
-                quantity=item.quantity,
-                unit=item.unit_of_measure,
-                unit_cost=item.unit_cost,
-                level=level,
-                parent_part=None,
-                source_bom_item_id=str(item.id),
-                item_type=item.item_type.value,
-                quantity_expression=item.quantity_expression,
-            ))
+            resolved.append(
+                ResolvedItem(
+                    part_number=item.part_number,
+                    part_name=item.part_name,
+                    quantity=item.quantity,
+                    unit=item.unit_of_measure,
+                    unit_cost=item.unit_cost,
+                    level=level,
+                    parent_part=None,
+                    source_bom_item_id=str(item.id),
+                    item_type=item.item_type.value,
+                    quantity_expression=item.quantity_expression,
+                )
+            )
 
             # Recurse into children (use inspect to avoid lazy load in async)
             from sqlalchemy import inspect as sa_inspect
+
             item_state = sa_inspect(item)
             if "children" in item_state.dict and item.children:
                 child_items = self._filter_items(item.children, selections, level + 1)
@@ -223,9 +224,7 @@ class BOMResolver:
 
         return result
 
-    def _resolve_quantities(
-        self, items: list[ResolvedItem], selections: dict[str, str]
-    ) -> list[ResolvedItem]:
+    def _resolve_quantities(self, items: list[ResolvedItem], selections: dict[str, str]) -> list[ResolvedItem]:
         """Evaluate quantity expressions using safe AST arithmetic.
 
         For items with a quantity_expression of type "formula", evaluates the
@@ -247,9 +246,7 @@ class BOMResolver:
                 for var_name, char_slug in variables.items():
                     val = selections.get(char_slug)
                     if val is None:
-                        raise ValueError(
-                            f"Missing selection for variable '{var_name}' (char: '{char_slug}')"
-                        )
+                        raise ValueError(f"Missing selection for variable '{var_name}' (char: '{char_slug}')")
                     local_vars[var_name] = float(val)
 
                 tree = ast.parse(formula_str, mode="eval")
@@ -284,9 +281,7 @@ class BOMResolver:
         return items
 
     @staticmethod
-    def _calculate_tiered_price_all_units(
-        quantity: Decimal, tiers: list[dict]
-    ) -> Decimal:
+    def _calculate_tiered_price_all_units(quantity: Decimal, tiers: list[dict]) -> Decimal:
         """All-units: entire quantity priced at the tier it falls into."""
         for tier in tiers:
             tier_min = _safe_decimal(tier["min"])
@@ -300,9 +295,7 @@ class BOMResolver:
         return Decimal("0")
 
     @staticmethod
-    def _calculate_tiered_price_marginal(
-        quantity: Decimal, tiers: list[dict]
-    ) -> Decimal:
+    def _calculate_tiered_price_marginal(quantity: Decimal, tiers: list[dict]) -> Decimal:
         """Marginal (incremental): units in each band priced at that band's rate."""
         total = Decimal("0")
         remaining = quantity
@@ -385,10 +378,7 @@ class BOMResolver:
                 if self._engine._evaluate_condition(condition, selections):
                     adj_type = expr.get("adjustment_type", "fixed")
                     amount = _safe_decimal(expr.get("amount", 0))
-                    if adj_type == "percentage":
-                        actual_amount = base_price * amount / Decimal("100")
-                    else:
-                        actual_amount = amount
+                    actual_amount = base_price * amount / Decimal("100") if adj_type == "percentage" else amount
                     total_adjustments += actual_amount
                     breakdown.append({"rule": rule.name, "type": rt, "amount": str(actual_amount)})
 
@@ -422,15 +412,11 @@ class BOMResolver:
                 elif qty_source == "characteristic" and qty_key:
                     raw = selections.get(qty_key)
                     if raw is not None:
-                        try:
+                        with contextlib.suppress(InvalidOperation):
                             quantity = Decimal(str(raw))
-                        except InvalidOperation:
-                            pass
                 elif qty_source == "fixed" and qty_key is not None:
-                    try:
+                    with contextlib.suppress(InvalidOperation):
                         quantity = Decimal(str(qty_key))
-                    except InvalidOperation:
-                        pass
                 elif qty_source == "base_price":
                     quantity = base_price
 
@@ -441,14 +427,16 @@ class BOMResolver:
                     amount = base_amount + self._calculate_tiered_price_all_units(quantity, tiers)
 
                 total_adjustments += amount
-                breakdown.append({
-                    "rule": rule.name,
-                    "type": rt,
-                    "amount": str(amount),
-                    "tier_model": tier_model,
-                    "quantity_used": str(quantity),
-                    "tier_applied": self._find_matching_tier(quantity, tiers),
-                })
+                breakdown.append(
+                    {
+                        "rule": rule.name,
+                        "type": rt,
+                        "amount": str(amount),
+                        "tier_model": tier_model,
+                        "quantity_used": str(quantity),
+                        "tier_applied": self._find_matching_tier(quantity, tiers),
+                    }
+                )
 
             elif rt == "margin":
                 min_margin_pct = _safe_decimal(expr.get("min_margin_pct", 0))
@@ -460,7 +448,8 @@ class BOMResolver:
 
         # Delete existing pricing (lock row to prevent concurrent race)
         existing = await db.execute(
-            select(ConfigurationPricing).where(ConfigurationPricing.session_id == session.id)
+            select(ConfigurationPricing)
+            .where(ConfigurationPricing.session_id == session.id)
             .with_for_update(skip_locked=False)
         )
         existing_pricing = existing.scalar_one_or_none()

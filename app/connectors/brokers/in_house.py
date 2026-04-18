@@ -24,9 +24,7 @@ from app.connectors.brokers.base import (
     AuthorizationStart,
     CredentialBroker,
     ToolDescriptor,
-    ToolResult,
 )
-from app.connectors.executor import connector_executor
 from app.connectors.models import ConnectorDefinition, TenantConnection
 from app.connectors.oauth_flow import oauth_flow
 from app.connectors.tool_adapter import ConnectorToolAdapter
@@ -88,7 +86,8 @@ class InHouseBroker(CredentialBroker):
         actor_user_id: uuid.UUID | None,
     ) -> list[ToolDescriptor]:
         platform_tools = ConnectorToolAdapter.connection_tools_to_platform(
-            connection, connector_def,
+            connection,
+            connector_def,
         )
         return [
             ToolDescriptor(

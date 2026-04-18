@@ -6,7 +6,7 @@ via the existing ``app.core.events`` infrastructure.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from app.core.events import DomainEvent
 

@@ -11,7 +11,6 @@ minimal — full A2A server + streaming negotiation is a later follow-up.
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any
 

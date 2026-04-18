@@ -144,7 +144,6 @@ class S3Storage:
         key = _validate_key(key)
         chunk_size = 5 * 1024 * 1024  # 5 MB (S3 minimum part size for multipart)
         total_size = 0
-        buffer = b""
 
         try:
             # Read first chunk to determine if we need multipart
@@ -173,8 +172,11 @@ class S3Storage:
             try:
                 # Upload first chunk as part 1
                 part = self._client.upload_part(
-                    Bucket=self._bucket, Key=key, UploadId=upload_id,
-                    PartNumber=part_number, Body=first_chunk,
+                    Bucket=self._bucket,
+                    Key=key,
+                    UploadId=upload_id,
+                    PartNumber=part_number,
+                    Body=first_chunk,
                 )
                 parts.append({"PartNumber": part_number, "ETag": part["ETag"]})
                 part_number += 1
@@ -187,15 +189,20 @@ class S3Storage:
                         raise StorageError(f"File too large (max {max_size // (1024 * 1024)} MB)", status_code=413)
 
                     part = self._client.upload_part(
-                        Bucket=self._bucket, Key=key, UploadId=upload_id,
-                        PartNumber=part_number, Body=chunk,
+                        Bucket=self._bucket,
+                        Key=key,
+                        UploadId=upload_id,
+                        PartNumber=part_number,
+                        Body=chunk,
                     )
                     parts.append({"PartNumber": part_number, "ETag": part["ETag"]})
                     part_number += 1
                     chunk = file_obj.read(chunk_size)
 
                 self._client.complete_multipart_upload(
-                    Bucket=self._bucket, Key=key, UploadId=upload_id,
+                    Bucket=self._bucket,
+                    Key=key,
+                    UploadId=upload_id,
                     MultipartUpload={"Parts": parts},
                 )
             except Exception:
@@ -318,11 +325,13 @@ class S3Storage:
             while True:
                 response = self._client.list_objects_v2(**kwargs)
                 for obj in response.get("Contents", []):
-                    items.append({
-                        "key": obj["Key"],
-                        "size": obj["Size"],
-                        "last_modified": obj["LastModified"],
-                    })
+                    items.append(
+                        {
+                            "key": obj["Key"],
+                            "size": obj["Size"],
+                            "last_modified": obj["LastModified"],
+                        }
+                    )
                 if not response.get("IsTruncated"):
                     break
                 kwargs["ContinuationToken"] = response["NextContinuationToken"]

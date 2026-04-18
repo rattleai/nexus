@@ -132,9 +132,7 @@ async def discover_authorization(
                 scopes_supported=auth_cfg.get("scopes"),
                 response_types_supported=None,
                 grant_types_supported=None,
-                code_challenge_methods_supported=(
-                    ["S256"] if auth_cfg.get("pkce_required") else None
-                ),
+                code_challenge_methods_supported=(["S256"] if auth_cfg.get("pkce_required") else None),
                 token_endpoint_auth_methods_supported=None,
             )
             await _persist_cache(connector_def, metadata, db)
@@ -148,22 +146,16 @@ async def discover_authorization(
 
     prm = await _fetch_protected_resource_metadata(server_url)
     if prm is None:
-        raise DiscoveryError(
-            f"No RFC 9728 Protected Resource Metadata found for {server_url}"
-        )
+        raise DiscoveryError(f"No RFC 9728 Protected Resource Metadata found for {server_url}")
 
     authorization_servers = prm.get("authorization_servers") or []
     if not authorization_servers:
-        raise DiscoveryError(
-            f"PRM for {server_url} does not list any authorization_servers"
-        )
+        raise DiscoveryError(f"PRM for {server_url} does not list any authorization_servers")
 
     as_url = authorization_servers[0]
     as_metadata = await _fetch_authorization_server_metadata(as_url)
     if as_metadata is None:
-        raise DiscoveryError(
-            f"No RFC 8414 / OIDC metadata found at {as_url}"
-        )
+        raise DiscoveryError(f"No RFC 8414 / OIDC metadata found at {as_url}")
 
     metadata = AuthorizationMetadata(
         issuer=as_metadata.get("issuer", as_url),
@@ -175,18 +167,13 @@ async def discover_authorization(
         scopes_supported=as_metadata.get("scopes_supported"),
         response_types_supported=as_metadata.get("response_types_supported"),
         grant_types_supported=as_metadata.get("grant_types_supported"),
-        code_challenge_methods_supported=as_metadata.get(
-            "code_challenge_methods_supported"
-        ),
-        token_endpoint_auth_methods_supported=as_metadata.get(
-            "token_endpoint_auth_methods_supported"
-        ),
+        code_challenge_methods_supported=as_metadata.get("code_challenge_methods_supported"),
+        token_endpoint_auth_methods_supported=as_metadata.get("token_endpoint_auth_methods_supported"),
     )
 
     if not metadata.authorize_url or not metadata.token_url:
         raise DiscoveryError(
-            f"Authorization server metadata for {as_url} is missing "
-            f"authorization_endpoint or token_endpoint"
+            f"Authorization server metadata for {as_url} is missing authorization_endpoint or token_endpoint"
         )
 
     await _persist_cache(connector_def, metadata, db)
@@ -201,9 +188,7 @@ async def dynamic_register_client(
 ) -> tuple[str, str]:
     """Run RFC 7591 Dynamic Client Registration and return (client_id, client_secret)."""
     if not metadata.registration_endpoint:
-        raise DiscoveryError(
-            "Authorization server does not expose a DCR registration_endpoint"
-        )
+        raise DiscoveryError("Authorization server does not expose a DCR registration_endpoint")
 
     validate_url(metadata.registration_endpoint)
 
@@ -223,9 +208,7 @@ async def dynamic_register_client(
         resp.raise_for_status()
         data = resp.json()
     except Exception as exc:
-        raise DiscoveryError(
-            f"Dynamic client registration failed: {str(exc)[:200]}"
-        ) from exc
+        raise DiscoveryError(f"Dynamic client registration failed: {str(exc)[:200]}") from exc
 
     client_id = data.get("client_id")
     client_secret = data.get("client_secret", "")

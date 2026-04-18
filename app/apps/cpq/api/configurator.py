@@ -12,7 +12,6 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.rate_limit import ApiKeyRateLimiter
-from app.db.session import set_tenant_context
 from app.apps.cpq.api.schemas_configurator import (
     BOMComparisonPart,
     BOMComparisonRequest,
@@ -22,9 +21,9 @@ from app.apps.cpq.api.schemas_configurator import (
     BulkActionResponse,
     BulkActionResultItem,
     ConfigurationPricingResponse,
+    ConfigurationSelectionRequest,
     ConfigurationSessionCreate,
     ConfigurationSessionResponse,
-    ConfigurationSelectionRequest,
     ConfigurationTemplateCreate,
     ConfigurationTemplateResponse,
     ConfiguredBOMResponse,
@@ -40,6 +39,7 @@ from app.apps.cpq.api.schemas_configurator import (
 )
 from app.apps.cpq.engine.bom_resolver import BOMResolver
 from app.apps.cpq.engine.engine import ConfiguratorEngine
+from app.apps.cpq.engine.validator import ConfigurationValidator
 from app.apps.cpq.events import (
     BOMResolved,
     ConfigurationCompleted,
@@ -48,12 +48,6 @@ from app.apps.cpq.events import (
     ConfigurationStarted,
     PricingResolved,
 )
-from app.apps.cpq.engine.validator import ConfigurationValidator
-from app.core.audit import AuditAction, emit_audit_event
-from app.core.events import emit
-from app.core.pagination import CursorPage, paginate
-from app.core.tenant import tenant_query
-from app.db.base import optimistic_version_bump
 from app.apps.cpq.models.configurator import (
     ConfigurationPricing,
     ConfigurationSession,
@@ -64,7 +58,13 @@ from app.apps.cpq.models.configurator import (
     PricingRuleType,
 )
 from app.apps.cpq.models.product import Product
+from app.core.audit import AuditAction, emit_audit_event
+from app.core.events import emit
+from app.core.pagination import CursorPage, paginate
+from app.core.tenant import tenant_query
+from app.db.base import optimistic_version_bump
 from app.db.models import Tenant
+from app.db.session import set_tenant_context
 
 _api_key_rate_limit = ApiKeyRateLimiter()
 router = APIRouter(prefix="/configurator", dependencies=[Depends(_api_key_rate_limit)])
@@ -91,9 +91,7 @@ async def create_session(
 ):
     # Verify product exists
     product_result = await db.execute(
-        tenant_query(select(Product), tenant).where(
-            Product.id == body.product_id, Product.deleted_at.is_(None)
-        )
+        tenant_query(select(Product), tenant).where(Product.id == body.product_id, Product.deleted_at.is_(None))
     )
     if not product_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Product not found")
@@ -112,8 +110,11 @@ async def create_session(
     )
     db.add(session)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="configuration_session",
-        resource_id=str(session.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="configuration_session",
+        resource_id=str(session.id),
+        tenant_id=tenant.id,
     )
 
     # If created from template, apply template selections
@@ -135,12 +136,11 @@ async def create_session(
                     pairs.append((slug, value))
                 else:
                     skipped += 1
-                    logger.warning("template_selection_skipped",
-                                   template_id=str(template.id), entry=sel)
+                    logger.warning("template_selection_skipped", template_id=str(template.id), entry=sel)
             if skipped:
-                logger.info("template_selections_summary",
-                            applied=len(pairs), skipped=skipped,
-                            template_id=str(template.id))
+                logger.info(
+                    "template_selections_summary", applied=len(pairs), skipped=skipped, template_id=str(template.id)
+                )
             if pairs:
                 await _engine.apply_selections_batch(db, session.id, pairs)
 
@@ -155,9 +155,13 @@ async def create_session(
     )
     session = result.scalar_one()
 
-    await emit(ConfigurationStarted(
-        session_id=str(session.id), product_id=str(body.product_id), tenant_id=str(tenant.id),
-    ))
+    await emit(
+        ConfigurationStarted(
+            session_id=str(session.id),
+            product_id=str(body.product_id),
+            tenant_id=str(tenant.id),
+        )
+    )
     return session
 
 
@@ -178,10 +182,7 @@ async def list_sessions(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = (
-        tenant_query(select(ConfigurationSession), tenant)
-        .options(selectinload(ConfigurationSession.selections))
-    )
+    stmt = tenant_query(select(ConfigurationSession), tenant).options(selectinload(ConfigurationSession.selections))
     if product_id:
         stmt = stmt.where(ConfigurationSession.product_id == product_id)
     if status:
@@ -193,13 +194,13 @@ async def list_sessions(
     if created_before:
         stmt = stmt.where(ConfigurationSession.created_at <= created_before)
     if has_bom is not None:
-        bom_exists = select(ConfiguredBOM.id).where(
-            ConfiguredBOM.session_id == ConfigurationSession.id
-        ).correlate(ConfigurationSession).exists()
-        if has_bom:
-            stmt = stmt.where(bom_exists)
-        else:
-            stmt = stmt.where(~bom_exists)
+        bom_exists = (
+            select(ConfiguredBOM.id)
+            .where(ConfiguredBOM.session_id == ConfigurationSession.id)
+            .correlate(ConfigurationSession)
+            .exists()
+        )
+        stmt = stmt.where(bom_exists) if has_bom else stmt.where(~bom_exists)
     return await paginate(db, stmt, ConfigurationSession.created_at, limit=limit, cursor=cursor, descending=True)
 
 
@@ -244,6 +245,7 @@ async def make_selection(
 
     # Resolve characteristic slug from ID
     from app.apps.cpq.models.product import Characteristic
+
     char_result = await db.execute(
         select(Characteristic).where(Characteristic.id == body.characteristic_id, Characteristic.deleted_at.is_(None))
     )
@@ -267,15 +269,22 @@ async def make_selection(
     )
     session_obj = session.scalar_one()
 
-    await emit(ConfigurationSelectionMade(
-        session_id=str(session_id), characteristic_slug=char.slug,
-        value=body.value, tenant_id=str(tenant.id),
-    ))
-    if session_obj.status == ConfigurationStatus.COMPLETE:
-        await emit(ConfigurationCompleted(
-            session_id=str(session_id), product_id=str(session_obj.product_id),
+    await emit(
+        ConfigurationSelectionMade(
+            session_id=str(session_id),
+            characteristic_slug=char.slug,
+            value=body.value,
             tenant_id=str(tenant.id),
-        ))
+        )
+    )
+    if session_obj.status == ConfigurationStatus.COMPLETE:
+        await emit(
+            ConfigurationCompleted(
+                session_id=str(session_id),
+                product_id=str(session_obj.product_id),
+                tenant_id=str(tenant.id),
+            )
+        )
 
     return SelectionResultResponse(
         session=ConfigurationSessionResponse.model_validate(session_obj),
@@ -284,13 +293,20 @@ async def make_selection(
         conflict_explanations=[
             ConflictExplanationResponse(
                 characteristic=ce.characteristic,
-                trace=[ConflictStepResponse(
-                    rule_id=s.rule_id, rule_name=s.rule_name,
-                    constraint_type=s.constraint_type, target_char=s.target_char,
-                    removed_values=s.removed_values, triggered_by=s.triggered_by,
-                ) for s in ce.trace],
+                trace=[
+                    ConflictStepResponse(
+                        rule_id=s.rule_id,
+                        rule_name=s.rule_name,
+                        constraint_type=s.constraint_type,
+                        target_char=s.target_char,
+                        removed_values=s.removed_values,
+                        triggered_by=s.triggered_by,
+                    )
+                    for s in ce.trace
+                ],
                 contributing_selections=ce.contributing_selections,
-            ) for ce in result.conflict_explanations
+            )
+            for ce in result.conflict_explanations
         ],
     )
 
@@ -331,13 +347,20 @@ async def remove_selection(
         conflict_explanations=[
             ConflictExplanationResponse(
                 characteristic=ce.characteristic,
-                trace=[ConflictStepResponse(
-                    rule_id=s.rule_id, rule_name=s.rule_name,
-                    constraint_type=s.constraint_type, target_char=s.target_char,
-                    removed_values=s.removed_values, triggered_by=s.triggered_by,
-                ) for s in ce.trace],
+                trace=[
+                    ConflictStepResponse(
+                        rule_id=s.rule_id,
+                        rule_name=s.rule_name,
+                        constraint_type=s.constraint_type,
+                        target_char=s.target_char,
+                        removed_values=s.removed_values,
+                        triggered_by=s.triggered_by,
+                    )
+                    for s in ce.trace
+                ],
                 contributing_selections=ce.contributing_selections,
-            ) for ce in result.conflict_explanations
+            )
+            for ce in result.conflict_explanations
         ],
     )
 
@@ -433,24 +456,29 @@ async def resolve_bom(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    await emit(BOMResolved(
-        session_id=str(session_id), configured_bom_id=str(configured_bom.id),
-        total_components=configured_bom.total_components,
-        total_cost=str(configured_bom.total_cost) if configured_bom.total_cost else "0",
-        tenant_id=str(tenant.id),
-    ))
+    await emit(
+        BOMResolved(
+            session_id=str(session_id),
+            configured_bom_id=str(configured_bom.id),
+            total_components=configured_bom.total_components,
+            total_cost=str(configured_bom.total_cost) if configured_bom.total_cost else "0",
+            tenant_id=str(tenant.id),
+        )
+    )
 
     # Emit pricing event if pricing was resolved
-    pricing_result = await db.execute(
-        select(ConfigurationPricing).where(ConfigurationPricing.session_id == session_id)
-    )
+    pricing_result = await db.execute(select(ConfigurationPricing).where(ConfigurationPricing.session_id == session_id))
     pricing = pricing_result.scalar_one_or_none()
     if pricing:
-        await emit(PricingResolved(
-            session_id=str(session_id), final_price=str(pricing.final_price),
-            margin_percentage=str(pricing.margin_percentage),
-            is_profitable=pricing.is_profitable, tenant_id=str(tenant.id),
-        ))
+        await emit(
+            PricingResolved(
+                session_id=str(session_id),
+                final_price=str(pricing.final_price),
+                margin_percentage=str(pricing.margin_percentage),
+                is_profitable=pricing.is_profitable,
+                tenant_id=str(tenant.id),
+            )
+        )
 
     return configured_bom
 
@@ -465,9 +493,7 @@ async def get_resolved_bom(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        tenant_query(select(ConfiguredBOM), tenant).where(ConfiguredBOM.session_id == session_id)
-    )
+    result = await db.execute(tenant_query(select(ConfiguredBOM), tenant).where(ConfiguredBOM.session_id == session_id))
     bom = result.scalar_one_or_none()
     if not bom:
         raise HTTPException(status_code=404, detail="No resolved BOM found for this session")
@@ -485,9 +511,7 @@ async def get_pricing(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(ConfigurationPricing), tenant).where(
-            ConfigurationPricing.session_id == session_id
-        )
+        tenant_query(select(ConfigurationPricing), tenant).where(ConfigurationPricing.session_id == session_id)
     )
     pricing = result.scalar_one_or_none()
     if not pricing:
@@ -519,8 +543,11 @@ async def lock_session(
 
     session.status = ConfigurationStatus.LOCKED
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="configuration_session",
-        resource_id=str(session.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="configuration_session",
+        resource_id=str(session.id),
+        tenant_id=tenant.id,
         changes={"status": "locked"},
     )
     await db.commit()
@@ -534,10 +561,13 @@ async def lock_session(
     )
     session = refreshed.scalar_one()
 
-    await emit(ConfigurationLocked(
-        session_id=str(session_id), product_id=str(session.product_id),
-        tenant_id=str(tenant.id),
-    ))
+    await emit(
+        ConfigurationLocked(
+            session_id=str(session_id),
+            product_id=str(session.product_id),
+            tenant_id=str(tenant.id),
+        )
+    )
     return session
 
 
@@ -573,6 +603,7 @@ async def clone_session(
     await db.flush()
 
     from app.apps.cpq.models.configurator import ConfigurationSelection
+
     for sel in source.selections:
         new_sel = ConfigurationSelection(
             tenant_id=tenant.id,
@@ -611,8 +642,7 @@ async def delete_session(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(ConfigurationSession), tenant)
-        .where(ConfigurationSession.id == session_id)
+        tenant_query(select(ConfigurationSession), tenant).where(ConfigurationSession.id == session_id)
     )
     session = result.scalar_one_or_none()
     if not session:
@@ -623,34 +653,34 @@ async def delete_session(
 
     # Delete related records first
     from app.apps.cpq.models.configurator import ConfigurationSelection
-    await db.execute(
-        select(ConfigurationSelection).where(ConfigurationSelection.session_id == session_id)
-    )
-    for sel in (await db.execute(
-        select(ConfigurationSelection).where(ConfigurationSelection.session_id == session_id)
-    )).scalars().all():
+
+    await db.execute(select(ConfigurationSelection).where(ConfigurationSelection.session_id == session_id))
+    for sel in (
+        (await db.execute(select(ConfigurationSelection).where(ConfigurationSelection.session_id == session_id)))
+        .scalars()
+        .all()
+    ):
         await db.delete(sel)
 
     # Delete resolved BOM if present
-    bom_result = await db.execute(
-        select(ConfiguredBOM).where(ConfiguredBOM.session_id == session_id)
-    )
+    bom_result = await db.execute(select(ConfiguredBOM).where(ConfiguredBOM.session_id == session_id))
     bom = bom_result.scalar_one_or_none()
     if bom:
         await db.delete(bom)
 
     # Delete pricing if present
-    pricing_result = await db.execute(
-        select(ConfigurationPricing).where(ConfigurationPricing.session_id == session_id)
-    )
+    pricing_result = await db.execute(select(ConfigurationPricing).where(ConfigurationPricing.session_id == session_id))
     pricing = pricing_result.scalar_one_or_none()
     if pricing:
         await db.delete(pricing)
 
     await db.delete(session)
     await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="configuration_session",
-        resource_id=str(session_id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.DELETE,
+        resource_type="configuration_session",
+        resource_id=str(session_id),
+        tenant_id=tenant.id,
     )
     await db.commit()
 
@@ -680,30 +710,37 @@ async def bulk_action(
 
             if body.action == "lock":
                 if not session.is_valid or not session.is_complete:
-                    results.append(BulkActionResultItem(
-                        session_id=sid, success=False, error="Incomplete or invalid",
-                    ))
+                    results.append(
+                        BulkActionResultItem(
+                            session_id=sid,
+                            success=False,
+                            error="Incomplete or invalid",
+                        )
+                    )
                     continue
                 session.status = ConfigurationStatus.LOCKED
                 results.append(BulkActionResultItem(session_id=sid, success=True))
 
             elif body.action == "delete":
                 if session.status == ConfigurationStatus.LOCKED:
-                    results.append(BulkActionResultItem(
-                        session_id=sid, success=False, error="Cannot delete locked session",
-                    ))
+                    results.append(
+                        BulkActionResultItem(
+                            session_id=sid,
+                            success=False,
+                            error="Cannot delete locked session",
+                        )
+                    )
                     continue
-                from app.apps.cpq.models.configurator import ConfigurationSelection
                 for sel in session.selections:
                     await db.delete(sel)
-                bom = (await db.execute(
-                    select(ConfiguredBOM).where(ConfiguredBOM.session_id == sid)
-                )).scalar_one_or_none()
+                bom = (
+                    await db.execute(select(ConfiguredBOM).where(ConfiguredBOM.session_id == sid))
+                ).scalar_one_or_none()
                 if bom:
                     await db.delete(bom)
-                pricing = (await db.execute(
-                    select(ConfigurationPricing).where(ConfigurationPricing.session_id == sid)
-                )).scalar_one_or_none()
+                pricing = (
+                    await db.execute(select(ConfigurationPricing).where(ConfigurationPricing.session_id == sid))
+                ).scalar_one_or_none()
                 if pricing:
                     await db.delete(pricing)
                 await db.delete(session)
@@ -724,7 +761,10 @@ async def bulk_action(
 
     succeeded = sum(1 for r in results if r.success)
     return BulkActionResponse(
-        total=len(results), succeeded=succeeded, failed=len(results) - succeeded, results=results,
+        total=len(results),
+        succeeded=succeeded,
+        failed=len(results) - succeeded,
+        results=results,
     )
 
 
@@ -748,27 +788,27 @@ async def compare_boms(
     for sid in body.session_ids:
         # Load session
         sess_result = await db.execute(
-            tenant_query(select(ConfigurationSession), tenant)
-            .where(ConfigurationSession.id == sid)
+            tenant_query(select(ConfigurationSession), tenant).where(ConfigurationSession.id == sid)
         )
         session = sess_result.scalar_one_or_none()
         if not session:
             raise HTTPException(status_code=404, detail=f"Session {sid} not found")
 
         # Load product name
-        prod_result = await db.execute(
-            select(Product.name).where(Product.id == session.product_id)
-        )
+        prod_result = await db.execute(select(Product.name).where(Product.id == session.product_id))
         product_name = prod_result.scalar_one_or_none()
 
-        sessions_data.append(BOMComparisonSession(
-            id=session.id, name=session.name, product_name=product_name,
-        ))
+        sessions_data.append(
+            BOMComparisonSession(
+                id=session.id,
+                name=session.name,
+                product_name=product_name,
+            )
+        )
 
         # Load resolved BOM
         bom_result = await db.execute(
-            tenant_query(select(ConfiguredBOM), tenant)
-            .where(ConfiguredBOM.session_id == sid)
+            tenant_query(select(ConfiguredBOM), tenant).where(ConfiguredBOM.session_id == sid)
         )
         bom = bom_result.scalar_one_or_none()
 
@@ -801,7 +841,10 @@ async def compare_boms(
         unit_costs = [p["unit_cost"] if p else None for p in present_in]
 
         part = BOMComparisonPart(
-            part_number=pn, part_name=part_name, quantities=quantities, unit_costs=unit_costs,
+            part_number=pn,
+            part_name=part_name,
+            quantities=quantities,
+            unit_costs=unit_costs,
         )
         if present_count == n:
             common_parts.append(part)
@@ -811,15 +854,14 @@ async def compare_boms(
     # Cost comparison per session
     cost_comparison = []
     for i, sid in enumerate(body.session_ids):
-        total = sum(
-            p["quantity"] * p["unit_cost"]
-            for p in all_bom_parts[i].values()
+        total = sum(p["quantity"] * p["unit_cost"] for p in all_bom_parts[i].values())
+        cost_comparison.append(
+            {
+                "session_id": str(sid),
+                "total_cost": round(total, 4),
+                "total_parts": len(all_bom_parts[i]),
+            }
         )
-        cost_comparison.append({
-            "session_id": str(sid),
-            "total_cost": round(total, 4),
-            "total_parts": len(all_bom_parts[i]),
-        })
 
     return BOMComparisonResponse(
         sessions=sessions_data,
@@ -855,7 +897,7 @@ async def part_frequency(
 
     for bom in boms:
         seen_parts = set()
-        for item in (bom.resolved_items or []):
+        for item in bom.resolved_items or []:
             pn = item.get("part_number", "")
             if pn and pn not in seen_parts:
                 seen_parts.add(pn)
@@ -890,9 +932,10 @@ async def export_session(
     db: AsyncSession = Depends(get_db),
 ):
     """Export a configuration session's BOM and pricing as CSV or JSON."""
-    from fastapi.responses import StreamingResponse
     import csv
     import io
+
+    from fastapi.responses import StreamingResponse
 
     # Load session
     session_result = await db.execute(
@@ -922,6 +965,7 @@ async def export_session(
 
     if format == "json":
         import json as json_mod
+
         export_data = {
             "session": {
                 "id": str(session.id),
@@ -974,15 +1018,17 @@ async def export_session(
         for item in bom.resolved_items:
             qty = float(item.get("quantity", 0))
             cost = float(item.get("unit_cost", 0))
-            writer.writerow([
-                item.get("part_number", ""),
-                item.get("part_name", ""),
-                item.get("item_type", ""),
-                qty,
-                item.get("unit", "EA"),
-                f"{cost:.2f}",
-                f"{qty * cost:.2f}",
-            ])
+            writer.writerow(
+                [
+                    item.get("part_number", ""),
+                    item.get("part_name", ""),
+                    item.get("item_type", ""),
+                    qty,
+                    item.get("unit", "EA"),
+                    f"{cost:.2f}",
+                    f"{qty * cost:.2f}",
+                ]
+            )
         writer.writerow([])
         writer.writerow(["Total Components", bom.total_components])
         writer.writerow(["Total Cost", f"{float(bom.total_cost):.2f}" if bom.total_cost else "N/A"])
@@ -1032,8 +1078,11 @@ async def create_template(
     )
     db.add(template)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="configuration_template",
-        resource_id=str(template.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="configuration_template",
+        resource_id=str(template.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(template)
@@ -1053,9 +1102,7 @@ async def list_templates(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = tenant_query(select(ConfigurationTemplate), tenant).where(
-        ConfigurationTemplate.product_id == product_id
-    )
+    stmt = tenant_query(select(ConfigurationTemplate), tenant).where(ConfigurationTemplate.product_id == product_id)
     return await paginate(db, stmt, ConfigurationTemplate.created_at, limit=limit, cursor=cursor, descending=True)
 
 
@@ -1102,7 +1149,9 @@ async def create_pricing_rule(
                 if t_max < t_min:
                     raise HTTPException(status_code=422, detail=f"Tier {i}: 'max' must be >= 'min'")
             if prev_max is not None and t_min <= prev_max:
-                raise HTTPException(status_code=422, detail=f"Tier {i}: overlaps with previous tier (min={t_min}, prev_max={prev_max})")
+                raise HTTPException(
+                    status_code=422, detail=f"Tier {i}: overlaps with previous tier (min={t_min}, prev_max={prev_max})"
+                )
             prev_max = t_max
 
     rule = PricingRule(
@@ -1120,8 +1169,11 @@ async def create_pricing_rule(
     )
     db.add(rule)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="pricing_rule",
-        resource_id=str(rule.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="pricing_rule",
+        resource_id=str(rule.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(rule)
@@ -1141,9 +1193,8 @@ async def list_pricing_rules(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = (
-        tenant_query(select(PricingRule), tenant)
-        .where(PricingRule.product_id == product_id, PricingRule.deleted_at.is_(None))
+    stmt = tenant_query(select(PricingRule), tenant).where(
+        PricingRule.product_id == product_id, PricingRule.deleted_at.is_(None)
     )
     return await paginate(db, stmt, PricingRule.created_at, limit=limit, cursor=cursor, descending=True)
 
@@ -1159,9 +1210,7 @@ async def get_pricing_rule(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(PricingRule), tenant).where(
-            PricingRule.id == rule_id, PricingRule.deleted_at.is_(None)
-        )
+        tenant_query(select(PricingRule), tenant).where(PricingRule.id == rule_id, PricingRule.deleted_at.is_(None))
     )
     rule = result.scalar_one_or_none()
     if not rule:
@@ -1181,9 +1230,7 @@ async def update_pricing_rule(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(PricingRule), tenant).where(
-            PricingRule.id == rule_id, PricingRule.deleted_at.is_(None)
-        )
+        tenant_query(select(PricingRule), tenant).where(PricingRule.id == rule_id, PricingRule.deleted_at.is_(None))
     )
     rule = result.scalar_one_or_none()
     if not rule:
@@ -1193,8 +1240,12 @@ async def update_pricing_rule(
         setattr(rule, field, value)
     await optimistic_version_bump(db, rule)
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="pricing_rule",
-        resource_id=str(rule.id), tenant_id=tenant.id, changes=changes,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="pricing_rule",
+        resource_id=str(rule.id),
+        tenant_id=tenant.id,
+        changes=changes,
     )
     await db.flush()
     await db.refresh(rule)
@@ -1213,17 +1264,18 @@ async def delete_pricing_rule(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(PricingRule), tenant).where(
-            PricingRule.id == rule_id, PricingRule.deleted_at.is_(None)
-        )
+        tenant_query(select(PricingRule), tenant).where(PricingRule.id == rule_id, PricingRule.deleted_at.is_(None))
     )
     rule = result.scalar_one_or_none()
     if not rule:
         raise HTTPException(status_code=404, detail="Pricing rule not found")
     rule.deleted_at = datetime.now(UTC)
     await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="pricing_rule",
-        resource_id=str(rule.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.DELETE,
+        resource_type="pricing_rule",
+        resource_id=str(rule.id),
+        tenant_id=tenant.id,
     )
     await db.commit()
 
@@ -1244,11 +1296,13 @@ async def simulate_pricing(
     """Simulate pricing for a set of selections without creating a session."""
     # Load pricing rules for the product
     rules_result = await db.execute(
-        tenant_query(select(PricingRule), tenant).where(
+        tenant_query(select(PricingRule), tenant)
+        .where(
             PricingRule.product_id == body.product_id,
             PricingRule.deleted_at.is_(None),
             PricingRule.is_active.is_(True),
-        ).order_by(PricingRule.priority.desc())
+        )
+        .order_by(PricingRule.priority.desc())
     )
     rules = list(rules_result.scalars().all())
 
@@ -1299,6 +1353,7 @@ async def simulate_pricing(
     margin_pct = (margin_amount / final_price * 100) if final_price > 0 else Decimal("0")
 
     import uuid as _uuid
+
     return ConfigurationPricingResponse(
         id=_uuid.uuid4(),
         session_id=_uuid.UUID(int=0),

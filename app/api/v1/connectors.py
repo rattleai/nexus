@@ -10,8 +10,6 @@ Provides:
 
 from __future__ import annotations
 
-import uuid
-
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +45,7 @@ async def _optional_user(
         return await _resolve_user_from_jwt(request, db)
     except HTTPException:
         return None
+
 
 _api_key_rate_limit = ApiKeyRateLimiter()
 router = APIRouter(prefix="/connectors", dependencies=[Depends(_api_key_rate_limit)])
@@ -116,7 +115,9 @@ async def get_app_credentials(
     from app.connectors.app_credentials import app_credential_manager
 
     creds = await app_credential_manager.get(
-        tenant_id=tenant.id, connector_slug=slug, db=db,
+        tenant_id=tenant.id,
+        connector_slug=slug,
+        db=db,
     )
     if creds is None:
         return AppCredentialsRead(
@@ -207,7 +208,9 @@ async def delete_app_credentials(
     from app.connectors.app_credentials import app_credential_manager
 
     removed = await app_credential_manager.delete(
-        tenant_id=tenant.id, connector_slug=slug, db=db,
+        tenant_id=tenant.id,
+        connector_slug=slug,
+        db=db,
     )
     if not removed:
         raise HTTPException(status_code=404, detail="No app credentials registered")

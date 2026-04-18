@@ -23,7 +23,6 @@ from app.connectors.models import (
     TrustLevel,
 )
 
-
 # ── Naming ───────────────────────────────────────────────
 
 
@@ -64,11 +63,7 @@ class ConnectorToolAdapter:
                 connector_def,
                 tool_name,
             ),
-            "input_schema": (
-                mcp_tool.get("inputSchema")
-                or mcp_tool.get("input_schema")
-                or {}
-            ),
+            "input_schema": (mcp_tool.get("inputSchema") or mcp_tool.get("input_schema") or {}),
             "source": "connector",
             "connector_slug": connector_def.slug,
             "connector_name": connector_def.name,
@@ -115,15 +110,11 @@ class ConnectorToolAdapter:
         if connector_def.connector_type == ConnectorType.MCP_SERVER:
             cached = connection.mcp_tools_cache or []
             for mcp_tool in cached:
-                tools.append(
-                    adapter.mcp_tool_to_platform(mcp_tool, connection, connector_def)
-                )
+                tools.append(adapter.mcp_tool_to_platform(mcp_tool, connection, connector_def))
         else:
             tool_defs = connector_def.tool_definitions or []
             for api_tool in tool_defs:
-                tools.append(
-                    adapter.api_tool_to_platform(api_tool, connection, connector_def)
-                )
+                tools.append(adapter.api_tool_to_platform(api_tool, connection, connector_def))
 
         return tools
 

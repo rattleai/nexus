@@ -17,7 +17,7 @@ celery.conf.update(
     worker_prefetch_multiplier=1,
     task_track_started=True,
     result_expires=86400,
-    task_time_limit=600,       # Hard kill after 10 minutes
+    task_time_limit=600,  # Hard kill after 10 minutes
     task_soft_time_limit=540,  # Raise SoftTimeLimitExceeded after 9 minutes
     task_reject_on_worker_lost=True,  # Re-queue tasks when worker is force-killed
     # Broker connection resilience — auto-reconnect on Redis restarts
@@ -90,15 +90,16 @@ celery.autodiscover_tasks(["app.workers", "app.agents", "app.docprocessor"])
 # app.connectors.tasks) that must also be imported so the worker process
 # registers them on the Celery task registry — otherwise beat enqueues
 # tasks that workers raise ``Received unregistered task of type`` for.
-import app.workers.periodic  # noqa: F401, E402
-import app.workers.webhook_delivery  # noqa: F401, E402
-import app.workers.event_consumer  # noqa: F401, E402
+import app.workers.event_consumer
+import app.workers.periodic
+import app.workers.webhook_delivery
+
 try:
-    import app.agents.tasks  # noqa: F401, E402
+    import app.agents.tasks
 except Exception:  # pragma: no cover — agents module optional
     pass
 try:
-    import app.connectors.tasks  # noqa: F401, E402
+    import app.connectors.tasks  # noqa: F401
 except Exception:  # pragma: no cover — connectors optional
     pass
 
@@ -120,7 +121,7 @@ for _plugin in _plugin_registry:
 
 # ── Dead Letter Queue: publish failed tasks to Redis Stream ──────────
 
-from celery.signals import task_failure, task_postrun, task_prerun  # noqa: E402
+from celery.signals import task_failure, task_postrun, task_prerun
 
 
 @task_failure.connect
@@ -149,8 +150,11 @@ def _publish_to_dlq(sender=None, task_id=None, exception=None, traceback=None, a
             r.close()
     except Exception:
         import structlog
+
         structlog.stdlib.get_logger().error(
-            "dlq_publish_failed", task_id=task_id, exc_info=True,
+            "dlq_publish_failed",
+            task_id=task_id,
+            exc_info=True,
         )
 
 
@@ -178,9 +182,8 @@ def _clear_task_context(sender=None, **kw):
     """Clear structlog context after task completes."""
     import structlog
 
-    structlog.contextvars.unbind_contextvars(
-        "request_id", "tenant_id", "celery_task_id", "celery_task_name"
-    )
+    structlog.contextvars.unbind_contextvars("request_id", "tenant_id", "celery_task_id", "celery_task_name")
+
 
 # Initialize OpenTelemetry for workers (if enabled)
 if settings.OTEL_ENABLED:

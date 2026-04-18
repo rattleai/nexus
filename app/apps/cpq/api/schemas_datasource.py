@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime
 from typing import Any
 
-import json
-
 from pydantic import BaseModel, Field, field_validator
-
 
 _MAX_METADATA_BYTES = 65536  # 64KB
 
@@ -142,9 +140,7 @@ class ConfigItemProvenanceRead(BaseModel):
 
 class DataSourceSearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="Natural language search query")
-    data_source_ids: list[uuid.UUID] | None = Field(
-        default=None, description="Limit search to specific data sources"
-    )
+    data_source_ids: list[uuid.UUID] | None = Field(default=None, description="Limit search to specific data sources")
     top_k: int = Field(default=10, ge=1, le=100, description="Number of results to return")
 
 
@@ -173,9 +169,7 @@ class ExtractionPreview(BaseModel):
         default_factory=dict,
         description="Count of detected entity types, e.g. {'product': 2, 'characteristic': 15}",
     )
-    sample_chunks: list[DataSourceChunkRead] = Field(
-        default_factory=list, description="First few chunks as a preview"
-    )
+    sample_chunks: list[DataSourceChunkRead] = Field(default_factory=list, description="First few chunks as a preview")
     extraction_error: str | None = None
 
     model_config = {"from_attributes": True}

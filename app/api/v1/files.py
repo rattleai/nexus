@@ -65,15 +65,17 @@ async def list_files(
             key = obj["key"]
             filename = key.rsplit("/", 1)[-1] if "/" in key else key
             content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-            items.append({
-                "id": key,
-                "filename": filename,
-                "content_type": content_type,
-                "size_bytes": obj["size"],
-                "storage_path": key,
-                "uploaded_by": None,
-                "created_at": obj["last_modified"].isoformat(),
-            })
+            items.append(
+                {
+                    "id": key,
+                    "filename": filename,
+                    "content_type": content_type,
+                    "size_bytes": obj["size"],
+                    "storage_path": key,
+                    "uploaded_by": None,
+                    "created_at": obj["last_modified"].isoformat(),
+                }
+            )
         return {"items": items, "next_cursor": None, "has_more": False}
     except StorageError as exc:
         raise handle_storage_error(exc) from exc
@@ -108,9 +110,7 @@ async def upload_file(
         # Stream directly to S3 — avoids loading entire file into memory (P0-11).
         # The SpooledTemporaryFile from UploadFile is passed to the sync S3 upload
         # via asyncio.to_thread, which streams in 5 MB chunks.
-        total_size = await storage.async_upload_fileobj(
-            key, file.file, max_size=settings.MAX_UPLOAD_SIZE_BYTES
-        )
+        total_size = await storage.async_upload_fileobj(key, file.file, max_size=settings.MAX_UPLOAD_SIZE_BYTES)
     except StorageError as exc:
         raise handle_storage_error(exc) from exc
     except RuntimeError:
@@ -135,6 +135,7 @@ async def download_file(
 ):
     # URL-decode before validation to prevent double-encoding bypass (%2e%2e → ..)
     from urllib.parse import unquote
+
     file_key = unquote(file_key)
 
     expected_prefix = f"tenants/{tenant.id}/"
@@ -173,6 +174,7 @@ async def delete_file(
     tenant: Tenant = Depends(get_current_tenant),
 ):
     from urllib.parse import unquote
+
     file_key = unquote(file_key)
 
     expected_prefix = f"tenants/{tenant.id}/"

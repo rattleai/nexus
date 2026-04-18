@@ -36,9 +36,7 @@ async def authenticate_api_key(
     key_hash = hash_api_key(raw_key)
 
     result = await db.execute(
-        select(ApiKey)
-        .options(selectinload(ApiKey.tenant))
-        .where(ApiKey.key_hash == key_hash, ApiKey.active.is_(True))
+        select(ApiKey).options(selectinload(ApiKey.tenant)).where(ApiKey.key_hash == key_hash, ApiKey.active.is_(True))
     )
     api_key = result.scalar_one_or_none()
 

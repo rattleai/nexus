@@ -1,37 +1,37 @@
 """Broker default + router status invariants.
 
-Locks in the "Composio by default, silent fallback to in-house" posture so
-a later refactor can't accidentally revert the default or break the
-fallback contract.
+Locks in the "in-house by default, opt-in Composio" posture so a later
+refactor can't silently route tenant OAuth tokens through an external
+broker. Individual YAMLs may still pin broker=composio, but the unset
+default stays in-house.
 """
 
 from __future__ import annotations
-
-from unittest.mock import patch
-
-import pytest
 
 from app.config import settings
 from app.connectors.brokers.router import BrokerRouter, broker_router
 from app.connectors.models import BrokerType
 
 
-def test_default_broker_is_composio():
-    """The platform ships with Composio as the recommended default."""
-    assert settings.CONNECTOR_DEFAULT_BROKER == BrokerType.COMPOSIO.value
+def test_default_broker_is_in_house():
+    """The platform ships with in-house as the default broker.
+
+    Composio is opt-in via per-connector YAML (broker: composio) and via
+    CONNECTOR_DEFAULT_BROKER once COMPOSIO_API_KEY is provisioned.
+    """
+    assert BrokerType.IN_HOUSE.value == settings.CONNECTOR_DEFAULT_BROKER
 
 
-def test_all_builtin_yamls_use_composio():
-    """Every built-in YAML should declare broker: composio so tenants get
-    the managed catalog on day one."""
+def test_all_builtin_yamls_pin_broker_explicitly():
+    """Every built-in YAML should declare its broker explicitly so the
+    default only affects future / plugin connectors."""
     from app.connectors.registry import connector_registry
 
     defs = connector_registry.load_builtins()
     assert defs, "built-in catalog must not be empty"
     for d in defs:
-        assert d.get("broker") == "composio", (
-            f"{d.get('slug')} does not default to Composio"
-        )
+        broker = d.get("broker")
+        assert broker in {"composio", "in_house"}, f"{d.get('slug')} has unexpected broker: {broker!r}"
 
 
 def test_register_mcp_server_stays_in_house(slack_oauth_connector):
@@ -44,7 +44,7 @@ def test_register_mcp_server_stays_in_house(slack_oauth_connector):
 
     async def _run():
         # Use a MagicMock db just enough to exercise the code path
-        from unittest.mock import MagicMock, AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
 
         db = MagicMock()
         db.add = MagicMock()
@@ -63,29 +63,33 @@ def test_register_mcp_server_stays_in_house(slack_oauth_connector):
         return connector
 
     import asyncio
+
     connector = asyncio.get_event_loop().run_until_complete(_run())
     assert connector.broker == BrokerType.IN_HOUSE
 
 
 def test_status_reports_composio_unavailable_without_api_key():
-    """When COMPOSIO_API_KEY is empty, status() must report the effective
-    default as in_house so ops can see the fallback."""
-    original = settings.COMPOSIO_API_KEY
+    """When COMPOSIO_API_KEY is empty, status() must report Composio as
+    unavailable and resolve the effective default to in-house."""
+    original_key = settings.COMPOSIO_API_KEY
+    original_default = settings.CONNECTOR_DEFAULT_BROKER
     settings.COMPOSIO_API_KEY = ""
     try:
         # Force a fresh composio client attempt
         from app.connectors.brokers.composio import composio_broker
+
         composio_broker._attempted = False
         composio_broker._available = False
         composio_broker._client = None
 
         status = broker_router.status()
-        assert status.default_broker == BrokerType.COMPOSIO.value
+        assert status.default_broker == settings.CONNECTOR_DEFAULT_BROKER
         assert status.composio_configured is False
         assert status.composio_available is False
         assert status.effective_default == BrokerType.IN_HOUSE.value
     finally:
-        settings.COMPOSIO_API_KEY = original
+        settings.COMPOSIO_API_KEY = original_key
+        settings.CONNECTOR_DEFAULT_BROKER = original_default
 
 
 def test_for_connector_falls_back_to_in_house_when_composio_unavailable(
@@ -97,6 +101,7 @@ def test_for_connector_falls_back_to_in_house_when_composio_unavailable(
     settings.COMPOSIO_API_KEY = ""
     try:
         from app.connectors.brokers.composio import composio_broker
+
         composio_broker._attempted = False
         composio_broker._available = False
         composio_broker._client = None

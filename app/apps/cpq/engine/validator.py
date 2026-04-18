@@ -6,16 +6,9 @@ import uuid
 from dataclasses import dataclass, field
 
 import structlog
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.apps.cpq.engine.engine import ConfiguratorEngine, ValidationError
-from app.apps.cpq.models.configurator import ConfigurationSession
-from app.apps.cpq.models.product import (
-    Characteristic,
-    CharacteristicAssignment,
-)
 
 logger = structlog.stdlib.get_logger()
 
@@ -58,21 +51,25 @@ class ConfigurationValidator:
 
         # Contradiction errors
         for c in result.contradictions:
-            errors.append(ValidationError(
-                characteristic_slug=c,
-                error_type="domain_empty",
-                message=f"No valid values remain for '{c}'",
-            ))
+            errors.append(
+                ValidationError(
+                    characteristic_slug=c,
+                    error_type="domain_empty",
+                    message=f"No valid values remain for '{c}'",
+                )
+            )
 
         # Required but missing
         all_selected = {**selections, **result.auto_set}
         for slug, char in char_map.items():
             if char.is_required and slug not in all_selected:
-                errors.append(ValidationError(
-                    characteristic_slug=slug,
-                    error_type="required_missing",
-                    message=f"Required characteristic '{slug}' has no value",
-                ))
+                errors.append(
+                    ValidationError(
+                        characteristic_slug=slug,
+                        error_type="required_missing",
+                        message=f"Required characteristic '{slug}' has no value",
+                    )
+                )
 
         # Domain validity (enum value must be in allowed set)
         for slug, value in selections.items():
@@ -81,11 +78,13 @@ class ConfigurationValidator:
                 if char.char_type.value == "enum":
                     allowed = {v.value for v in char.values}
                     if value not in allowed:
-                        errors.append(ValidationError(
-                            characteristic_slug=slug,
-                            error_type="invalid_value",
-                            message=f"Value '{value}' is not a valid option for '{slug}'",
-                        ))
+                        errors.append(
+                            ValidationError(
+                                characteristic_slug=slug,
+                                error_type="invalid_value",
+                                message=f"Value '{value}' is not a valid option for '{slug}'",
+                            )
+                        )
 
         is_complete = self._engine._check_completeness(char_map, selections, result.auto_set)
         is_valid = len(errors) == 0

@@ -7,12 +7,12 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import settings
 from app.db.base import Base
-from app.plugins.registry import discover_plugins  # noqa: E402
+from app.plugins.registry import discover_plugins
 
 # Discover plugins so their models register on Base.metadata
 discover_plugins()
 
-from app.db.models import *  # noqa: F401, F403 — register all models (infra + plugins)
+from app.db.models import *  # noqa: F403 — register all models (infra + plugins)
 
 config = context.config
 # Migrations need superuser privileges (CREATE TABLE, ALTER, ENABLE RLS).

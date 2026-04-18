@@ -67,21 +67,28 @@ def upgrade() -> None:
     # auto-create these types inside create_table/add_column.
 
     trust_level_enum = PG_ENUM(
-        "verified", "trusted", "untrusted",
+        "verified",
+        "trusted",
+        "untrusted",
         name="trustlevel",
         create_type=False,
     )
     trust_level_enum.create(op.get_bind(), checkfirst=True)
 
     broker_type_enum = PG_ENUM(
-        "composio", "in_house",
+        "composio",
+        "in_house",
         name="brokertype",
         create_type=False,
     )
     broker_type_enum.create(op.get_bind(), checkfirst=True)
 
     connector_task_status_enum = PG_ENUM(
-        "working", "input_required", "completed", "failed", "cancelled",
+        "working",
+        "input_required",
+        "completed",
+        "failed",
+        "cancelled",
         name="connectortaskstatus",
         create_type=False,
     )
@@ -106,7 +113,8 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.UniqueConstraint(
-            "tenant_id", "connector_slug",
+            "tenant_id",
+            "connector_slug",
             name="uq_connector_app_credentials_tenant_slug",
         ),
     )
@@ -153,7 +161,12 @@ def upgrade() -> None:
         "connector_tasks",
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("connection_id", UUID(as_uuid=True), sa.ForeignKey("tenant_connections.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "connection_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("tenant_connections.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("mcp_task_id", sa.String(255), nullable=False),
         sa.Column("tool_name", sa.String(255), nullable=False),
         sa.Column("arguments", JSONB, nullable=True),

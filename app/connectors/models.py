@@ -9,7 +9,6 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -27,7 +26,6 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, SoftDeleteMixin, TimestampMixin
-
 
 # ── Enums ──────────────────────────────────────────────────
 
@@ -126,7 +124,9 @@ class ConnectorDefinition(TimestampMixin, Base):
     __tablename__ = "connector_definitions"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -178,7 +178,8 @@ class ConnectorDefinition(TimestampMixin, Base):
     # {authorize_url, token_url, registration_endpoint, scopes_supported, ...}
     discovery_cache: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     discovery_refreshed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     # RFC 7591 Dynamic Client Registration endpoint (populated by discovery)
@@ -202,7 +203,9 @@ class ConnectorDefinition(TimestampMixin, Base):
     # (client_id / client_secret) before users can authenticate. Set True for
     # providers that do not support RFC 7591 Dynamic Client Registration.
     requires_app_credentials: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="false",
+        Boolean,
+        nullable=False,
+        server_default="false",
     )
 
     # Which sync source wrote this row. Drives query-layer dedup priority
@@ -251,19 +254,25 @@ class TenantConnection(SoftDeleteMixin, TimestampMixin, Base):
     __tablename__ = "tenant_connections"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("tenants.id"), nullable=False, index=True,
+        ForeignKey("tenants.id"),
+        nullable=False,
+        index=True,
     )
     connector_definition_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("connector_definitions.id"), nullable=False,
+        ForeignKey("connector_definitions.id"),
+        nullable=False,
     )
 
     # Display
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     account_identifier: Mapped[str | None] = mapped_column(
-        String(255), nullable=True,
+        String(255),
+        nullable=True,
     )
 
     # Status
@@ -280,13 +289,15 @@ class TenantConnection(SoftDeleteMixin, TimestampMixin, Base):
     mcp_prompts_cache: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     mcp_capabilities: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     cache_refreshed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     # Health monitoring
     health_status: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     health_checked_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     # Per-connection configuration overrides
@@ -294,10 +305,12 @@ class TenantConnection(SoftDeleteMixin, TimestampMixin, Base):
 
     # Tracking
     connected_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True,
+        UUID(as_uuid=True),
+        nullable=True,
     )
     last_used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     # Relationships
@@ -312,14 +325,17 @@ class TenantConnection(SoftDeleteMixin, TimestampMixin, Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "tenant_id", "connector_definition_id", "connected_by_user_id",
+            "tenant_id",
+            "connector_definition_id",
+            "connected_by_user_id",
             "account_identifier",
             name="uq_tenant_connection_user_account",
         ),
         Index("ix_tenant_connections_tenant_status", "tenant_id", "status"),
         Index(
             "ix_tenant_connections_tenant_connector",
-            "tenant_id", "connector_definition_id",
+            "tenant_id",
+            "connector_definition_id",
         ),
     )
 
@@ -337,10 +353,14 @@ class TenantCredential(TimestampMixin, Base):
     __tablename__ = "tenant_credentials"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("tenants.id"), nullable=False, index=True,
+        ForeignKey("tenants.id"),
+        nullable=False,
+        index=True,
     )
     connection_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("tenant_connections.id", ondelete="CASCADE"),
@@ -356,7 +376,8 @@ class TenantCredential(TimestampMixin, Base):
     access_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     refresh_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
     granted_scopes: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
@@ -369,7 +390,8 @@ class TenantCredential(TimestampMixin, Base):
     # Status
     is_valid: Mapped[bool] = mapped_column(Boolean, default=True)
     last_refreshed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
     refresh_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -378,9 +400,7 @@ class TenantCredential(TimestampMixin, Base):
         back_populates="credential",
     )
 
-    __table_args__ = (
-        Index("ix_tenant_credentials_tenant", "tenant_id"),
-    )
+    __table_args__ = (Index("ix_tenant_credentials_tenant", "tenant_id"),)
 
 
 # ── Connector Audit Log (append-only) ───────────────────────
@@ -392,13 +412,17 @@ class ConnectorAuditLog(Base):
     __tablename__ = "connector_audit_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("tenants.id"), nullable=False,
+        ForeignKey("tenants.id"),
+        nullable=False,
     )
     connection_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("tenant_connections.id", ondelete="SET NULL"), nullable=True,
+        ForeignKey("tenant_connections.id", ondelete="SET NULL"),
+        nullable=True,
     )
 
     # What happened
@@ -410,7 +434,8 @@ class ConnectorAuditLog(Base):
     actor_type: Mapped[str] = mapped_column(String(20), nullable=False)
     actor_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     agent_instance_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True,
+        UUID(as_uuid=True),
+        nullable=True,
     )
 
     # Execution details
@@ -420,14 +445,18 @@ class ConnectorAuditLog(Base):
 
     # Timestamp
     occurred_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (
         Index("ix_connector_audit_tenant_time", "tenant_id", "occurred_at"),
         Index(
             "ix_connector_audit_connection_time",
-            "tenant_id", "connection_id", "occurred_at",
+            "tenant_id",
+            "connection_id",
+            "occurred_at",
         ),
     )
 
@@ -447,10 +476,14 @@ class ConnectorAppCredential(TimestampMixin, Base):
     __tablename__ = "connector_app_credentials"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("tenants.id"), nullable=False, index=True,
+        ForeignKey("tenants.id"),
+        nullable=False,
+        index=True,
     )
     connector_slug: Mapped[str] = mapped_column(String(100), nullable=False)
 
@@ -468,12 +501,14 @@ class ConnectorAppCredential(TimestampMixin, Base):
 
     # Audit: which user registered the app
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True,
+        UUID(as_uuid=True),
+        nullable=True,
     )
 
     __table_args__ = (
         UniqueConstraint(
-            "tenant_id", "connector_slug",
+            "tenant_id",
+            "connector_slug",
             name="uq_connector_app_credentials_tenant_slug",
         ),
         Index("ix_connector_app_credentials_tenant", "tenant_id"),
@@ -493,19 +528,25 @@ class ConnectorOAuthState(Base):
     __tablename__ = "connector_oauth_states"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("tenants.id"), nullable=False,
+        ForeignKey("tenants.id"),
+        nullable=False,
     )
     state_token: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     connector_slug: Mapped[str] = mapped_column(String(100), nullable=False)
     payload_enc: Mapped[str] = mapped_column(Text, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
+        DateTime(timezone=True),
+        nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (
@@ -528,13 +569,17 @@ class ConnectorTask(TimestampMixin, Base):
     __tablename__ = "connector_tasks"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("tenants.id"), nullable=False,
+        ForeignKey("tenants.id"),
+        nullable=False,
     )
     connection_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("tenant_connections.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("tenant_connections.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     # Handle issued by the MCP server
@@ -560,13 +605,16 @@ class ConnectorTask(TimestampMixin, Base):
 
     # Audit
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True,
+        UUID(as_uuid=True),
+        nullable=True,
     )
     agent_instance_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True,
+        UUID(as_uuid=True),
+        nullable=True,
     )
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     __table_args__ = (

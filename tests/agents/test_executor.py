@@ -67,13 +67,20 @@ def _build_executor_patches(
 
     patches = {
         "set_tenant_context": patch(
-            "app.agents.executor.set_tenant_context", new_callable=AsyncMock,
+            "app.agents.executor.set_tenant_context",
+            new_callable=AsyncMock,
         ),
         "load_definition": patch.object(
-            AgentExecutor, "_load_definition", new_callable=AsyncMock, return_value=definition,
+            AgentExecutor,
+            "_load_definition",
+            new_callable=AsyncMock,
+            return_value=definition,
         ),
         "get_or_create_session": patch.object(
-            AgentExecutor, "_get_or_create_session", new_callable=AsyncMock, return_value=session,
+            AgentExecutor,
+            "_get_or_create_session",
+            new_callable=AsyncMock,
+            return_value=session,
         ),
         "runtime_cls": patch("app.agents.executor.AgentRuntime", mock_runtime_cls),
         "emit": patch("app.agents.executor.emit", new_callable=AsyncMock),
@@ -277,12 +284,16 @@ class TestErrorRecovery:
         with (
             patch("app.agents.executor.set_tenant_context", new_callable=AsyncMock),
             patch.object(
-                AgentExecutor, "_load_definition",
-                new_callable=AsyncMock, return_value=definition,
+                AgentExecutor,
+                "_load_definition",
+                new_callable=AsyncMock,
+                return_value=definition,
             ),
             patch.object(
-                AgentExecutor, "_get_or_create_session",
-                new_callable=AsyncMock, return_value=session,
+                AgentExecutor,
+                "_get_or_create_session",
+                new_callable=AsyncMock,
+                return_value=session,
             ),
             patch("app.agents.executor.AgentRuntime", mock_runtime_cls),
             patch("app.agents.executor.emit", new_callable=AsyncMock),
@@ -337,12 +348,16 @@ class TestErrorRecovery:
         with (
             patch("app.agents.executor.set_tenant_context", new_callable=AsyncMock),
             patch.object(
-                AgentExecutor, "_load_definition",
-                new_callable=AsyncMock, return_value=definition,
+                AgentExecutor,
+                "_load_definition",
+                new_callable=AsyncMock,
+                return_value=definition,
             ),
             patch.object(
-                AgentExecutor, "_get_or_create_session",
-                new_callable=AsyncMock, return_value=session,
+                AgentExecutor,
+                "_get_or_create_session",
+                new_callable=AsyncMock,
+                return_value=session,
             ),
             patch("app.agents.executor.AgentRuntime", mock_runtime_cls),
             patch("app.agents.executor.emit", new_callable=AsyncMock),
@@ -355,9 +370,7 @@ class TestErrorRecovery:
                 api_key="sk-test",
             )
 
-        assert call_order == ["rollback", "get"], (
-            f"Expected rollback before get, got: {call_order}"
-        )
+        assert call_order == ["rollback", "get"], f"Expected rollback before get, got: {call_order}"
 
     @pytest.mark.asyncio
     async def test_commit_called_after_marking_failed(self):
@@ -378,12 +391,16 @@ class TestErrorRecovery:
         with (
             patch("app.agents.executor.set_tenant_context", new_callable=AsyncMock),
             patch.object(
-                AgentExecutor, "_load_definition",
-                new_callable=AsyncMock, return_value=make_agent_definition(),
+                AgentExecutor,
+                "_load_definition",
+                new_callable=AsyncMock,
+                return_value=make_agent_definition(),
             ),
             patch.object(
-                AgentExecutor, "_get_or_create_session",
-                new_callable=AsyncMock, return_value=_make_session(),
+                AgentExecutor,
+                "_get_or_create_session",
+                new_callable=AsyncMock,
+                return_value=_make_session(),
             ),
             patch("app.agents.executor.AgentRuntime", mock_runtime_cls),
             patch("app.agents.executor.emit", new_callable=AsyncMock),
@@ -413,10 +430,7 @@ class TestSessionMessageTruncation:
 
         max_msgs = 5
         # Pre-fill session with more messages than the limit
-        existing_messages = [
-            {"role": "user", "content": f"message {i}"}
-            for i in range(max_msgs + 10)
-        ]
+        existing_messages = [{"role": "user", "content": f"message {i}"} for i in range(max_msgs + 10)]
         session = _make_session(messages=existing_messages)
 
         # Runtime returns steps that will add more messages
@@ -456,10 +470,7 @@ class TestSessionMessageTruncation:
         executor = AgentExecutor(mock_db)
 
         max_msgs = 200
-        existing_messages = [
-            {"role": "user", "content": f"msg {i}"}
-            for i in range(3)
-        ]
+        existing_messages = [{"role": "user", "content": f"msg {i}"} for i in range(3)]
         session = _make_session(messages=existing_messages)
 
         run_result = _make_run_result(steps=[])
@@ -494,10 +505,7 @@ class TestSessionMessageTruncation:
         executor = AgentExecutor(mock_db)
 
         max_msgs = 3
-        existing_messages = [
-            {"role": "user", "content": f"msg-{i}"}
-            for i in range(10)
-        ]
+        existing_messages = [{"role": "user", "content": f"msg-{i}"} for i in range(10)]
         session = _make_session(messages=existing_messages)
 
         run_result = _make_run_result(steps=[])
@@ -541,8 +549,10 @@ class TestInputValidation:
         with (
             patch("app.agents.executor.set_tenant_context", new_callable=AsyncMock),
             patch.object(
-                AgentExecutor, "_load_definition",
-                new_callable=AsyncMock, return_value=definition,
+                AgentExecutor,
+                "_load_definition",
+                new_callable=AsyncMock,
+                return_value=definition,
             ),
             pytest.raises(AgentExecutionError, match=r"messages.*prompt"),
         ):
@@ -563,8 +573,10 @@ class TestInputValidation:
         with (
             patch("app.agents.executor.set_tenant_context", new_callable=AsyncMock),
             patch.object(
-                AgentExecutor, "_load_definition",
-                new_callable=AsyncMock, return_value=definition,
+                AgentExecutor,
+                "_load_definition",
+                new_callable=AsyncMock,
+                return_value=definition,
             ),
             pytest.raises(AgentExecutionError, match=r"messages.*prompt"),
         ):
@@ -585,8 +597,10 @@ class TestInputValidation:
         with (
             patch("app.agents.executor.set_tenant_context", new_callable=AsyncMock),
             patch.object(
-                AgentExecutor, "_load_definition",
-                new_callable=AsyncMock, return_value=definition,
+                AgentExecutor,
+                "_load_definition",
+                new_callable=AsyncMock,
+                return_value=definition,
             ),
             pytest.raises(AgentExecutionError, match=r"role.*content"),
         ):
@@ -607,8 +621,10 @@ class TestInputValidation:
         with (
             patch("app.agents.executor.set_tenant_context", new_callable=AsyncMock),
             patch.object(
-                AgentExecutor, "_load_definition",
-                new_callable=AsyncMock, return_value=definition,
+                AgentExecutor,
+                "_load_definition",
+                new_callable=AsyncMock,
+                return_value=definition,
             ),
             pytest.raises(AgentExecutionError, match=r"role.*content"),
         ):
@@ -629,8 +645,10 @@ class TestInputValidation:
         with (
             patch("app.agents.executor.set_tenant_context", new_callable=AsyncMock),
             patch.object(
-                AgentExecutor, "_load_definition",
-                new_callable=AsyncMock, return_value=definition,
+                AgentExecutor,
+                "_load_definition",
+                new_callable=AsyncMock,
+                return_value=definition,
             ),
             pytest.raises(AgentExecutionError, match=r"role.*content"),
         ):

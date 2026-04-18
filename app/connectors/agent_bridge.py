@@ -29,7 +29,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.config import settings
 from app.connectors.models import (
     ConnectionStatus,
     ConnectorDefinition,
@@ -111,9 +110,7 @@ class ConnectorToolProvider:
             .options(joinedload(TenantConnection.connector_definition))
         )
         if actor_user_id is not None:
-            stmt = stmt.where(
-                TenantConnection.connected_by_user_id == actor_user_id
-            )
+            stmt = stmt.where(TenantConnection.connected_by_user_id == actor_user_id)
 
         result = await db.execute(stmt)
         connections = result.unique().scalars().all()
@@ -159,7 +156,9 @@ class ConnectorToolProvider:
             return None
 
         resolved = await capability_resolver.resolve_agent_tools_with_connectors(
-            definition, tenant_id, db,
+            definition,
+            tenant_id,
+            db,
         )
         return set(resolved)
 
@@ -187,7 +186,9 @@ class ConnectorToolProvider:
         # Per-agent authorization (P0.3)
         if agent_id is not None:
             allowed = await self._resolve_agent_allowed_tools(
-                agent_id, tenant_id, db,
+                agent_id,
+                tenant_id,
+                db,
             )
             if allowed is not None and tool_name not in allowed:
                 await self._emit_governance_violation(
@@ -214,22 +215,21 @@ class ConnectorToolProvider:
         )
         if connection is None:
             return {
-                "error": (
-                    f"No active connection for '{connector_slug}'. "
-                    f"The user must connect their account first."
-                ),
+                "error": (f"No active connection for '{connector_slug}'. The user must connect their account first."),
                 "is_error": True,
             }
 
         connector_def = connection.connector_definition
 
         # Cedar / policy gate (P3.1) — no-op when Cedar disabled
+        policy_denied_cls: type[Exception] | None = None
         try:
             from app.connectors.policy_gate import (
                 PolicyDenied,
                 policy_gate,
             )
 
+            policy_denied_cls = PolicyDenied
             await policy_gate.authorize(
                 tenant_id=tenant_id,
                 actor_user_id=actor_user_id,
@@ -242,7 +242,7 @@ class ConnectorToolProvider:
             pass
         except Exception as exc:
             # PolicyDenied is the only expected failure mode; re-raise others
-            if "PolicyDenied" in type(exc).__name__:
+            if policy_denied_cls is not None and isinstance(exc, policy_denied_cls):
                 await self._emit_governance_violation(
                     tenant_id=tenant_id,
                     agent_id=agent_id,
@@ -302,9 +302,7 @@ class ConnectorToolProvider:
             )
         )
         if actor_user_id is not None:
-            stmt = stmt.where(
-                TenantConnection.connected_by_user_id == actor_user_id
-            )
+            stmt = stmt.where(TenantConnection.connected_by_user_id == actor_user_id)
 
         result = await db.execute(stmt)
         connection = result.unique().scalar_one_or_none()

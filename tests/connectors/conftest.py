@@ -159,9 +159,7 @@ def make_oauth_credential(
         credential_type=CredentialType.OAUTH2,
         access_token_enc=encrypt("test-access-token"),
         refresh_token_enc=encrypt("test-refresh-token"),
-        token_expires_at=(
-            now - timedelta(minutes=5) if expired else now + timedelta(hours=1)
-        ),
+        token_expires_at=(now - timedelta(minutes=5) if expired else now + timedelta(hours=1)),
         is_valid=True,
         granted_scopes={"scopes": ["channels:read"]},
         auth_metadata={},

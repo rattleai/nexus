@@ -38,7 +38,10 @@ def upgrade() -> None:
     # type while emitting the add_column DDL.
 
     connector_source_enum = PG_ENUM(
-        "yaml", "composio", "tenant_mcp", "plugin",
+        "yaml",
+        "composio",
+        "tenant_mcp",
+        "plugin",
         name="connectorsource",
         create_type=False,
     )

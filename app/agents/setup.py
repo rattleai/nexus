@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import re
 import uuid
-from typing import Any, Callable, Coroutine
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 import structlog
 from sqlalchemy import select
@@ -46,11 +47,7 @@ def build_tool_executor(
         # Connector tools skip the static check — the bridge does its own
         # tenant-aware capability resolution (which also covers them).
         is_connector_tool = tool_name.startswith("connector:")
-        if (
-            not is_connector_tool
-            and static_allowed
-            and tool_name not in static_allowed
-        ):
+        if not is_connector_tool and static_allowed and tool_name not in static_allowed:
             return {"error": f"Tool '{tool_name}' is not allowed for this agent"}
 
         try:
@@ -140,14 +137,16 @@ async def resolve_datasource_mentions(
                 ds_id = uuid.UUID(ds_id_str)
                 context_text = await _load_datasource_context(ds_id, tenant_id, db)
                 if context_text:
-                    resolved.append({
-                        "role": "system",
-                        "content": (
-                            f"=== Data Source: {ds_name} (id: {ds_id_str}) ===\n"
-                            f"{context_text}\n"
-                            f"=== End Data Source: {ds_name} ==="
-                        ),
-                    })
+                    resolved.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                f"=== Data Source: {ds_name} (id: {ds_id_str}) ===\n"
+                                f"{context_text}\n"
+                                f"=== End Data Source: {ds_name} ==="
+                            ),
+                        }
+                    )
             except Exception:
                 logger.warning(
                     "datasource_mention_resolve_failed",

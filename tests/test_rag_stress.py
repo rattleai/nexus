@@ -7,9 +7,7 @@ concurrency, and robustness of all new RAG components.
 from __future__ import annotations
 
 import asyncio
-import math
 import random
-import string
 import time
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,13 +15,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 # ── Chunking Stress Tests ────────────────────────────────────
-
 from app.docprocessor.chunking import (
     ChunkingStrategy,
     FixedSizeChunker,
     MarkdownChunker,
     RecursiveChunker,
-    SemanticChunker,
     get_chunker,
 )
 
@@ -108,7 +104,7 @@ class TestChunkingStress:
         chunker = RecursiveChunker()
         chunks = chunker.chunk(text, chunk_size=100, chunk_overlap=0)
         assert len(chunks) > 0
-        for chunk_text, meta in chunks:
+        for chunk_text, _meta in chunks:
             assert len(chunk_text) <= 120  # Allow some flex
 
     def test_markdown_many_headings(self):
@@ -270,7 +266,9 @@ class TestEmbeddingGatewayStress:
             mock_settings.AI_OPENAI_API_KEY = "sk-test"
 
             with patch.object(
-                gateway, "_call_provider", return_value=mock_embedding,
+                gateway,
+                "_call_provider",
+                return_value=mock_embedding,
             ):
                 tasks = [gateway.generate(f"text-{i}") for i in range(50)]
                 results = await asyncio.gather(*tasks)
@@ -294,7 +292,8 @@ class TestEmbeddingGatewayStress:
             with patch.object(gateway, "_cache_mget", mget_mock):
                 with patch.object(gateway, "_cache_mset", mset_mock):
                     with patch.object(
-                        gateway, "_call_provider_batch",
+                        gateway,
+                        "_call_provider_batch",
                         return_value=[emb, emb, emb],
                     ):
                         results = await gateway.generate_batch(["a", "b", "c"])
@@ -310,7 +309,7 @@ class TestEmbeddingGatewayStress:
 
 # ── Reranker Stress Tests ────────────────────────────────────
 
-from app.agents.reranker import Reranker, RerankerResult
+from app.agents.reranker import Reranker
 
 
 class TestRerankerStress:
@@ -367,10 +366,11 @@ class TestRerankerStress:
 
 # ── Search Engine Stress Tests ───────────────────────────────
 
+from datetime import UTC
+
 from app.agents.search import (
     HybridSearchEngine,
     SearchFilters,
-    SearchResult,
     SearchSource,
     SearchType,
     _vec_cast,
@@ -394,7 +394,7 @@ class TestSearchStress:
     @pytest.mark.asyncio
     async def test_search_with_all_filters(self):
         """Search with every filter set simultaneously."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         engine = HybridSearchEngine()
         mock_db = AsyncMock()
@@ -411,8 +411,8 @@ class TestSearchStress:
                     data_source_ids=[uuid.uuid4(), uuid.uuid4()],
                     source_types=["pdf", "csv"],
                     tags=["important", "reviewed"],
-                    date_from=datetime(2024, 1, 1, tzinfo=timezone.utc),
-                    date_to=datetime(2025, 12, 31, tzinfo=timezone.utc),
+                    date_from=datetime(2024, 1, 1, tzinfo=UTC),
+                    date_to=datetime(2025, 12, 31, tzinfo=UTC),
                     section_title="Introduction",
                 ),
                 limit=10,
@@ -556,8 +556,8 @@ class TestVectorTypeStress:
         # binary: 1536 bits / 8 = 192 bytes (97% savings)
         assert 1536 // 8 == 192
         # Verify savings ratios
-        assert 3072 / 6144 == 0.5    # halfvec = 50% of full
-        assert 192 / 6144 < 0.032    # binary < 3.2% of full
+        assert 3072 / 6144 == 0.5  # halfvec = 50% of full
+        assert 192 / 6144 < 0.032  # binary < 3.2% of full
 
     def test_result_processor_parses_vector_string(self):
         """Result processor correctly parses pgvector string format."""
@@ -598,7 +598,7 @@ class TestVectorTypeStress:
 
 # ── RAG Evaluator Stress Tests ───────────────────────────────
 
-from app.agents.rag_metrics import RAGEvaluator, RetrievalMetrics
+from app.agents.rag_metrics import RAGEvaluator
 
 
 class TestDateParser:
@@ -657,9 +657,7 @@ class TestRAGEvaluatorStress:
             {"content": "answer A", "score": 0.9},
             {"content": "answer B", "score": 0.8},
         ]
-        metrics = evaluator.evaluate_retrieval(
-            results, ground_truth=["answer A", "answer B"]
-        )
+        metrics = evaluator.evaluate_retrieval(results, ground_truth=["answer A", "answer B"])
         assert metrics.context_recall == 1.0
         assert metrics.context_precision == 1.0
 
@@ -668,9 +666,7 @@ class TestRAGEvaluatorStress:
         results = [
             {"content": "irrelevant stuff", "score": 0.9},
         ]
-        metrics = evaluator.evaluate_retrieval(
-            results, ground_truth=["the actual answer"]
-        )
+        metrics = evaluator.evaluate_retrieval(results, ground_truth=["the actual answer"])
         assert metrics.context_recall == 0.0
 
 
@@ -685,9 +681,7 @@ class TestEndToEndStress:
         # Simulate a technical document
         paragraphs = []
         for i in range(50):
-            paragraph = f"Section {i}: " + " ".join(
-                f"This is sentence {j} about topic {i}." for j in range(10)
-            )
+            paragraph = f"Section {i}: " + " ".join(f"This is sentence {j} about topic {i}." for j in range(10))
             paragraphs.append(paragraph)
         document = "\n\n".join(paragraphs)
 

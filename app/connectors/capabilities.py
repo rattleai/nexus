@@ -22,7 +22,6 @@ Example for a google-workspace connector::
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
 import structlog
 from sqlalchemy import select
@@ -31,11 +30,9 @@ from sqlalchemy.orm import joinedload
 
 from app.connectors.models import (
     ConnectionStatus,
-    ConnectorDefinition,
-    ConnectorType,
     TenantConnection,
 )
-from app.connectors.tool_adapter import ConnectorToolAdapter, make_tool_name
+from app.connectors.tool_adapter import ConnectorToolAdapter
 from app.plugins.base import CapabilityDomain, ToolCapability
 
 logger = structlog.stdlib.get_logger()
@@ -86,18 +83,17 @@ async def build_connector_capability_domains(
                 slug_suffix = group.get("slug_suffix", "all")
                 patterns = group.get("tool_patterns", [])
                 # Filter tools matching patterns (simple prefix match)
-                matching = tuple(
-                    tn for tn in tool_names
-                    if any(p in tn for p in patterns)
-                ) if patterns else tool_names
+                matching = tuple(tn for tn in tool_names if any(p in tn for p in patterns)) if patterns else tool_names
                 if matching:
-                    caps.append(ToolCapability(
-                        slug=f"connectors:{cd.slug}:{slug_suffix}",
-                        label=group.get("label", f"{cd.name} {slug_suffix}"),
-                        description=group.get("description", ""),
-                        tools=matching,
-                        risk_level=group.get("risk_level", "low"),
-                    ))
+                    caps.append(
+                        ToolCapability(
+                            slug=f"connectors:{cd.slug}:{slug_suffix}",
+                            label=group.get("label", f"{cd.name} {slug_suffix}"),
+                            description=group.get("description", ""),
+                            tools=matching,
+                            risk_level=group.get("risk_level", "low"),
+                        )
+                    )
             capabilities = tuple(caps)
         else:
             # Default: single "all" capability containing every tool
@@ -110,11 +106,13 @@ async def build_connector_capability_domains(
                 ),
             )
 
-        domains.append(CapabilityDomain(
-            slug=f"connectors:{cd.slug}",
-            label=cd.name,
-            icon=cd.icon,
-            capabilities=capabilities,
-        ))
+        domains.append(
+            CapabilityDomain(
+                slug=f"connectors:{cd.slug}",
+                label=cd.name,
+                icon=cd.icon,
+                capabilities=capabilities,
+            )
+        )
 
     return domains

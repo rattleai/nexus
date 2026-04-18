@@ -57,7 +57,8 @@ class AgentMemoryManager:
     ) -> Any | None:
         """Read a value from short-term (session) memory."""
         redis_key = _SHORT_TERM_KEY.format(
-            instance_id=instance_id, session_id=session_id,
+            instance_id=instance_id,
+            session_id=session_id,
         )
         raw = await redis_pool.hget(redis_key, key)
         if raw is None:
@@ -97,7 +98,8 @@ return 1
         from app.config import settings
 
         redis_key = _SHORT_TERM_KEY.format(
-            instance_id=instance_id, session_id=session_id,
+            instance_id=instance_id,
+            session_id=session_id,
         )
 
         cap = max_entries or settings.AGENT_MEMORY_SHORT_MAX_ENTRIES
@@ -130,7 +132,8 @@ return 1
     ) -> dict[str, Any]:
         """Read all short-term memory for a session."""
         redis_key = _SHORT_TERM_KEY.format(
-            instance_id=instance_id, session_id=session_id,
+            instance_id=instance_id,
+            session_id=session_id,
         )
         raw = await redis_pool.hgetall(redis_key)
         result = {}
@@ -148,7 +151,8 @@ return 1
     ) -> None:
         """Clear all short-term memory for a session."""
         redis_key = _SHORT_TERM_KEY.format(
-            instance_id=instance_id, session_id=session_id,
+            instance_id=instance_id,
+            session_id=session_id,
         )
         await redis_pool.delete(redis_key)
 
@@ -193,7 +197,7 @@ return 1
 
         # NOTE: redis_pool.eval() runs a server-side Lua script atomically
         # on the Redis server — this is NOT Python eval().
-        result = await redis_pool.eval(  # noqa: S307
+        result = await redis_pool.eval(
             self._SET_SHORT_TERM_LUA,
             1,
             redis_key,
@@ -265,18 +269,17 @@ return 1
         # Validate embedding dimensions and types
         if embedding is not None:
             from app.config import settings
+
             expected_dims = settings.AGENT_MEMORY_VECTOR_DIMENSIONS
             if not isinstance(embedding, list):
                 raise ValueError("Embedding must be a list of floats")
             if len(embedding) != expected_dims:
-                raise ValueError(
-                    f"Embedding dimension mismatch: got {len(embedding)}, "
-                    f"expected {expected_dims}"
-                )
+                raise ValueError(f"Embedding dimension mismatch: got {len(embedding)}, expected {expected_dims}")
             if not all(isinstance(v, (int, float)) for v in embedding):
                 raise ValueError("All embedding values must be numeric (int or float)")
             # Ensure all values are finite
             import math
+
             if any(math.isnan(v) or math.isinf(v) for v in embedding):
                 raise ValueError("Embedding contains NaN or Inf values")
 
@@ -426,6 +429,7 @@ return 1
         """
         limit = min(limit, 50)
         import math
+
         from app.config import settings
 
         # Validate query_embedding before use (same checks as set_long_term)
@@ -439,11 +443,19 @@ return 1
 
         if settings.AGENT_MEMORY_VECTOR_ENABLED:
             return await self._search_pgvector(
-                instance_id, tenant_id, query_embedding, namespace, limit,
+                instance_id,
+                tenant_id,
+                query_embedding,
+                namespace,
+                limit,
             )
 
         return await self._search_python_fallback(
-            instance_id, tenant_id, query_embedding, namespace, limit,
+            instance_id,
+            tenant_id,
+            query_embedding,
+            namespace,
+            limit,
         )
 
     async def _search_pgvector(
@@ -472,13 +484,16 @@ return 1
             LIMIT :limit
         """)
 
-        result = await self.db.execute(stmt, {
-            "instance_id": instance_id,
-            "tenant_id": tenant_id,
-            "namespace": namespace,
-            "query_vec": vector_str,
-            "limit": limit,
-        })
+        result = await self.db.execute(
+            stmt,
+            {
+                "instance_id": instance_id,
+                "tenant_id": tenant_id,
+                "namespace": namespace,
+                "query_vec": vector_str,
+                "limit": limit,
+            },
+        )
 
         return [
             {
@@ -552,7 +567,10 @@ return 1
             AgentDefinitionMemoryEntry.tenant_id == tenant_id,
             AgentDefinitionMemoryEntry.namespace == namespace,
             AgentDefinitionMemoryEntry.key == key,
-            or_(AgentDefinitionMemoryEntry.expires_at.is_(None), AgentDefinitionMemoryEntry.expires_at > datetime.now(UTC)),
+            or_(
+                AgentDefinitionMemoryEntry.expires_at.is_(None),
+                AgentDefinitionMemoryEntry.expires_at > datetime.now(UTC),
+            ),
         )
         result = await self.db.execute(stmt)
         entry = result.scalar_one_or_none()
@@ -610,7 +628,10 @@ return 1
                 AgentDefinitionMemoryEntry.definition_id == definition_id,
                 AgentDefinitionMemoryEntry.tenant_id == tenant_id,
                 AgentDefinitionMemoryEntry.namespace == namespace,
-                or_(AgentDefinitionMemoryEntry.expires_at.is_(None), AgentDefinitionMemoryEntry.expires_at > datetime.now(UTC)),
+                or_(
+                    AgentDefinitionMemoryEntry.expires_at.is_(None),
+                    AgentDefinitionMemoryEntry.expires_at > datetime.now(UTC),
+                ),
             )
             .order_by(AgentDefinitionMemoryEntry.updated_at.desc())
             .limit(limit)

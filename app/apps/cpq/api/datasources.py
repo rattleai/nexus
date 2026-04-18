@@ -16,7 +16,6 @@ from app.api.deps import (
     get_current_user_optional,
     get_db,
 )
-from app.db.models import User
 from app.api.rate_limit import ApiKeyRateLimiter
 from app.apps.cpq.api.schemas_datasource import (
     DataSourceChunkRead,
@@ -38,6 +37,7 @@ from app.db.models import (
     DataSourceStatus,
     DataSourceType,
     Tenant,
+    User,
 )
 from app.storage.s3 import S3Storage, StorageError, handle_storage_error
 
@@ -181,9 +181,7 @@ async def upload_datasource(
 
     try:
         storage = _get_storage()
-        total_size = await storage.async_upload_fileobj(
-            key, file.file, max_size=settings.MAX_UPLOAD_SIZE_BYTES
-        )
+        total_size = await storage.async_upload_fileobj(key, file.file, max_size=settings.MAX_UPLOAD_SIZE_BYTES)
     except StorageError as exc:
         raise handle_storage_error(exc) from exc
     except RuntimeError:
@@ -237,14 +235,15 @@ async def upload_datasource(
 )
 async def browse_cloud_drive(
     connection_id: uuid.UUID = Query(
-        ..., description="TenantConnection id (must belong to the caller's tenant)",
+        ...,
+        description="TenantConnection id (must belong to the caller's tenant)",
     ),
     path: str = Query(
         "",
         max_length=500,
         description="Provider-specific folder reference: empty/'' for root, "
-                    "Dropbox path like '/Reports', or a Google Drive / "
-                    "OneDrive parent ID.",
+        "Dropbox path like '/Reports', or a Google Drive / "
+        "OneDrive parent ID.",
     ),
     cursor: str | None = Query(
         None,
@@ -366,9 +365,7 @@ async def get_datasource(
 ):
     """Get a data source with extraction preview (sample chunks and detected entities)."""
     result = await db.execute(
-        tenant_query(select(DataSource), tenant).where(
-            DataSource.id == datasource_id, DataSource.deleted_at.is_(None)
-        )
+        tenant_query(select(DataSource), tenant).where(DataSource.id == datasource_id, DataSource.deleted_at.is_(None))
     )
     ds = result.scalar_one_or_none()
     if not ds:
@@ -417,9 +414,7 @@ async def delete_datasource(
 ):
     """Soft-delete a data source."""
     result = await db.execute(
-        tenant_query(select(DataSource), tenant).where(
-            DataSource.id == datasource_id, DataSource.deleted_at.is_(None)
-        )
+        tenant_query(select(DataSource), tenant).where(DataSource.id == datasource_id, DataSource.deleted_at.is_(None))
     )
     ds = result.scalar_one_or_none()
     if not ds:
@@ -454,9 +449,7 @@ async def reprocess_datasource(
     Existing chunks are deleted so they can be regenerated.
     """
     result = await db.execute(
-        tenant_query(select(DataSource), tenant).where(
-            DataSource.id == datasource_id, DataSource.deleted_at.is_(None)
-        )
+        tenant_query(select(DataSource), tenant).where(DataSource.id == datasource_id, DataSource.deleted_at.is_(None))
     )
     ds = result.scalar_one_or_none()
     if not ds:
@@ -514,9 +507,7 @@ async def list_chunks(
     """List indexed chunks for a data source with cursor pagination."""
     # Verify data source exists and belongs to tenant
     result = await db.execute(
-        tenant_query(select(DataSource), tenant).where(
-            DataSource.id == datasource_id, DataSource.deleted_at.is_(None)
-        )
+        tenant_query(select(DataSource), tenant).where(DataSource.id == datasource_id, DataSource.deleted_at.is_(None))
     )
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Data source not found")

@@ -98,7 +98,10 @@ return 0
 
 
 async def _atomic_check_and_increment(
-    key: str, amount: float, limit: float, ttl_seconds: int = 0,
+    key: str,
+    amount: float,
+    limit: float,
+    ttl_seconds: int = 0,
 ) -> int:
     """Atomically check spending limit AND increment in a single Lua call.
 
@@ -107,7 +110,7 @@ async def _atomic_check_and_increment(
     Uses Redis server-side Lua scripting (not Python eval).
     """
     # redis_pool.eval runs a Lua script on the Redis server (not Python eval)
-    result = await redis_pool.eval(  # noqa: S307
+    result = await redis_pool.eval(
         _CHECK_AND_INCREMENT_LUA,
         1,  # number of keys
         key,  # KEYS[1]
@@ -119,7 +122,9 @@ async def _atomic_check_and_increment(
 
 
 async def _atomic_spend_check(
-    key: str, estimated_cost: float, limit: float,
+    key: str,
+    estimated_cost: float,
+    limit: float,
 ) -> int:
     """Atomically check whether spending would exceed the limit (read-only).
 
@@ -128,7 +133,7 @@ async def _atomic_spend_check(
     Returns 0 if within bounds, -1 if limit would be exceeded.
     """
     # redis_pool.eval runs a Lua script on the Redis server (not Python eval)
-    result = await redis_pool.eval(  # noqa: S307
+    result = await redis_pool.eval(
         _CHECK_SPENDING_LUA,
         1,  # number of keys
         key,  # KEYS[1]
@@ -156,6 +161,7 @@ class GovernanceEngine:
         approval_caps = policy.get("require_approval_for_capabilities", [])
         if denied_caps or approval_caps:
             from app.agents.capabilities import capability_resolver
+
             if denied_caps:
                 self._denied_cap_tools = capability_resolver.resolve(denied_caps)
             if approval_caps:
@@ -270,13 +276,19 @@ class GovernanceEngine:
             agent_id = context.get("agent_id", "unknown")
             estimated_cost = context.get("estimated_cost", 0.01)
             from datetime import UTC, datetime
+
             today = datetime.now(UTC).strftime("%Y-%m-%d")
             day_key = _SPEND_DAY_KEY.format(
-                tenant_id=tenant_id, agent_id=agent_id, date=today,
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                date=today,
             )
             try:
                 lua_result = await _atomic_check_and_increment(
-                    day_key, estimated_cost, max_per_day, ttl_seconds=86400 * 2,
+                    day_key,
+                    estimated_cost,
+                    max_per_day,
+                    ttl_seconds=86400 * 2,
                 )
             except Exception as exc:
                 logger.error("governance_redis_unavailable", check="spending_limit", exc_info=True)
@@ -305,13 +317,19 @@ class GovernanceEngine:
             agent_id = context.get("agent_id", "unknown")
             estimated_cost = context.get("estimated_cost", 0.01)
             from datetime import UTC, datetime
+
             this_month = datetime.now(UTC).strftime("%Y-%m")
             month_key = _SPEND_MONTH_KEY.format(
-                tenant_id=tenant_id, agent_id=agent_id, month=this_month,
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                month=this_month,
             )
             try:
                 lua_result = await _atomic_check_and_increment(
-                    month_key, estimated_cost, max_per_month, ttl_seconds=86400 * 35,
+                    month_key,
+                    estimated_cost,
+                    max_per_month,
+                    ttl_seconds=86400 * 35,
                 )
             except Exception as exc:
                 logger.error("governance_redis_unavailable", check="monthly_spending_limit", exc_info=True)
@@ -387,7 +405,8 @@ class GovernanceEngine:
         agent_id = context.get("agent_id", "")
         if max_agent_rpm is not None and agent_id:
             agent_rate_key = _RATE_AGENT_KEY.format(
-                tenant_id=tenant_id, agent_id=agent_id,
+                tenant_id=tenant_id,
+                agent_id=agent_id,
             )
             try:
                 pipe = redis_pool.pipeline(transaction=True)
@@ -434,9 +453,8 @@ class GovernanceEngine:
         tool_name = context.get("tool_name", "")
 
         # Check both raw tool names and capability-resolved tool names
-        needs_approval = (
-            (require_approval and tool_name in require_approval)
-            or (self._approval_cap_tools and tool_name in self._approval_cap_tools)
+        needs_approval = (require_approval and tool_name in require_approval) or (
+            self._approval_cap_tools and tool_name in self._approval_cap_tools
         )
         if not needs_approval:
             return
@@ -451,18 +469,21 @@ class GovernanceEngine:
         approval_key = _APPROVAL_KEY.format(approval_id=approval_id)
         import json
         from datetime import UTC, datetime
-        approval_data = json.dumps({
-            "approval_id": approval_id,
-            "tenant_id": str(tenant_id),
-            "instance_id": instance_id,
-            "agent_id": agent_id,
-            "action": f"tool_call:{tool_name}",
-            "tool_name": tool_name,
-            "context": {k: str(v) for k, v in context.items()},
-            "status": "pending",
-            "default_action": default_action,
-            "created_at": datetime.now(UTC).isoformat(),
-        })
+
+        approval_data = json.dumps(
+            {
+                "approval_id": approval_id,
+                "tenant_id": str(tenant_id),
+                "instance_id": instance_id,
+                "agent_id": agent_id,
+                "action": f"tool_call:{tool_name}",
+                "tool_name": tool_name,
+                "context": {k: str(v) for k, v in context.items()},
+                "status": "pending",
+                "default_action": default_action,
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
         await redis_pool.setex(approval_key, timeout + 60, approval_data)
 
         # Add to tenant's pending approvals list
@@ -483,7 +504,6 @@ class GovernanceEngine:
         )
 
         # Wait for approval via Redis pub/sub (low-latency) with polling fallback
-        import asyncio
         decision = await self._wait_for_approval(approval_id, approval_key, timeout)
 
         # Clean up pending set
@@ -492,6 +512,7 @@ class GovernanceEngine:
         if decision is None:
             # Timeout: apply default action
             from app.agents.events import AgentApprovalResolved
+
             await emit(
                 AgentApprovalResolved(
                     tenant_id=str(tenant_id),
@@ -625,7 +646,6 @@ class GovernanceEngine:
         # Check per-agent DB query rate (separate from general rate limiting)
         max_db_qpm = self.policy.get("max_queries_per_minute")
         if max_db_qpm is not None:
-            from app.config import settings
             rate_key = f"agent:gov:db_rate:{tenant_id}:{instance_id}"
             try:
                 pipe = redis_pool.pipeline()
@@ -694,10 +714,14 @@ class GovernanceEngine:
             # partial updates if the process dies mid-sequence.
             run_key = _SPEND_RUN_KEY.format(instance_id=instance_id)
             day_key = _SPEND_DAY_KEY.format(
-                tenant_id=tenant_id, agent_id=agent_id, date=now.strftime("%Y-%m-%d"),
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                date=now.strftime("%Y-%m-%d"),
             )
             month_key = _SPEND_MONTH_KEY.format(
-                tenant_id=tenant_id, agent_id=agent_id, month=now.strftime("%Y-%m"),
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                month=now.strftime("%Y-%m"),
             )
 
             pipe = redis_pool.pipeline()
@@ -783,6 +807,7 @@ class GovernanceEngine:
             await redis_pool.publish(channel_name, decision)
 
         from app.agents.events import AgentApprovalResolved
+
         await emit(
             AgentApprovalResolved(
                 tenant_id=data.get("tenant_id", ""),
@@ -869,6 +894,7 @@ class GovernanceEngine:
             raw = await redis_pool.get(cb_key)
             if raw:
                 import json
+
                 data = json.loads(raw)
                 return True, data.get("reason", "Circuit breaker open")
             return False, ""
@@ -883,12 +909,15 @@ class GovernanceEngine:
     ) -> None:
         """Trip the tenant-level circuit breaker, pausing all agent execution."""
         import json
+
         cb_key = f"agent:gov:tenant_cb:{tenant_id}"
-        data = json.dumps({
-            "reason": reason,
-            "tripped_at": time.time(),
-            "duration": duration_seconds,
-        })
+        data = json.dumps(
+            {
+                "reason": reason,
+                "tripped_at": time.time(),
+                "duration": duration_seconds,
+            }
+        )
         try:
             await redis_pool.setex(cb_key, duration_seconds, data)
             logger.warning(

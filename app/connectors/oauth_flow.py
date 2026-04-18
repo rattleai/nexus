@@ -18,6 +18,7 @@ Security hardening over the original PR #63 implementation:
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import json
 import secrets
@@ -33,7 +34,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors.app_credentials import (
     AppCredentialError,
-    DecryptedAppCredentials,
     app_credential_manager,
 )
 from app.connectors.credentials import credential_manager
@@ -119,9 +119,7 @@ class ConnectorOAuthFlow:
 
         client_id = app_creds.client_id or ""
         if not client_id:
-            raise OAuthFlowError(
-                f"OAuth app credentials for '{connector_def.slug}' have no client_id."
-            )
+            raise OAuthFlowError(f"OAuth app credentials for '{connector_def.slug}' have no client_id.")
 
         scopes = auth_config.get("scopes", [])
         pkce_required = bool(auth_config.get("pkce_required", False))
@@ -144,11 +142,7 @@ class ConnectorOAuthFlow:
         if pkce_required:
             code_verifier = secrets.token_urlsafe(64)
             code_challenge = (
-                base64.urlsafe_b64encode(
-                    hashlib.sha256(code_verifier.encode()).digest()
-                )
-                .rstrip(b"=")
-                .decode()
+                base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).rstrip(b"=").decode()
             )
             state_payload["code_verifier"] = code_verifier
 
@@ -171,9 +165,7 @@ class ConnectorOAuthFlow:
             "state": state,
         }
         if scopes:
-            params["scope"] = (
-                " ".join(scopes) if isinstance(scopes, list) else str(scopes)
-            )
+            params["scope"] = " ".join(scopes) if isinstance(scopes, list) else str(scopes)
         if pkce_required and code_challenge:
             params["code_challenge"] = code_challenge
             params["code_challenge_method"] = "S256"
@@ -220,9 +212,7 @@ class ConnectorOAuthFlow:
         auth_config = _effective_auth_config(connector_def)
         token_url = auth_config.get("token_url")
         if not token_url:
-            raise OAuthFlowError(
-                f"Connector {connector_def.slug} has no token_url"
-            )
+            raise OAuthFlowError(f"Connector {connector_def.slug} has no token_url")
 
         try:
             app_creds = await app_credential_manager.require(
@@ -256,9 +246,7 @@ class ConnectorOAuthFlow:
                 connector=connector_def.slug,
                 error=str(exc)[:200],
             )
-            raise OAuthFlowError(
-                "Failed to exchange authorization code with provider"
-            ) from exc
+            raise OAuthFlowError("Failed to exchange authorization code with provider") from exc
 
         access_token = token_response.get("access_token", "")
         refresh_token = token_response.get("refresh_token")
@@ -283,11 +271,7 @@ class ConnectorOAuthFlow:
                     )
                 if resp.status_code == 200:
                     user_info = resp.json()
-                    account_identifier = (
-                        user_info.get("email")
-                        or user_info.get("login")
-                        or user_info.get("name")
-                    )
+                    account_identifier = user_info.get("email") or user_info.get("login") or user_info.get("name")
                     auth_metadata["user_info"] = user_info
             except Exception:
                 logger.debug("oauth_userinfo_fetch_failed", exc_info=True)
@@ -400,15 +384,11 @@ class ConnectorOAuthFlow:
                 logger.warning("oauth_state_decrypt_failed", state=state)
 
         # Single-use — delete from both stores regardless
-        try:
+        with contextlib.suppress(Exception):
             await redis_pool.delete(key)
-        except Exception:
-            pass
 
         if row is not None:
-            await db.execute(
-                delete(ConnectorOAuthState).where(ConnectorOAuthState.id == row.id)
-            )
+            await db.execute(delete(ConnectorOAuthState).where(ConnectorOAuthState.id == row.id))
             await db.flush()
 
         if payload_json is None:

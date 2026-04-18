@@ -8,9 +8,8 @@ global defaults from app.config.settings when not set.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, func
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,15 +28,11 @@ class TenantRAGConfig(TimestampMixin, Base):
     )
 
     # Embedding settings
-    embedding_model: Mapped[str] = mapped_column(
-        String(100), default="text-embedding-3-small"
-    )
+    embedding_model: Mapped[str] = mapped_column(String(100), default="text-embedding-3-small")
     embedding_dimensions: Mapped[int] = mapped_column(Integer, default=1536)
 
     # Chunking settings
-    chunking_strategy: Mapped[str] = mapped_column(
-        String(50), default="fixed_size"
-    )
+    chunking_strategy: Mapped[str] = mapped_column(String(50), default="fixed_size")
     chunk_size: Mapped[int] = mapped_column(Integer, default=1000)
     chunk_overlap: Mapped[int] = mapped_column(Integer, default=200)
 
@@ -52,6 +47,4 @@ class TenantRAGConfig(TimestampMixin, Base):
     hyde_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     graph_rag_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    __table_args__ = (
-        Index("ix_tenant_rag_configs_tenant", "tenant_id"),
-    )
+    __table_args__ = (Index("ix_tenant_rag_configs_tenant", "tenant_id"),)

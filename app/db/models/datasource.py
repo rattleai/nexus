@@ -31,12 +31,12 @@ from sqlalchemy.types import UserDefinedType
 class VectorPrecision(enum.StrEnum):
     """Vector storage precision modes for pgvector columns."""
 
-    FULL = "full"      # float32 vector(N) — 4 bytes/dim
-    HALF = "half"      # float16 halfvec(N) — 2 bytes/dim (50% savings)
+    FULL = "full"  # float32 vector(N) — 4 bytes/dim
+    HALF = "half"  # float16 halfvec(N) — 2 bytes/dim (50% savings)
     BINARY = "binary"  # 1-bit bit(N) — 0.125 bytes/dim (97% savings)
 
-from app.db.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin
 
+from app.db.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin
 
 # ── Enums ────────────────────────────────────────────────
 
@@ -86,7 +86,8 @@ class DataSource(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
 
     # Connector-based cloud drive info (references the unified connector system)
     connection_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("tenant_connections.id", ondelete="SET NULL"), nullable=True,
+        ForeignKey("tenant_connections.id", ondelete="SET NULL"),
+        nullable=True,
     )
     connector_slug: Mapped[str | None] = mapped_column(String(100), nullable=True)
     cloud_file_id: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -111,9 +112,7 @@ class DataSource(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, default=dict)
 
     # Relationships
-    chunks: Mapped[list[DataSourceChunk]] = relationship(
-        back_populates="data_source", cascade="all, delete-orphan"
-    )
+    chunks: Mapped[list[DataSourceChunk]] = relationship(back_populates="data_source", cascade="all, delete-orphan")
     # NOTE: provenance_records relationship is contributed by the CPQ plugin
     # (see app.apps.cpq.models.datasource.ConfigItemProvenance)
 
@@ -147,9 +146,7 @@ class VectorType(UserDefinedType):
 
     def __eq__(self, other):
         return (
-            isinstance(other, VectorType)
-            and self.dimensions == other.dimensions
-            and self.precision == other.precision
+            isinstance(other, VectorType) and self.dimensions == other.dimensions and self.precision == other.precision
         )
 
     def __hash__(self):
@@ -170,6 +167,7 @@ class VectorType(UserDefinedType):
 
         Always returns list[float] or None — never leaks raw driver strings.
         """
+
         def process(value):
             if value is None:
                 return None
@@ -181,6 +179,7 @@ class VectorType(UserDefinedType):
                     return []
                 return [float(x) for x in stripped.split(",") if x.strip()]
             return None
+
         return process
 
 
@@ -210,7 +209,8 @@ class DataSourceChunk(TimestampMixin, Base):
     # Used as the primary search column when VECTOR_QUANTIZATION="half" is enabled.
     # The full-precision column is kept for accuracy-sensitive operations.
     embedding_halfvec: Mapped[list | None] = mapped_column(
-        VectorType(1536, precision="half"), nullable=True,
+        VectorType(1536, precision="half"),
+        nullable=True,
     )
     # Auto-maintained tsvector for full-text search (GIN indexed, trigger-updated).
     # Column type is tsvector in PostgreSQL; mapped as Text here since SQLAlchemy
@@ -227,21 +227,24 @@ class DataSourceChunk(TimestampMixin, Base):
 
     # Parent-child retrieval — small child chunks for matching, parent chunks for context
     parent_chunk_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, index=True,
+        UUID(as_uuid=True),
+        nullable=True,
+        index=True,
     )
     chunk_level: Mapped[str | None] = mapped_column(
-        String(20), nullable=True, server_default="standard",
+        String(20),
+        nullable=True,
+        server_default="standard",
     )
 
     # Versioning — content_hash for incremental re-indexing, deleted_at for soft-delete
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     # Relationships
     data_source: Mapped[DataSource] = relationship(back_populates="chunks")
 
-    __table_args__ = (
-        Index("ix_data_source_chunks_tenant_source", "tenant_id", "data_source_id"),
-    )
+    __table_args__ = (Index("ix_data_source_chunks_tenant_source", "tenant_id", "data_source_id"),)

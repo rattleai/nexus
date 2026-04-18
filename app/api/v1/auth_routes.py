@@ -17,6 +17,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user_from_token, get_db
 from app.api.rate_limit import RateLimiter
 from app.api.schemas_auth import AuthResponse, RegisterResponse, TokenResponse, UserLogin, UserRegister, UserResponse
+from app.api.v1._auth_helpers import (
+    MAX_REFRESH_TOKENS_PER_USER as _MAX_REFRESH_TOKENS_PER_USER,
+)
+from app.api.v1._auth_helpers import (
+    check_mfa_required,
+)
+from app.api.v1._auth_helpers import (
+    clear_refresh_cookie as _clear_refresh_cookie,
+)
+from app.api.v1._auth_helpers import (
+    set_refresh_cookie as _set_refresh_cookie,
+)
 from app.config import settings
 from app.core.email import EmailTemplate, send_email
 from app.core.events import InvitationAccepted, UserRegistered, emit
@@ -40,13 +52,6 @@ from app.db.models import (
     UserRole,
 )
 
-from app.api.v1._auth_helpers import (
-    MAX_REFRESH_TOKENS_PER_USER as _MAX_REFRESH_TOKENS_PER_USER,
-    check_mfa_required,
-    clear_refresh_cookie as _clear_refresh_cookie,
-    set_refresh_cookie as _set_refresh_cookie,
-)
-
 _auth_rate_limit = RateLimiter(max_requests=settings.RATE_LIMIT_AUTH_ENDPOINTS, window=60, key_prefix="rl:auth")
 _refresh_rate_limit = RateLimiter(max_requests=30, window=60, key_prefix="rl:auth-refresh")
 
@@ -61,6 +66,7 @@ async def _check_account_lockout(email: str) -> None:
     """Check if an account is locked out due to too many failed login attempts."""
     try:
         from app.core.redis import redis_pool
+
         key = f"lockout:{email}"
         attempts = await redis_pool.get(key)
         if attempts and int(attempts) >= _MAX_LOGIN_ATTEMPTS:
@@ -79,6 +85,7 @@ async def _record_failed_login(email: str, client_ip: str) -> None:
     logger.warning("login_failed", email=email, client_ip=client_ip)
     try:
         from app.core.redis import redis_pool
+
         key = f"lockout:{email}"
         pipe = redis_pool.pipeline()
         pipe.incr(key)
@@ -92,6 +99,7 @@ async def _clear_login_attempts(email: str) -> None:
     """Clear login attempt counter on successful login."""
     try:
         from app.core.redis import redis_pool
+
         await redis_pool.delete(f"lockout:{email}")
     except Exception:
         pass
@@ -100,9 +108,7 @@ async def _clear_login_attempts(email: str) -> None:
 @router.post("/register", response_model=RegisterResponse, status_code=201, dependencies=[Depends(_auth_rate_limit)])
 async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
     # Check for existing user
-    existing = await db.execute(
-        select(User).where(User.email == body.email, User.deleted_at.is_(None))
-    )
+    existing = await db.execute(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
 
@@ -188,9 +194,7 @@ async def login(body: UserLogin, request: Request, response: Response, db: Async
     # Check account lockout before expensive password verification
     await _check_account_lockout(body.email)
 
-    result = await db.execute(
-        select(User).where(User.email == body.email, User.deleted_at.is_(None))
-    )
+    result = await db.execute(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     user = result.scalar_one_or_none()
 
     # Always run verify_password to prevent timing attacks that reveal whether an email exists
@@ -399,11 +403,15 @@ async def _try_grace_period_refresh(token_hash: str, db: AsyncSession):
     )
 
     # Return a row-like object matching what the caller expects
-    return type("Row", (), {
-        "id": replacement.id,
-        "user_id": replacement.user_id,
-        "expires_at": replacement.expires_at,
-    })()
+    return type(
+        "Row",
+        (),
+        {
+            "id": replacement.id,
+            "user_id": replacement.user_id,
+            "expires_at": replacement.expires_at,
+        },
+    )()
 
 
 @router.post("/logout", dependencies=[Depends(_auth_rate_limit)])
@@ -416,9 +424,7 @@ async def logout(
     # Revoke refresh token in DB
     if refresh_token:
         token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
-        result = await db.execute(
-            select(RefreshToken).where(RefreshToken.token_hash == token_hash)
-        )
+        result = await db.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
         rt = result.scalar_one_or_none()
         if rt:
             rt.revoked = True
@@ -429,6 +435,7 @@ async def logout(
     if auth_header.startswith("Bearer "):
         try:
             from app.core.security import decode_access_token, revoke_access_token
+
             payload = decode_access_token(auth_header[7:])
             jti = payload.get("jti")
             if jti:
@@ -603,9 +610,7 @@ async def verify_email(body: VerifyEmailRequest, db: AsyncSession = Depends(get_
         raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
     # Verify user's email (exclude soft-deleted users)
-    user_result = await db.execute(
-        select(User).where(User.id == claimed.user_id, User.deleted_at.is_(None))
-    )
+    user_result = await db.execute(select(User).where(User.id == claimed.user_id, User.deleted_at.is_(None)))
     user = user_result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -632,15 +637,14 @@ class ResetPasswordRequest(BaseModel):
     @classmethod
     def check_password_strength(cls, v: str) -> str:
         from app.api.schemas_auth import _validate_password_strength
+
         return _validate_password_strength(v)
 
 
 @router.post("/forgot-password", dependencies=[Depends(_auth_rate_limit)])
 async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     """Request a password reset email. Always returns success to prevent email enumeration."""
-    result = await db.execute(
-        select(User).where(User.email == body.email.strip().lower(), User.deleted_at.is_(None))
-    )
+    result = await db.execute(select(User).where(User.email == body.email.strip().lower(), User.deleted_at.is_(None)))
     user = result.scalar_one_or_none()
 
     if user:
@@ -700,9 +704,7 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
     if not claimed:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
 
-    user_result = await db.execute(
-        select(User).where(User.id == claimed.user_id, User.deleted_at.is_(None))
-    )
+    user_result = await db.execute(select(User).where(User.id == claimed.user_id, User.deleted_at.is_(None)))
     user = user_result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -720,6 +722,7 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
 
     # Revoke all outstanding access tokens for this user via Redis blacklist
     from app.core.security import revoke_all_user_tokens
+
     await revoke_all_user_tokens(str(user.id))
 
     logger.info("password_reset_completed", user_id=str(user.id))
@@ -740,6 +743,7 @@ class AcceptInvitationRequest(BaseModel):
         if v is None:
             return v
         from app.api.schemas_auth import _validate_password_strength
+
         return _validate_password_strength(v)
 
 
@@ -776,9 +780,7 @@ async def accept_invitation(
         raise HTTPException(status_code=403, detail="Cannot assign owner role via invitation")
 
     # Check if user already exists
-    user_result = await db.execute(
-        select(User).where(User.email == invitation.email, User.deleted_at.is_(None))
-    )
+    user_result = await db.execute(select(User).where(User.email == invitation.email, User.deleted_at.is_(None)))
     user = user_result.scalar_one_or_none()
 
     if user:
@@ -838,11 +840,13 @@ async def accept_invitation(
     await db.refresh(user)
     await db.commit()
 
-    await emit(InvitationAccepted(
-        tenant_id=str(invitation.tenant_id),
-        user_id=str(user.id),
-        email=user.email,
-    ))
+    await emit(
+        InvitationAccepted(
+            tenant_id=str(invitation.tenant_id),
+            user_id=str(user.id),
+            email=user.email,
+        )
+    )
 
     access_token = create_access_token({"sub": str(user.id), "tenant_id": str(invitation.tenant_id)})
     _set_refresh_cookie(response, raw_refresh)

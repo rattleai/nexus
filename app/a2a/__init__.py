@@ -7,10 +7,10 @@ codebase. See app/a2a/agent_card.py for the Agent Card publisher and
 app/a2a/client.py for the A2A-as-connector adapter.
 """
 
-from app.a2a.agent_card import AgentCard, AgentCapability, publish_agent_card
+from app.a2a.agent_card import AgentCapability, AgentCard, publish_agent_card
 
 __all__ = [
-    "AgentCard",
     "AgentCapability",
+    "AgentCard",
     "publish_agent_card",
 ]

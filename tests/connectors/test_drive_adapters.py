@@ -25,9 +25,7 @@ from app.connectors.drive import (
 from app.connectors.drive.dropbox import DropboxDriveAdapter
 from app.connectors.drive.google_drive import GoogleDriveAdapter
 from app.connectors.drive.onedrive import OneDriveAdapter
-from app.connectors.models import AuthType, BrokerType, ConnectorType, TrustLevel
-from app.connectors.models import ConnectorDefinition
-
+from app.connectors.models import AuthType, BrokerType, ConnectorDefinition, ConnectorType, TrustLevel
 
 # ── Fixtures ────────────────────────────────────────────────
 
@@ -95,7 +93,7 @@ class _MockAsyncClient:
         self._responses = list(responses)
         self.calls: list[dict[str, Any]] = []
 
-    async def __aenter__(self) -> "_MockAsyncClient":
+    async def __aenter__(self) -> _MockAsyncClient:
         return self
 
     async def __aexit__(self, *exc_info) -> None:
@@ -178,9 +176,7 @@ async def test_dropbox_list_uses_cursor_continuation():
     adapter = DropboxDriveAdapter()
     mock = _patch_adapter(
         adapter,
-        responses=[
-            _make_response(json_body={"entries": [], "has_more": False})
-        ],
+        responses=[_make_response(json_body={"entries": [], "has_more": False})],
     )
 
     await adapter.list(
@@ -206,9 +202,7 @@ async def test_dropbox_download_reads_bytes_from_body():
             _make_response(
                 content=payload_bytes,
                 headers={
-                    "Dropbox-API-Result": json.dumps(
-                        {"name": "report.pdf", "size": len(payload_bytes)}
-                    ),
+                    "Dropbox-API-Result": json.dumps({"name": "report.pdf", "size": len(payload_bytes)}),
                 },
             )
         ],
@@ -269,10 +263,7 @@ async def test_google_drive_list_passes_parent_id_in_query():
                         {
                             "id": "gdrive-file-1",
                             "name": "notes.docx",
-                            "mimeType": (
-                                "application/vnd.openxmlformats-officedocument."
-                                "wordprocessingml.document"
-                            ),
+                            "mimeType": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
                             "size": "1024",
                             "modifiedTime": "2026-04-11T09:00:00Z",
                         },
@@ -362,15 +353,10 @@ async def test_google_drive_download_exports_native_doc_to_docx():
 
     assert file_.content == exported
     assert file_.filename == "Meeting Notes.docx"
-    assert file_.mime_type == (
-        "application/vnd.openxmlformats-officedocument."
-        "wordprocessingml.document"
-    )
+    assert file_.mime_type == ("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     export_call = mock.calls[1]
     assert export_call["url"] == "/drive/v3/files/gdrive-doc-1/export"
-    assert export_call["params"]["mimeType"].endswith(
-        "wordprocessingml.document"
-    )
+    assert export_call["params"]["mimeType"].endswith("wordprocessingml.document")
 
 
 # ── OneDrive ────────────────────────────────────────────────
@@ -430,10 +416,7 @@ async def test_onedrive_download_fetches_metadata_then_content():
                     "id": "onedrive-file-1",
                     "name": "slides.pptx",
                     "file": {
-                        "mimeType": (
-                            "application/vnd.openxmlformats-officedocument."
-                            "presentationml.presentation"
-                        ),
+                        "mimeType": ("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
                     },
                     "size": len(payload),
                 }
@@ -441,10 +424,7 @@ async def test_onedrive_download_fetches_metadata_then_content():
             _make_response(
                 content=payload,
                 headers={
-                    "Content-Type": (
-                        "application/vnd.openxmlformats-officedocument."
-                        "presentationml.presentation"
-                    ),
+                    "Content-Type": ("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
                 },
             ),
         ],
@@ -463,9 +443,7 @@ async def test_onedrive_download_fetches_metadata_then_content():
 
     meta_call, content_call = mock.calls
     assert meta_call["url"].endswith("/me/drive/items/onedrive-file-1")
-    assert content_call["url"].endswith(
-        "/me/drive/items/onedrive-file-1/content"
-    )
+    assert content_call["url"].endswith("/me/drive/items/onedrive-file-1/content")
 
 
 # ── Composio-brokered connections are rejected ─────────────

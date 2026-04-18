@@ -179,6 +179,7 @@ async def jwks():
     instead of sharing the signing secret.
     """
     from app.core.security import get_jwks_public_key
+
     key = get_jwks_public_key()
     if key is None:
         return {"keys": []}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -12,6 +13,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, SoftDeleteMixin, TimestampMixin, VersionMixin
 from app.db.models.mobile import SyncMixin
+
+if TYPE_CHECKING:
+    from app.db.models.core import Tenant
 
 
 class JobStatus(enum.StrEnum):
@@ -28,7 +32,9 @@ class Job(SyncMixin, SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     type: Mapped[str] = mapped_column(String(50), nullable=False)
-    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus, values_callable=lambda e: [m.value for m in e]), default=JobStatus.PENDING, index=True)
+    status: Mapped[JobStatus] = mapped_column(
+        Enum(JobStatus, values_callable=lambda e: [m.value for m in e]), default=JobStatus.PENDING, index=True
+    )
     input_hash: Mapped[str | None] = mapped_column(String(64))
     webhook_url: Mapped[str | None] = mapped_column(String(2048))
     payload: Mapped[dict | None] = mapped_column(JSONB)
@@ -37,7 +43,7 @@ class Job(SyncMixin, SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
     error: Mapped[str | None] = mapped_column(Text)
     result: Mapped[dict | None] = mapped_column(JSONB)
 
-    tenant: Mapped["Tenant"] = relationship(back_populates="jobs")
+    tenant: Mapped[Tenant] = relationship(back_populates="jobs")
 
     __table_args__ = (Index("ix_jobs_tenant_status", "tenant_id", "status"),)
 
@@ -107,13 +113,16 @@ class Consent(TimestampMixin, Base):
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
     granted_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False,
+        DateTime(timezone=True),
+        server_default=text("now()"),
+        nullable=False,
     )
     withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class DSARStatus(enum.StrEnum):
     """Data Subject Access Request status."""
+
     RECEIVED = "received"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -122,12 +131,13 @@ class DSARStatus(enum.StrEnum):
 
 class DSARType(enum.StrEnum):
     """Types of Data Subject Access Requests."""
-    ACCESS = "access"          # Right to access (Art. 15)
+
+    ACCESS = "access"  # Right to access (Art. 15)
     RECTIFICATION = "rectification"  # Right to rectification (Art. 16)
-    ERASURE = "erasure"        # Right to erasure (Art. 17)
+    ERASURE = "erasure"  # Right to erasure (Art. 17)
     PORTABILITY = "portability"  # Right to data portability (Art. 20)
     RESTRICTION = "restriction"  # Right to restriction (Art. 18)
-    OBJECTION = "objection"    # Right to object (Art. 21)
+    OBJECTION = "objection"  # Right to object (Art. 21)
 
 
 class DataSubjectRequest(TimestampMixin, Base):
@@ -153,14 +163,17 @@ class DataSubjectRequest(TimestampMixin, Base):
     )
     status: Mapped[DSARStatus] = mapped_column(
         Enum(DSARStatus, name="dsar_status", values_callable=lambda e: [m.value for m in e]),
-        default=DSARStatus.RECEIVED, nullable=False,
+        default=DSARStatus.RECEIVED,
+        nullable=False,
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     response_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # SLA tracking: GDPR requires response within 30 days
     received_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False,
+        DateTime(timezone=True),
+        server_default=text("now()"),
+        nullable=False,
     )
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -178,9 +191,7 @@ class DataRetentionPolicy(TimestampMixin, VersionMixin, Base):
     """
 
     __tablename__ = "data_retention_policies"
-    __table_args__ = (
-        Index("ix_retention_tenant_resource", "tenant_id", "resource_type", unique=True),
-    )
+    __table_args__ = (Index("ix_retention_tenant_resource", "tenant_id", "resource_type", unique=True),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)

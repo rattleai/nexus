@@ -6,6 +6,23 @@ in their plugin packages (e.g. ``app.apps.cpq.models``).
 Alembic discovers plugin models via ``env.py`` through the plugin registry.
 """
 
+from app.connectors.models import (
+    AuthType,
+    BrokerType,
+    ConnectionStatus,
+    ConnectorAppCredential,
+    ConnectorAuditLog,
+    ConnectorDefinition,
+    ConnectorOAuthState,
+    ConnectorSource,
+    ConnectorTask,
+    ConnectorTaskStatus,
+    ConnectorType,
+    CredentialType,
+    TenantConnection,
+    TenantCredential,
+    TrustLevel,
+)
 from app.db.models.ai import (
     AIProvider,
     AIUsageLog,
@@ -48,23 +65,6 @@ from app.db.models.datasource import (
     DataSourceStatus,
     DataSourceType,
 )
-from app.connectors.models import (
-    AuthType,
-    BrokerType,
-    ConnectionStatus,
-    ConnectorAppCredential,
-    ConnectorAuditLog,
-    ConnectorDefinition,
-    ConnectorOAuthState,
-    ConnectorSource,
-    ConnectorTask,
-    ConnectorTaskStatus,
-    ConnectorType,
-    CredentialType,
-    TenantConnection,
-    TenantCredential,
-    TrustLevel,
-)
 from app.db.models.enterprise import (
     SSOConfiguration,
     SSOProvider,
@@ -82,8 +82,23 @@ from app.db.models.mobile import (
 from app.db.models.oauth_client import (
     OAuthClient,
 )
+from app.db.models.operations import (
+    AuditLog,
+    Consent,
+    ConsentType,
+    DataRetentionPolicy,
+    DataSubjectRequest,
+    DSARStatus,
+    DSARType,
+    Job,
+    JobStatus,
+)
 from app.db.models.rag_config import (
     TenantRAGConfig,
+)
+from app.db.models.rag_graph import (
+    RAGEntity,
+    RAGRelationship,
 )
 from app.evaluation.models import (
     RAGEvaluationDataset,
@@ -92,108 +107,93 @@ from app.evaluation.models import (
     RAGEvaluationRun,
     RAGQueryLog,
 )
-from app.db.models.rag_graph import (
-    RAGEntity,
-    RAGRelationship,
-)
-from app.db.models.operations import (
-    AuditLog,
-    Consent,
-    ConsentType,
-    DSARStatus,
-    DSARType,
-    DataRetentionPolicy,
-    DataSubjectRequest,
-    Job,
-    JobStatus,
-)
 
 __all__ = [
-    # Core
-    "Tenant",
-    "ApiKey",
-    "User",
-    "TenantMembership",
-    "UserRole",
-    # Auth
-    "OAuthAccount",
-    "RefreshToken",
-    "EmailVerificationToken",
-    # Operations
-    "Job",
-    "JobStatus",
-    "AuditLog",
-    # GDPR
-    "Consent",
-    "ConsentType",
-    "DataSubjectRequest",
-    "DSARType",
-    "DSARStatus",
-    "DataRetentionPolicy",
-    # Features
-    "FeatureFlag",
-    "TenantFeatureOverride",
-    # Collaboration
-    "Invitation",
-    "InvitationStatus",
-    "Notification",
-    "WebhookEndpoint",
-    "WebhookDelivery",
-    # Billing
-    "Plan",
-    "PlanTier",
-    "Subscription",
-    "SubscriptionStatus",
-    "UsageRecord",
-    "CreditPack",
-    # Enterprise
-    "SSOConfiguration",
-    "SSOProvider",
     # AI
     "AIProvider",
-    "TenantAIProviderKey",
-    "DollarWallet",
-    "WalletTransaction",
-    "WalletTransactionType",
     "AIUsageLog",
-    "PromptTemplate",
-    # OAuth
-    "OAuthClient",
-    # Mobile
-    "PushSubscription",
-    "WebAuthnCredential",
-    "ChangeLog",
-    "SyncMixin",
-    # Data Sources (infrastructure — application-agnostic)
-    "DataSource",
-    "DataSourceType",
-    "DataSourceStatus",
-    "DataSourceChunk",
-    # Connectors
-    "ConnectorDefinition",
-    "ConnectorType",
+    "ApiKey",
+    "AuditLog",
     "AuthType",
     "BrokerType",
-    "TrustLevel",
+    "ChangeLog",
     "ConnectionStatus",
-    "CredentialType",
-    "TenantConnection",
-    "TenantCredential",
-    "ConnectorAuditLog",
     "ConnectorAppCredential",
+    "ConnectorAuditLog",
+    # Connectors
+    "ConnectorDefinition",
     "ConnectorOAuthState",
     "ConnectorSource",
     "ConnectorTask",
     "ConnectorTaskStatus",
-    # RAG Configuration
-    "TenantRAGConfig",
+    "ConnectorType",
+    # GDPR
+    "Consent",
+    "ConsentType",
+    "CredentialType",
+    "CreditPack",
+    "DSARStatus",
+    "DSARType",
+    "DataRetentionPolicy",
+    # Data Sources (infrastructure — application-agnostic)
+    "DataSource",
+    "DataSourceChunk",
+    "DataSourceStatus",
+    "DataSourceType",
+    "DataSubjectRequest",
+    "DollarWallet",
+    "EmailVerificationToken",
+    # Features
+    "FeatureFlag",
+    # Collaboration
+    "Invitation",
+    "InvitationStatus",
+    # Operations
+    "Job",
+    "JobStatus",
+    "Notification",
+    # Auth
+    "OAuthAccount",
+    # OAuth
+    "OAuthClient",
+    # Billing
+    "Plan",
+    "PlanTier",
+    "PromptTemplate",
+    # Mobile
+    "PushSubscription",
+    # RAG Graph
+    "RAGEntity",
     # RAG Evaluation
     "RAGEvaluationDataset",
     "RAGEvaluationQuery",
-    "RAGEvaluationRun",
     "RAGEvaluationResult",
+    "RAGEvaluationRun",
     "RAGQueryLog",
-    # RAG Graph
-    "RAGEntity",
     "RAGRelationship",
+    "RefreshToken",
+    # Enterprise
+    "SSOConfiguration",
+    "SSOProvider",
+    "Subscription",
+    "SubscriptionStatus",
+    "SyncMixin",
+    # Core
+    "Tenant",
+    "TenantAIProviderKey",
+    "TenantConnection",
+    "TenantCredential",
+    "TenantFeatureOverride",
+    "TenantMembership",
+    # RAG Configuration
+    "TenantRAGConfig",
+    "TrustLevel",
+    "UsageRecord",
+    "User",
+    "UserRole",
+    "WalletTransaction",
+    "WalletTransactionType",
+    "WebAuthnCredential",
+    "WebhookDelivery",
+    "WebhookEndpoint",
 ]

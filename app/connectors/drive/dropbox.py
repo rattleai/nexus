@@ -51,7 +51,9 @@ class DropboxDriveAdapter(DriveAdapter):
         cursor: str | None = None,
     ) -> DriveListing:
         token = await self._access_token(
-            connection=connection, connector_def=connector_def, db=db,
+            connection=connection,
+            connector_def=connector_def,
+            db=db,
         )
 
         # Dropbox continuation uses a separate endpoint; first-page and
@@ -75,9 +77,7 @@ class DropboxDriveAdapter(DriveAdapter):
 
         if response.status_code == 404 or response.status_code == 409:
             # Dropbox uses 409 with an error tag for "path/not_found"
-            raise DriveFileNotFoundError(
-                f"Dropbox path '{path}' not found or inaccessible"
-            )
+            raise DriveFileNotFoundError(f"Dropbox path '{path}' not found or inaccessible")
         response.raise_for_status()
 
         payload = response.json()
@@ -94,7 +94,9 @@ class DropboxDriveAdapter(DriveAdapter):
         db: AsyncSession,
     ) -> DriveFile:
         token = await self._access_token(
-            connection=connection, connector_def=connector_def, db=db,
+            connection=connection,
+            connector_def=connector_def,
+            db=db,
         )
 
         # Dropbox-API-Arg carries the path/id as a header-encoded JSON blob.
@@ -117,15 +119,11 @@ class DropboxDriveAdapter(DriveAdapter):
         # Metadata comes back in a response header — Dropbox guarantees it.
         result_header = response.headers.get("Dropbox-API-Result")
         if not result_header:
-            raise DriveAdapterError(
-                "Dropbox download response missing Dropbox-API-Result header"
-            )
+            raise DriveAdapterError("Dropbox download response missing Dropbox-API-Result header")
         try:
             metadata = json.loads(result_header)
         except json.JSONDecodeError as exc:
-            raise DriveAdapterError(
-                f"Dropbox-API-Result is not valid JSON: {exc}"
-            ) from exc
+            raise DriveAdapterError(f"Dropbox-API-Result is not valid JSON: {exc}") from exc
 
         filename = metadata.get("name") or file_id.rsplit("/", 1)[-1]
         reported_size = metadata.get("size")

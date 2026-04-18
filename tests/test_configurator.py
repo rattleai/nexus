@@ -1,21 +1,23 @@
 """Tests for configurator engine, session management, BOM resolution, and pricing."""
 
 import uuid
-from datetime import UTC, datetime
-from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import get_current_tenant, get_db
-from app.apps.cpq.engine.engine import ConfiguratorEngine, SelectionResult
+from app.apps.cpq.engine.engine import ConfiguratorEngine
 from app.main import create_app
 
 
 def _make_tenant():
     return MagicMock(
-        id=uuid.uuid4(), name="Test", slug="test", plan="free", is_active=True,
+        id=uuid.uuid4(),
+        name="Test",
+        slug="test",
+        plan="free",
+        is_active=True,
     )
 
 
@@ -23,8 +25,10 @@ def _make_api_key(tenant):
     """Create a mock API key with all scopes for testing authenticated endpoints."""
     api_key = MagicMock()
     api_key.scopes = [
-        "products:read", "products:write",
-        "configurator:read", "configurator:write",
+        "products:read",
+        "products:write",
+        "configurator:read",
+        "configurator:write",
     ]
     api_key.tenant = tenant
     return api_key
@@ -51,9 +55,12 @@ async def config_client():
 @pytest.mark.asyncio
 async def test_create_session_requires_auth(config_client):
     client, _ = config_client
-    response = await client.post("/api/v1/configurator/sessions", json={
-        "product_id": str(uuid.uuid4()),
-    })
+    response = await client.post(
+        "/api/v1/configurator/sessions",
+        json={
+            "product_id": str(uuid.uuid4()),
+        },
+    )
     assert response.status_code == 401
 
 
@@ -92,23 +99,29 @@ async def test_get_session_not_found(config_client):
 @pytest.mark.asyncio
 async def test_create_template_requires_auth(config_client):
     client, _ = config_client
-    response = await client.post("/api/v1/configurator/templates", json={
-        "product_id": str(uuid.uuid4()),
-        "name": "Sport Package",
-        "selections": [],
-    })
+    response = await client.post(
+        "/api/v1/configurator/templates",
+        json={
+            "product_id": str(uuid.uuid4()),
+            "name": "Sport Package",
+            "selections": [],
+        },
+    )
     assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_create_pricing_rule_requires_auth(config_client):
     client, _ = config_client
-    response = await client.post("/api/v1/configurator/pricing/rules", json={
-        "product_id": str(uuid.uuid4()),
-        "name": "Base Price",
-        "rule_type": "base_price",
-        "expression": {"type": "base_price", "amount": 25000},
-    })
+    response = await client.post(
+        "/api/v1/configurator/pricing/rules",
+        json={
+            "product_id": str(uuid.uuid4()),
+            "name": "Base Price",
+            "rule_type": "base_price",
+            "expression": {"type": "base_price", "amount": 25000},
+        },
+    )
     assert response.status_code == 401
 
 
@@ -172,30 +185,39 @@ class TestConstraintEvaluation:
 
     def test_evaluate_and(self):
         result = self.engine._evaluate_condition(
-            {"op": "and", "conditions": [
-                {"char": "engine", "op": "eq", "value": "V8"},
-                {"char": "trim", "op": "eq", "value": "sport"},
-            ]},
+            {
+                "op": "and",
+                "conditions": [
+                    {"char": "engine", "op": "eq", "value": "V8"},
+                    {"char": "trim", "op": "eq", "value": "sport"},
+                ],
+            },
             {"engine": "V8", "trim": "sport"},
         )
         assert result is True
 
     def test_evaluate_and_false(self):
         result = self.engine._evaluate_condition(
-            {"op": "and", "conditions": [
-                {"char": "engine", "op": "eq", "value": "V8"},
-                {"char": "trim", "op": "eq", "value": "sport"},
-            ]},
+            {
+                "op": "and",
+                "conditions": [
+                    {"char": "engine", "op": "eq", "value": "V8"},
+                    {"char": "trim", "op": "eq", "value": "sport"},
+                ],
+            },
             {"engine": "V8", "trim": "base"},
         )
         assert result is False
 
     def test_evaluate_or(self):
         result = self.engine._evaluate_condition(
-            {"op": "or", "conditions": [
-                {"char": "engine", "op": "eq", "value": "V8"},
-                {"char": "engine", "op": "eq", "value": "V6"},
-            ]},
+            {
+                "op": "or",
+                "conditions": [
+                    {"char": "engine", "op": "eq", "value": "V8"},
+                    {"char": "engine", "op": "eq", "value": "V6"},
+                ],
+            },
             {"engine": "V6"},
         )
         assert result is True
@@ -240,8 +262,9 @@ class TestConstraintPropagation:
         rule.effective_from = None
         rule.effective_to = None
         rule.constraint_type = MagicMock(value="requires")
-        rule.constraint_type.__eq__ = lambda s, o: s.value == (o.value if hasattr(o, 'value') else o)
+        rule.constraint_type.__eq__ = lambda s, o: s.value == (o.value if hasattr(o, "value") else o)
         from app.db.models import ConstraintType
+
         rule.constraint_type = ConstraintType.REQUIRES
         rule.expression = {
             "type": "requires",
@@ -268,6 +291,7 @@ class TestConstraintPropagation:
         rule.effective_from = None
         rule.effective_to = None
         from app.db.models import ConstraintType
+
         rule.constraint_type = ConstraintType.EXCLUDES
         rule.expression = {
             "type": "excludes",
@@ -295,6 +319,7 @@ class TestConstraintPropagation:
         rule.id = uuid.uuid4()
         rule.name = "V8 requires auto transmission"
         from app.db.models import ConstraintType
+
         rule.constraint_type = ConstraintType.REQUIRES
         rule.expression = {
             "type": "requires",
@@ -321,6 +346,7 @@ class TestConstraintPropagation:
         rule.id = uuid.uuid4()
         rule.name = "V8 requires auto transmission"
         from app.db.models import ConstraintType
+
         rule.constraint_type = ConstraintType.REQUIRES
         rule.expression = {
             "type": "requires",
@@ -354,6 +380,7 @@ class TestConstraintPropagation:
         rule.id = uuid.uuid4()
         rule.name = "Base trim excludes panoramic"
         from app.db.models import ConstraintType
+
         rule.constraint_type = ConstraintType.EXCLUDES
         rule.expression = {
             "type": "excludes",
@@ -382,6 +409,7 @@ class TestConstraintPropagation:
         rule.effective_from = None
         rule.effective_to = None
         from app.db.models import ConstraintType
+
         rule.constraint_type = ConstraintType.REQUIRES
         rule.expression = {
             "type": "requires",
@@ -407,6 +435,7 @@ class TestConstraintPropagation:
         rule.effective_from = None
         rule.effective_to = None
         from app.db.models import ConstraintType
+
         rule.constraint_type = ConstraintType.SELECTION_CONDITION
         rule.expression = {
             "type": "selection_condition",
@@ -437,10 +466,13 @@ class TestExtractReferencedChars:
 
     def test_compound_and(self):
         expr = {
-            "if": {"op": "and", "conditions": [
-                {"char": "a", "op": "eq", "value": "1"},
-                {"char": "b", "op": "eq", "value": "2"},
-            ]},
+            "if": {
+                "op": "and",
+                "conditions": [
+                    {"char": "a", "op": "eq", "value": "1"},
+                    {"char": "b", "op": "eq", "value": "2"},
+                ],
+            },
             "then": {"char": "c", "op": "eq", "value": "3"},
         }
         result = self.engine._extract_referenced_chars(expr)
@@ -477,7 +509,11 @@ class TestFormulaEvaluation:
         assert result == "150.0"
 
     def test_complex_arithmetic(self):
-        expr = {"target": "cost", "expression": "base * qty + shipping", "variables": {"base": "unit_price", "qty": "quantity", "shipping": "ship_cost"}}
+        expr = {
+            "target": "cost",
+            "expression": "base * qty + shipping",
+            "variables": {"base": "unit_price", "qty": "quantity", "shipping": "ship_cost"},
+        }
         result = self.engine._evaluate_formula(expr, {"unit_price": "10", "quantity": "5", "ship_cost": "7.5"})
         assert result == "57.5"
 

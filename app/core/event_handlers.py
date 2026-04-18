@@ -162,15 +162,11 @@ async def handle_invitation_sent(event: InvitationSent) -> None:
         # Load tenant and inviter names
         import uuid
 
-        tenant_result = await db.execute(
-            select(Tenant).where(Tenant.id == uuid.UUID(event.tenant_id))
-        )
+        tenant_result = await db.execute(select(Tenant).where(Tenant.id == uuid.UUID(event.tenant_id)))
         tenant = tenant_result.scalar_one_or_none()
         tenant_name = tenant.name if tenant else "the team"
 
-        inviter_result = await db.execute(
-            select(User).where(User.id == uuid.UUID(event.invited_by))
-        )
+        inviter_result = await db.execute(select(User).where(User.id == uuid.UUID(event.invited_by)))
         inviter = inviter_result.scalar_one_or_none()
         inviter_name = inviter.display_name or inviter.email if inviter else "A team member"
 
@@ -201,10 +197,14 @@ async def handle_job_completed(event: JobCompleted) -> None:
             data={"job_id": event.job_id, "job_type": event.job_type},
         )
 
-    await _dispatch_webhooks(event.tenant_id, "job.completed", {
-        "job_id": event.job_id,
-        "job_type": event.job_type,
-    })
+    await _dispatch_webhooks(
+        event.tenant_id,
+        "job.completed",
+        {
+            "job_id": event.job_id,
+            "job_type": event.job_type,
+        },
+    )
 
 
 @on(JobFailed)
@@ -221,20 +221,28 @@ async def handle_job_failed(event: JobFailed) -> None:
             data={"job_id": event.job_id, "job_type": event.job_type, "error": event.error},
         )
 
-    await _dispatch_webhooks(event.tenant_id, "job.failed", {
-        "job_id": event.job_id,
-        "job_type": event.job_type,
-        "error": event.error,
-    })
+    await _dispatch_webhooks(
+        event.tenant_id,
+        "job.failed",
+        {
+            "job_id": event.job_id,
+            "job_type": event.job_type,
+            "error": event.error,
+        },
+    )
 
 
 @on(SubscriptionChanged)
 async def handle_subscription_changed(event: SubscriptionChanged) -> None:
     """Dispatch webhook for subscription changes."""
-    await _dispatch_webhooks(event.tenant_id, "subscription.changed", {
-        "old_plan": event.old_plan,
-        "new_plan": event.new_plan,
-    })
+    await _dispatch_webhooks(
+        event.tenant_id,
+        "subscription.changed",
+        {
+            "old_plan": event.old_plan,
+            "new_plan": event.new_plan,
+        },
+    )
 
 
 @on(DataExportRequested)

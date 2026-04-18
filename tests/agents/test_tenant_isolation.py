@@ -9,7 +9,7 @@ Verifies that:
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
@@ -224,8 +224,9 @@ class TestGetAgentOr404:
     @pytest.mark.asyncio
     async def test_rejects_deleted_agent(self):
         """Soft-deleted agent (deleted_at is set) triggers 404."""
+        from datetime import UTC, datetime
+
         from app.api.v1.agents import _get_agent_or_404
-        from datetime import datetime, UTC
 
         tenant_id = uuid.uuid4()
         mock_agent = MagicMock()

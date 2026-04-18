@@ -16,7 +16,6 @@ import pytest
 
 from app.agents.governance import GovernanceEngine
 
-
 # ── TestAbusePatterns ─────────────────────────────────────────────────
 
 
@@ -103,7 +102,9 @@ class TestTenantCircuitBreaker:
         with patch("app.agents.governance.redis_pool") as mock_redis:
             mock_redis.setex = AsyncMock()
             await GovernanceEngine.trip_tenant_circuit_breaker(
-                tenant_id, reason="abuse detected", duration_seconds=600,
+                tenant_id,
+                reason="abuse detected",
+                duration_seconds=600,
             )
         mock_redis.setex.assert_awaited_once()
         args = mock_redis.setex.call_args

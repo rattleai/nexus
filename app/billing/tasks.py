@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from decimal import Decimal
 
 import structlog
 from sqlalchemy import select
@@ -42,9 +41,7 @@ async def _async_process_auto_refill(tenant_id: str) -> None:
     tid = uuid.UUID(tenant_id)
 
     async with async_session_factory() as db:
-        result = await db.execute(
-            select(DollarWallet).where(DollarWallet.tenant_id == tid)
-        )
+        result = await db.execute(select(DollarWallet).where(DollarWallet.tenant_id == tid))
         wallet = result.scalar_one_or_none()
         if not wallet:
             logger.warning("auto_refill_no_wallet", tenant_id=tenant_id)
@@ -69,9 +66,7 @@ async def _async_process_auto_refill(tenant_id: str) -> None:
         # Look up Stripe customer ID from subscription
         from app.db.models.billing import Subscription
 
-        sub_result = await db.execute(
-            select(Subscription).where(Subscription.tenant_id == tid)
-        )
+        sub_result = await db.execute(select(Subscription).where(Subscription.tenant_id == tid))
         subscription = sub_result.scalar_one_or_none()
         if not subscription or not subscription.stripe_customer_id:
             logger.error("auto_refill_no_stripe_customer", tenant_id=tenant_id)

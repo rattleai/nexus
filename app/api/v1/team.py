@@ -295,13 +295,15 @@ async def create_invitation(
     await db.commit()
 
     accept_url = f"{settings.APP_BASE_URL}/accept-invitation?token={raw_token}"
-    await emit(InvitationSent(
-        tenant_id=str(user.tenant_id),
-        email=body.email,
-        role=body.role,
-        invited_by=str(user.id),
-        accept_url=accept_url,
-    ))
+    await emit(
+        InvitationSent(
+            tenant_id=str(user.tenant_id),
+            email=body.email,
+            role=body.role,
+            invited_by=str(user.id),
+            accept_url=accept_url,
+        )
+    )
     logger.info(
         "invitation_created",
         tenant_id=str(user.tenant_id),

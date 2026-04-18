@@ -64,6 +64,7 @@ def _get_key(version: int) -> bytes:
         source_key = settings.ENCRYPTION_KEY or settings.SECRET_KEY
         if not settings.ENCRYPTION_KEY and not settings.DEBUG:
             import warnings
+
             warnings.warn(
                 "ENCRYPTION_KEY is not set; falling back to SECRET_KEY. "
                 "Set ENCRYPTION_KEY independently in production.",
@@ -87,6 +88,7 @@ def _get_aes_gcm_key(version: int) -> bytes:
         source_key = settings.ENCRYPTION_KEY or settings.SECRET_KEY
         if not settings.ENCRYPTION_KEY and not settings.DEBUG:
             import warnings
+
             warnings.warn(
                 "ENCRYPTION_KEY is not set; falling back to SECRET_KEY. "
                 "Set ENCRYPTION_KEY independently in production.",
@@ -118,7 +120,7 @@ def _parse_version_tag(ciphertext: str) -> tuple[int | None, str]:
     if ciphertext.startswith(_VERSION_PREFIX) and ":" in ciphertext[:10]:
         tag, _, raw = ciphertext.partition(":")
         try:
-            version = int(tag[len(_VERSION_PREFIX):])
+            version = int(tag[len(_VERSION_PREFIX) :])
             return version, raw
         except ValueError:
             pass
@@ -168,6 +170,7 @@ def decrypt(ciphertext: str) -> str:
                 return _decrypt_v2(raw, version)
             except Exception as exc:
                 import structlog
+
                 structlog.stdlib.get_logger().warning(
                     "v2_decrypt_failed_trying_fallback",
                     version=version,

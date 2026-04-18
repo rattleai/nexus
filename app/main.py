@@ -1,5 +1,5 @@
-from contextlib import asynccontextmanager
 import importlib
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import structlog
@@ -17,7 +17,8 @@ from app.api.middleware import PreferMinimalMiddleware, RequestSizeLimitMiddlewa
 from app.config import settings, validate_settings
 from app.core.logging import setup_logging
 from app.core.redis import redis_pool
-from app.plugins.registry import discover_plugins, registry as plugin_registry
+from app.plugins.registry import discover_plugins
+from app.plugins.registry import registry as plugin_registry
 
 # ── Plugin discovery (before app creation) ─────────────────
 discover_plugins()
@@ -33,7 +34,7 @@ for _plugin in plugin_registry:
 
 # API router must be imported AFTER plugin discovery so plugin
 # routers are registered when v1_router is assembled.
-from app.api.v1 import v1_router  # noqa: E402
+from app.api.v1 import v1_router
 
 setup_logging()
 logger = structlog.stdlib.get_logger()
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI):
 
     # Enable DB connection pool monitoring (P0-8)
     from app.db.session import setup_pool_monitoring
+
     setup_pool_monitoring()
 
     logger.info(
@@ -77,7 +79,9 @@ async def lifespan(app: FastAPI):
 
     try:
         async with async_engine.connect() as conn:
-            result = await conn.execute(sa_text("SELECT current_user, usesuper FROM pg_user WHERE usename = current_user"))
+            result = await conn.execute(
+                sa_text("SELECT current_user, usesuper FROM pg_user WHERE usename = current_user")
+            )
             row = result.one_or_none()
             if row and row[1]:
                 logger.error(
@@ -96,9 +100,7 @@ async def lifespan(app: FastAPI):
 
             # Verify pgvectorscale availability when DiskANN is configured
             if settings.VECTOR_INDEX_TYPE == "diskann":
-                ext_check = await conn.execute(
-                    sa_text("SELECT 1 FROM pg_extension WHERE extname = 'vectorscale'")
-                )
+                ext_check = await conn.execute(sa_text("SELECT 1 FROM pg_extension WHERE extname = 'vectorscale'"))
                 if ext_check.scalar() is None:
                     logger.warning(
                         "diskann_extension_missing",
@@ -135,7 +137,8 @@ async def lifespan(app: FastAPI):
                     await connector_registry.sync_composio_catalog(_db)
                 except Exception:
                     logger.warning(
-                        "composio_catalog_sync_failed", exc_info=True,
+                        "composio_catalog_sync_failed",
+                        exc_info=True,
                     )
                 await _db.commit()
         except Exception:
@@ -224,14 +227,28 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=[
-            "Authorization", "Content-Type", "X-API-Key", "X-Admin-Key",
-            "X-Request-ID", "X-Idempotency-Key", "If-None-Match", "X-CSRF-Token",
-            "X-Agent-Name", "Prefer",
+            "Authorization",
+            "Content-Type",
+            "X-API-Key",
+            "X-Admin-Key",
+            "X-Request-ID",
+            "X-Idempotency-Key",
+            "If-None-Match",
+            "X-CSRF-Token",
+            "X-Agent-Name",
+            "Prefer",
         ],
         expose_headers=[
-            "ETag", "X-Request-ID", "X-Response-Time", "Retry-After",
-            "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset",
-            "X-CSRF-Token", "X-Agent-Name", "Preference-Applied",
+            "ETag",
+            "X-Request-ID",
+            "X-Response-Time",
+            "Retry-After",
+            "X-RateLimit-Limit",
+            "X-RateLimit-Remaining",
+            "X-RateLimit-Reset",
+            "X-CSRF-Token",
+            "X-Agent-Name",
+            "Preference-Applied",
         ],
         max_age=86400,
     )
@@ -273,6 +290,7 @@ def create_app() -> FastAPI:
     async def privacy_policy():
         """Privacy policy endpoint (required for GPT Store and plugin publishing)."""
         from starlette.responses import HTMLResponse
+
         return HTMLResponse(
             "<html><head><title>CADPrice Privacy Policy</title></head><body>"
             "<h1>Privacy Policy</h1>"
@@ -320,6 +338,7 @@ def create_app() -> FastAPI:
 
     # Plugin manifest endpoint
     from app.plugins.api import router as plugins_router
+
     app.include_router(plugins_router, prefix=settings.API_V1_PREFIX)
 
     # Enrich OpenAPI schema with agent-friendly metadata
@@ -328,6 +347,7 @@ def create_app() -> FastAPI:
     def _enriched_openapi():
         schema = _original_openapi()
         from app.api.openapi_enrichment import enrich_openapi_schema
+
         return enrich_openapi_schema(schema)
 
     app.openapi = _enriched_openapi
@@ -349,6 +369,7 @@ def create_app() -> FastAPI:
         return JSONResponse(app.openapi())
 
     if settings.DEBUG:
+
         @app.get("/api/docs", include_in_schema=False)
         async def swagger_ui():
             return get_swagger_ui_html(

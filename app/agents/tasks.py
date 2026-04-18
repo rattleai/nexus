@@ -70,7 +70,7 @@ def _run_async(coro):
     bind=True,
     max_retries=2,
     soft_time_limit=540,  # 9 minutes
-    time_limit=600,       # 10 minutes hard kill
+    time_limit=600,  # 10 minutes hard kill
 )
 def execute_agent_run(
     self,
@@ -85,6 +85,7 @@ def execute_agent_run(
 
     Returns a dict with the instance ID and status.
     """
+
     async def _run():
         from app.agents.executor import AgentExecutor
         from app.db.session import async_session_factory
@@ -122,15 +123,19 @@ def execute_agent_run(
         # Mark instance as failed due to timeout — retry status update once on failure
         for attempt in range(2):
             try:
-                _run_async(_mark_instances_failed(
-                    tenant_id,
-                    definition_id,
-                    "Agent execution timed out (soft limit reached)",
-                ))
+                _run_async(
+                    _mark_instances_failed(
+                        tenant_id,
+                        definition_id,
+                        "Agent execution timed out (soft limit reached)",
+                    )
+                )
                 break
             except Exception:
                 if attempt == 0:
-                    import time; time.sleep(0.5)
+                    import time
+
+                    time.sleep(0.5)
                 else:
                     logger.exception("failed_to_mark_timeout_after_retry")
         return {
@@ -149,7 +154,7 @@ def execute_agent_run(
                 attempt=self.request.retries + 1,
                 error=str(exc)[:200],
             )
-            raise self.retry(exc=exc, countdown=min(2 ** self.request.retries * 5, 60))
+            raise self.retry(exc=exc, countdown=min(2**self.request.retries * 5, 60))
 
         logger.error(
             "agent_task_failed",
@@ -206,6 +211,7 @@ def execute_workflow_run(
     key_source: str = "platform",
 ) -> dict:
     """Execute a workflow asynchronously in a Celery worker."""
+
     async def _run():
         from app.agents.orchestrator import AgentOrchestrator
         from app.db.session import async_session_factory
@@ -264,6 +270,7 @@ def cleanup_stale_instances() -> dict:
     Runs without tenant context (platform-level) and bypasses RLS so the
     UPDATE sees all tenants in a single sweep.
     """
+
     async def _run():
         from app.agents.models import AgentInstance, InstanceStatus
         from app.config import settings
@@ -275,7 +282,6 @@ def cleanup_stale_instances() -> dict:
         # which connects as the DB superuser and bypasses RLS. Regular
         # application code must NOT use this factory.
         async with admin_async_session_factory() as db:
-
             # Tier 1: PENDING longer than threshold — task never started
             pending_cutoff = now - timedelta(seconds=settings.AGENT_PENDING_STALE_SECONDS)
             r1 = await db.execute(

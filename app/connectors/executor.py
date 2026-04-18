@@ -21,7 +21,7 @@ Handles MCP server invocation, OAuth API calls, and API key API calls with:
 
 from __future__ import annotations
 
-import json
+import contextlib
 import re
 import time
 import uuid
@@ -84,10 +84,7 @@ class ConnectorExecutor:
 
         if _connector_breaker.is_open(breaker_key):
             return {
-                "error": (
-                    f"Connector '{connector_def.slug}' is temporarily "
-                    f"unavailable (circuit open)"
-                ),
+                "error": (f"Connector '{connector_def.slug}' is temporarily unavailable (circuit open)"),
                 "is_error": True,
             }
 
@@ -114,14 +111,21 @@ class ConnectorExecutor:
         try:
             if connector_def.connector_type == ConnectorType.MCP_SERVER:
                 result = await self._invoke_mcp(
-                    connection, connector_def, tool_name, arguments,
+                    connection,
+                    connector_def,
+                    tool_name,
+                    arguments,
                 )
             elif connector_def.connector_type in (
                 ConnectorType.OAUTH_API,
                 ConnectorType.API_KEY_API,
             ):
                 result = await self._invoke_http(
-                    connection, connector_def, tool_name, arguments, db,
+                    connection,
+                    connector_def,
+                    tool_name,
+                    arguments,
+                    db,
                 )
             else:
                 return {
@@ -154,10 +158,7 @@ class ConnectorExecutor:
                 error=error_msg,
             )
             return {
-                "error": (
-                    f"Tool '{tool_name}' on '{connector_def.slug}' failed: "
-                    f"{str(exc)[:200]}"
-                ),
+                "error": (f"Tool '{tool_name}' on '{connector_def.slug}' failed: {str(exc)[:200]}"),
                 "is_error": True,
             }
 
@@ -177,11 +178,7 @@ class ConnectorExecutor:
                     agent_instance_id=agent_instance_id,
                     latency_ms=latency_ms,
                     error_message=error_msg,
-                    request_summary=(
-                        {"idempotency_key": idempotency_key}
-                        if idempotency_key
-                        else None
-                    ),
+                    request_summary=({"idempotency_key": idempotency_key} if idempotency_key else None),
                 )
                 db.add(audit)
                 await db.flush()
@@ -242,10 +239,7 @@ class ConnectorExecutor:
 
         if not base_url:
             return {
-                "error": (
-                    f"Connector '{connector_def.slug}' has no api_base_url "
-                    f"in api_config"
-                ),
+                "error": (f"Connector '{connector_def.slug}' has no api_base_url in api_config"),
                 "is_error": True,
             }
 
@@ -258,6 +252,7 @@ class ConnectorExecutor:
         url = f"{base_url.rstrip('/')}/{path.lstrip('/')}" if path else base_url
 
         from app.core.url_validation import validate_url
+
         validate_url(url)
 
         # Auth headers
@@ -268,9 +263,7 @@ class ConnectorExecutor:
                 headers[str(k)] = str(v)
 
         auth_type = (
-            connector_def.auth_type.value
-            if hasattr(connector_def.auth_type, "value")
-            else str(connector_def.auth_type)
+            connector_def.auth_type.value if hasattr(connector_def.auth_type, "value") else str(connector_def.auth_type)
         )
         if auth_type in ("oauth2", "bearer_token"):
             headers["Authorization"] = f"Bearer {token}"
@@ -321,6 +314,7 @@ class ConnectorExecutor:
                 if attempt + 1 >= max_attempts:
                     break
                 import asyncio
+
                 await asyncio.sleep(backoff)
                 backoff *= settings.CONNECTOR_DURABLE_RETRY_BACKOFF
                 continue
@@ -346,6 +340,7 @@ class ConnectorExecutor:
 
             if 500 <= response.status_code < 600 and attempt + 1 < max_attempts:
                 import asyncio
+
                 await asyncio.sleep(backoff)
                 backoff *= settings.CONNECTOR_DURABLE_RETRY_BACKOFF
                 continue
@@ -437,12 +432,8 @@ def _end_tool_span(span: Any, *, status: str, latency_ms: int) -> None:
 
         span.set_attribute("gen_ai.tool.latency_ms", latency_ms)
         span.set_attribute("gen_ai.tool.status", status)
-        span.set_status(
-            Status(StatusCode.OK if status == "success" else StatusCode.ERROR)
-        )
+        span.set_status(Status(StatusCode.OK if status == "success" else StatusCode.ERROR))
     except Exception:
         pass
-    try:
+    with contextlib.suppress(Exception):
         span.end()
-    except Exception:
-        pass

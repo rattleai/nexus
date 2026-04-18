@@ -128,7 +128,4 @@ async def file_list(
             hint="Storage may be temporarily unavailable. Try again.",
         ) from None
 
-    return [
-        {"key": k, "filename": k.split("/")[-1]}
-        for k in keys
-    ]
+    return [{"key": k, "filename": k.split("/")[-1]} for k in keys]

@@ -45,7 +45,9 @@ class OneDriveAdapter(DriveAdapter):
         cursor: str | None = None,
     ) -> DriveListing:
         token = await self._access_token(
-            connection=connection, connector_def=connector_def, db=db,
+            connection=connection,
+            connector_def=connector_def,
+            db=db,
         )
 
         # If the caller passed an ``@odata.nextLink`` URL as cursor, hit it
@@ -90,7 +92,9 @@ class OneDriveAdapter(DriveAdapter):
         db: AsyncSession,
     ) -> DriveFile:
         token = await self._access_token(
-            connection=connection, connector_def=connector_def, db=db,
+            connection=connection,
+            connector_def=connector_def,
+            db=db,
         )
 
         async with self._client(access_token=token) as client:
@@ -102,9 +106,7 @@ class OneDriveAdapter(DriveAdapter):
                 },
             )
             if meta_resp.status_code == 404:
-                raise DriveFileNotFoundError(
-                    f"OneDrive file '{file_id}' not found"
-                )
+                raise DriveFileNotFoundError(f"OneDrive file '{file_id}' not found")
             meta_resp.raise_for_status()
             meta = meta_resp.json()
 
@@ -158,9 +160,7 @@ def _item_to_drive_item(entry: dict[str, Any]) -> DriveItem:
             size = None
     mime_type: str | None = None
     if not is_folder:
-        mime_type = (entry.get("file") or {}).get("mimeType") or mimetypes.guess_type(
-            entry.get("name", "")
-        )[0]
+        mime_type = (entry.get("file") or {}).get("mimeType") or mimetypes.guess_type(entry.get("name", ""))[0]
 
     return DriveItem(
         id=entry.get("id", ""),

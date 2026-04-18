@@ -69,17 +69,10 @@ export function ExecutionTimeline({
       .reverse() // oldest first so timeline reads left-to-right top-to-bottom
   }, [instances])
 
-  if (sorted.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-        No instances to display
-      </div>
-    )
-  }
-
-  // Compute time range for the timeline
+  // Compute time range for the timeline — derived before early return so
+  // useMemo below is always called in the same order (rules-of-hooks).
   const now = Date.now()
-  const timeStart = new Date(sorted[0].created_at).getTime()
+  const timeStart = sorted.length > 0 ? new Date(sorted[0].created_at).getTime() : now
   const timeEnd = Math.max(
     now,
     ...sorted.map((i) =>
@@ -105,6 +98,14 @@ export function ExecutionTimeline({
     }
     return labels
   }, [timeStart, totalSpan])
+
+  if (sorted.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+        No instances to display
+      </div>
+    )
+  }
 
   return (
     <TooltipProvider delayDuration={200}>

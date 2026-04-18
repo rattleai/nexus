@@ -24,7 +24,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin, VersionMixin
 
-
 # ── Enums ────────────────────────────────────────────────
 
 
@@ -74,9 +73,7 @@ class ConfigurationSession(AuditMixin, VersionMixin, TimestampMixin, Base):
     # Cached domain state after constraint propagation
     available_domains: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
-    template_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("configuration_templates.id"), nullable=True
-    )
+    template_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("configuration_templates.id"), nullable=True)
     external_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, default=dict)
 
@@ -104,18 +101,14 @@ class ConfigurationSelection(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    session_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("configuration_sessions.id"), nullable=False, index=True
-    )
-    characteristic_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("characteristics.id"), nullable=False, index=True
-    )
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("configuration_sessions.id"), nullable=False, index=True)
+    characteristic_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("characteristics.id"), nullable=False, index=True)
     value: Mapped[str] = mapped_column(String(500), nullable=False)
     is_auto_set: Mapped[bool] = mapped_column(Boolean, default=False)
     set_by_rule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     session: Mapped[ConfigurationSession] = relationship(back_populates="selections")
-    characteristic: Mapped["Characteristic"] = relationship()  # noqa: F821
+    characteristic: Mapped[Characteristic] = relationship()  # noqa: F821
 
     __table_args__ = (
         Index("ix_config_selections_session", "session_id"),
@@ -141,9 +134,7 @@ class ConfigurationTemplate(AuditMixin, TimestampMixin, Base):
     selections: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, default=dict)
 
-    __table_args__ = (
-        Index("ix_config_templates_tenant_product", "tenant_id", "product_id"),
-    )
+    __table_args__ = (Index("ix_config_templates_tenant_product", "tenant_id", "product_id"),)
 
 
 # ── Resolved BOM ─────────────────────────────────────────
@@ -156,21 +147,15 @@ class ConfiguredBOM(AuditMixin, TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    session_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("configuration_sessions.id"), nullable=False, unique=True
-    )
-    bom_header_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("bom_headers.id"), nullable=False, index=True
-    )
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("configuration_sessions.id"), nullable=False, unique=True)
+    bom_header_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bom_headers.id"), nullable=False, index=True)
 
     resolved_items: Mapped[list] = mapped_column(JSONB, nullable=False)
     total_components: Mapped[int] = mapped_column(Integer, default=0)
     total_cost: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
 
     selection_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    resolved_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
-    )
+    resolved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
     resolution_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     session: Mapped[ConfigurationSession] = relationship(back_populates="resolved_bom")
@@ -226,9 +211,7 @@ class ConfigurationPricing(AuditMixin, TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    session_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("configuration_sessions.id"), nullable=False, unique=True
-    )
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("configuration_sessions.id"), nullable=False, unique=True)
     currency: Mapped[str] = mapped_column(String(3), default="EUR")
     base_price: Mapped[Decimal] = mapped_column(Numeric(14, 4), default=Decimal("0"))
     total_adjustments: Mapped[Decimal] = mapped_column(Numeric(14, 4), default=Decimal("0"))
@@ -238,9 +221,7 @@ class ConfigurationPricing(AuditMixin, TimestampMixin, Base):
     margin_percentage: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=Decimal("0"))
     price_breakdown: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     is_profitable: Mapped[bool] = mapped_column(Boolean, default=False)
-    resolved_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
-    )
+    resolved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
 
     session: Mapped[ConfigurationSession] = relationship(back_populates="pricing")
 

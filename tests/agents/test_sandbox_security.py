@@ -92,9 +92,7 @@ async def test_allowed_import_json():
 @pytest.mark.asyncio
 async def test_allowed_import_datetime():
     sandbox = ExecutionSandbox(_FAST_CONFIG)
-    result = await sandbox.execute_python(
-        "import datetime\nprint(datetime.date.today())"
-    )
+    result = await sandbox.execute_python("import datetime\nprint(datetime.date.today())")
     assert result.success is True, f"datetime should be allowed: {result.error}"
     # Output should be an ISO-format date (e.g. 2026-03-11)
     assert len(result.stdout.strip()) == 10
@@ -143,9 +141,7 @@ async def test_resource_limit_memory():
     result = await sandbox.execute_python(code)
     assert result.success is False, "Huge allocation should fail"
     # Accept either a non-zero exit code or an error message
-    assert result.exit_code != 0 or result.error, (
-        "Expected non-zero exit or error for memory limit"
-    )
+    assert result.exit_code != 0 or result.error, "Expected non-zero exit or error for memory limit"
 
 
 @pytest.mark.asyncio
@@ -155,6 +151,4 @@ async def test_resource_limit_cpu():
     code = "while True:\n    pass"
     result = await sandbox.execute_python(code)
     assert result.success is False, "Infinite loop should be stopped"
-    assert result.exit_code != 0 or result.error, (
-        "Expected non-zero exit or error for CPU limit"
-    )
+    assert result.exit_code != 0 or result.error, "Expected non-zero exit or error for CPU limit"

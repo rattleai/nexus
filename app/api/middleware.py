@@ -1,4 +1,3 @@
-import hashlib
 import hmac
 import json
 import re
@@ -86,7 +85,11 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 
 
 def _add_security_headers(
-    response: Response, request_id: str, *, is_agent: bool = False, path: str = "",
+    response: Response,
+    request_id: str,
+    *,
+    is_agent: bool = False,
+    path: str = "",
 ) -> None:
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -99,9 +102,7 @@ def _add_security_headers(
 
     response.headers["X-Frame-Options"] = "DENY"
     if not settings.DEBUG:
-        response.headers["Strict-Transport-Security"] = (
-            "max-age=63072000; includeSubDomains; preload"
-        )
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), publickey-credentials-get=self"
 
@@ -255,12 +256,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         rl_limit = getattr(request.state, "rate_limit_limit", None)
         if rl_limit is not None:
             response.headers["X-RateLimit-Limit"] = str(rl_limit)
-            response.headers["X-RateLimit-Remaining"] = str(
-                getattr(request.state, "rate_limit_remaining", 0)
-            )
-            response.headers["X-RateLimit-Reset"] = str(
-                getattr(request.state, "rate_limit_reset", 0)
-            )
+            response.headers["X-RateLimit-Remaining"] = str(getattr(request.state, "rate_limit_remaining", 0))
+            response.headers["X-RateLimit-Reset"] = str(getattr(request.state, "rate_limit_reset", 0))
 
         # ── CSRF cookie (only for browser sessions, not agents) ──
         if settings.AUTH_ENABLED and not _is_agent:
@@ -335,7 +332,9 @@ class PreferMinimalMiddleware(BaseHTTPMiddleware):
 
         # For list responses, trim each item
         if isinstance(body, list):
-            minimal = [{k: v for k, v in item.items() if k in _MINIMAL_FIELDS} for item in body if isinstance(item, dict)]
+            minimal = [
+                {k: v for k, v in item.items() if k in _MINIMAL_FIELDS} for item in body if isinstance(item, dict)
+            ]
             return JSONResponse(
                 status_code=response.status_code,
                 content=minimal,

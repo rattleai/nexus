@@ -159,14 +159,11 @@ class CredentialManager:
             )
             credential = result.scalar_one_or_none()
             if credential is None:
-                raise CredentialError(
-                    f"No credential found for connection {connection.id}"
-                )
+                raise CredentialError(f"No credential found for connection {connection.id}")
 
         if not credential.is_valid:
             raise CredentialError(
-                f"Credential for connection {connection.id} is marked invalid. "
-                "Please re-authenticate."
+                f"Credential for connection {connection.id} is marked invalid. Please re-authenticate."
             )
 
         # API key / bearer: just decrypt and return
@@ -197,9 +194,7 @@ class CredentialManager:
             return False
         if not credential.refresh_token_enc:
             return False
-        buffer = timedelta(
-            seconds=settings.CONNECTOR_CREDENTIAL_REFRESH_BUFFER_SECONDS
-        )
+        buffer = timedelta(seconds=settings.CONNECTOR_CREDENTIAL_REFRESH_BUFFER_SECONDS)
         return credential.token_expires_at < datetime.now(UTC) + buffer
 
     async def _refresh_with_lock(
@@ -236,9 +231,7 @@ class CredentialManager:
             # Lock contention — rely on the other refresher. Re-read and check.
             await db.refresh(credential)
             if self._needs_refresh(credential):
-                raise CredentialError(
-                    "OAuth token refresh is contended; please retry shortly."
-                )
+                raise CredentialError("OAuth token refresh is contended; please retry shortly.")
             return
 
         try:
@@ -281,9 +274,7 @@ class CredentialManager:
         auth_config = _effective_auth_config(connector_def)
         token_url = auth_config.get("token_url")
         if not token_url:
-            raise CredentialError(
-                f"Connector {connector_def.slug} has no token_url"
-            )
+            raise CredentialError(f"Connector {connector_def.slug} has no token_url")
 
         try:
             app_creds = await app_credential_manager.require(
@@ -321,9 +312,7 @@ class CredentialManager:
             credential.is_valid = False
             credential.refresh_error = str(exc)[:500]
             await db.flush()
-            raise CredentialError(
-                "Token refresh failed. Please re-authenticate."
-            ) from exc
+            raise CredentialError("Token refresh failed. Please re-authenticate.") from exc
 
         now = datetime.now(UTC)
         credential.access_token_enc = encrypt(data["access_token"])

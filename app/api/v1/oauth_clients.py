@@ -21,7 +21,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import RequireRole, RequireUI, get_current_tenant, get_db
-from app.api.rate_limit import RateLimiter
 from app.config import settings
 from app.db.models import Tenant
 from app.db.models.oauth_client import OAuthClient
@@ -180,9 +179,7 @@ async def list_oauth_clients(
 ):
     """List all registered OAuth clients for the tenant."""
     result = await db.execute(
-        select(OAuthClient)
-        .where(OAuthClient.tenant_id == tenant.id)
-        .order_by(OAuthClient.created_at.desc())
+        select(OAuthClient).where(OAuthClient.tenant_id == tenant.id).order_by(OAuthClient.created_at.desc())
     )
     clients = result.scalars().all()
 

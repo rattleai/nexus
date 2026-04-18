@@ -53,9 +53,7 @@ class ConnectorRateLimiter:
             )
 
         user_part = str(actor_user_id) if actor_user_id else "system"
-        bucket_key = (
-            f"{_BUCKET_PREFIX}:{tenant_id}:{user_part}:{connector_slug}"
-        )
+        bucket_key = f"{_BUCKET_PREFIX}:{tenant_id}:{user_part}:{connector_slug}"
 
         capacity = max(1, settings.CONNECTOR_RATE_LIMIT_REQUESTS_PER_MINUTE)
         burst = max(capacity, settings.CONNECTOR_RATE_LIMIT_BURST)

@@ -15,10 +15,8 @@ from app.apps.cpq.engine.engine import (
     ConfiguratorEngine,
     ConstraintRule,
     ConstraintType,
-    NumericInterval,
     VariantTable,
 )
-
 from app.apps.cpq.models.product import Characteristic
 
 
@@ -79,9 +77,7 @@ class ConstraintAnalyzer:
         cycles = self._detect_cycles(graph, rule_edges)
         dead_values = self._detect_dead_values(char_map, active)
         coverage_gaps = self._detect_coverage_gaps(char_map, active)
-        is_satisfiable, sat_note = self._check_satisfiability(
-            char_map, active, variant_tables
-        )
+        is_satisfiable, sat_note = self._check_satisfiability(char_map, active, variant_tables)
 
         elapsed_ms = (_time.monotonic() - start) * 1000
 
@@ -142,11 +138,10 @@ class ConstraintAnalyzer:
                     targets.add(target_char)
 
             elif ct == ConstraintType.TABLE:
-                table_id = expr.get("table_id")
+                expr.get("table_id")
                 # Input/output columns are characteristic slugs
                 # We'd need variant table data to know the columns
                 # For now, skip TABLE dependencies (conservative)
-                pass
 
             for s in sources:
                 for t in targets:
@@ -181,7 +176,6 @@ class ConstraintAnalyzer:
     ) -> list[CycleInfo]:
         WHITE, GRAY, BLACK = 0, 1, 2
         color: dict[str, int] = defaultdict(int)
-        parent: dict[str, str | None] = {}
         cycles: list[CycleInfo] = []
 
         all_nodes = set(graph.keys())
@@ -195,14 +189,14 @@ class ConstraintAnalyzer:
                     # Found a cycle — extract it
                     cycle_start = path.index(neighbor) if neighbor in path else -1
                     if cycle_start >= 0:
-                        cycle_path = path[cycle_start:] + [neighbor]
+                        cycle_path = [*path[cycle_start:], neighbor]
                         involved = []
                         for i in range(len(cycle_path) - 1):
                             edge = (cycle_path[i], cycle_path[i + 1])
                             involved.extend(rule_edges.get(edge, []))
                         cycles.append(CycleInfo(path=cycle_path, involved_rules=involved))
                 elif color[neighbor] == WHITE:
-                    dfs(neighbor, path + [neighbor])
+                    dfs(neighbor, [*path, neighbor])
             color[node] = BLACK
 
         for node in all_nodes:
@@ -251,12 +245,14 @@ class ConstraintAnalyzer:
                             excluding_rules.append(str(rule.id))
 
                 if excluding_rules:
-                    dead.append(DeadValueInfo(
-                        characteristic=target_slug,
-                        value=value,
-                        reason=f"Unconditionally excluded by {len(excluding_rules)} rule(s)",
-                        excluding_rules=excluding_rules,
-                    ))
+                    dead.append(
+                        DeadValueInfo(
+                            characteristic=target_slug,
+                            value=value,
+                            reason=f"Unconditionally excluded by {len(excluding_rules)} rule(s)",
+                            excluding_rules=excluding_rules,
+                        )
+                    )
 
             # Check if a value is excluded by all possible values of the triggering char
             for value in all_values:
@@ -270,8 +266,8 @@ class ConstraintAnalyzer:
                     if not if_clause:
                         continue  # already handled above
                     trigger_slug = if_clause.get("char")
-                    trigger_op = if_clause.get("op")
-                    trigger_val = if_clause.get("value")
+                    if_clause.get("op")
+                    if_clause.get("value")
                     if not trigger_slug or trigger_slug not in char_map:
                         continue
                     trigger_char = char_map[trigger_slug]
@@ -301,18 +297,20 @@ class ConstraintAnalyzer:
 
                     if covered_values >= trigger_values and trigger_values:
                         # Already reported above if unconditional
-                        already = any(
-                            d.characteristic == target_slug and d.value == value
-                            for d in dead
-                        )
+                        already = any(d.characteristic == target_slug and d.value == value for d in dead)
                         if not already:
-                            dead.append(DeadValueInfo(
-                                characteristic=target_slug,
-                                value=value,
-                                reason=f"Excluded for all values of '{trigger_slug}'",
-                                excluding_rules=[str(r.id) for r in rules
-                                                 if value in (r.expression.get("then", {}).get("value") or [])],
-                            ))
+                            dead.append(
+                                DeadValueInfo(
+                                    characteristic=target_slug,
+                                    value=value,
+                                    reason=f"Excluded for all values of '{trigger_slug}'",
+                                    excluding_rules=[
+                                        str(r.id)
+                                        for r in rules
+                                        if value in (r.expression.get("then", {}).get("value") or [])
+                                    ],
+                                )
+                            )
 
         return dead
 
@@ -338,11 +336,7 @@ class ConstraintAnalyzer:
                 t = expr.get("target", {}).get("char")
                 if t:
                     targeted_chars.add(t)
-            elif ct == ConstraintType.DEFAULT_VALUE:
-                t = expr.get("target")
-                if t:
-                    targeted_chars.add(t)
-            elif ct == ConstraintType.FORMULA:
+            elif ct == ConstraintType.DEFAULT_VALUE or ct == ConstraintType.FORMULA:
                 t = expr.get("target")
                 if t:
                     targeted_chars.add(t)
@@ -364,13 +358,15 @@ class ConstraintAnalyzer:
             reachable = slug in targeted_chars
 
             if not has_default and not reachable:
-                gaps.append(CoverageGapInfo(
-                    characteristic=slug,
-                    is_required=True,
-                    has_default=False,
-                    reachable_via_constraints=False,
-                    gap_description=f"Required characteristic '{slug}' has no default value and is not the target of any constraint rule. Users must always manually select it.",
-                ))
+                gaps.append(
+                    CoverageGapInfo(
+                        characteristic=slug,
+                        is_required=True,
+                        has_default=False,
+                        reachable_via_constraints=False,
+                        gap_description=f"Required characteristic '{slug}' has no default value and is not the target of any constraint rule. Users must always manually select it.",
+                    )
+                )
 
         return gaps
 
@@ -384,9 +380,7 @@ class ConstraintAnalyzer:
     ) -> tuple[bool, str]:
         """Run zero-selection propagation to detect inherent contradictions."""
         domains = self._engine._build_initial_domains(char_map)
-        result = self._engine._propagate(
-            domains, {}, constraints, variant_tables, set(domains.keys())
-        )
+        result = self._engine._propagate(domains, {}, constraints, variant_tables, set(domains.keys()))
         if result.contradictions:
             chars = ", ".join(result.contradictions)
             return False, f"Constraint network is unsatisfiable: empty domains for [{chars}] with no selections"

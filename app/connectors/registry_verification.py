@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
-from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -66,7 +65,8 @@ async def verify_mcp_server(url: str) -> TrustLevel:
     card = await _fetch_server_card(url)
     if card is None:
         return _gate_untrusted(
-            url, reason="No /.well-known/mcp server card found",
+            url,
+            reason="No /.well-known/mcp server card found",
         )
 
     if card.signature and card.signed_payload:
@@ -81,7 +81,8 @@ async def verify_mcp_server(url: str) -> TrustLevel:
             return TrustLevel.TRUSTED
         else:
             return _gate_untrusted(
-                url, reason="Invalid signature on server card",
+                url,
+                reason="Invalid signature on server card",
             )
 
     # No signature provided → untrusted by default.
@@ -140,9 +141,9 @@ def _verify_signature(signed_payload: str, signature: str) -> bool:
         return False
 
     try:
-        from cryptography.hazmat.primitives.serialization import load_pem_public_key
         from cryptography.exceptions import InvalidSignature
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.hazmat.primitives.serialization import load_pem_public_key
     except Exception:
         logger.warning("cryptography_not_available_for_signature_verification")
         return False

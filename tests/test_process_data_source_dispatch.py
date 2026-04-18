@@ -63,7 +63,8 @@ async def test_url_routes_to_process_url():
 
     assert result is expected
     processor.process_url.assert_called_once_with(
-        "https://example.com/doc", ds.tenant_id,
+        "https://example.com/doc",
+        ds.tenant_id,
     )
 
 
@@ -107,11 +108,16 @@ async def test_cloud_drive_routes_through_adapter_and_enriches_metadata(monkeypa
         ds.mime_type = drive_file.mime_type
         ds.file_size = drive_file.size
         return await _fake_process_bytes(
-            drive_file.content, drive_file.filename, drive_file.mime_type,
+            drive_file.content,
+            drive_file.filename,
+            drive_file.mime_type,
         )
 
     monkeypatch.setattr(
-        DocumentProcessor, "_process_cloud_drive", _fake_inner, raising=True,
+        DocumentProcessor,
+        "_process_cloud_drive",
+        _fake_inner,
+        raising=True,
     )
 
     ds = _ds(

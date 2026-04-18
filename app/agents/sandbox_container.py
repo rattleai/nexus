@@ -91,6 +91,7 @@ class NsjailSandbox:
             )
 
             import time
+
             start = time.monotonic()
 
             # Uses create_subprocess_exec (not shell) to avoid command injection
@@ -124,8 +125,8 @@ class NsjailSandbox:
 
             duration_ms = int((time.monotonic() - start) * 1000)
 
-            stdout = stdout_bytes[:self.config.max_output_bytes].decode("utf-8", errors="replace")
-            stderr = stderr_bytes[:self.config.max_output_bytes].decode("utf-8", errors="replace")
+            stdout = stdout_bytes[: self.config.max_output_bytes].decode("utf-8", errors="replace")
+            stderr = stderr_bytes[: self.config.max_output_bytes].decode("utf-8", errors="replace")
 
             # Read result file
             return_value = None
@@ -181,35 +182,56 @@ class NsjailSandbox:
 
         cmd = [
             "nsjail",
-            "--mode", "o",  # Once mode (execute and exit)
-            "--chroot", "/",
+            "--mode",
+            "o",  # Once mode (execute and exit)
+            "--chroot",
+            "/",
             "--rw",
             # PID namespace
             "--disable_clone_newuser",
             # Resource limits via cgroup v2
-            "--cgroup_mem_max", str(mem_bytes),
-            "--cgroup_cpu_ms_per_sec", "1000",
-            "--time_limit", str(self.config.timeout_seconds),
-            "--rlimit_as", str(self.config.memory_mb),
-            "--rlimit_cpu", str(self.config.cpu_seconds),
-            "--rlimit_fsize", "10",  # 10 MB max file size
-            "--rlimit_nofile", "64",
-            "--rlimit_nproc", "1",
+            "--cgroup_mem_max",
+            str(mem_bytes),
+            "--cgroup_cpu_ms_per_sec",
+            "1000",
+            "--time_limit",
+            str(self.config.timeout_seconds),
+            "--rlimit_as",
+            str(self.config.memory_mb),
+            "--rlimit_cpu",
+            str(self.config.cpu_seconds),
+            "--rlimit_fsize",
+            "10",  # 10 MB max file size
+            "--rlimit_nofile",
+            "64",
+            "--rlimit_nproc",
+            "1",
             # Mount namespace: sandbox dir is writable, rest read-only
-            "--bindmount_ro", "/usr",
-            "--bindmount_ro", "/lib",
-            "--bindmount_ro", "/lib64",
-            "--bindmount_ro", "/etc/alternatives",
-            "--bindmount", f"{sandbox_dir}:{sandbox_dir}",
-            "--tmpfsmount", "/tmp",
+            "--bindmount_ro",
+            "/usr",
+            "--bindmount_ro",
+            "/lib",
+            "--bindmount_ro",
+            "/lib64",
+            "--bindmount_ro",
+            "/etc/alternatives",
+            "--bindmount",
+            f"{sandbox_dir}:{sandbox_dir}",
+            "--tmpfsmount",
+            "/tmp",
             # seccomp-bpf logging
             "--seccomp_log",
             # Env (passed as individual flags, not shell variables)
-            "--env", f"HOME={sandbox_dir}",
-            "--env", f"TMPDIR={sandbox_dir}",
-            "--env", "PATH=/usr/bin:/bin",
-            "--env", "PYTHONDONTWRITEBYTECODE=1",
-            "--env", f"SANDBOX_DIR={sandbox_dir}",
+            "--env",
+            f"HOME={sandbox_dir}",
+            "--env",
+            f"TMPDIR={sandbox_dir}",
+            "--env",
+            "PATH=/usr/bin:/bin",
+            "--env",
+            "PYTHONDONTWRITEBYTECODE=1",
+            "--env",
+            f"SANDBOX_DIR={sandbox_dir}",
         ]
 
         # Network namespace: disabled by default
@@ -346,12 +368,16 @@ class ContainerSandboxRouter:
         if self._backend == "nsjail":
             sandbox = NsjailSandbox(self.config)
             return await sandbox.execute_python(
-                code, input_data=input_data, execution_id=execution_id,
+                code,
+                input_data=input_data,
+                execution_id=execution_id,
             )
         else:
             sandbox = ExecutionSandbox(self.config)
             return await sandbox.execute_python(
-                code, input_data=input_data, execution_id=execution_id,
+                code,
+                input_data=input_data,
+                execution_id=execution_id,
             )
 
     @property

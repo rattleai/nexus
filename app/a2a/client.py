@@ -121,7 +121,8 @@ class A2ABroker(CredentialBroker):
         pass
 
     async def _fetch_agent_card(
-        self, connector_def: ConnectorDefinition,
+        self,
+        connector_def: ConnectorDefinition,
     ) -> dict[str, Any] | None:
         url = (connector_def.mcp_config or {}).get("server_url", "")
         if not url:

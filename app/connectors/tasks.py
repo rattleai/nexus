@@ -75,16 +75,16 @@ async def _refresh_expiring_credentials_async() -> int:
 
                 # Load the connection and connector definition
                 conn_result = await db.execute(
-                    select(
-                        __import__("app.connectors.models", fromlist=["TenantConnection"]).TenantConnection
-                    )
+                    select(__import__("app.connectors.models", fromlist=["TenantConnection"]).TenantConnection)
                     .where(
                         __import__("app.connectors.models", fromlist=["TenantConnection"]).TenantConnection.id
                         == cred.connection_id
                     )
                     .options(
                         joinedload(
-                            __import__("app.connectors.models", fromlist=["TenantConnection"]).TenantConnection.connector_definition
+                            __import__(
+                                "app.connectors.models", fromlist=["TenantConnection"]
+                            ).TenantConnection.connector_definition
                         )
                     )
                 )
@@ -123,10 +123,12 @@ async def _check_connector_health_async() -> int:
         result = await db.execute(
             select(TenantConnection)
             .where(
-                TenantConnection.status.in_([
-                    ConnectionStatus.ACTIVE,
-                    ConnectionStatus.DEGRADED,
-                ]),
+                TenantConnection.status.in_(
+                    [
+                        ConnectionStatus.ACTIVE,
+                        ConnectionStatus.DEGRADED,
+                    ]
+                ),
                 TenantConnection.deleted_at.is_(None),
             )
             .options(joinedload(TenantConnection.connector_definition))
@@ -140,14 +142,17 @@ async def _check_connector_health_async() -> int:
 
             try:
                 # For connections with credentials, verify token validity
-                if conn.credential and conn.credential.is_valid:
-                    if (
+                if (
+                    conn.credential
+                    and conn.credential.is_valid
+                    and (
                         conn.credential.token_expires_at
                         and conn.credential.token_expires_at < datetime.now(UTC)
                         and not conn.credential.refresh_token_enc
-                    ):
-                        conn.status = ConnectionStatus.EXPIRED
-                        conn.status_message = "OAuth token expired with no refresh token"
+                    )
+                ):
+                    conn.status = ConnectionStatus.EXPIRED
+                    conn.status_message = "OAuth token expired with no refresh token"
 
                 conn.health_checked_at = datetime.now(UTC)
                 conn.health_status = {"status": "ok", "checked_at": str(datetime.now(UTC))}
@@ -177,16 +182,19 @@ try:
     @shared_task(name="app.connectors.tasks.refresh_expiring_credentials")
     def refresh_expiring_credentials() -> int:
         import asyncio
+
         return asyncio.run(_refresh_expiring_credentials_async())
 
     @shared_task(name="app.connectors.tasks.check_connector_health")
     def check_connector_health() -> int:
         import asyncio
+
         return asyncio.run(_check_connector_health_async())
 
     @shared_task(name="app.connectors.tasks.cleanup_idle_mcp_sessions")
     def cleanup_idle_mcp_sessions() -> int:
         import asyncio
+
         return asyncio.run(_cleanup_idle_mcp_sessions_async())
 
 except ImportError:

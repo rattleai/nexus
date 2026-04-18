@@ -22,15 +22,15 @@ class RAGEvaluationDataset(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_type: Mapped[str] = mapped_column(
-        String(50), nullable=False, server_default="human_annotation",
+        String(50),
+        nullable=False,
+        server_default="human_annotation",
     )
     query_count: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(default=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, default=dict)
 
-    __table_args__ = (
-        Index("ix_rag_eval_datasets_tenant_name", "tenant_id", "name", unique=True),
-    )
+    __table_args__ = (Index("ix_rag_eval_datasets_tenant_name", "tenant_id", "name", unique=True),)
 
 
 class RAGEvaluationQuery(TimestampMixin, Base):
@@ -47,9 +47,7 @@ class RAGEvaluationQuery(TimestampMixin, Base):
     relevance_grades: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, default=dict)
 
-    __table_args__ = (
-        Index("ix_rag_eval_queries_dataset", "tenant_id", "dataset_id"),
-    )
+    __table_args__ = (Index("ix_rag_eval_queries_dataset", "tenant_id", "dataset_id"),)
 
 
 class RAGEvaluationRun(TimestampMixin, Base):
@@ -70,9 +68,7 @@ class RAGEvaluationRun(TimestampMixin, Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    __table_args__ = (
-        Index("ix_rag_eval_runs_tenant_dataset", "tenant_id", "dataset_id", "created_at"),
-    )
+    __table_args__ = (Index("ix_rag_eval_runs_tenant_dataset", "tenant_id", "dataset_id", "created_at"),)
 
 
 class RAGEvaluationResult(Base):
@@ -95,12 +91,12 @@ class RAGEvaluationResult(Base):
     generated_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
 
-    __table_args__ = (
-        Index("ix_rag_eval_results_run", "tenant_id", "run_id"),
-    )
+    __table_args__ = (Index("ix_rag_eval_results_run", "tenant_id", "run_id"),)
 
 
 class RAGQueryLog(Base):
@@ -121,7 +117,9 @@ class RAGQueryLog(Base):
     empty_result: Mapped[bool] = mapped_column(default=False)
     search_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (

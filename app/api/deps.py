@@ -79,7 +79,7 @@ async def _resolve_api_key(request: Request, db: AsyncSession) -> ApiKey | None:
     Results are cached on request.state to avoid redundant DB queries when
     multiple dependencies call this within the same request.
     """
-    if hasattr(request.state, '_resolved_api_key'):
+    if hasattr(request.state, "_resolved_api_key"):
         return request.state._resolved_api_key
 
     x_api_key = request.headers.get("X-API-Key")
@@ -110,7 +110,7 @@ async def _resolve_user_from_jwt(request: Request, db: AsyncSession) -> User | N
     Results are cached on request.state to avoid redundant JWT decoding and
     DB queries when multiple dependencies call this within the same request.
     """
-    if hasattr(request.state, '_jwt_user'):
+    if hasattr(request.state, "_jwt_user"):
         return request.state._jwt_user
 
     auth_header = request.headers.get("Authorization", "")
@@ -172,7 +172,7 @@ async def get_current_tenant(
     Results are cached on request.state to avoid redundant queries when
     multiple dependencies need the tenant within the same request.
     """
-    if hasattr(request.state, '_resolved_tenant'):
+    if hasattr(request.state, "_resolved_tenant"):
         return request.state._resolved_tenant
 
     # Try JWT auth first (frontend users)
@@ -182,7 +182,7 @@ async def get_current_tenant(
         tenant = result.scalar_one_or_none()
         if not tenant:
             raise HTTPException(status_code=403, detail="Tenant not found or inactive")
-        if not getattr(request.state, '_tenant_context_set', False):
+        if not getattr(request.state, "_tenant_context_set", False):
             await set_tenant_context(db, str(tenant.id))
             request.state._tenant_context_set = True
         request.state._resolved_tenant = tenant
@@ -192,7 +192,7 @@ async def get_current_tenant(
     api_key = await _resolve_api_key(request, db)
     if api_key:
         tenant = api_key.tenant
-        if not getattr(request.state, '_tenant_context_set', False):
+        if not getattr(request.state, "_tenant_context_set", False):
             await set_tenant_context(db, str(tenant.id))
             request.state._tenant_context_set = True
         request.state._resolved_tenant = tenant
@@ -211,7 +211,7 @@ async def get_tenant_db(
     Use this instead of manually calling set_tenant_context() in every endpoint.
     The tenant context is guaranteed to be set before the session is returned.
     """
-    if not getattr(request.state, '_tenant_context_set', False):
+    if not getattr(request.state, "_tenant_context_set", False):
         await set_tenant_context(db, str(tenant.id))
         request.state._tenant_context_set = True
     return db
@@ -251,7 +251,7 @@ async def get_current_user_from_token(
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
 
     # Set RLS tenant context for defense-in-depth isolation (idempotent per request)
-    if not getattr(request.state, '_tenant_context_set', False):
+    if not getattr(request.state, "_tenant_context_set", False):
         await set_tenant_context(db, str(user.tenant_id))
         request.state._tenant_context_set = True
 

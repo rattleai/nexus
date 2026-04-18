@@ -13,7 +13,7 @@ so db.commit() wipes app.tenant_id. These tests verify that:
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from sqlalchemy.exc import PendingRollbackError
@@ -45,7 +45,10 @@ class TestToolExecutorRLSContext:
         mock_set_ctx = AsyncMock()
 
         with (
-            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["config_create_product"]),
+            patch(
+                "app.agents.capabilities.capability_resolver.resolve_agent_tools",
+                return_value=["config_create_product"],
+            ),
             patch("app.agents.tool_registry.tool_registry", mock_registry),
             patch("app.db.session.set_tenant_context", mock_set_ctx),
         ):
@@ -77,7 +80,10 @@ class TestToolExecutorRLSContext:
         mock_set_ctx = AsyncMock()
 
         with (
-            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["config_create_product", "config_list_products"]),
+            patch(
+                "app.agents.capabilities.capability_resolver.resolve_agent_tools",
+                return_value=["config_create_product", "config_list_products"],
+            ),
             patch("app.agents.tool_registry.tool_registry", mock_registry),
             patch("app.db.session.set_tenant_context", mock_set_ctx),
         ):
@@ -124,7 +130,10 @@ class TestToolExecutorRLSContext:
         mock_set_ctx = AsyncMock()
 
         with (
-            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["config_create_product"]),
+            patch(
+                "app.agents.capabilities.capability_resolver.resolve_agent_tools",
+                return_value=["config_create_product"],
+            ),
             patch("app.agents.tool_registry.tool_registry", mock_registry),
             patch("app.db.session.set_tenant_context", mock_set_ctx),
         ):
@@ -235,9 +244,7 @@ class TestPluginToolErrorRecovery:
         mock_plugin = MagicMock()
         mock_plugin.name = "cpq"
         mock_plugin.get_agent_tool_definitions.return_value = {"config_create_product": {}}
-        mock_plugin.invoke_tool = AsyncMock(
-            side_effect=RuntimeError("RLS violation")
-        )
+        mock_plugin.invoke_tool = AsyncMock(side_effect=RuntimeError("RLS violation"))
 
         with patch("app.plugins.registry.registry", [mock_plugin]):
             result = await registry._invoke_plugin_tool(
@@ -264,9 +271,7 @@ class TestPluginToolErrorRecovery:
         mock_plugin = MagicMock()
         mock_plugin.name = "cpq"
         mock_plugin.get_agent_tool_definitions.return_value = {"config_create_product": {}}
-        mock_plugin.invoke_tool = AsyncMock(
-            side_effect=ValueError("bad input")
-        )
+        mock_plugin.invoke_tool = AsyncMock(side_effect=ValueError("bad input"))
 
         with patch("app.plugins.registry.registry", [mock_plugin]):
             result = await registry._invoke_plugin_tool(
@@ -293,9 +298,7 @@ class TestPluginToolErrorRecovery:
         mock_plugin = MagicMock()
         mock_plugin.name = "cpq"
         mock_plugin.get_agent_tool_definitions.return_value = {"config_create_product": {}}
-        mock_plugin.invoke_tool = AsyncMock(
-            side_effect=RuntimeError("RLS violation")
-        )
+        mock_plugin.invoke_tool = AsyncMock(side_effect=RuntimeError("RLS violation"))
 
         with patch("app.plugins.registry.registry", [mock_plugin]):
             # Must not raise even though rollback failed
@@ -342,6 +345,7 @@ class TestStreamingCleanupRecovery:
 
         # Simulate the cleanup logic directly
         from sqlalchemy.exc import PendingRollbackError as PRE
+
         from app.agents.models import AgentInstance
 
         async def _cleanup_instance():
@@ -414,17 +418,20 @@ class TestRunStreamRLSContext:
 
         # First completion triggers a tool call, second gives final answer
         step = 0
+
         async def mock_completion(**kwargs):
             nonlocal step
             step += 1
             if step == 1:
                 return FakeCompletion(
                     content="Let me create a product.",
-                    tool_calls=[{
-                        "id": "call_1",
-                        "name": "config_create_product",
-                        "arguments": '{"name": "Batmobile", "slug": "batmobile"}',
-                    }],
+                    tool_calls=[
+                        {
+                            "id": "call_1",
+                            "name": "config_create_product",
+                            "arguments": '{"name": "Batmobile", "slug": "batmobile"}',
+                        }
+                    ],
                 )
             return FakeCompletion(
                 content="Product created successfully.",
@@ -485,9 +492,8 @@ class TestMigration0023:
     def test_all_cpq_tables_listed(self):
         """The migration must cover every table from migration 0016."""
         import importlib
-        mod = importlib.import_module(
-            "app.db.migrations.versions.0026_cpq_rls_with_check"
-        )
+
+        mod = importlib.import_module("app.db.migrations.versions.0026_cpq_rls_with_check")
 
         expected_tables = {
             "product_families",
@@ -516,9 +522,8 @@ class TestMigration0023:
     def test_migration_revision_chain(self):
         """0026 must depend on 0025."""
         import importlib
-        mod = importlib.import_module(
-            "app.db.migrations.versions.0026_cpq_rls_with_check"
-        )
+
+        mod = importlib.import_module("app.db.migrations.versions.0026_cpq_rls_with_check")
 
         assert mod.revision == "0026_cpq_rls_with_check"
         assert mod.down_revision == "0025_capability_model"
@@ -537,9 +542,7 @@ class TestToolFailureIsolation:
         """If tool A fails, tool B should still succeed thanks to rollback."""
         from app.agents.setup import build_tool_executor
 
-        definition = make_agent_definition(
-            allowed_tools=["config_create_product", "config_list_products"]
-        )
+        definition = make_agent_definition(allowed_tools=["config_create_product", "config_list_products"])
         db = make_mock_db()
 
         call_count = 0
@@ -556,7 +559,10 @@ class TestToolFailureIsolation:
         mock_set_ctx = AsyncMock()
 
         with (
-            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["config_create_product", "config_list_products"]),
+            patch(
+                "app.agents.capabilities.capability_resolver.resolve_agent_tools",
+                return_value=["config_create_product", "config_list_products"],
+            ),
             patch("app.agents.tool_registry.tool_registry", mock_registry),
             patch("app.db.session.set_tenant_context", mock_set_ctx),
         ):
