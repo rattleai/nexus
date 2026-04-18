@@ -67,6 +67,11 @@ api-sync:  ## Export OpenAPI spec and regenerate TypeScript client
 	$(MAKE) api-generate
 
 openapi-lock:  ## Refresh openapi.lock.json (CI fails if it drifts)
+	# Match the flag posture used by the CI gate so the lock includes
+	# the full public surface (auth, mcp, oauth client-credentials).
+	AUTH_ENABLED=true \
+	MCP_ENABLED=true \
+	OAUTH_CLIENT_CREDENTIALS_ENABLED=true \
 	python scripts/dump_openapi.py openapi.lock.json
 	@echo "openapi.lock.json refreshed — commit it."
 

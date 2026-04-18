@@ -8827,6 +8827,142 @@
         "title": "OAuthCallbackRequest",
         "type": "object"
       },
+      "OAuthClientCreate": {
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "OAuthClientCreate",
+        "type": "object"
+      },
+      "OAuthClientCreateResponse": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_secret": {
+            "title": "Client Secret",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "name",
+          "scopes",
+          "active",
+          "client_secret"
+        ],
+        "title": "OAuthClientCreateResponse",
+        "type": "object"
+      },
+      "OAuthClientResponse": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "name",
+          "scopes",
+          "active"
+        ],
+        "title": "OAuthClientResponse",
+        "type": "object"
+      },
       "OAuthProvidersResponse": {
         "properties": {
           "providers": {
@@ -10262,6 +10398,24 @@
         "title": "ResetPasswordRequest",
         "type": "object"
       },
+      "RotateSecretResponse": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_secret": {
+            "title": "Client Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_secret"
+        ],
+        "title": "RotateSecretResponse",
+        "type": "object"
+      },
       "SearchFilterRequest": {
         "properties": {
           "data_source_ids": {
@@ -11281,27 +11435,27 @@
         "title": "TenantUpdate",
         "type": "object"
       },
-      "TokenResponse": {
+      "TokenRequest": {
         "properties": {
-          "access_token": {
-            "title": "Access Token",
+          "client_id": {
+            "title": "Client Id",
             "type": "string"
           },
-          "expires_in": {
-            "title": "Expires In",
-            "type": "integer"
+          "client_secret": {
+            "title": "Client Secret",
+            "type": "string"
           },
-          "token_type": {
-            "default": "bearer",
-            "title": "Token Type",
+          "grant_type": {
+            "title": "Grant Type",
             "type": "string"
           }
         },
         "required": [
-          "access_token",
-          "expires_in"
+          "grant_type",
+          "client_id",
+          "client_secret"
         ],
-        "title": "TokenResponse",
+        "title": "TokenRequest",
         "type": "object"
       },
       "UnreadCountResponse": {
@@ -12423,6 +12577,57 @@
           "updated_at"
         ],
         "title": "WorkflowRunResponse",
+        "type": "object"
+      },
+      "app__api__schemas_auth__TokenResponse": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "expires_in"
+        ],
+        "title": "TokenResponse",
+        "type": "object"
+      },
+      "app__api__v1__oauth_clients__TokenResponse": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "Bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "expires_in",
+          "scope"
+        ],
+        "title": "TokenResponse",
         "type": "object"
       }
     }
@@ -16494,7 +16699,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/app__api__schemas_auth__TokenResponse"
                 }
               }
             },
@@ -22702,6 +22907,196 @@
         "tags": [
           "notifications"
         ]
+      }
+    },
+    "/api/v1/oauth/clients": {
+      "get": {
+        "description": "List all registered OAuth clients for the tenant.",
+        "operationId": "list_oauth_clients_api_v1_oauth_clients_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OAuthClientResponse"
+                  },
+                  "title": "Response List Oauth Clients Api V1 Oauth Clients Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Oauth Clients",
+        "tags": [
+          "oauth"
+        ]
+      },
+      "post": {
+        "description": "Register a new OAuth client for machine-to-machine authentication.\n\nReturns the client_id and client_secret. The secret is only shown once.",
+        "operationId": "create_oauth_client_api_v1_oauth_clients_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthClientCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthClientCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Oauth Client",
+        "tags": [
+          "oauth"
+        ],
+        "x-agent-hint": "Register an OAuth client for machine-to-machine auth. Admin only.",
+        "x-idempotent": false
+      }
+    },
+    "/api/v1/oauth/clients/{client_id}": {
+      "delete": {
+        "description": "Revoke an OAuth client.",
+        "operationId": "revoke_oauth_client_api_v1_oauth_clients__client_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Oauth Client",
+        "tags": [
+          "oauth"
+        ]
+      }
+    },
+    "/api/v1/oauth/clients/{client_id}/rotate": {
+      "post": {
+        "description": "Rotate the client secret for an OAuth client.\n\nReturns the new client_secret. The secret is only shown once.",
+        "operationId": "rotate_client_secret_api_v1_oauth_clients__client_id__rotate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RotateSecretResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate Client Secret",
+        "tags": [
+          "oauth"
+        ]
+      }
+    },
+    "/api/v1/oauth/token": {
+      "post": {
+        "description": "Exchange client credentials for an access token.\n\nImplements OAuth 2.1 Client Credentials grant.",
+        "operationId": "exchange_token_api_v1_oauth_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__api__v1__oauth_clients__TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exchange Token",
+        "tags": [
+          "oauth"
+        ],
+        "x-agent-hint": "Exchange client_id + client_secret for a short-lived JWT. Rate limited to 10 requests/minute."
       }
     },
     "/api/v1/plugins/health": {

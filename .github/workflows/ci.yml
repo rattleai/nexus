@@ -643,7 +643,10 @@ jobs:
   # Diffing the live spec against the lock catches accidental API
   # surface changes — added / removed / renamed fields and endpoints —
   # before they ship and break downstream consumers (frontend + SDKs).
-  # Update via: `make openapi-lock` (or run dump_openapi.py manually).
+  # Feature flags are forced on so the lock represents the full deployed
+  # surface (otherwise the spec varies with CI defaults and the lock
+  # silently misses entire route groups). Refresh via `make openapi-lock`
+  # using the same env vars.
   openapi-lock-check:
     name: OpenAPI Lock Drift
     runs-on: ubuntu-latest
@@ -665,6 +668,13 @@ jobs:
       SECRET_KEY: ${{ secrets.CI_SECRET_KEY || 'ci-test-secret-key-min-32-chars-long' }}
       ADMIN_KEY: ${{ secrets.CI_ADMIN_KEY || 'ci-test-admin-key-min-32-chars-long' }}
       DEBUG: "true"
+      # Pin every feature flag that gates a public router on. The lock
+      # then represents the maximum public surface; a regression here is
+      # always meaningful (drifted schema or new/removed endpoint), never
+      # a CI-default flake.
+      AUTH_ENABLED: "true"
+      MCP_ENABLED: "true"
+      OAUTH_CLIENT_CREDENTIALS_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -678,7 +688,7 @@ jobs:
           set -euo pipefail
           python scripts/dump_openapi.py /tmp/openapi.live.json
           if ! diff -q openapi.lock.json /tmp/openapi.live.json > /dev/null; then
-            echo "::error::OpenAPI surface drifted from openapi.lock.json. Regenerate via \`python scripts/dump_openapi.py openapi.lock.json\` and commit."
+            echo "::error::OpenAPI surface drifted from openapi.lock.json. Regenerate with the same flags via \`AUTH_ENABLED=true MCP_ENABLED=true OAUTH_CLIENT_CREDENTIALS_ENABLED=true python scripts/dump_openapi.py openapi.lock.json\` and commit."
             diff openapi.lock.json /tmp/openapi.live.json | head -200
             exit 1
           fi
@@ -858,16 +868,17 @@ jobs:
             sleep 1
           done
           echo "::error::API failed to start"; cat /tmp/uvicorn.log; exit 1
-      - name: Run a 30s locust burst against /health/live + /openapi.json
+      - name: Run a 30s locust burst against /health/live
         run: |
+          # Only hit /health/live — it's the dedicated probe path and is
+          # excluded from per-tenant rate limiting. /openapi.json was
+          # rate-limited in the previous run and skewed the stats.
           cat > /tmp/locustfile.py <<'PY'
           from locust import HttpUser, task, between
           class HealthUser(HttpUser):
               wait_time = between(0.05, 0.2)
-              @task(5)
+              @task
               def health(self): self.client.get("/api/v1/health/live")
-              @task(1)
-              def openapi(self): self.client.get("/openapi.json")
           PY
           locust -f /tmp/locustfile.py --host http://localhost:8000 \
             --headless --users 25 --spawn-rate 5 --run-time 30s \
