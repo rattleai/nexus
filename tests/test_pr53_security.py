@@ -86,21 +86,21 @@ class TestWebParserSSRF:
 
 class TestConfiguratorValidation:
     def test_parse_uuid_valid(self):
-        from app.mcp.tools.configurator import _parse_uuid
+        from app.apps.cpq.mcp_tools import _parse_uuid
 
         uid = uuid.uuid4()
         result = _parse_uuid(str(uid), "test_field")
         assert result == uid
 
     def test_parse_uuid_invalid(self):
-        from app.mcp.tools.configurator import _parse_uuid
+        from app.apps.cpq.mcp_tools import _parse_uuid
 
         result = _parse_uuid("not-a-uuid", "test_field")
         assert isinstance(result, dict)
         assert "error" in result
 
     def test_parse_uuid_empty(self):
-        from app.mcp.tools.configurator import _parse_uuid
+        from app.apps.cpq.mcp_tools import _parse_uuid
 
         result = _parse_uuid("", "test_field")
         assert isinstance(result, dict)
@@ -108,7 +108,7 @@ class TestConfiguratorValidation:
 
     @pytest.mark.asyncio
     async def test_config_get_product_invalid_uuid(self):
-        from app.mcp.tools.configurator import config_get_product
+        from app.apps.cpq.mcp_tools import config_get_product
 
         tenant = _make_tenant()
         db = AsyncMock()
@@ -118,7 +118,7 @@ class TestConfiguratorValidation:
 
     @pytest.mark.asyncio
     async def test_config_create_product_invalid_family_id(self):
-        from app.mcp.tools.configurator import config_create_product
+        from app.apps.cpq.mcp_tools import config_create_product
 
         tenant = _make_tenant()
         db = AsyncMock()
@@ -139,7 +139,7 @@ class TestConfiguratorValidation:
 class TestEnumValidation:
     @pytest.mark.asyncio
     async def test_config_list_products_invalid_status(self):
-        from app.mcp.tools.configurator import config_list_products
+        from app.apps.cpq.mcp_tools import config_list_products
 
         tenant = _make_tenant()
         db = AsyncMock()
@@ -155,9 +155,9 @@ class TestCharacteristicTypeFix:
     def test_import_characteristic_type(self):
         """Verify the CharType -> CharacteristicType fix by importing the module."""
         # This would have crashed pre-fix due to importing non-existent CharType
-        from app.mcp.tools import configurator
+        from app.apps.cpq import mcp_tools
 
-        assert hasattr(configurator, "config_create_characteristic")
+        assert hasattr(mcp_tools, "config_create_characteristic")
 
 
 # ── Error Sanitization ───────────────────────────────────────────────
@@ -376,7 +376,7 @@ class TestChunkDeletionTenantFilter:
         """Static check that the reprocess endpoint filters chunks by tenant."""
         import inspect
 
-        from app.api.v1 import datasources
+        from app.apps.cpq.api import datasources
 
         source = inspect.getsource(datasources)
         # The delete(DataSourceChunk) call must include tenant_id
@@ -390,7 +390,7 @@ class TestORMIndexNaming:
     """Verify ORM index names match migration index names."""
 
     def test_provenance_index_names_match_migration(self):
-        from app.db.models.datasource import ConfigItemProvenance
+        from app.apps.cpq.models.datasource import ConfigItemProvenance
 
         index_names = {idx.name for idx in ConfigItemProvenance.__table__.indexes}
         # These names must match what migration 0019 created

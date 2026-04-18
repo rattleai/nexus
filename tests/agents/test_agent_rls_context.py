@@ -58,12 +58,17 @@ class TestToolExecutorRLSContext:
         # set_tenant_context must have been called with the correct tenant_id
         mock_set_ctx.assert_called_once_with(db, str(TENANT_ID))
 
-        # The tool registry must have been invoked after the context was set
+        # The tool registry must have been invoked after the context was set.
+        # actor_user_id/agent_id/agent_instance_id are threaded through for the
+        # confused-deputy fix (P0.2) and per-agent authorization (P0.3).
         mock_registry.invoke.assert_called_once_with(
             tool_name="config_create_product",
             arguments={"name": "Batmobile", "slug": "batmobile"},
             tenant_id=TENANT_ID,
             db=db,
+            actor_user_id=None,
+            agent_id=getattr(definition, "id", None),
+            agent_instance_id=None,
         )
         assert result == {"id": "prod-1", "name": "Test"}
 
@@ -486,6 +491,12 @@ class TestRunStreamRLSContext:
 # ===================================================================
 
 
+@pytest.mark.skip(
+    reason="0026_cpq_rls_with_check was folded into 0001_basic_schema during the "
+    "37→1 migration consolidation; per-migration assertions no longer apply. "
+    "Coverage now lives in tests/agents/test_rls_policies.py against the "
+    "consolidated schema."
+)
 class TestMigration0023:
     """Verify migration 0023 targets all 19 CPQ tables."""
 
@@ -547,7 +558,11 @@ class TestToolFailureIsolation:
 
         call_count = 0
 
-        async def mock_invoke(tool_name, arguments, tenant_id, db):
+        async def mock_invoke(tool_name, arguments, tenant_id, db, **_kwargs):
+            # **kwargs absorbs the new actor_user_id / agent_id /
+            # agent_instance_id parameters threaded through for confused-
+            # deputy prevention without requiring every test mock to
+            # mirror the full signature.
             nonlocal call_count
             call_count += 1
             if call_count == 1:

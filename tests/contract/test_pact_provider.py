@@ -44,6 +44,13 @@ class TestPactVerification:
 
     def test_verify_pacts(self, pact_verifier):
         """Verify all pact files in the pacts directory."""
+        # Backend Tests runs the whole tests/ tree, but pact verification
+        # needs a live API on PROVIDER_URL. The dedicated Contract Tests
+        # (Pact) CI job stands one up; everywhere else, skip rather than
+        # fail with a connection error.
+        if not _can_reach_provider():
+            pytest.skip(f"Provider not reachable at {PROVIDER_URL}; run inside the Contract Tests CI job")
+
         pact_files = list(Path(PACT_DIR).glob("*.json"))
         if not pact_files:
             pytest.skip("No pact files found in pacts directory")

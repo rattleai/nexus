@@ -188,7 +188,7 @@ class TestNumericDomainPropagation:
         assert d.min == 42.0
 
     def test_numeric_requires_narrows_interval(self):
-        from app.db.models import ConstraintType
+        from app.apps.cpq.models.product import ConstraintType
 
         rule = self._make_constraint(
             ConstraintType.REQUIRES,
@@ -208,7 +208,7 @@ class TestNumericDomainPropagation:
         assert d.max == 500
 
     def test_numeric_contradiction(self):
-        from app.db.models import ConstraintType
+        from app.apps.cpq.models.product import ConstraintType
 
         rule1 = self._make_constraint(
             ConstraintType.REQUIRES,
@@ -456,7 +456,7 @@ class TestConstraintAnalyzer:
         return CharacteristicInfo(characteristic=char)
 
     def _mock_rule(self, ct_str, expression):
-        from app.db.models import ConstraintType
+        from app.apps.cpq.models.product import ConstraintType
 
         rule = MagicMock()
         rule.id = uuid.uuid4()
@@ -699,7 +699,7 @@ class TestSnapshotLoading:
         assert domains["weight"].max == 500
 
     def test_propagate_with_prebuilt_index(self):
-        from app.db.models import ConstraintType
+        from app.apps.cpq.models.product import ConstraintType
 
         rule = MagicMock()
         rule.id = uuid.uuid4()
@@ -750,7 +750,7 @@ class TestBOMEagerLoad:
 
 class TestQuantityExpressionValidation:
     def test_valid_expression(self):
-        from app.api.v1.boms import _validate_quantity_expression
+        from app.apps.cpq.api.boms import _validate_quantity_expression
 
         # Should not raise
         _validate_quantity_expression(
@@ -762,18 +762,18 @@ class TestQuantityExpressionValidation:
         )
 
     def test_none_is_valid(self):
-        from app.api.v1.boms import _validate_quantity_expression
+        from app.apps.cpq.api.boms import _validate_quantity_expression
 
         _validate_quantity_expression(None)
 
     def test_invalid_type(self):
-        from app.api.v1.boms import _validate_quantity_expression
+        from app.apps.cpq.api.boms import _validate_quantity_expression
 
         with pytest.raises(Exception):
             _validate_quantity_expression({"type": "table"})
 
     def test_unmapped_variable(self):
-        from app.api.v1.boms import _validate_quantity_expression
+        from app.apps.cpq.api.boms import _validate_quantity_expression
 
         with pytest.raises(Exception):
             _validate_quantity_expression(
@@ -785,7 +785,7 @@ class TestQuantityExpressionValidation:
             )
 
     def test_invalid_syntax(self):
-        from app.api.v1.boms import _validate_quantity_expression
+        from app.apps.cpq.api.boms import _validate_quantity_expression
 
         with pytest.raises(Exception):
             _validate_quantity_expression(

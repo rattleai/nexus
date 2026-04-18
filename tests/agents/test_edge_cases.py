@@ -288,6 +288,7 @@ class TestVersionFields:
             "db_access_policy": {},
             "behavioral_baseline": {},
             "metadata": {},
+            "capabilities": [],
             "created_at": "2024-01-01T00:00:00Z",
             "updated_at": "2024-01-01T00:00:00Z",
         }

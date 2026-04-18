@@ -263,7 +263,7 @@ class TestConstraintPropagation:
         rule.effective_to = None
         rule.constraint_type = MagicMock(value="requires")
         rule.constraint_type.__eq__ = lambda s, o: s.value == (o.value if hasattr(o, "value") else o)
-        from app.db.models import ConstraintType
+        from app.apps.cpq.models.product import ConstraintType
 
         rule.constraint_type = ConstraintType.REQUIRES
         rule.expression = {
@@ -290,7 +290,7 @@ class TestConstraintPropagation:
         rule.is_active = True
         rule.effective_from = None
         rule.effective_to = None
-        from app.db.models import ConstraintType
+        from app.apps.cpq.models.product import ConstraintType
 
         rule.constraint_type = ConstraintType.EXCLUDES
         rule.expression = {
@@ -318,7 +318,7 @@ class TestConstraintPropagation:
         rule.effective_to = None
         rule.id = uuid.uuid4()
         rule.name = "V8 requires auto transmission"
-        from app.db.models import ConstraintType
+        from app.apps.cpq.models.product import ConstraintType
 
         rule.constraint_type = ConstraintType.REQUIRES
         rule.expression = {
@@ -345,7 +345,7 @@ class TestConstraintPropagation:
         rule.effective_to = None
         rule.id = uuid.uuid4()
         rule.name = "V8 requires auto transmission"
-        from app.db.models import ConstraintType
+        from app.apps.cpq.models.product import ConstraintType
 
         rule.constraint_type = ConstraintType.REQUIRES
         rule.expression = {
@@ -379,7 +379,7 @@ class TestConstraintPropagation:
         rule.effective_to = None
         rule.id = uuid.uuid4()
         rule.name = "Base trim excludes panoramic"
-        from app.db.models import ConstraintType
+        from app.apps.cpq.models.product import ConstraintType
 
         rule.constraint_type = ConstraintType.EXCLUDES
         rule.expression = {
@@ -408,7 +408,7 @@ class TestConstraintPropagation:
         rule.is_active = True
         rule.effective_from = None
         rule.effective_to = None
-        from app.db.models import ConstraintType
+        from app.apps.cpq.models.product import ConstraintType
 
         rule.constraint_type = ConstraintType.REQUIRES
         rule.expression = {
@@ -434,7 +434,7 @@ class TestConstraintPropagation:
         rule.is_active = True
         rule.effective_from = None
         rule.effective_to = None
-        from app.db.models import ConstraintType
+        from app.apps.cpq.models.product import ConstraintType
 
         rule.constraint_type = ConstraintType.SELECTION_CONDITION
         rule.expression = {
