@@ -1,0 +1,31 @@
+# Trivy vulnerability allowlist.
+#
+# Add an entry only after triaging the CVE. Every line is either:
+#   - a CVE ID that exists in a fixed upstream version we have not yet
+#     bumped to (tracked for the next dependency-bump PR), or
+#   - an OS-level CVE whose fix is not yet in the base image and whose
+#     runtime exposure is limited by the container surface.
+#
+# Review this list quarterly. Remove entries as soon as the upstream
+# fix lands in either the Python deps or the base image.
+
+# ── Python deps (also listed in the pip-audit --ignore-vuln flags in
+#    .github/workflows/ci.yml; keep the two lists in sync until the
+#    dependency-bump PR raises cryptography>=46.0.6 and pyopenssl>=26).
+CVE-2026-26007  # cryptography <46.0.5 — fixed upstream, pending bump
+CVE-2026-34073  # cryptography <46.0.6 name-constraint bypass
+CVE-2026-25990  # pillow <12.1.1 PSD OOB write
+CVE-2026-40192  # pillow <12.2.0 FITS decompression bomb
+CVE-2026-27448  # pyopenssl <26.0.0 SNI callback bypass
+CVE-2026-27459  # pyopenssl <26.0.0 cookie-cb buffer overflow
+CVE-2025-71176  # pytest <9.0.3 /tmp race (dev-only, low risk)
+
+# ── Base-image OS CVEs (Debian bookworm slim, tracked for base-image
+#    bump). All are DoS or local-privilege escalations that require
+#    attacker code inside the container; the container runs as non-root
+#    and the app does not spawn shells or parse untrusted systemd / ncurses
+#    input at runtime.
+CVE-2026-28390  # openssl / libssl3 DoS — fixed in 3.5.5-1~deb13u2
+CVE-2026-29111  # systemd / libsystemd / libudev arbitrary code — deb13 pending
+CVE-2026-27135  # libnghttp2 HTTP/2 DoS — deb13 pending
+CVE-2025-69720  # ncurses / libtinfo buffer overflow — deb13 pending

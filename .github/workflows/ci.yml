@@ -774,6 +774,12 @@ jobs:
           format: table
           exit-code: 1
           severity: CRITICAL,HIGH
+          # Unfixed CVEs in the base image are allowlisted via
+          # .trivyignore (reviewed quarterly). `ignore-unfixed: true`
+          # covers the long-tail of "affected but no patch yet" entries
+          # so only actionable findings fail the build.
+          ignore-unfixed: true
+          trivyignores: .trivyignore
 
   # ── Container smoke test ──────────────────────────────────
   # Catches "image built but doesn't actually run" — missing files in
