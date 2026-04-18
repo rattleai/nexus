@@ -79,6 +79,29 @@ class DataSourceList(BaseModel):
     page: int
     page_size: int
 
+
+# ── Cloud-drive browse ───────────────────────────────────
+
+
+class DriveItemRead(BaseModel):
+    """One entry in a cloud-drive folder listing."""
+
+    id: str
+    name: str
+    path: str
+    is_folder: bool
+    size: int | None = None
+    mime_type: str | None = None
+    modified_at: datetime | None = None
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class DriveListingRead(BaseModel):
+    """One page of a cloud-drive folder listing."""
+
+    items: list[DriveItemRead]
+    cursor: str | None = None
+
     model_config = {"from_attributes": True}
 
 

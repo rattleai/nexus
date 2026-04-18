@@ -91,6 +91,18 @@ class DataSource(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
     connector_slug: Mapped[str | None] = mapped_column(String(100), nullable=True)
     cloud_file_id: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # The user who created this DataSource — used as ``actor_user_id`` when
+    # the Celery extraction task invokes connector tools, so per-user
+    # TenantConnection resolution (confused-deputy protection) still applies
+    # outside the request thread. Nullable so system-created sources
+    # (migrations, background seeds) don't need a synthetic user row.
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Extraction results
     extraction_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     extraction_error: Mapped[str | None] = mapped_column(Text, nullable=True)
