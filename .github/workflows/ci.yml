@@ -256,9 +256,22 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Start API server
         run: |
-          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          sleep 3
-          curl -sf http://localhost:8000/api/v1/health/live || exit 1
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &
+          # The lifespan runs connector YAML sync, migration checks, and
+          # extension verification — a flat `sleep 3` was racing uvicorn.
+          # Poll /health/live for up to 60s before giving up and dumping
+          # the startup log so failures show the real error.
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/api/v1/health/live > /dev/null 2>&1; then
+              echo "API server ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::API server failed to become ready within 60s"
+          echo "--- uvicorn log ---"
+          cat /tmp/uvicorn.log
+          exit 1
       - name: Run Playwright tests
         working-directory: frontend
         run: npx playwright test --reporter=html
@@ -411,9 +424,22 @@ jobs:
       - run: alembic upgrade head
       - name: Start API server
         run: |
-          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          sleep 3
-          curl -sf http://localhost:8000/api/v1/health/live || exit 1
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &
+          # The lifespan runs connector YAML sync, migration checks, and
+          # extension verification — a flat `sleep 3` was racing uvicorn.
+          # Poll /health/live for up to 60s before giving up and dumping
+          # the startup log so failures show the real error.
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/api/v1/health/live > /dev/null 2>&1; then
+              echo "API server ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::API server failed to become ready within 60s"
+          echo "--- uvicorn log ---"
+          cat /tmp/uvicorn.log
+          exit 1
       - run: pytest tests/contract/ -v --tb=short
 
   dependency-audit:
