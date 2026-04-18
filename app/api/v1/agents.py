@@ -841,7 +841,12 @@ async def run_agent_stream(
     # invoke tools (CPQ, built-in, tenant-custom) during the streaming run.
     from app.agents.setup import build_tool_executor, build_governance_checker, resolve_datasource_mentions
 
-    tool_executor = build_tool_executor(agent, tenant.id, db)
+    tool_executor = build_tool_executor(
+        agent,
+        tenant.id,
+        db,
+        agent_instance_id=instance_id,
+    )
     governance_checker = build_governance_checker(agent, tenant.id)
 
     # Resolve @[name](ds:uuid) data source mentions in user messages

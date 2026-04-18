@@ -130,6 +130,11 @@ services:
     environment:
       - PYTHONPATH=/app
       - DATABASE_URL=postgresql+asyncpg://app_user:change-me-in-production@pgbouncer:6432/app
+      # Superuser connection for platform-wide admin tasks (stale cleanup,
+      # retention sweeps, cross-tenant reporting). Read from
+      # app.db.session.admin_async_session_factory — must never be used by
+      # application request handlers.
+      - DATABASE_MIGRATION_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
     volumes:
       - .:/app
     depends_on:
@@ -158,6 +163,7 @@ services:
     environment:
       - PYTHONPATH=/app
       - DATABASE_URL=postgresql+asyncpg://app_user:change-me-in-production@pgbouncer:6432/app
+      - DATABASE_MIGRATION_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
     volumes:
       - .:/app
     depends_on:
@@ -166,26 +172,14 @@ services:
       redis:
         condition: service_healthy
     command: celery -A app.workers.celery_app beat --loglevel=info
-    # Override Dockerfile's curl healthcheck (beat doesn't run HTTP).
-    # Python-based process check (slim image has no pgrep/ps); verifies
-    # the main beat process is alive by reading /proc.
+    # Beat is a scheduler, not an HTTP service, so the Dockerfile's
+    # curl-based healthcheck never passes. `command:` above runs celery
+    # beat directly, so PID 1's cmdline is the beat process — grep it.
+    # grep is in the slim image; no dependency on pgrep/ps/python.
     healthcheck:
-      test:
-        - "CMD-SHELL"
-        - |
-          python -c "
-          import os, sys
-          for pid in os.listdir('/proc'):
-              if not pid.isdigit(): continue
-              try:
-                  with open(f'/proc/{pid}/cmdline', 'rb') as f:
-                      cmd = f.read().decode(errors='ignore')
-                  if 'celery' in cmd and 'beat' in cmd: sys.exit(0)
-              except Exception: pass
-          sys.exit(1)
-          "
+      test: ["CMD-SHELL", "grep -q celery /proc/1/cmdline && grep -q beat /proc/1/cmdline"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
       start_period: 20s
     stop_grace_period: 10s
@@ -199,6 +193,7 @@ services:
       - PYTHONPATH=/app
       - AGENT_EXECUTION_ENABLED=true
       - DATABASE_URL=postgresql+asyncpg://app_user:change-me-in-production@pgbouncer:6432/app
+      - DATABASE_MIGRATION_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
     volumes:
       - .:/app
     depends_on:
@@ -232,6 +227,7 @@ services:
       - MCP_ENABLED=true
       - MCP_TRANSPORT=http
       - DATABASE_URL=postgresql+asyncpg://app_user:change-me-in-production@pgbouncer:6432/app
+      - DATABASE_MIGRATION_URL=postgresql+asyncpg://app:app@pgbouncer:6432/app
     volumes:
       - .:/app
     depends_on:

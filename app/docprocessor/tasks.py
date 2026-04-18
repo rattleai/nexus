@@ -108,9 +108,12 @@ async def _extract_async(datasource_id: uuid.UUID) -> dict:
         if not ds:
             return {"status": "error", "detail": "DataSource not found"}
 
-        # Step 1: Extract content from the source
+        # Step 1: Extract content from the source. process_data_source
+        # dispatches on ds.source_type (UPLOAD / URL / CLOUD_DRIVE / PASTE)
+        # and, for cloud drives, enriches ds.filename/mime_type/file_size
+        # from the actual downloaded file.
         processor = DocumentProcessor()
-        extraction = await processor.process(ds, db=db)
+        extraction = await processor.process_data_source(ds, db=db)
 
         # Store extraction metadata
         ds.extraction_result = extraction.to_dict()

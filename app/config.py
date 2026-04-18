@@ -73,16 +73,59 @@ class Settings(BaseSettings):
     PASSWORD_RESET_EXPIRE_HOURS: int = 1
     APP_BASE_URL: str = "http://localhost:3000"
 
-    # Cloud Drive OAuth
-    GOOGLE_DRIVE_CLIENT_ID: str = ""
-    GOOGLE_DRIVE_CLIENT_SECRET: str = ""
-    GOOGLE_DRIVE_REDIRECT_URI: str = ""
-    DROPBOX_APP_KEY: str = ""
-    DROPBOX_APP_SECRET: str = ""
-    DROPBOX_REDIRECT_URI: str = ""
-    ONEDRIVE_CLIENT_ID: str = ""
-    ONEDRIVE_CLIENT_SECRET: str = ""
-    ONEDRIVE_REDIRECT_URI: str = ""
+    # ── Connector System ─────────────────────────────────
+    CONNECTOR_ENABLED: bool = True
+    CONNECTOR_MCP_POOL_MAX_PER_SERVER: int = 3
+    CONNECTOR_MCP_IDLE_TIMEOUT_SECONDS: int = 300
+    CONNECTOR_MCP_CONNECT_TIMEOUT_SECONDS: int = 10
+    CONNECTOR_MCP_REQUEST_TIMEOUT_SECONDS: int = 30
+    CONNECTOR_HTTP_REQUEST_TIMEOUT_SECONDS: int = 30
+    CONNECTOR_TOOL_CACHE_TTL_SECONDS: int = 300
+    CONNECTOR_HEALTH_CHECK_INTERVAL_SECONDS: int = 300
+    CONNECTOR_MAX_CONNECTIONS_PER_TENANT: int = 50
+    CONNECTOR_CREDENTIAL_REFRESH_BUFFER_SECONDS: int = 300
+    CONNECTOR_MAX_TOOL_OUTPUT_BYTES: int = 51200  # 50KB
+
+    # Rate limiting (per user × per connector) — token bucket in Redis
+    CONNECTOR_RATE_LIMIT_REQUESTS_PER_MINUTE: int = 60
+    CONNECTOR_RATE_LIMIT_BURST: int = 30
+
+    # Signed registry verification (P1.3)
+    CONNECTOR_REGISTRY_PUBLIC_KEY_PATH: str = ""
+    CONNECTOR_REGISTRY_URL: str = "https://registry.modelcontextprotocol.io"
+    CONNECTOR_REGISTRY_ALLOW_UNTRUSTED: bool = False
+
+    # Durable execution (P1.4)
+    CONNECTOR_DURABLE_EXECUTION_ENABLED: bool = True
+    CONNECTOR_DURABLE_MAX_ATTEMPTS: int = 3
+    CONNECTOR_DURABLE_RETRY_INITIAL_SECONDS: float = 1.0
+    CONNECTOR_DURABLE_RETRY_BACKOFF: float = 2.0
+
+    # Composio broker (P2.2)
+    COMPOSIO_API_KEY: str = ""
+    COMPOSIO_BASE_URL: str = "https://backend.composio.dev"
+    # Default broker for connectors whose YAML does not specify one.
+    # Composio is the recommended default: it gives tenants 500+ pre-integrated
+    # SaaS tools with managed OAuth + refresh, and tokens never enter the
+    # agent runtime. When COMPOSIO_API_KEY is unset, BrokerRouter falls back
+    # to the in-house broker transparently so nothing breaks in dev.
+    CONNECTOR_DEFAULT_BROKER: str = "composio"  # "composio" | "in_house"
+
+    # HashiCorp Vault for in-house credentials (P2.3, optional)
+    VAULT_ADDR: str = ""
+    VAULT_TOKEN: str = ""
+    VAULT_TRANSIT_KEY: str = "connector-tokens"
+
+    # Cedar policy engine (P3.1)
+    CONNECTOR_CEDAR_ENABLED: bool = False
+    CONNECTOR_CEDAR_POLICY_DIR: str = "app/authz/policies"
+
+    # Cloud-drive ingest (Dropbox / Google Drive / OneDrive → RAG)
+    CLOUD_DRIVE_MAX_FILE_SIZE_MB: int = 50
+    CLOUD_DRIVE_LIST_PAGE_SIZE: int = 100
+
+    # A2A (P3.2)
+    CONNECTOR_A2A_ENABLED: bool = False
 
     # Billing (Stripe)
     STRIPE_SECRET_KEY: str = ""
@@ -338,7 +381,7 @@ class Settings(BaseSettings):
     # Listed here for documentation; actual gating is in app.plugins.registry.
     APP_CPQ_ENABLED: bool = True
 
-    # (Cloud Drive OAuth settings are defined above — do not duplicate here.)
+    # (Connector OAuth credentials are stored per-connector in connector_definitions.)
 
     # Allowed scope values for API keys
     VALID_SCOPES: list[str] = [
@@ -352,7 +395,7 @@ class Settings(BaseSettings):
         "ai:read", "ai:write", "ai:admin",
         "mcp:read", "mcp:write",
         "agents:read", "agents:write", "agents:admin", "agents:execute",
-        "cloud-connections:read", "cloud-connections:write",
+        "connections:read", "connections:write", "connections:admin",
         # App-specific scopes are contributed dynamically via plugins.
         # See app.plugins.registry — scopes are appended after discovery.
     ]

@@ -43,12 +43,27 @@ from app.db.models.core import (
     UserRole,
 )
 from app.db.models.datasource import (
-    CloudConnection,
-    CloudProvider,
     DataSource,
     DataSourceChunk,
     DataSourceStatus,
     DataSourceType,
+)
+from app.connectors.models import (
+    AuthType,
+    BrokerType,
+    ConnectionStatus,
+    ConnectorAppCredential,
+    ConnectorAuditLog,
+    ConnectorDefinition,
+    ConnectorOAuthState,
+    ConnectorSource,
+    ConnectorTask,
+    ConnectorTaskStatus,
+    ConnectorType,
+    CredentialType,
+    TenantConnection,
+    TenantCredential,
+    TrustLevel,
 )
 from app.db.models.enterprise import (
     SSOConfiguration,
@@ -154,8 +169,22 @@ __all__ = [
     "DataSourceType",
     "DataSourceStatus",
     "DataSourceChunk",
-    "CloudConnection",
-    "CloudProvider",
+    # Connectors
+    "ConnectorDefinition",
+    "ConnectorType",
+    "AuthType",
+    "BrokerType",
+    "TrustLevel",
+    "ConnectionStatus",
+    "CredentialType",
+    "TenantConnection",
+    "TenantCredential",
+    "ConnectorAuditLog",
+    "ConnectorAppCredential",
+    "ConnectorOAuthState",
+    "ConnectorSource",
+    "ConnectorTask",
+    "ConnectorTaskStatus",
     # RAG Configuration
     "TenantRAGConfig",
     # RAG Evaluation

@@ -9,6 +9,7 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
+  Cloud,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -16,6 +17,7 @@ import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { formatBytes } from "@/lib/format"
+import { CloudDrivePicker } from "@/components/data-sources/cloud-drive-picker"
 
 export interface DocumentChunk {
   id: string
@@ -38,6 +40,18 @@ export interface RAGDocumentPanelProps {
   documents: RAGDocument[]
   onUpload: (files: File[]) => void
   onDelete?: (id: string) => void
+  /**
+   * When true, renders a "From cloud drive" button that opens the
+   * CloudDrivePicker. Requires the tenant to have at least one
+   * cloud-drive connection configured.
+   */
+  enableCloudDrive?: boolean
+  /**
+   * Called with the newly-created DataSource id after a cloud-drive
+   * pick. Typically used to optimistically insert a "processing" row
+   * into the ``documents`` list.
+   */
+  onCloudDrivePicked?: (dataSourceId: string) => void
   className?: string
 }
 
@@ -148,8 +162,11 @@ export function RAGDocumentPanel({
   documents,
   onUpload,
   onDelete,
+  enableCloudDrive = false,
+  onCloudDrivePicked,
   className,
 }: RAGDocumentPanelProps) {
+  const [pickerOpen, setPickerOpen] = useState(false)
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: onUpload,
     accept: {
@@ -181,6 +198,26 @@ export function RAGDocumentPanel({
           </p>
         </div>
       </div>
+
+      {enableCloudDrive && (
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => setPickerOpen(true)}
+          >
+            <Cloud className="h-4 w-4" />
+            From cloud drive
+          </Button>
+          <CloudDrivePicker
+            open={pickerOpen}
+            onOpenChange={setPickerOpen}
+            onPicked={onCloudDrivePicked}
+          />
+        </>
+      )}
 
       {documents.length > 0 && (
         <ScrollArea className="max-h-[500px]">

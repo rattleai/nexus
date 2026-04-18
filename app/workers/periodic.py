@@ -11,7 +11,7 @@ from sqlalchemy import delete, func, select, text, update
 
 from app.config import settings
 from app.workers.celery_app import celery
-from app.workers.tasks import _SyncSession
+from app.workers.tasks import _AdminSyncSession, _SyncSession
 
 logger = structlog.stdlib.get_logger()
 
@@ -22,7 +22,7 @@ def cleanup_expired_jobs() -> dict:
     from app.db.models import Job
 
     cutoff = datetime.now(UTC) - timedelta(days=30)
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         result = db.execute(
             delete(Job).where(Job.deleted_at.isnot(None), Job.deleted_at < cutoff)
         )
@@ -39,7 +39,7 @@ def cleanup_stale_processing() -> dict:
     from app.db.models import Job, JobStatus
 
     cutoff = datetime.now(UTC) - timedelta(hours=1)
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         result = db.execute(
             update(Job)
             .where(
@@ -71,7 +71,7 @@ def cache_warmup() -> dict:
 
     from app.db.models import Tenant
 
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         tenants = (
             db.execute(select(Tenant).where(Tenant.is_active.is_(True), Tenant.deleted_at.is_(None)))
             .scalars()
@@ -107,7 +107,7 @@ def storage_usage_report() -> dict:
     """Log storage usage per tenant (daily)."""
     from app.db.models import Job, Tenant
 
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         results = db.execute(
             select(
                 Tenant.id,
@@ -144,7 +144,7 @@ def cleanup_expired_tokens() -> dict:
     from app.db.models import EmailVerificationToken, RefreshToken
 
     now = datetime.now(UTC)
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         # Remove expired refresh tokens (expired or revoked older than 7 days)
         revoked_cutoff = now - timedelta(days=7)
         refresh_result = db.execute(
@@ -205,7 +205,7 @@ def enforce_data_retention() -> dict:
     total_archived = 0
     model_map = _get_retention_model_map()
 
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         policies = db.execute(
             select(DataRetentionPolicy).where(
                 DataRetentionPolicy.is_active.is_(True),
@@ -290,7 +290,7 @@ def hard_purge_deleted_accounts() -> dict:
     from app.db.models.core import Tenant
 
     cutoff = datetime.now(UTC) - timedelta(days=30)
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         # Find tenants soft-deleted > 30 days ago
         tenants = db.execute(
             select(Tenant).where(
@@ -364,7 +364,7 @@ def hard_purge_deleted_users() -> dict:
     cutoff = datetime.now(UTC) - timedelta(days=30)
     purged = 0
 
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         # Find users soft-deleted > 30 days ago
         users = db.execute(
             select(User).where(
@@ -447,7 +447,7 @@ def cleanup_expired_invitations() -> dict:
     from app.db.models import Invitation, InvitationStatus
 
     now = datetime.now(UTC)
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         result = db.execute(
             update(Invitation)
             .where(

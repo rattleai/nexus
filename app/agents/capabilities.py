@@ -149,6 +149,97 @@ class CapabilityResolver:
         """Clear the cached index (e.g. after hot-reloading plugins in tests)."""
         self._slug_to_tools, self._tool_to_slug, self._domains = None, None, None
 
+    # ── Connector capability extension (tenant-specific) ───
+
+    async def resolve_with_connectors(
+        self,
+        capability_slugs: list[str],
+        tenant_id: uuid.UUID,
+        db: Any,
+    ) -> set[str]:
+        """Resolve capability slugs including tenant-specific connector capabilities.
+
+        Connector capabilities are prefixed with ``connectors:`` and are
+        resolved dynamically from the tenant's active connections.
+        Non-connector slugs are resolved from the static global index.
+        """
+        from app.config import settings
+
+        # Split into global and connector slugs
+        global_slugs = [s for s in capability_slugs if not s.startswith("connectors:")]
+        connector_slugs = [s for s in capability_slugs if s.startswith("connectors:")]
+
+        # Resolve global capabilities
+        tools = self.resolve(global_slugs) if global_slugs else set()
+
+        # Resolve connector capabilities
+        if connector_slugs and settings.CONNECTOR_ENABLED:
+            try:
+                from app.connectors.capabilities import build_connector_capability_domains
+
+                domains = await build_connector_capability_domains(tenant_id, db)
+                # Build a temporary slug → tools index from connector domains
+                connector_index: dict[str, tuple[str, ...]] = {}
+                for domain in domains:
+                    for cap in domain.capabilities:
+                        connector_index[cap.slug] = cap.tools
+
+                for slug in connector_slugs:
+                    if slug in connector_index:
+                        tools.update(connector_index[slug])
+                    else:
+                        logger.debug("connector_capability_slug_unknown", slug=slug)
+            except Exception:
+                logger.debug("connector_capability_resolve_failed", exc_info=True)
+
+        return tools
+
+    async def resolve_agent_tools_with_connectors(
+        self,
+        definition: Any,
+        tenant_id: uuid.UUID,
+        db: Any,
+    ) -> list[str]:
+        """Like ``resolve_agent_tools`` but includes connector capabilities.
+
+        Use this when building the tool list for an agent that may have
+        connector capabilities assigned.
+        """
+        capabilities = getattr(definition, "capabilities", None) or []
+        allowed_tools = getattr(definition, "allowed_tools", None) or []
+
+        if capabilities:
+            has_connector_caps = any(c.startswith("connectors:") for c in capabilities)
+            if has_connector_caps:
+                tools = await self.resolve_with_connectors(capabilities, tenant_id, db)
+            else:
+                tools = self.resolve(capabilities)
+            tools.update(allowed_tools)
+            return sorted(tools)
+
+        return list(allowed_tools)
+
+    async def get_catalog_with_connectors(
+        self,
+        tenant_id: uuid.UUID,
+        db: Any,
+    ) -> list[CapabilityDomain]:
+        """Return the full capability catalog including connector domains."""
+        from app.config import settings
+
+        catalog = self.get_catalog()
+
+        if settings.CONNECTOR_ENABLED:
+            try:
+                from app.connectors.capabilities import build_connector_capability_domains
+
+                connector_domains = await build_connector_capability_domains(tenant_id, db)
+                catalog.extend(connector_domains)
+            except Exception:
+                logger.debug("connector_catalog_build_failed", exc_info=True)
+
+        return catalog
+
 
 # Module-level singleton
 capability_resolver = CapabilityResolver()

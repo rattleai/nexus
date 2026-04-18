@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import mimetypes
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import structlog
@@ -17,6 +17,11 @@ from app.docprocessor.parsers.json_parser import JSONParser
 from app.docprocessor.parsers.pdf_parser import PDFParser
 from app.docprocessor.parsers.web_parser import WebParser
 from app.docprocessor.parsers.word_parser import WordParser
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.db.models.datasource import DataSource
 
 logger = structlog.stdlib.get_logger()
 
@@ -159,6 +164,125 @@ class DocumentProcessor:
             )
 
         return await parser.parse(file_bytes=data, filename=filename)
+
+    async def process_data_source(
+        self,
+        ds: "DataSource",
+        db: "AsyncSession",
+    ) -> ExtractionResult:
+        """Dispatch extraction based on ``ds.source_type``.
+
+        This is the canonical entry point for the Celery extraction task.
+        Concrete fetch logic lives in the type-specific branches:
+
+        * ``UPLOAD`` — fetch from S3 by ``file_key``.
+        * ``URL`` — fetch and parse the web page.
+        * ``CLOUD_DRIVE`` — download via the provider-specific ``DriveAdapter``
+          (Dropbox / Google Drive / OneDrive), then hand off to
+          ``process_bytes`` so the same parser/chunker/embedder path applies
+          as for local uploads.
+        * ``PASTE`` — no-op; paste content is already materialized as the
+          first chunk at create time.
+
+        Enriches ``ds.filename`` / ``ds.mime_type`` / ``ds.file_size`` for
+        cloud-drive sources so the UI and downstream audit show real metadata.
+        """
+        from app.db.models.datasource import DataSourceType
+
+        if ds.source_type == DataSourceType.UPLOAD:
+            if not ds.file_key:
+                raise ValueError(
+                    f"UPLOAD DataSource {ds.id} has no file_key"
+                )
+            return await self.process(ds.file_key, ds.tenant_id)
+
+        if ds.source_type == DataSourceType.URL:
+            if not ds.url:
+                raise ValueError(f"URL DataSource {ds.id} has no url")
+            return await self.process_url(ds.url, ds.tenant_id)
+
+        if ds.source_type == DataSourceType.CLOUD_DRIVE:
+            return await self._process_cloud_drive(ds, db)
+
+        if ds.source_type == DataSourceType.PASTE:
+            return ExtractionResult(
+                source_type="paste",
+                source_name=ds.name,
+                raw_text="",
+                metadata={
+                    "note": "paste content materialized at create time; "
+                    "extraction task is a no-op",
+                },
+            )
+
+        raise ValueError(
+            f"Unsupported DataSource.source_type: {ds.source_type}"
+        )
+
+    async def _process_cloud_drive(
+        self,
+        ds: "DataSource",
+        db: "AsyncSession",
+    ) -> ExtractionResult:
+        """Fetch a cloud-drive file via the connector system, then extract."""
+        from sqlalchemy import select as sa_select
+
+        from app.connectors.drive import resolve_adapter
+        from app.connectors.models import ConnectorDefinition, TenantConnection
+
+        if not ds.connection_id or not ds.connector_slug or not ds.cloud_file_id:
+            raise ValueError(
+                f"CLOUD_DRIVE DataSource {ds.id} missing connection_id, "
+                "connector_slug, or cloud_file_id"
+            )
+
+        # Load the connection and its definition; tenant isolation is
+        # enforced in the create endpoint, but the worker session also
+        # has RLS set so cross-tenant leakage is impossible here.
+        conn_result = await db.execute(
+            sa_select(TenantConnection).where(
+                TenantConnection.id == ds.connection_id,
+                TenantConnection.deleted_at.is_(None),
+            )
+        )
+        connection = conn_result.scalar_one_or_none()
+        if connection is None:
+            raise ValueError(
+                f"TenantConnection {ds.connection_id} not found for "
+                f"DataSource {ds.id}"
+            )
+
+        def_result = await db.execute(
+            sa_select(ConnectorDefinition).where(
+                ConnectorDefinition.id == connection.connector_definition_id,
+            )
+        )
+        connector_def = def_result.scalar_one_or_none()
+        if connector_def is None:
+            raise ValueError(
+                f"ConnectorDefinition missing for connection {connection.id}"
+            )
+
+        adapter = resolve_adapter(ds.connector_slug)
+        drive_file = await adapter.download(
+            connection=connection,
+            connector_def=connector_def,
+            file_id=ds.cloud_file_id,
+            db=db,
+        )
+
+        # Enrich the DataSource with real metadata so the UI reflects the
+        # actual downloaded file, not whatever placeholder the create call
+        # carried.
+        ds.filename = drive_file.filename
+        ds.mime_type = drive_file.mime_type
+        ds.file_size = drive_file.size
+
+        return await self.process_bytes(
+            drive_file.content,
+            drive_file.filename,
+            drive_file.mime_type,
+        )
 
     @staticmethod
     def _validate_mime(data: bytes, filename: str, declared_mime: str) -> str:

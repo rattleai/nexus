@@ -245,8 +245,15 @@ class ToolRegistry:
         self,
         tenant_id: uuid.UUID,
         db: AsyncSession,
+        *,
+        agent_id: uuid.UUID | None = None,
+        actor_user_id: uuid.UUID | None = None,
     ) -> list[dict[str, Any]]:
-        """List all available tools (built-in + tenant custom)."""
+        """List all available tools (built-in + tenant custom + connectors).
+
+        When ``agent_id`` / ``actor_user_id`` are supplied, connector tools
+        are filtered to what this agent + user is authorized to call.
+        """
         tools = []
 
         # Built-in tools (infra + plugins)
@@ -269,6 +276,21 @@ class ToolRegistry:
                 "input_schema": tool.input_schema,
             })
 
+        # Connector tools (from active connections)
+        if settings.CONNECTOR_ENABLED:
+            try:
+                from app.connectors.agent_bridge import connector_tool_provider
+
+                connector_tools = await connector_tool_provider.list_tools(
+                    tenant_id,
+                    db,
+                    agent_id=agent_id,
+                    actor_user_id=actor_user_id,
+                )
+                tools.extend(connector_tools)
+            except Exception:
+                logger.debug("connector_tools_load_failed", exc_info=True)
+
         return tools
 
     async def invoke(
@@ -278,14 +300,35 @@ class ToolRegistry:
         arguments: dict[str, Any],
         tenant_id: uuid.UUID,
         db: AsyncSession | None = None,
+        actor_user_id: uuid.UUID | None = None,
+        agent_id: uuid.UUID | None = None,
+        agent_instance_id: uuid.UUID | None = None,
+        idempotency_key: str | None = None,
     ) -> Any:
         """Invoke a tool by name with the given arguments.
 
-        Routes to built-in handler or external endpoint based on tool type.
+        ``actor_user_id`` and ``agent_id`` flow through to the connector
+        provider for per-user token resolution (P0.2) and per-agent
+        authorization (P0.3).
         """
         # Check built-in tools first (infra + plugins)
         if tool_name in _get_all_builtin_tools():
             return await self._invoke_builtin(tool_name, arguments, tenant_id, db=db)
+
+        # Check connector tools (prefix-based routing)
+        if tool_name.startswith("connector:") and settings.CONNECTOR_ENABLED and db is not None:
+            from app.connectors.agent_bridge import connector_tool_provider
+
+            return await connector_tool_provider.invoke(
+                tool_name=tool_name,
+                arguments=arguments,
+                tenant_id=tenant_id,
+                db=db,
+                actor_user_id=actor_user_id,
+                agent_id=agent_id,
+                agent_instance_id=agent_instance_id,
+                idempotency_key=idempotency_key,
+            )
 
         # Check tenant tools
         if db is None:

@@ -27,6 +27,23 @@ from app.core.redis import redis_pool
 
 logger = structlog.stdlib.get_logger()
 
+
+def _matches_tool_list(tool_name: str, patterns: list[str]) -> bool:
+    """Check if a tool name matches any entry in a pattern list.
+
+    Supports exact matches and fnmatch-style wildcards for
+    connector tool patterns like ``connector:slack:*``.
+    """
+    if tool_name in patterns:
+        return True
+    # Only do wildcard matching if any pattern contains a glob character
+    if any("*" in p or "?" in p for p in patterns):
+        from fnmatch import fnmatch
+
+        return any(fnmatch(tool_name, p) for p in patterns)
+    return False
+
+
 # Redis keys for tracking spending and rate limits
 _SPEND_RUN_KEY = "agent:gov:spend:run:{instance_id}"
 _SPEND_DAY_KEY = "agent:gov:spend:day:{tenant_id}:{agent_id}:{date}"
@@ -175,9 +192,9 @@ class GovernanceEngine:
         if not tool_name:
             return
 
-        # Check denied tools first (raw tool names)
+        # Check denied tools first (raw tool names, with wildcard support)
         denied = self.policy.get("denied_tools", [])
-        if denied and tool_name in denied:
+        if denied and _matches_tool_list(tool_name, denied):
             await self._emit_violation(
                 tenant_id=tenant_id,
                 context=context,
@@ -204,9 +221,9 @@ class GovernanceEngine:
                 details={"tool_name": tool_name},
             )
 
-        # Check allowed tools (if specified, only these are allowed)
+        # Check allowed tools (if specified, only these are allowed; supports wildcards)
         allowed = self.policy.get("allowed_tools", [])
-        if allowed and tool_name not in allowed:
+        if allowed and not _matches_tool_list(tool_name, allowed):
             await self._emit_violation(
                 tenant_id=tenant_id,
                 context=context,

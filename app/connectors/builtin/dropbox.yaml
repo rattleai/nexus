@@ -1,0 +1,97 @@
+slug: dropbox
+name: Dropbox
+description: >-
+  Connect to Dropbox for cloud file storage and sharing. Access, upload,
+  and manage files and folders in your Dropbox account.
+icon: HardDrive
+category: cloud_storage
+connector_type: oauth_api
+auth_type: oauth2
+broker: composio
+trust_level: verified
+requires_app_credentials: true
+version: "1.0.0"
+documentation_url: https://www.dropbox.com/developers/documentation
+
+tags:
+  - dropbox
+  - cloud-storage
+  - files
+  - sharing
+  - sync
+
+auth_config:
+  authorize_url: https://www.dropbox.com/oauth2/authorize
+  token_url: https://api.dropboxapi.com/oauth2/token
+  userinfo_url: https://api.dropboxapi.com/2/users/get_current_account
+  revoke_url: https://api.dropboxapi.com/2/auth/token/revoke
+  pkce_required: true
+  scopes:
+    - files.metadata.read
+    - files.content.read
+    - files.content.write
+    - sharing.read
+  extra_authorize_params:
+    token_access_type: offline
+
+api_config:
+  api_base_url: https://api.dropboxapi.com/2
+  default_headers:
+    Content-Type: application/json
+
+mcp_config: {}
+
+tool_definitions:
+  - name: list_folder
+    description: List files and folders at a given path in Dropbox
+    method: POST
+    path: /files/list_folder
+    arg_location: json_body
+    input_schema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: "The folder path to list (use empty string for root)"
+          default: ""
+        recursive:
+          type: boolean
+          description: Whether to list contents recursively
+          default: false
+        limit:
+          type: integer
+          description: Maximum number of entries to return
+          default: 100
+      required: []
+  - name: download_file
+    description: Download a file from Dropbox by path
+    method: POST
+    path: /files/download
+    arg_location: json_body
+    input_schema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: The path of the file to download
+      required:
+        - path
+  - name: search
+    description: Search for files and folders in Dropbox
+    method: POST
+    path: /files/search_v2
+    arg_location: json_body
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Search query string
+        max_results:
+          type: integer
+          description: Maximum number of results
+          default: 20
+      required:
+        - query
+
+capability_template: {}

@@ -48,6 +48,7 @@ dependencies = [
     "webauthn>=2.0,<3",
     "websockets>=15.0,<16",
     "fastmcp>=3.1,<4",
+    "pyyaml>=6.0,<7",
     "fastapi-mcp>=0.3,<1",
     "sqlparse>=0.5,<1",
     # Document processing pipeline
@@ -79,6 +80,12 @@ perf = [
 ]
 scaffold = [
     "copier>=9.0,<10",
+]
+# Composio managed connector broker: gives tenants 500+ pre-integrated
+# SaaS tools with managed OAuth, refresh, and rate limiting. Optional —
+# the platform falls back to the in-house broker when this is missing.
+composio = [
+    "composio-core>=0.7,<2",
 ]
 
 [project.scripts]
