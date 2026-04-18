@@ -154,9 +154,18 @@ resource "aws_lambda_function" "secret_rotation" {
   timeout       = 60
   memory_size   = 128
 
-  # The rotation Lambda code is packaged separately
+  # The rotation Lambda code is packaged separately by the deploy
+  # pipeline (scripts/build_lambda_secret_rotation.sh) before
+  # `terraform apply`. The zip is intentionally not committed; CI's
+  # `terraform validate` therefore can't read it, so the hash falls
+  # back through `try()` to a sentinel that satisfies the type check.
+  # Apply still fails loudly if the zip is missing because `filename`
+  # is checked at plan/apply time without any try() wrapper.
   filename         = "${path.module}/lambda/secret_rotation.zip"
-  source_code_hash = filebase64sha256("${path.module}/lambda/secret_rotation.zip")
+  source_code_hash = try(
+    filebase64sha256("${path.module}/lambda/secret_rotation.zip"),
+    "validate-only-placeholder",
+  )
 
   vpc_config {
     subnet_ids         = aws_subnet.private[*].id

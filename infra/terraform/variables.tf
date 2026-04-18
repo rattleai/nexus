@@ -20,6 +20,17 @@ variable "dr_region" {
   default     = ""
 }
 
+variable "dr_s3_bucket_arn" {
+  description = <<-EOT
+    Pre-existing S3 bucket ARN in the DR region used as the replication
+    target for the primary uploads bucket. Required when var.dr_region
+    is set; otherwise unused (the replication resources have count=0).
+    Provision the bucket in the DR account/region out of band.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "environment" {
   description = "Deployment environment (prod, staging)"
   type        = string
