@@ -66,6 +66,10 @@ api-sync:  ## Export OpenAPI spec and regenerate TypeScript client
 	$(MAKE) api-export
 	$(MAKE) api-generate
 
+openapi-lock:  ## Refresh openapi.lock.json (CI fails if it drifts)
+	python scripts/dump_openapi.py openapi.lock.json
+	@echo "openapi.lock.json refreshed — commit it."
+
 # ── Scaffolding ──────────────────────────────────────────────
 new-service:  ## Scaffold a new microservice (usage: make new-service dest=services/my-svc)
 	@test -n "$(dest)" || (echo "Usage: make new-service dest=services/my-svc" && exit 1)

@@ -133,6 +133,110 @@ jobs:
       - run: pip install -e "."
       - run: alembic upgrade head
 
+  # ── Migration: single linear chain ────────────────────────
+  # A second alembic head (caused by accidentally branching the chain
+  # during a rebase) is silent until prod fails to migrate. Reject it
+  # at PR time.
+  migration-heads:
+    name: Migration Heads (single chain)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e "."
+      - name: Assert exactly one alembic head
+        run: |
+          heads=$(alembic heads 2>/dev/null | grep -c "(head)" || true)
+          echo "alembic head count: ${heads}"
+          if [ "${heads}" -ne 1 ]; then
+            echo "::error::Migration chain must have exactly 1 head, found ${heads}. Run \`alembic merge\` to reconcile."
+            alembic heads
+            exit 1
+          fi
+
+  # ── Migration: rollback round-trip ────────────────────────
+  # `downgrade()` in alembic migrations is rarely tested but matters at
+  # incident time. Verify upgrade → downgrade -1 → upgrade head still
+  # converges; catches broken downgrade ops before they're needed.
+  migration-rollback:
+    name: Migration Rollback Round-Trip
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
+      SECRET_KEY: ${{ secrets.CI_SECRET_KEY || 'ci-test-secret-key-min-32-chars-long' }}
+      ADMIN_KEY: ${{ secrets.CI_ADMIN_KEY || 'ci-test-admin-key-min-32-chars-long' }}
+      DEBUG: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e "."
+      - name: Apply, downgrade one revision, re-apply
+        run: |
+          set -euo pipefail
+          alembic upgrade head
+          alembic downgrade -1
+          alembic upgrade head
+          echo "Rollback round-trip succeeded."
+
+  # ── Migration: ORM ↔ DB drift ─────────────────────────────
+  # `alembic check` runs autogenerate against the live schema and fails
+  # if the ORM models diverge from the DB. Surfaces missing indexes,
+  # NOT NULL drift, dropped/renamed constraints. Currently warn-only
+  # while pre-existing main-branch drift is paid down — flip
+  # continue-on-error to false in a follow-up once the baseline is
+  # clean to make this a hard merge gate.
+  migration-drift:
+    name: Migration Drift (alembic check)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
+      SECRET_KEY: ${{ secrets.CI_SECRET_KEY || 'ci-test-secret-key-min-32-chars-long' }}
+      ADMIN_KEY: ${{ secrets.CI_ADMIN_KEY || 'ci-test-admin-key-min-32-chars-long' }}
+      DEBUG: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e "."
+      - run: alembic upgrade head
+      - name: alembic check (ORM ↔ DB)
+        run: alembic check
+
   frontend-lint:
     name: Frontend Lint
     runs-on: ubuntu-latest
@@ -503,6 +607,142 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ── Custom secret-leak pattern scan ───────────────────────
+  # Gitleaks catches *committed* secrets; this catches *patterns* that
+  # would leak runtime secrets to logs / stdout. Common drift mode for
+  # AI / OAuth code: `logger.info("...", token=access_token)`. The
+  # logic lives in scripts/scan_secret_leaks.py so it's also runnable
+  # locally and easy to extend (no PCRE / portability quirks).
+  secret-leak-pattern-scan:
+    name: Secret Leak Pattern Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/scan_secret_leaks.py app/
+
+  # ── Lockfile drift ───────────────────────────────────────
+  # The committed uv.lock must resolve from the current pyproject.toml.
+  # `uv lock --check` fails when the lockfile is out of sync, ensuring
+  # every environment (dev / CI / prod) installs the exact same versions.
+  dependency-lock-check:
+    name: Dependency Lock Drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv
+      - run: uv lock --check
+
+  # ── OpenAPI surface lock ─────────────────────────────────
+  # openapi.lock.json is the committed snapshot of the FastAPI spec.
+  # Diffing the live spec against the lock catches accidental API
+  # surface changes — added / removed / renamed fields and endpoints —
+  # before they ship and break downstream consumers (frontend + SDKs).
+  # Update via: `make openapi-lock` (or run dump_openapi.py manually).
+  openapi-lock-check:
+    name: OpenAPI Lock Drift
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
+      SECRET_KEY: ${{ secrets.CI_SECRET_KEY || 'ci-test-secret-key-min-32-chars-long' }}
+      ADMIN_KEY: ${{ secrets.CI_ADMIN_KEY || 'ci-test-admin-key-min-32-chars-long' }}
+      DEBUG: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e "."
+      - run: alembic upgrade head
+      - name: Generate live spec and diff
+        run: |
+          set -euo pipefail
+          python scripts/dump_openapi.py /tmp/openapi.live.json
+          if ! diff -q openapi.lock.json /tmp/openapi.live.json > /dev/null; then
+            echo "::error::OpenAPI surface drifted from openapi.lock.json. Regenerate via \`python scripts/dump_openapi.py openapi.lock.json\` and commit."
+            diff openapi.lock.json /tmp/openapi.live.json | head -200
+            exit 1
+          fi
+          echo "OpenAPI lock matches live spec."
+
+  # ── RLS enforcement under non-superuser role ──────────────
+  # Production runs as `app_user` which RLS policies actually apply to.
+  # CI's default role is `app` (superuser), which silently bypasses RLS
+  # — so a tenant-isolation regression can pass Backend Tests yet still
+  # leak data in prod. This job creates the restricted role, grants the
+  # minimum privileges, and re-runs the RLS test suite under it.
+  rls-enforcement-test:
+    name: RLS Tests (non-superuser)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@localhost:5432/app_test
+      DATABASE_MIGRATION_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
+      SECRET_KEY: ${{ secrets.CI_SECRET_KEY || 'ci-test-secret-key-min-32-chars-long' }}
+      ADMIN_KEY: ${{ secrets.CI_ADMIN_KEY || 'ci-test-admin-key-min-32-chars-long' }}
+      DEBUG: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: Apply migrations as superuser, then create restricted app_user
+        run: |
+          set -euo pipefail
+          alembic upgrade head
+          PGPASSWORD=app psql -h localhost -U app -d app_test <<'SQL'
+          -- Create the runtime role used by the application.
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+              CREATE ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOBYPASSRLS;
+            END IF;
+          END
+          $$;
+          GRANT USAGE ON SCHEMA public TO app_user;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public
+            GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public
+            GRANT USAGE, SELECT ON SEQUENCES TO app_user;
+          SQL
+      - name: Run RLS-targeted tests under non-superuser role
+        run: pytest tests/test_rls_policies.py tests/agents/test_agent_rls_context.py -v --tb=short
+
   security-scan:
     name: Container Security Scan
     runs-on: ubuntu-latest
@@ -524,6 +764,116 @@ jobs:
           format: table
           exit-code: 1
           severity: CRITICAL,HIGH
+
+  # ── Container smoke test ──────────────────────────────────
+  # Catches "image built but doesn't actually run" — missing files in
+  # the Dockerfile COPY, missing env defaults, broken entrypoint, etc.
+  # Cheap insurance: import app.main and the alembic env, exit 0.
+  container-smoke:
+    name: Container Smoke Test
+    runs-on: ubuntu-latest
+    needs: [docker-build-push]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: saas-platform:smoke
+          cache-from: type=gha
+      - name: Boot the image and run a minimal sanity check
+        run: |
+          set -euo pipefail
+          # Run with a throw-away SECRET_KEY so settings validation passes.
+          # We don't connect to a DB — just verify the Python entrypoint
+          # imports, the ASGI app object exists, and the Alembic env loads.
+          docker run --rm \
+            -e SECRET_KEY=ci-test-secret-key-min-32-chars-long \
+            -e ADMIN_KEY=ci-test-admin-key-min-32-chars-long \
+            -e DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/app_test \
+            -e DEBUG=true \
+            saas-platform:smoke \
+            python -c "
+          import importlib
+          mod = importlib.import_module('app.main')
+          assert hasattr(mod, 'app'), 'app.main must export ASGI `app`'
+          assert mod.app.openapi_schema is None or isinstance(mod.app.openapi_schema, dict)
+          # Confirm migration env can be imported without contacting the DB.
+          importlib.import_module('app.db.migrations.env')
+          print('Container smoke: OK')
+          "
+
+  # ── Smoke load test ──────────────────────────────────────
+  # 30-second locust burst against the in-CI uvicorn (no DB writes —
+  # only health/static endpoints). Catches accidental N+1 query
+  # regressions and obviously broken middleware before deploy. Treated
+  # as advisory while a perf baseline is established.
+  load-smoke:
+    name: Load Smoke (locust)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app_test
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ${{ secrets.CI_SECRET_KEY || 'ci-test-secret-key-min-32-chars-long' }}
+      ADMIN_KEY: ${{ secrets.CI_ADMIN_KEY || 'ci-test-admin-key-min-32-chars-long' }}
+      DEBUG: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev,perf]"
+      - run: alembic upgrade head
+      - name: Start API server
+        run: |
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/api/v1/health/live > /dev/null 2>&1; then
+              echo "API ready after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::API failed to start"; cat /tmp/uvicorn.log; exit 1
+      - name: Run a 30s locust burst against /health/live + /openapi.json
+        run: |
+          cat > /tmp/locustfile.py <<'PY'
+          from locust import HttpUser, task, between
+          class HealthUser(HttpUser):
+              wait_time = between(0.05, 0.2)
+              @task(5)
+              def health(self): self.client.get("/api/v1/health/live")
+              @task(1)
+              def openapi(self): self.client.get("/openapi.json")
+          PY
+          locust -f /tmp/locustfile.py --host http://localhost:8000 \
+            --headless --users 25 --spawn-rate 5 --run-time 30s \
+            --csv /tmp/locust --only-summary
+          echo "--- request summary ---"
+          cat /tmp/locust_stats.csv
 
   # Production deployment (P0-2: real deployment, not placeholder)
   deploy:

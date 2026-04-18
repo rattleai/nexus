@@ -134,6 +134,7 @@ ignore = [
 "app/mcp/run.py" = ["T20"]  # CLI entry point needs print for error messages
 "app/db/migrations/**" = ["I001"]  # Auto-generated migrations
 "tests/**" = ["F401", "F841"]  # Fixtures/imports sometimes intentionally unused
+"scripts/**" = ["T20"]  # CLI scripts (openapi dump, secret-leak scan, seeders) print intentionally
 
 [tool.mypy]
 python_version = "3.11"
