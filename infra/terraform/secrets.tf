@@ -61,8 +61,11 @@ resource "aws_secretsmanager_secret_rotation" "db_master_password" {
   rotation_lambda_arn = aws_lambda_function.secret_rotation.arn
 
   rotation_rules {
-    automatically_after_days = 30
-    schedule_expression      = "rate(30 days)"
+    # AWS provider v5 enforces: pick exactly one of
+    # automatically_after_days or schedule_expression. schedule_expression
+    # is more flexible (cron / rate), so we keep it and drop the redundant
+    # day count.
+    schedule_expression = "rate(30 days)"
   }
 }
 
