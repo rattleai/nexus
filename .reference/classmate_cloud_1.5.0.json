@@ -1,0 +1,2196 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "classmate CLOUD API",
+    "description": "API for calculating CAD part manufacturing costs, by simus systems GmbH",
+    "contact": {
+      "email": "scharrer@simus-systems.com"
+    },
+    "license": {
+      "name": "commercial"
+    },
+    "version": "1.5.0"
+  },
+  "servers": [
+    {
+      "url": "https://classmate.cloud",
+      "description": "classmate CLOUD production server"
+    },
+    {
+      "url": "https://virtserver.swaggerhub.com/scharrer/classmate_CLOUD/1.5.0",
+      "description": "SwaggerHub API Auto Mocking"
+    }
+  ],
+  "security": [
+    {
+      "basicAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "WebService"
+    }
+  ],
+  "paths": {
+    "/api/analyze": {
+      "post": {
+        "tags": [
+          "WebService"
+        ],
+        "summary": "Analyzes a CAD model and converts it to S3D.",
+        "description": "Allows you to upload a CAD file to the classmate CLOUD server,\nwhere it is inspected and converted to the intermediate format S3D.  \n\nOn success, the response contains the resulting S3D file, as well as\nmetadata collected during the analysis.\n",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "query",
+            "description": "The API version.\n",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1.5"
+              ]
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "description": "The language to use for localized strings.  \nIn the rest of the API specification, this is referred to as \nthe \"request language\".  \nIt affects all JSON fields in the result that have \"localized\" in\ntheir name, such as `material.localizedGroupName`.\n",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "enum": [
+                "en",
+                "de"
+              ]
+            }
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "description": "The names of additional fields that should be included in the JSON\nresponse.  \n(This is for additional data which is not included in the response\nby default - either because computing it increases the runtime of\nthe request, or because it significantly increases the size of the\nresponse.)\n",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "possibleRawMaterial",
+                  "pngPreview"
+                ]
+              }
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request was malformed, or the uploaded model was rejected.\n",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "Internal error message.\n",
+                  "example": "Invalid value passed for query parameter 'language'.\n"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid username or password.\n"
+          },
+          "402": {
+            "description": "This classmate CLOUD user account's license has expired, or has no\nmore calculations left.\n"
+          },
+          "403": {
+            "description": "This classmate CLOUD user account does not have API privileges.\n"
+          },
+          "500": {
+            "description": "A timeout or unexpected error occurred.\n"
+          }
+        }
+      }
+    },
+    "/api/calculate": {
+      "post": {
+        "tags": [
+          "WebService"
+        ],
+        "summary": "Performs a classmate CLOUD calculation on an S3D model.",
+        "description": "Allows you to upload an S3D file that was previously produced by the\n`/api/analyze` path, and performs a classmate CLOUD calculation\nfor the CAD model that it represents.\n\nOn success, the response contains the calculation results.\n",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "query",
+            "description": "The API version.\n",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1.3"
+              ]
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "description": "The language to use for localized strings.  \nIn the rest of the API specification, this is referred to as \nthe \"request language\".  \nIt affects all JSON fields in the result that have \"localized\" in\ntheir name, such as `rawMaterial.material.localizedGroupName`.\n",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "enum": [
+                "en",
+                "de"
+              ]
+            }
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "description": "The names of additional fields that should be included in the JSON\nresponse.  \n(This is for additional data which is not included in the response\nby default - either because computing it increases the runtime of\nthe request, or because it significantly increases the size of the\nresponse.)\n",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "costsPerUnit",
+                  "costReport",
+                  "processReport",
+                  "processReport.views",
+                  "priceParams"
+                ]
+              }
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "$ref": "#/components/schemas/CalculateRequest"
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "The S3D model to upload, as a binary blob.  \n(Alternatively, it can be embedded inside the JSON - \nsee the `model` field of `CalculateRequest`.)\n",
+                    "format": "binary"
+                  }
+                }
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalculateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalculateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request was malformed, or the uploaded model was rejected.\n",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "Internal error message.\n",
+                  "example": "Invalid value passed for query parameter 'language'.\n"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid username or password.\n"
+          },
+          "402": {
+            "description": "This classmate CLOUD user account's license has expired, or has no\nmore calculations left.\n"
+          },
+          "403": {
+            "description": "This classmate CLOUD user account does not have API privileges.\n"
+          },
+          "500": {
+            "description": "A timeout or unexpected error occurred.\n"
+          }
+        }
+      }
+    },
+    "/api/settings/machines": {
+      "get": {
+        "tags": [
+          "WebService"
+        ],
+        "summary": "Gets all available cloud machines and their properties.",
+        "description": "Gets all available cloud machines and their properties.\n",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "query",
+            "description": "The API version.\n",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1.3"
+              ]
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "description": "The language to use for localized strings.  \nIn the rest of the API specification, this is referred to as \nthe \"request language\".  \nIt affects all JSON fields in the result that have `localized` in\ntheir name, such as `rawMaterial.material.localizedGroupName`.\n",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "enum": [
+                "en",
+                "de"
+              ]
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "description": "List of machine `id`s which will be returned.\nIf empty, all machines will be returned.\n",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.\n"
+          },
+          "401": {
+            "description": "Invalid username or password.\n"
+          },
+          "402": {
+            "description": "This classmate CLOUD user account's license has expired.\n"
+          },
+          "403": {
+            "description": "This classmate CLOUD user account does not have API privileges.\n"
+          },
+          "500": {
+            "description": "A timeout or unexpected error occurred.\n"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "WebService"
+        ],
+        "summary": "Sets specific properties of machines.",
+        "description": "Allows you to overwrite the machine properties which are returned by the `/api/getMachines` path.\n",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "query",
+            "description": "The API version.\n",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1.3"
+              ]
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "description": "The language to use for localized strings.  \nIn the rest of the API specification, this is referred to as \nthe \"request language\".  \nIt affects all JSON fields in the result that have `localized` in\ntheir name, such as `rawMaterial.material.localizedGroupName`.\n",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "enum": [
+                "en",
+                "de"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Machines"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.\n"
+          },
+          "400": {
+            "description": "Request was malformed, an overwrite of a machine property which shouldn´t be overwritten was requested.\n",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "Internal error message.\n",
+                  "example": "Invalid value passed for query parameter 'language'.\n"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid username or password.\n"
+          },
+          "402": {
+            "description": "This classmate CLOUD user account's license has expired.\n"
+          },
+          "403": {
+            "description": "This classmate CLOUD user account does not have API privileges.\n"
+          },
+          "500": {
+            "description": "A timeout or unexpected error occurred.\n"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AnalyzeResponse": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "The API version.\n"
+          },
+          "language": {
+            "type": "string",
+            "description": "The request language.\n"
+          },
+          "nativeFileName": {
+            "type": "string",
+            "description": "The file name of the uploaded model (if specified in the\n`Content-Disposition` multipart header in the request).\n"
+          },
+          "modelName": {
+            "type": "string",
+            "description": "The name of the model.\n"
+          },
+          "modelDimensions": {
+            "$ref": "#/components/schemas/ModelDimensions"
+          },
+          "material": {
+            "$ref": "#/components/schemas/MaterialDescription"
+          },
+          "possibleRawMaterial": {
+            "$ref": "#/components/schemas/RawMaterialDescription"
+          },
+          "featureSummary": {
+            "$ref": "#/components/schemas/FeatureSummary"
+          },
+          "annotations": {
+            "type": "array",
+            "description": "Annotations found in the model.\n",
+            "items": {
+              "$ref": "#/components/schemas/Annotation"
+            }
+          },
+          "s3dModel": {
+            "type": "string",
+            "description": "The uploaded CAD model, converted to S3D (as a Base64-encoded\nstring).\n",
+            "format": "binary"
+          },
+          "pngPreview": {
+            "type": "string",
+            "description": "A preview image of the CAD model, in PNG format.  \n[This is not included in the response by default. Append\n`&include=pngPreview` to the request query to include it.]\n",
+            "format": "binary"
+          }
+        },
+        "example": {
+          "version": "1.5",
+          "language": "en",
+          "nativeFileName": "HINGE23.sldprt",
+          "modelName": "HINGE23",
+          "modelDimensions": {
+            "type": "rectangular",
+            "l": 120,
+            "w": 50,
+            "h": 40
+          },
+          "featureSummary": {
+            "boreholeCount": 4,
+            "holeCylinderCount": 6,
+            "shaftCylinderCount": 0
+          },
+          "annotations": [
+            {
+              "type": "HOLE_FIT",
+              "count": 4
+            },
+            {
+              "type": "HOLE_FIT",
+              "toleranceGrade": "IT6",
+              "count": 2
+            },
+            {
+              "type": "INTERNAL_THREAD",
+              "count": 1
+            }
+          ],
+          "s3dModel": "WlMzRAEAAAAAAAO8DAAAH4sIAAAAAAAAAO19..."
+        }
+      },
+      "CalculateRequest": {
+        "required": [
+          "rawMaterial"
+        ],
+        "type": "object",
+        "properties": {
+          "lotSize": {
+            "type": "integer",
+            "description": "The lot size to use in the calculation.\n\nHigher lot sizes typically result in lower calculated costs per\nunit.\n",
+            "default": 1
+          },
+          "rawMaterial": {
+            "$ref": "#/components/schemas/RawMaterialChoice"
+          },
+          "surfaceTreatments": {
+            "type": "array",
+            "description": "Identifiers of the surface treatments that should be included in the\ncalculation (if any).  \n(See table \"Surface treatments\", column \"Abbreviation\", in the\n[settings](https://classmate.cloud/cloudUserSettings) of your\nclassmate CLOUD API user account.)\n",
+            "items": {
+              "type": "string"
+            }
+          },
+          "annotations": {
+            "type": "array",
+            "description": "The list of the annotations that should be considered in the\ncalculation.\n\nIf this field is specified, and its contents differ from the\n`annotations` data-structure returned by `/api/analyze`,\nthen annotations in the model are automatically added or removed as\nnecessary to end up with the specified number of annotations of each\ntype.\n\nYou cannot specify exactly which annotion should be placed on which\nface in the model; you can only specify how many annotations of each\ntype you want.\n\nAdditional annotations are assigned to \"free\" boreholes and shafts\nin the model on a best-effort basis. Hole-fits may be assigned to\nhole cylinders; threads may be assigned to hole and shaft cylinders.\n\nThe information in the  `featureSummary` and `annotations`\ndata-structures returned by `/api/analyze` can help you fill out\nthis field.\n",
+            "items": {
+              "$ref": "#/components/schemas/Annotation"
+            }
+          },
+          "calculationFactors": {
+            "$ref": "#/components/schemas/CalculationFactors"
+          },
+          "model": {
+            "type": "string",
+            "description": "The Base64-encoded S3D file that was received as the `s3dModel`\nproperty of an `/api/analyze` response.  \n(Alternatively, if the request is made using a `multipart/form-data`\nbody, The S3D file can be uploaded as a separate form field named\n`model`.)\n",
+            "format": "binary"
+          }
+        },
+        "example": {
+          "lotSize": 100,
+          "rawMaterial": {
+            "id": "00006578"
+          },
+          "model": "WlMzRAEAAAAAAAO8DAAAH4sIAAAAAAAAAO19..."
+        }
+      },
+      "CalculateResponse": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "The API version.\n"
+          },
+          "language": {
+            "type": "string",
+            "description": "The request language.\n"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelDescription"
+          },
+          "rawMaterial": {
+            "$ref": "#/components/schemas/RawMaterialDescription"
+          },
+          "lotSize": {
+            "type": "integer",
+            "description": "The lot size that was chosen in the request.\n"
+          },
+          "calculations": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Calculation"
+            }
+          }
+        },
+        "example": {
+          "version": "1.5",
+          "language": "de",
+          "model": {
+            "name": "HINGE23",
+            "mass": 0.29
+          },
+          "rawMaterial": {
+            "id": "00006578",
+            "name": "FL 50x40",
+            "material": {
+              "group": "St",
+              "localizedGroupName": "Steel",
+              "number": "1.0122",
+              "name": "EN10277-S235JRG2C"
+            },
+            "mass": 0.53
+          },
+          "lotSize": 10,
+          "calculations": [
+            {
+              "variant": 1,
+              "successQuota": 1.0,
+              "costs": {
+                "price": 268.2,
+                "priceNoProg": 250.8,
+                "manufacturingNoProg": 180.3
+              }
+            }
+          ]
+        }
+      },
+      "ErrorList": {
+        "type": "object",
+        "properties": {
+          "errors": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "One or more error messages.\n"
+      },
+      "Annotation": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "The annotation type.\n* `HOLE_FIT`: A tolerance for the diameter of a borehole.\n* `INTERNAL_THREAD`: A threaded hole.\n* `EXTERNAL_THREAD`: A threaded shaft.\n",
+            "enum": [
+              "HOLE_FIT",
+              "INTERNAL_THREAD",
+              "EXTERNAL_THREAD"
+            ]
+          },
+          "toleranceGrade": {
+            "type": "string",
+            "description": "The hole-fit tolerance grade, as a code consisting of a table name\n(e.g. `IT`) and column number (e.g. `9`).  \n(Optional; Only allowed for type=`HOLE_FIT`.)\n\nRecognized values include: `IT01`, `IT0`, `IT1`, `IT2`, `IT3`, `IT4`,\n`IT5`, `IT6`, `IT7`, `IT8`, `IT9`, `IT10`, `IT11`, `IT12`, `IT13`,\n`IT14`, `IT15`, `IT16`, `IT17`, `IT18`\n"
+          },
+          "count": {
+            "type": "integer",
+            "description": "How many instances of this annotation appear in the CAD model.\n"
+          }
+        },
+        "description": "An annotation found in a CAD model.\n",
+        "example": {
+          "type": "HOLE_FIT",
+          "toleranceGrade": "IT6",
+          "count": 5
+        }
+      },
+      "Calculation": {
+        "properties": {
+          "variant": {
+            "type": "integer",
+            "description": "The identifier of the calculation variant. (Can currently be 1 or 2.)\n"
+          },
+          "successQuota": {
+            "type": "number",
+            "description": "The portion of the model's surface area for which appropriate\nmachining operations were found during the calculation - from 0.0\n(nothing) to 1.0 (the entire surface area).  \nIf this value is less than 1.0, it means that the model contains\nfaces for which no suitable machining method could be found, and\nthus the calculated costs are likely lower than the true production\ncosts.\n"
+          },
+          "costs": {
+            "$ref": "#/components/schemas/CostSummary"
+          },
+          "costsPerUnit": {
+            "$ref": "#/components/schemas/CostSummary"
+          },
+          "costReport": {
+            "$ref": "#/components/schemas/CostReport"
+          },
+          "processReport": {
+            "$ref": "#/components/schemas/ProcessReport"
+          }
+        },
+        "description": "Represents the calculation result for *one* calculation variant.  \n\nIf `/api/calculate` returned `HTTP 200`, then there is always at least one calculation result included in the `.calculations` array of the response.  \nIf more than one calculation result is included, the first one (i.e. `.calculations[0]`) is the \"best\" one.  \nSee the PDF documentation for an explanation of calculation variants.\n"
+      },
+      "CalculationFactors": {
+        "properties": {
+          "hourlyRate": {
+            "type": "number",
+            "description": "Multiplication factor for the hourly rate of the machines and\nstaff.  \n(Increasing this value increases the calculated costs.)\n",
+            "default": 1
+          },
+          "setupTime": {
+            "type": "number",
+            "description": "Multiplication factor for the make-ready time of the machines.  \n(Increasing this value increases the calculated costs.)\n",
+            "default": 1
+          },
+          "cuttingParams": {
+            "type": "number",
+            "description": "Multiplication factor for the cutting parameters (maximum feed,\ncutting speed, cutting depth) of the machine tools.  \n(Increasing this value *decreases* the calculated costs.)\n",
+            "default": 1
+          },
+          "additionalTime": {
+            "type": "number",
+            "description": "Multiplication factor for the secondary processing time (operation\ntime, tool change time, clamping time, unload and load time) of the\nmachine tools.  \n(Increasing this value increases the calculated costs.)\n",
+            "default": 1
+          }
+        },
+        "description": "Values for adjusting the cost calculation.\n"
+      },
+      "CostReport": {
+        "type": "object",
+        "properties": {
+          "breakdown": {
+            "$ref": "#/components/schemas/CostsBreakdown"
+          },
+          "times": {
+            "$ref": "#/components/schemas/CostReportTimes"
+          },
+          "stages": {
+            "$ref": "#/components/schemas/CostReportStages"
+          },
+          "scaling": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CostSummary"
+            },
+            "description": "Lot-size scaling.  \nThis is a map where the keys are {\"1\", \"2\", \"5\", \"10\", \"25\", \"50\",\n\"100\", \"1000\"}, and the values are `CostSummary` data-structures.\n"
+          },
+          "machines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CostReportMachineTimes"
+            }
+          },
+          "localizedMessages": {
+            "type": "array",
+            "description": "Informational messages generated during the calculation.\n",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "description": "Detailed breakdown of the calculated costs. [Not included by default.\nAppend `&include=costReport` to the request URL to include it.]\n"
+      },
+      "CostsBreakdown": {
+        "required": [
+          "manufacturingBD",
+          "price",
+          "priceBD",
+          "priceNoProg",
+          "priceNoProgBD"
+        ],
+        "type": "object",
+        "properties": {
+          "price": {
+            "type": "number",
+            "description": "Purchase price [EUR/unit].\n(= sum of `priceBD.*`)  \nThis is the price for new orders, where programming costs are\nincurred.\n"
+          },
+          "priceBD": {
+            "$ref": "#/components/schemas/CostsBreakdownPrice"
+          },
+          "priceNoProg": {
+            "type": "number",
+            "description": "Purchase price without programming [EUR/unit].  \n(= sum of `priceNoProgBD.*`)  \nThis is the price for repeat orders, where the programming costs are\nno longer incurred.\n"
+          },
+          "priceNoProgBD": {
+            "$ref": "#/components/schemas/CostsBreakdownPrice"
+          },
+          "manufacturingBD": {
+            "$ref": "#/components/schemas/CostsBreakdownManufacturing"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Hierarchical breakdown of the calculated costs.\n"
+      },
+      "CostsBreakdownPrice": {
+        "required": [
+          "prime",
+          "primeBD",
+          "profit"
+        ],
+        "type": "object",
+        "properties": {
+          "prime": {
+            "type": "number",
+            "description": "Prime costs [EUR/unit].  \n(= sum of `primeBD.*`)\n"
+          },
+          "primeBD": {
+            "$ref": "#/components/schemas/CostsBreakdownPrime"
+          },
+          "profit": {
+            "type": "number",
+            "description": "Profit [EUR/unit].  \n(= `prime * priceParams.factorProfit`)\n"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Breakdown of `price` or `priceNoProg`.\n"
+      },
+      "CostsBreakdownPrime": {
+        "required": [
+          "administration",
+          "generalSales",
+          "manufacturing",
+          "reject",
+          "specialSales"
+        ],
+        "type": "object",
+        "properties": {
+          "manufacturing": {
+            "type": "number",
+            "description": "Manufacturing costs [EUR/unit].  \n(= sum of `manufacturingBD.*`, potentially excluding `manufacturingBD.programming`)\n"
+          },
+          "administration": {
+            "type": "number",
+            "description": "Administration costs [EUR/unit].  \n(= `manufacturing * priceParams.factorAdministrationCosts`)\n"
+          },
+          "generalSales": {
+            "type": "number",
+            "description": "General sales costs [EUR/unit].  \n(= `manufacturing * priceParams.factorGeneralSalesCosts`)\n"
+          },
+          "reject": {
+            "type": "number",
+            "description": "Reject costs [EUR/unit].  \n(= `manufacturing * priceParams.factorRejectCosts`)\n"
+          },
+          "specialSales": {
+            "type": "number",
+            "description": "Special sales costs [EUR/unit].  \n(= `(manufacturing + administration + generalSales + reject) * priceParams.factorSpecialSalesCosts`)\n"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Breakdown of `prime`.\n"
+      },
+      "CostsBreakdownManufacturing": {
+        "required": [
+          "programming",
+          "programmingBD",
+          "setup",
+          "setupBD",
+          "unit",
+          "unitBD"
+        ],
+        "type": "object",
+        "properties": {
+          "programming": {
+            "type": "number",
+            "description": "The programming costs divided by the lot size [EUR/unit].  \n(= sum of `programmingBD.*`)\n"
+          },
+          "programmingBD": {
+            "$ref": "#/components/schemas/CostsBreakdownSetup"
+          },
+          "setup": {
+            "type": "number",
+            "description": "The setup costs divided by the lot size [EUR/unit].  \n(= sum of `setupBD.*`)\n"
+          },
+          "setupBD": {
+            "$ref": "#/components/schemas/CostsBreakdownSetup"
+          },
+          "unit": {
+            "type": "number",
+            "description": "Unit costs [EUR/unit].  \n(= sum of `unitBD.*`)\n"
+          },
+          "unitBD": {
+            "$ref": "#/components/schemas/CostsBreakdownUnit"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Breakdown of `manufacturing`.\n"
+      },
+      "CostsBreakdownSetup": {
+        "required": [
+          "additions",
+          "additionsBD",
+          "base"
+        ],
+        "type": "object",
+        "properties": {
+          "base": {
+            "type": "number",
+            "description": "Unadjusted machine programming or setup costs [EUR/unit].  \n(= sum of `costReport.stages.programming[*].costs` or `costReport.stages.setup[*].costs`)\n"
+          },
+          "additions": {
+            "type": "number",
+            "description": "Markup [EUR/unit], to account for production overhead, risk, and site administration costs.  \n(= sum of `additionsBD.*`)\n"
+          },
+          "additionsBD": {
+            "$ref": "#/components/schemas/CostsBreakdownMachiningAdditions"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Breakdown of `programming` or `setup`.\n"
+      },
+      "CostsBreakdownUnit": {
+        "required": [
+          "additions",
+          "additionsBD",
+          "machining",
+          "machiningBD",
+          "material"
+        ],
+        "type": "object",
+        "properties": {
+          "material": {
+            "type": "number",
+            "description": "Unadjusted costs for the raw material [EUR/unit].\n"
+          },
+          "machining": {
+            "type": "number",
+            "description": "Unadjusted costs for the machining operations [EUR/unit].  \n(= sum of `machiningBD.*`)\n"
+          },
+          "machiningBD": {
+            "$ref": "#/components/schemas/CostsBreakdownMachining"
+          },
+          "additions": {
+            "type": "number",
+            "description": "Markup [EUR/unit], to account for overhead, risk, site administration costs, etc.  \n(= sum of `additionsBD.*`)\n"
+          },
+          "additionsBD": {
+            "$ref": "#/components/schemas/CostsBreakdownUnitAdditions"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Breakdown of `costReport.hierarchy.manufacturing.unit`, i.e. the manufacturing costs per unit without machine setup or programming.\n"
+      },
+      "CostsBreakdownMachining": {
+        "required": [
+          "fineShaping",
+          "joining",
+          "postTreatment",
+          "roughShaping",
+          "surfaceTreatment"
+        ],
+        "type": "object",
+        "properties": {
+          "roughShaping": {
+            "type": "number",
+            "description": "Costs for rough-shaping operations such as milling [EUR/unit].  \n(= sum of `costReport.stages.roughShaping[*].costs`.)\n"
+          },
+          "fineShaping": {
+            "type": "number",
+            "description": "Costs for fine-shaping operations [EUR/unit].  \n**[Not yet implemented - always zero, for now]**\n"
+          },
+          "postTreatment": {
+            "type": "number",
+            "description": "Costs for post-treatment operations such as deburring [EUR/unit].  \n(= sum of `costReport.stages.postTreatment[*].costs`.)\n"
+          },
+          "joining": {
+            "type": "number",
+            "description": "Costs for joining operations such as welding [EUR/unit].  \n**[Not yet implemented - always zero, for now]**\n"
+          },
+          "surfaceTreatment": {
+            "type": "number",
+            "description": "Costs for surface-treatment operations [EUR/unit].  \n(= sum of `max(surfaceTreatmentBD[*].unitArr, surfaceTreatmentBD[*].minPerLotArr / lotSize)`, or 0 if `surfaceTreatmentBD` is null.)\n"
+          },
+          "surfaceTreatmentBD": {
+            "$ref": "#/components/schemas/CostsBreakdownMachiningStage"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Breakdown of `machining`.\n"
+      },
+      "CostsBreakdownMachiningStage": {
+        "required": [
+          "minPerLotArr",
+          "unitArr"
+        ],
+        "type": "object",
+        "properties": {
+          "unitArr": {
+            "type": "array",
+            "description": "Unit costs for each chosen surface treatment.\n",
+            "items": {
+              "type": "number"
+            }
+          },
+          "minPerLotArr": {
+            "type": "array",
+            "description": "Minimum costs per lot for each chosen surface treatment  \n(See table \"Surface treatments\", column \"Minimal price/lot\", in the [settings](https://classmate.cloud/cloudUserSettings) of your classmate CLOUD API user account.)\n",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "description": "Breakdown of `surfaceTreatment`\n"
+      },
+      "CostsBreakdownUnitAdditions": {
+        "required": [
+          "machining",
+          "machiningBD",
+          "material",
+          "materialBD"
+        ],
+        "type": "object",
+        "properties": {
+          "material": {
+            "type": "number",
+            "description": "Markup for the raw material [EUR/unit].  \n(= sum of `materialBD.*`)\n"
+          },
+          "materialBD": {
+            "$ref": "#/components/schemas/CostsBreakdownMaterialAdditions"
+          },
+          "machining": {
+            "type": "number",
+            "description": "Markup for the machining operations [EUR/unit].  \n(= sum of `machiningBD.*`)\n"
+          },
+          "machiningBD": {
+            "$ref": "#/components/schemas/CostsBreakdownMachiningAdditions"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Breakdown of `unit.additions`.\n"
+      },
+      "CostsBreakdownMaterialAdditions": {
+        "required": [
+          "overhead",
+          "risk",
+          "siteAdministration",
+          "specialDirect"
+        ],
+        "type": "object",
+        "properties": {
+          "specialDirect": {
+            "type": "number",
+            "description": "Material special direct costs [EUR/unit], which includes costs for special tools, design plans, models/templates, patents/licenses, and analyses/samples.  \n(= `base * priceParams.factorMaterialSpecialDirectCosts`)\n"
+          },
+          "overhead": {
+            "type": "number",
+            "description": "Material overhead costs [EUR/unit], which includes procurement costs (packaging/freight), storage costs for a shared warehouse, and inspection costs.  \n(= `(base + specialDirect) * priceParams.factorMaterialOverheadCosts`)\n"
+          },
+          "risk": {
+            "type": "number",
+            "description": "Material risk costs [EUR/unit], which covers the risk of loss from shrinkage, theft, obsolescence, reduction in quality, reduction in inventory prices, and inventory/cash differences.  \n(= `(base + specialDirect) * priceParams.factorMaterialRiskCosts`)\n"
+          },
+          "siteAdministration": {
+            "type": "number",
+            "description": "Site administration costs [EUR/unit], which includes costs for administrative personnel, supervisory board salaries, association dues, auditing costs, costs of administrative buildings (lighting, rent, lease, heating), office equipment, supplies, postal charges, and travel expenses (to the extent that they are not included in the sales costs).  \n(= `(base + specialDirect + overhead + risk) * priceParams.factorSiteAdministrationCosts`)\n"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Breakdown of `unit.additionsBD.material`.\n"
+      },
+      "CostsBreakdownMachiningAdditions": {
+        "required": [
+          "overhead",
+          "risk",
+          "siteAdministration"
+        ],
+        "type": "object",
+        "properties": {
+          "overhead": {
+            "type": "number",
+            "description": "Production overhead costs [EUR/unit].  \n(= `base * priceParams.factorManufacturingOverheadCosts`)\n"
+          },
+          "risk": {
+            "type": "number",
+            "description": "Production risk costs [EUR/unit], i.e. a surcharge for unknown losses in production.  \n(= `base * priceParams.factorProductionRiskCosts`)\n"
+          },
+          "siteAdministration": {
+            "type": "number",
+            "description": "Site administration costs [EUR/unit].  \n(= `(base + overhead + risk) * priceParams.factorSiteAdministrationCosts`)\n"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Breakdown of `programming.additions`, `setup.additions`, or `unit.additionsBD.machining`.\n"
+      },
+      "CostReportTimes": {
+        "required": [
+          "totalProgramming",
+          "totalSetup",
+          "unit"
+        ],
+        "type": "object",
+        "properties": {
+          "totalProgramming": {
+            "type": "number",
+            "description": "Programming time [min]. *(Attention - not per unit!)*  \n`= sum(costReport.stages.programming[*].time)`\n"
+          },
+          "totalSetup": {
+            "type": "number",
+            "description": "Setup time [min]. *(Attention - not per unit!)*  \n`= sum(costReport.machines[*].tr)`  \n`= sum(costReport.stages.setup[*].tr)`\n"
+          },
+          "unit": {
+            "type": "number",
+            "description": "Production time per unit [min/unit].  \n`= sum(costReport.machine[*].te)`  \n`= sum(costReport.stages.*[*].te)`\n"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Breakdown of the manufacturing time.\n"
+      },
+      "CostReportStages": {
+        "type": "object",
+        "properties": {
+          "setup": {
+            "type": "array",
+            "description": "Costs and times for machine setup.\n",
+            "items": {
+              "$ref": "#/components/schemas/CostReportMachineSetup"
+            }
+          },
+          "programming": {
+            "type": "array",
+            "description": "Costs and times for programming the machines.\n",
+            "items": {
+              "$ref": "#/components/schemas/CostReportMachineProgramming"
+            }
+          },
+          "roughShaping": {
+            "type": "array",
+            "description": "Costs and times for rough-shaping operations, such as milling.\n",
+            "items": {
+              "$ref": "#/components/schemas/CostReportMachineOperation"
+            }
+          },
+          "postTreatment": {
+            "type": "array",
+            "description": "Costs and times for post-treatment operations, such as deburring.\n",
+            "items": {
+              "$ref": "#/components/schemas/CostReportMachineOperation"
+            }
+          },
+          "surfaceTreatment": {
+            "type": "array",
+            "description": "Costs for surface-treatment operations, such as Zinc coating.\n",
+            "items": {
+              "$ref": "#/components/schemas/CostReportSurfaceTreatment"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "description": "Detailed breakdown of the times and costs by manufacturing stage.\n"
+      },
+      "CostReportMachineSetup": {
+        "required": [
+          "costs",
+          "machine",
+          "tr"
+        ],
+        "type": "object",
+        "properties": {
+          "machine": {
+            "type": "string",
+            "description": "Machine identifier.  \n(One of the values of `costReport.machines[*].id`).\n"
+          },
+          "tr": {
+            "type": "number",
+            "description": "The setup time (without programming) for this machine [min].  \n*(Attention - not per unit!)*  \nSame as the corresponding `costReport.machines[*].tr`.\n"
+          },
+          "costs": {
+            "type": "number",
+            "description": "The setup costs (without programming) for this machine [EUR].  \n*(Attention - not per unit!)*\n"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Setup costs and times for a single machine.\n"
+      },
+      "CostReportMachineProgramming": {
+        "required": [
+          "costs",
+          "machine",
+          "time"
+        ],
+        "type": "object",
+        "properties": {
+          "machine": {
+            "type": "string",
+            "description": "Machine identifier.  \n(One of the values of `costReport.machines[*].id`).\n"
+          },
+          "time": {
+            "type": "number",
+            "description": "The programming time for this machine.  *(Attention - not per unit!)*\n"
+          },
+          "costs": {
+            "type": "number",
+            "description": "The programming costs for this machine. *(Attention - not per unit!)*\n"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Programming costs and times for a single machine.\n"
+      },
+      "CostReportMachineOperation": {
+        "required": [
+          "costs",
+          "machine",
+          "te",
+          "thu"
+        ],
+        "type": "object",
+        "properties": {
+          "machine": {
+            "type": "string",
+            "description": "Machine identifier.  \n(One of the values of `costReport.machines[*].id`).\n"
+          },
+          "type": {
+            "type": "string",
+            "description": "The type of operation.\n",
+            "enum": [
+              "TURNING",
+              "MILLING",
+              "FORMING",
+              "STAMPING",
+              "DRILLING",
+              "ERODING",
+              "FINE_SHAPING",
+              "JOINING",
+              "CASTING",
+              "CUTTING",
+              "BROACHING",
+              "ANNEALING",
+              "TOOTHING",
+              "CENTERING",
+              "INSPECTING",
+              "OTHER"
+            ]
+          },
+          "localizedSubType": {
+            "type": "string",
+            "description": "A human-friendly designation for the specific type of operation, in the request language (e.g. `Rough milling`).  \n(The exact wording may change without an API version bump.)\n"
+          },
+          "thu": {
+            "type": "number",
+            "description": "Main time [min/unit].\n"
+          },
+          "te": {
+            "type": "number",
+            "description": "Unit time [min/unit]. (= `thu` + secondary time + allowance time)\n"
+          },
+          "costs": {
+            "type": "number",
+            "description": "Costs for the operation [EUR/unit].\n"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Costs and times for a single machining operation.\n"
+      },
+      "CostReportSurfaceTreatment": {
+        "required": [
+          "costs",
+          "id",
+          "localizedName"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Surface treatment identifier.  \n(See table \"Surface treatments\", column \"Abbreviation\", in the [settings](https://classmate.cloud/cloudUserSettings) of your classmate CLOUD API user account.)\n"
+          },
+          "localizedName": {
+            "type": "string",
+            "description": "Surface treatment name in the request language.  \n(See table \"Surface treatments\", column \"Name\", in the [settings](https://classmate.cloud/cloudUserSettings) of your classmate CLOUD API user account.)\n"
+          },
+          "te": {
+            "type": "number",
+            "description": "Duration of the surface treatment [min/unit].  \n**[Not yet implemented]**\n"
+          },
+          "costs": {
+            "type": "number",
+            "description": "Costs of the surface treatmen [EUR/unit].\n"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Costs and times for a single surface treatment.\n"
+      },
+      "CostReportMachineTimes": {
+        "required": [
+          "id",
+          "tbe",
+          "te",
+          "tg",
+          "thu",
+          "tnb",
+          "tr",
+          "tsp",
+          "tv",
+          "tverf",
+          "tw"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Identifier of the machine.  \n(See table \"Machines\", column \"Abbreviation\", in the [settings](https://classmate.cloud/cloudUserSettings) of your classmate CLOUD API user account.)\n"
+          },
+          "localizedName": {
+            "type": "string",
+            "description": "Name of the machine, in the request language.\n"
+          },
+          "tr": {
+            "type": "number",
+            "description": "Setup time [min].*(Attention - not per unit!)*\n"
+          },
+          "te": {
+            "type": "number",
+            "description": "Time per unit [min/unit]. (`= tg + tv`)\n"
+          },
+          "tg": {
+            "type": "number",
+            "description": "Productive time [min/unit]. (`= thu + tnb`)\n"
+          },
+          "tv": {
+            "type": "number",
+            "description": "Allowance time [min/unit]. (Estimated based on `tg`.)\n"
+          },
+          "thu": {
+            "type": "number",
+            "description": "Main time [min/unit].\n"
+          },
+          "tnb": {
+            "type": "number",
+            "description": "Controllable secondary time [min/unit]. (`= tverf + tw + tsp + tbe`)\n"
+          },
+          "tverf": {
+            "type": "number",
+            "description": "Traversing time [min/unit].\n"
+          },
+          "tw": {
+            "type": "number",
+            "description": "Tool change time [min/unit].\n"
+          },
+          "tsp": {
+            "type": "number",
+            "description": "Clamping time [min/unit].\n"
+          },
+          "tbe": {
+            "type": "number",
+            "description": "Load/unload time [min/unit].\n"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Detailed times for a specific machine involved in the manufacturing process.  \n(Total time for one machine is `tr + lotSize * te`; the other times are components of `te`.)\n"
+      },
+      "CostSummary": {
+        "properties": {
+          "manufacturingNoProg": {
+            "type": "number",
+            "description": "The manufacturing costs [EUR or EUR/unit]\n"
+          },
+          "priceNoProg": {
+            "type": "number",
+            "description": "The purchase price without programming [EUR or EUR/unit]\n"
+          },
+          "price": {
+            "type": "number",
+            "description": "The purchase price including programming [EUR or EUR/unit]\n"
+          }
+        },
+        "description": "Summary of the calculated costs for manufacturing the given lot size of\nthe uploaded part.  \nThe units are:\n* `EUR` in `.calculations[*].costs`\n* `EUR/unit` in\n`.calculations[*].costsPerUnit` (which is only included when you append\n`&include=costsPerUnit` to the request query)\n* `EUR/unit` in `.calculations[*].costReport.scaling.*`.\n",
+        "example": {
+          "manufacturingNoProg": 18.03,
+          "priceNoProg": 25.08,
+          "price": 26.82
+        }
+      },
+      "Error": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "A message key identifying the type of error.\n\nError keys for `/api/analyze` (HTTP 400 Bad Request):\n\n* __`API.error.validate`:__  \n  An incoming JSON property failed the validation.\n  * *Possible argument `jsonProperty`: The affected JSON path.*\n* __`Analyze.error.fileType`:__  \n  The file type of the model is not\n  supported.\n* __`Analyze.error.fileTypeVersion`:__  \n  The file type version of the model is not supported.\n  * *Possible argument `version`: A string describing the file type\n    version.*\n* __`Analyze.error.jtWithoutXTBRep`:__  \n  The model is a JT file which doesn't use the XT-BRep\n  representation, and thus isn't supported.\n* __`Analyze.error.assembly`:__  \n  The model is an assembly or welding component. Only single parts\n  are supported.\n* __`Analyze.error.tooManyFaces`:__  \n  The model contains too many faces.\n  * *Argument `max`: The allowed number of faces.*\n* __`Analyze.error.tooManyTriangles`:__  \n  The model's tesselation contains too many triangles.\n* __`Analyze.error.emptyModel`:__  \n  The model contains no faces. Empty models are not supported.\n* __`Analyze.error.surfaceModel`:__  \n  The model does not represent a closed body. Surface models are\n  not supported.\n\nError keys for `/api/analyze` (HTTP 500 Internal Server Error):\n\n* __`Analyze.error`:__  \n  An internal error occurred.\n* __`Convert.error`:__  \n  An internal error occurred during the conversion to S3D.\n* __`Convert.error.hostUnreachable`:__  \n  An internal error occurred during the conversion to S3D.\n* __`Convert.error.serviceUnreachable`:__  \n  An internal error occurred during the conversion to S3D.\n* __`Convert.error.timeout`:__  \n  The conversion was aborted due to\n  timeout. The model is probably too complex.\n\nError message keys for `/api/calculate`:\n\n* __`API.error.validate`:__  \n  An incoming JSON property failed the validation.\n  * *Possible argument `jsonProperty`: The affected JSON path.*\n* __`Calculate.error.unsupportedModel`:__\n  The model is of a type that classmate CLOUD currently cannot\n  calculate, or is configured to explicitly exclude.\n* __`Calculate.error.noMachiningIdentified`:__\n  classmate CLOUD could not determine any possible machining\n  operations for manufacturing the part.\n* __`Calculate.error`:__  \n  An internal error occurred.\n"
+          },
+          "arguments": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "description": "A map containing additional string or number values that are useful\nfor constructing a localized error message from the message key.  \nSee the documentation of the `key` field for the possible argument\nnames for different error keys.\n"
+          },
+          "localizedMessage": {
+            "type": "string",
+            "description": "A human-readable version of the error message (in the request\nlanguage), that can be shown to end-users.  \nThe wording may change without an API version bump; if you want more\ncontrol, construct your own translation based on `key` and `arguments`.\n"
+          },
+          "internalMessage": {
+            "type": "string",
+            "description": "An internal error message in English, meant to be read by developers\nand not end-users.\n"
+          }
+        },
+        "description": "An error message.  \nFor errors that may be of interest to end users, `key`\nand `localizedMessage` are usually set.  \nFor errors meant to be read only by API developers, usually only\n`internalMessage` is set.\n",
+        "example": {
+          "key": "Analyze.error.fileTypeVersion",
+          "arguments": {
+            "version": "SolidEdge V14"
+          },
+          "localizedMessage": "File type version not supported (SolidEdge V14)."
+        }
+      },
+      "FeatureSummary": {
+        "properties": {
+          "isSimpleTube": {
+            "type": "boolean",
+            "description": "For models with `modelDimensions.shape = TUBE_ROUND`, this flag\nspecifies whether it is a \"simple\" tube that could potentially be\nmanufactured from a perfectly fitting tube raw material without a\nturning machine.  \nThe current definition is that the tube's lateral cylinder faces\n(outside and inside) must not have any recesses or grooves, but may\npotentially have chamfers or boreholes.  \nThis definition is subject to change.\n"
+          },
+          "boreholeCount": {
+            "type": "number",
+            "description": "The number of boreholes found in the model.\n"
+          },
+          "holeCylinderCount": {
+            "type": "number",
+            "description": "The number of concave cylinder faces in the model that are suitable\nfor a thread or hole-fit annotation.\n"
+          },
+          "shaftCylinderCount": {
+            "type": "number",
+            "description": "The number of convex cylinder faces in the model that are suitable\nfor a thread annotation.\n"
+          }
+        },
+        "description": "Statistics about holes, shafts, grooves, etc. in the model.\n"
+      },
+      "Machines": {
+        "properties": {
+          "machines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Machine"
+            }
+          }
+        },
+        "description": "A list of machines.\n\nIn the `GET /api/settings/machines` response, this contains all the requested\nmachines.  \nIn the `POST /api/settings/machines` request, you can include as many of the\nmachines as you want - the ones not included remain unmodified.\n"
+      },
+      "Machine": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Identifier of the machine.  \n(See table \"Machines\", column \"Abbreviation\", in the\n[settings](https://classmate.cloud/cloudUserSettings) of your\nclassmate CLOUD API user account.)\n"
+          },
+          "localizedName": {
+            "type": "string",
+            "description": "Name of the machine, in the request language.\n"
+          },
+          "variant1": {
+            "$ref": "#/components/schemas/MachineVariant"
+          },
+          "variant2": {
+            "$ref": "#/components/schemas/MachineVariant"
+          },
+          "hourlyRate": {
+            "type": "number",
+            "description": "Hourly rate [EUR/h]\n"
+          },
+          "maxRotation": {
+            "type": "number",
+            "description": "Maximum rotation [mm]\n"
+          },
+          "maxDrillings": {
+            "type": "number",
+            "description": "Maximum drillings\n"
+          },
+          "maxLD": {
+            "type": "number",
+            "description": "Slenderness ratio (max. L/D)\n"
+          },
+          "maxWeight": {
+            "type": "number",
+            "description": "Maximum weight [kg]\n"
+          },
+          "minLength": {
+            "type": "number",
+            "description": "Minimum length [mm]\n"
+          },
+          "maxLength": {
+            "type": "number",
+            "description": "Maximum length: [mm]\n"
+          },
+          "minWidth": {
+            "type": "number",
+            "description": "Minimum width: [mm]\n"
+          },
+          "maxWidth": {
+            "type": "number",
+            "description": "Maximum width: [mm]\n"
+          },
+          "minHeight": {
+            "type": "number",
+            "description": "Minimum height: [mm]\n"
+          },
+          "maxHeight": {
+            "type": "number",
+            "description": "Maximum height: [mm]\n"
+          },
+          "minDiameter": {
+            "type": "number",
+            "description": "Minimum diameter [mm]\n"
+          },
+          "maxDiameter": {
+            "type": "number",
+            "description": "Maximum diameter [mm]\n"
+          },
+          "minBendRadius": {
+            "type": "number",
+            "description": "Minimum bend radius [mm]\n"
+          },
+          "maxBendRadius": {
+            "type": "number",
+            "description": "Maximum bend radius [mm]\n"
+          },
+          "factorSetupTime": {
+            "type": "number",
+            "description": "Factor to be multiplied to all setup times of this machine.  \n(Higher means slower.)\n"
+          },
+          "factorAdditionalTime": {
+            "type": "number",
+            "description": "Factor to be multiplied to all additional times (tool change times,\nload/unload times, etc.) for  this machine.  \n(Higher means slower.)\n"
+          },
+          "factorProgrammingTimes": {
+            "type": "number",
+            "description": "Factor to be multiplied to all programming times for this machine.  \n(Higher means slower.)\n"
+          },
+          "turningCuttingParams": {
+            "$ref": "#/components/schemas/MachineCuttingParams"
+          },
+          "millingCuttingParams": {
+            "$ref": "#/components/schemas/MachineCuttingParams"
+          },
+          "cuttingParams": {
+            "$ref": "#/components/schemas/MachineCuttingParams"
+          }
+        },
+        "description": "Properties for a specific machine involved in the manufacturing process\n\nFor each machine, all the properties included in the `/api/getMachines`\nresponse may be modified in the `/api/setMachines` request - with the\nexception of `id` and `localizedName`, which are read-only properties.\nProperties which are not included in a `/api/setMachines` request will\nkeep their current value.\n"
+      },
+      "MachineCuttingParams": {
+        "properties": {
+          "factorFeed": {
+            "type": "number",
+            "description": "Factor to be multiplied to the machine's feed.  \n(Higher means faster.)\n"
+          },
+          "factorCuttingSpeed": {
+            "type": "number",
+            "description": "Factor to be multiplied to the machine's cutting speed.  \n(Higher means faster.)\n"
+          },
+          "factorPlungingDepth": {
+            "type": "number",
+            "description": "Factor to be multiplied to the machine's plunging depth.  \n(Higher means faster.)\n"
+          }
+        },
+        "description": "The cutting parameters (for turning, milling, or other operations).\n\nFor each machine, all the properties included in the `GET` response may\nbe modified in the `POST` request.\nProperties which are not included in the `POST` request will keep their\ncurrent value.\n"
+      },
+      "MachineVariant": {
+        "properties": {
+          "active": {
+            "type": "boolean",
+            "description": "Defines if the machine should be used in the calculation process\n(`true`), or excluded (`false`).\n"
+          },
+          "priority": {
+            "type": "number",
+            "description": "Defines the priority of usage.\n"
+          }
+        },
+        "description": "Machine properties which can be set separately for each calculation variant.\n"
+      },
+      "MaterialChoice": {
+        "required": [
+          "group"
+        ],
+        "properties": {
+          "group": {
+            "type": "string",
+            "description": "Material group identifier.  \n(See table \"Material groups\", column \"Abbreviation\", in the\n[settings](https://classmate.cloud/cloudUserSettings) of your\nclassmate CLOUD API user account.)\n\nThis field is mandatory when defining a custom semi-finished\nproduct, because it is used for selecting suitable machines during\ncalculation.\n\nIt is also used as a fallback for looking up the material costs and\ndensity, if not otherwise specified.\n"
+          },
+          "number": {
+            "type": "string",
+            "description": "Numerical designation of the material according to DIN EN.  \n(See table \"Materials\", column \"Material number\", in the\n[settings](https://classmate.cloud/cloudUserSettings) of your\nclassmate CLOUD API user account.)\n\nThis is optional, and is only used for looking up the material\ncosts (if not explicitly specified with  `pricePerKg` / `pricePerM`\n/ `pricePerM2`) and material density (if not explicitly specified\nwith `material.density`).\n"
+          },
+          "density": {
+            "type": "string",
+            "description": "A custom material density [g/cm³].\n\nIf not specified, the density is read from the pre-defined material\n(`materia.number`), or failing that, the group (`material.group`).\n\nThe density is used for calculating the material costs (unless\n`pricePerM` or `pricePerM2` is specified), and for filling the\n`blankMass` and `modelMass` fields in the `/api/calculate` response.\n"
+          }
+        },
+        "description": "The material that the existing product (raw material) is made of.\n\nSpecify this to define a custom semi-finished product.  \nMust not be specified together with a pre-defined semi-finished product\n(`rawMaterial.id`).\n"
+      },
+      "MaterialDescription": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "description": "Material group identifier (if available).  \n(See table \"Material groups\", column \"Abbreviation\", in the\n[settings](https://classmate.cloud/cloudUserSettings) of your\nclassmate CLOUD API user account.)\n"
+          },
+          "localizedGroupName": {
+            "type": "string",
+            "description": "Material group name, in the language specified in the request (if\navailable).  \n(See table \"Material groups\", column \"Name\", in the\n[settings](https://classmate.cloud/cloudUserSettings) of your\nclassmate CLOUD API user account.)\n"
+          },
+          "number": {
+            "type": "string",
+            "description": "Numerical designation of the material according to DIN EN (if\navailable).  \n(See table \"Materials\", column \"Material number\", in the\n[settings](https://classmate.cloud/cloudUserSettings) of your\nclassmate CLOUD API user account.)\n"
+          },
+          "name": {
+            "type": "string",
+            "description": "Designation of the material according to DIN EN (if available).  \n(See table \"Materials\", column \"Name\", in the\n[settings](https://classmate.cloud/cloudUserSettings) of your\nclassmate CLOUD API user account.)\n"
+          }
+        },
+        "description": "Description of a material.\n\nIn `AnalyzeResponse`, this describes a material identified based on data\nstored in the CAD model (if found).  \nIn `CalculateResponse`, this describes the material that was actually\nused in the calculation.\n",
+        "example": {
+          "group": "St",
+          "localizedGroupName": "Steel",
+          "number": "1.0577",
+          "name": "EN10277-S355J2"
+        }
+      },
+      "ModelDescription": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the model.\n"
+          },
+          "mass": {
+            "type": "number",
+            "description": "The mass of the machined part [kg].\n"
+          }
+        },
+        "description": "Information about the model that was calculated. (Much more information is available in the `/api/analyze` response.)\n"
+      },
+      "ModelDimensions": {
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/SemiFinishedProductType"
+          },
+          "l": {
+            "type": "number",
+            "description": "Length of the bounding box in mm (always present).  \nFor `ROUND` and `TUBE_ROUND` parts, this side of the bounding\nbox is parallel to the axis of rotation. For other parts, it is\nalways the longest side of the bounding box.\n"
+          },
+          "w": {
+            "type": "number",
+            "description": "Width of the bounding box in mm (always present).\n"
+          },
+          "h": {
+            "type": "number",
+            "description": "Height of the bounding box in mm (always present).\n"
+          },
+          "da": {
+            "type": "number",
+            "description": "Outer diameter of the model in mm (present for\n`type`=`ROUND`/`TUBE_ROUND`).\n"
+          },
+          "di": {
+            "type": "number",
+            "description": "Inner diameter of the model in mm (present for `type`=`TUBE_ROUND`).\n"
+          },
+          "fl": {
+            "type": "number",
+            "description": "Length of the flat pattern in mm (present for `type`=`SHEET`).  \nIf the model is already a flat sheet, this is the same as `l`.\n"
+          },
+          "fw": {
+            "type": "number",
+            "description": "Width of the flat pattern in mm (present for `type`=`SHEET`).  \nIf the model is already a flat sheet, this is the same as `w`.\n"
+          },
+          "s": {
+            "type": "number",
+            "description": "Thickness of the flat pattern in mm (present for `type`=`SHEET`).  \nIf the model is already a flat sheet, this is the same as `h`.\n"
+          },
+          "volume": {
+            "type": "number",
+            "description": "The volume of the model, in mm³.\n"
+          },
+          "surfaceArea": {
+            "type": "number",
+            "description": "The surface area of the model, in mm².\n"
+          }
+        },
+        "description": "Dimensions of a CAD model (in mm).  \nThe `type` specifies how the dimensions are expressed.\n",
+        "example": {
+          "type": "TUBE_ROUND",
+          "l": 100,
+          "w": 25,
+          "h": 25,
+          "da": 25,
+          "di": 20
+        }
+      },
+      "ProcessReport": {
+        "properties": {
+          "views": {
+            "type": "array",
+            "description": "A list of 2D views depicting the model.  \nTogether, these views contain labels for all the features listed in\nthe `processReport.features` data structure.  \n[Not included in the response by default. Append\n`&include=processReport.views` to the request query to include it.]\n",
+            "items": {
+              "$ref": "#/components/schemas/ProcessReportView"
+            }
+          },
+          "machines": {
+            "type": "array",
+            "description": "The machines used.  \n(These are referenced by `id` in the `processReport.features` data\nstructure.)\n",
+            "items": {
+              "$ref": "#/components/schemas/ProcessReportMachine"
+            }
+          },
+          "tools": {
+            "type": "array",
+            "description": "The machine tools used.  \n(These are referenced by `id` in the `processReport.features` data\nstructure.)\n",
+            "items": {
+              "$ref": "#/components/schemas/ProcessReportTool"
+            }
+          },
+          "features": {
+            "type": "array",
+            "description": "The processing objects that are part of the process report.\n",
+            "items": {
+              "$ref": "#/components/schemas/ProcessReportFeature"
+            }
+          },
+          "operationGroups": {
+            "type": "array",
+            "description": "Groups of similar feature operations.\n",
+            "items": {
+              "$ref": "#/components/schemas/ProcessReportOperationGroup"
+            }
+          }
+        },
+        "description": "Information about the machining operations involved in manufacturing the\npart.  \n[Not included in the response by default. Append\n`&include=processReport` or `&include=processReport.views` to the\nrequest query to include it.]\n"
+      },
+      "ProcessReportFeature": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "A unique identifier for the feature.  \n(The internal structure of IDs may change without an API version\nbump; thus it should be treated as an opaque string and not parsed.)\n"
+          },
+          "label": {
+            "type": "string",
+            "description": "The label used for this feature in the `processReport.views` diagrams.\n"
+          },
+          "type": {
+            "type": "string",
+            "description": "The feature type.  \n`GENERIC_FEATURE` means a virtual processing object which contains\nan operation like deburring that isn't associated with specific\nfaces of the model.  \nThe other types represent physical features in the model, e.g.\n`HOLE` = a borehole in the model.\n",
+            "enum": [
+              "BEAD",
+              "BENDING_EDGE",
+              "CENTER_HOLE",
+              "CENTRIC_PILOT_HOLE",
+              "CHAMFER",
+              "C_SLOT",
+              "ENGRAVING",
+              "HOLE",
+              "INNER_CONTOUR",
+              "INNER_GEAR",
+              "INNER_GROOVE",
+              "INNER_RECESS",
+              "INNER_SECTION",
+              "LINEAR_SLOT",
+              "OUTER_CONTOUR",
+              "OUTER_GEAR",
+              "OUTER_RECESS",
+              "OUTER_SECTION",
+              "PLANE_SURFACE",
+              "POCKET",
+              "RECESS",
+              "SCALE",
+              "SIGNATURE",
+              "SLIT",
+              "WOODRUFF_KEY_GROOVE",
+              "OTHER_FACES",
+              "OTHER_FEATURE",
+              "GENERIC_FEATURE"
+            ]
+          },
+          "localizedType": {
+            "type": "string",
+            "description": "A human-friendly designation for the feature type, in the request\nlanguage.  \n(The exact wording may change without an API version bump.)\n"
+          },
+          "faces": {
+            "type": "array",
+            "description": "IDs of the faces in the CAD model that are part of this feature.\n",
+            "items": {
+              "type": "string"
+            }
+          },
+          "operations": {
+            "type": "array",
+            "description": "The machining operations to be performed on this feature.\n",
+            "items": {
+              "$ref": "#/components/schemas/ProcessReportOperation"
+            }
+          }
+        },
+        "description": "A processing object on which one or more machining operations are\nperformed.  \nThis can be a physical feature of the CAD model (such as a\ncontour/pocket/borehole), or a generic processing object (such as\ndeburring).\n",
+        "example": {
+          "id": "innercontour-0",
+          "label": "4-0-0",
+          "type": "INNER_CONTOUR",
+          "localizedType": "Inner contour",
+          "faces": "Face-20 Face-21",
+          "operations": []
+        }
+      },
+      "ProcessReportMachine": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The identifier used to refer to this machine in other data structures.  \n(See table \"Machines\", column \"Abbreviation\", in the\n[settings](https://classmate.cloud/cloudUserSettings) of your\nclassmate CLOUD API user account.)\n"
+          },
+          "localizedName": {
+            "type": "string",
+            "description": "A human-friendly name for the machine, in the request language.  \n(See table \"Machines\", column \"Name\", in the\n[settings](https://classmate.cloud/cloudUserSettings) of your\nclassmate CLOUD API user account.)\n"
+          }
+        },
+        "description": "A machine.\n",
+        "example": {
+          "id": "M5S",
+          "localizedName": "5 axes milling machine [small]"
+        }
+      },
+      "ProcessReportOperation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "A unique identifier for the operation.  \n(The internal structure of IDs may change without an API version\nbump; thus it should be treated as an opaque string and not parsed.)\n"
+          },
+          "type": {
+            "type": "string",
+            "description": "The type of operation.\n",
+            "enum": [
+              "TURNING",
+              "MILLING",
+              "FORMING",
+              "STAMPING",
+              "DRILLING",
+              "ERODING",
+              "FINE_SHAPING",
+              "JOINING",
+              "CASTING",
+              "CUTTING",
+              "BROACHING",
+              "ANNEALING",
+              "TOOTHING",
+              "CENTERING",
+              "INSPECTING",
+              "OTHER"
+            ]
+          },
+          "localizedSubType": {
+            "type": "string",
+            "description": "A human-friendly designation for the specific type of operation, in\nthe request language (e.g. `Rough milling`).  \n(The exact wording may change without an API version bump.)\n"
+          },
+          "machine": {
+            "type": "string",
+            "description": "The id of the machine used for this operation.  \n(See `processReport.machines[*].id`.)\n"
+          },
+          "tool": {
+            "type": "string",
+            "description": "The id of the machine tool used for this operation.\n(See `processReport.tools[*].id`.)\n"
+          },
+          "faces": {
+            "type": "array",
+            "description": "IDs of the faces in the finished model that were affected by this\noperation.  \n(If not specified, the operaton affects all faces of its parent\nfeature.)\n",
+            "items": {
+              "type": "string"
+            }
+          },
+          "operationTime": {
+            "type": "number",
+            "description": "The primary processing time of the operation [s].\n"
+          },
+          "unitTime": {
+            "type": "number",
+            "description": "The portion of the unit manufacturing time that is caused by this\noperation [s].  \nThis includes secondary processing times.  \n**(Not yet implemented.)**\n"
+          },
+          "unitCost": {
+            "type": "number",
+            "description": "The portion of the unit manufacturing cost that is caused by this\noperation [EUR].  \n**(Not yet implemented.)**\n"
+          },
+          "toolPath": {
+            "type": "number",
+            "description": "The length of the tool path [mm].\n"
+          },
+          "cuttingSpeed": {
+            "type": "number",
+            "description": "The cutting speed v<sup>C</sup> [m/min].\n"
+          },
+          "rpm": {
+            "type": "number",
+            "description": "The spindle speed (revolutions per minute) [1/min].\n"
+          },
+          "feedSpeed": {
+            "type": "number",
+            "description": "The feed speed v<sup>f</sup> [mm/min].\n"
+          },
+          "feedPerTooth": {
+            "type": "number",
+            "description": "The feed per tooth f<sup>z</sup> [mm/Z].\n"
+          },
+          "feedPerRevolution": {
+            "type": "number",
+            "description": "The feed per revolution f<sup>n</sup> [mm/rev].\n"
+          }
+        },
+        "description": "A machining operation performed on a single feature, with a single machine tool.\n",
+        "example": {
+          "id": "bag-0:rough_milling-0",
+          "type": "MILLING",
+          "localizedSubType": "Rough milling",
+          "machine": "M5S",
+          "tool": "rough_milling_cutter-F50",
+          "operationTime": 3.7,
+          "unitTime": 23.4,
+          "unitCost": 0.61,
+          "toolPath": 270,
+          "cuttingSpeed": 650,
+          "rpm": 4138,
+          "feedSpeed": 4344.9,
+          "feedPerTooth": 0.15
+        }
+      },
+      "ProcessReportOperationGroup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "A unique identifier for the group.  \n(The internal structure of IDs may change without an API version\nbump; thus it should be treated as an opaque string and not parsed.)\n"
+          },
+          "operations": {
+            "type": "array",
+            "description": "The IDs of the feature operations that are part of this group.  \n(See `processReport.features[*].operations[*].id`.)\n",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "description": "A group of similar feature operations\n",
+        "example": {
+          "id": "hole-[1,2,3,4]:hole_milling@M5S",
+          "operations": [
+            "hole-1:hole_milling-0",
+            "hole-2:hole_milling-0",
+            "hole-3:hole_milling-0",
+            "hole-4:hole_milling-0"
+          ]
+        }
+      },
+      "ProcessReportTool": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The identifier used to refer to this tool in other data structures.  \n(The internal structure of IDs may change without an API version\nbump; thus it should be treated as an opaque string and not parsed.)\n"
+          },
+          "type": {
+            "type": "string",
+            "description": "The tool type.\n**(Not yet implemented.)**\n"
+          },
+          "localizedType": {
+            "type": "string",
+            "description": "A human-friendly designation for the tool type, in the language\nspecified in the request.  \n(The exact wording may change without an API version bump.)\n"
+          },
+          "machine": {
+            "type": "string",
+            "description": "The identifier of the machines to which the tool belongs.  \n(See `processReport.machines[*].id`.)\n"
+          },
+          "diameter": {
+            "type": "number",
+            "description": "The tool diameter in mm (if applicable).\n"
+          },
+          "teeth": {
+            "type": "integer",
+            "description": "The number of teeth on the tool (e.g. for a milling cutter), or 0 if\nnot applicable.\n"
+          },
+          "operationTime": {
+            "type": "number",
+            "description": "The total primary processing time for all operations using this tool\n[s].\n"
+          },
+          "toolPath": {
+            "type": "number",
+            "description": "The total length of the tool paths for all operations using this\ntool [mm].\n"
+          },
+          "operations": {
+            "type": "array",
+            "description": "The IDs of the features for which this tool is used.  \n(See `processReport.features[*].id`.)\n",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "description": "A machining tool.\n",
+        "example": {
+          "id": "rough_cutter-F50",
+          "type": "ROUGH_CUTTER",
+          "localizedType": "Rough cutter",
+          "machine": "M3S",
+          "diameter": 50,
+          "teeth": 7,
+          "operationTime": 30,
+          "toolPath": 373.13,
+          "features": [
+            "inner_contour-0",
+            "inner_contour-2"
+          ]
+        }
+      },
+      "ProcessReportView": {
+        "type": "object",
+        "properties": {
+          "orientation": {
+            "type": "string",
+            "description": "The orientation of the view.  \n(There can be multiple views with the same orientation, if there are\ntoo many labels to fit on one view.)\n",
+            "enum": [
+              "TOP",
+              "BOTTOM",
+              "FRONT",
+              "BACK",
+              "LEFT",
+              "RIGHT"
+            ]
+          },
+          "svgDiagram": {
+            "type": "string",
+            "description": "The SVG diagram of the view (as a Base64-encoded string).\n",
+            "format": "binary"
+          }
+        },
+        "description": "A 2D view depicting a CAD model from one side, with labels for machining\nfeatures that are visible from that side.\n"
+      },
+      "RawMaterialDescription": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The identifier under which the pre-defined semi-finished product is\nstored in classmate CLOUD.  \n(See table \"Semi-finished products\", column \"Identifier\", in the\n[settings](https://classmate.cloud/cloudUserSettings) of your\nclassmate CLOUD API user account.)\n"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the pre-defined semi-finished product.  \n(See table \"Semi-finished products\", column \"Name\", in the\n[settings](https://classmate.cloud/cloudUserSettings) of your\nclassmate CLOUD API user account.)\n"
+          },
+          "material": {
+            "$ref": "#/components/schemas/MaterialDescription"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/SemiFinishedProductShape"
+          },
+          "preCut": {
+            "$ref": "#/components/schemas/SemiFinishedProductPreCut"
+          },
+          "mass": {
+            "type": "number",
+            "description": "The mass of the pre-cut raw material [kg].\n"
+          }
+        },
+        "description": "Description of a raw material (that is, an existing physical product\nfrom which a part can be machined).\n\nIn `AnalyzeResponse`, this describes a possible raw material picked by\nclassmate CLOUD.  \nIn `CalculateResponse`, this describes the raw material that was\nactually used as the basis for the calculation.\n\n[In `/api/analyze`, this is not included in the response by default.\nAppend `&include=possibleRawMaterial` to the request query to include\nit.]\n",
+        "example": {
+          "id": "00003534",
+          "name": "BL 4",
+          "material": {
+            "group": "St",
+            "localizedGroupName": "Steel",
+            "number": "1.0577",
+            "name": "EN10277-S355J2"
+          },
+          "shape": {
+            "type": "sheet",
+            "s": 4.0
+          }
+        }
+      },
+      "RawMaterialChoice": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "A CAD model (in the S3D file format, as a Base64-encoded string) to\nuse as the raw part. Must not be specified together with `id`,\n`shape`, `preCut`, `offsets`, `pricePerM`, or `pricePerSqrM`.\n\nAlternatively, if you send the `POST /api/analyze` request with\ncontent type `multipart/form-data`, then you can specify the raw\npart CAD model as the separate form-data field `rmModel` (raw\nbinary S3D file, without Base64 encoding).\n"
+          },
+          "id": {
+            "type": "string",
+            "description": "The identifier of a pre-defined semi-finished product stored in\nclassmate CLOUD.  \n(See table \"Semi-finished products\", column \"Identifier\", in the\n[settings](https://classmate.cloud/cloudUserSettings) of your\nclassmate CLOUD API user account.)\n\nSpecify this if you want to use one of your pre-defined\nsemi-finished products.  \nAll required data about material, shape, and price is retrieved from\nthere.\n"
+          },
+          "material": {
+            "$ref": "#/components/schemas/MaterialChoice"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/SemiFinishedProductShape"
+          },
+          "preCut": {
+            "$ref": "#/components/schemas/SemiFinishedProductPreCut"
+          },
+          "offsets": {
+            "$ref": "#/components/schemas/SemiFinishedProductOffsets"
+          },
+          "pricePerUnit": {
+            "type": "number",
+            "description": "The purchase price per unit [EUR].  \n(Only allowed if a pre-cut was specified.)\n"
+          },
+          "pricePerKg": {
+            "type": "number",
+            "description": "The purchase price per kilogram [EUR/kg].\n"
+          },
+          "pricePerM": {
+            "type": "number",
+            "description": "The purchase price per meter [EUR/m].  \n(Only allowed for bar/tube-shaped raw materials.)\n"
+          },
+          "pricePerSqrM": {
+            "type": "number",
+            "description": "The purchase price per square meter [EUR/m²].  \n(Only allowed for sheet/plate-shaped raw materials.)\n"
+          }
+        },
+        "description": "The existing product (semi-finished product or custom blank) from which\nthe part should be machined.  \nYou can specify one of the following combinations of properties:\n* `model` + `material`:  \n  The raw material is the given CAD model.\n* `id`:  \n  The raw material is the uncut semi-finished product with the given  \n  identifier.\n* `shape` (+ `preCut` + `offsets`) + `material`:  \n  The raw material is the explicitly specified (uncut or pre-cut)\n  semi-finished product.\n\nAdditionally, if `id` is not specified, you may specify one of\n`pricePerUnit`, `pricePerKg`, `pricePerM`, or `pricePerSqrM` – otherwise\nthe calculation estimates a raw material purchase price based on\n`material`.\n",
+        "example": {
+          "id": "00004164"
+        }
+      },
+      "SemiFinishedProductOffsets": {
+        "type": "object",
+        "properties": {
+          "l_front": {
+            "type": "number",
+            "description": "Oversize [mm], on the front side in the direction of the\nlength of the model. (Only allowed for\n`type`=`RECTANGULAR`/`ROUND`/`TUBE_ROUND`).\n"
+          },
+          "l_back": {
+            "type": "number",
+            "description": "Oversize [mm], on the back side in the direction of the length\nof the model. (Only allowed for\n`type`=`RECTANGULAR`/`ROUND`/`TUBE_ROUND`).\n"
+          },
+          "w_left": {
+            "type": "number",
+            "description": "Oversize [mm], on the left side in the direction of the width\nof the model. (Only allowed for `type`=`RECTANGULAR`).\n"
+          },
+          "w_right": {
+            "type": "number",
+            "description": "Oversize [mm], on the right side in the direction of the width\nof the model. (Only allowed for `type`=`RECTANGULAR`).\n"
+          },
+          "h_bottom": {
+            "type": "number",
+            "description": "Oversize [mm], on the bottom side in the direction of the\nheight of the model. (Only allowed for `type`=`RECTANGULAR`).\n"
+          },
+          "h_top": {
+            "type": "number",
+            "description": "Oversize [mm], on the top side in the direction of the height\nof the model. (Only allowed for `type`=`RECTANGULAR`).\n"
+          },
+          "da_outside": {
+            "type": "number",
+            "description": "Oversize [mm], in the direction of the outer radius of the\nmodel. (Only allowed for `type`=`ROUND`/`TUBE_ROUND`).\n"
+          },
+          "di_inside": {
+            "type": "number",
+            "description": "Oversize [mm], in the direction of inner radius of the model.\n(Only allowed for `type`=`ROUND`/`TUBE_ROUND`).\n"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Placement of the semi-finished product relative to the outer-most\nsurfaces of the model.  \nCan be specified in addition to `shape` and `preCut`, but in those\ndata-structures, you can skip any fields already mathematically\ndetermined by this one.\n",
+        "example": {
+          "w_left": 2,
+          "w_right": 2,
+          "h_top": 4,
+          "h_bottom": 0
+        }
+      },
+      "SemiFinishedProductPreCut": {
+        "properties": {
+          "l": {
+            "type": "number",
+            "description": "Pre-cut length in mm.\n"
+          },
+          "w": {
+            "type": "number",
+            "description": "Pre-cut width in mm. (Only allowed for raw materials of type `SHEET`.)\n"
+          }
+        },
+        "description": "The pre-cut length (for tubes and rods), or pre-cut rectangle\n(for sheets).\n\nSpecify this if you want to use a fully-defined pre-cut blank (rather\nthan a variable-length semi-finished product) as the existing product.\n",
+        "example": {
+          "l": 50
+        }
+      },
+      "SemiFinishedProductShape": {
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/SemiFinishedProductType"
+          },
+          "w": {
+            "type": "number",
+            "description": "Width of the cross-section in mm. (Present for\n`type`=`RECTANGULAR`/`PROFILE_*`.)\n"
+          },
+          "h": {
+            "type": "number",
+            "description": "Height of the cross-section in mm. (Present for\n`type`=`RECTANGULAR`/`PROFILE_*`.)\n"
+          },
+          "da": {
+            "type": "number",
+            "description": "Outer diameter of the cross-section in mm. (Present for\n`type`=`ROUND`/`HALF_ROUND`/`TUBE_ROUND`.)\n"
+          },
+          "di": {
+            "type": "number",
+            "description": "Inner diameter of the cross-section in mm. (Present for\n`type`=`TUBE_ROUND`.)\n"
+          },
+          "s": {
+            "type": "number",
+            "description": "Thickness of the sheet metal or plate in mm. (Present for\n`type`=`SHEET`/`PROFILE_*`.)\n"
+          }
+        },
+        "description": "Shape of a semi-finished product (i.e. an uncut raw material).\n",
+        "example": {
+          "type": "TUBE_ROUND",
+          "da": 25
+        }
+      },
+      "SemiFinishedProductType": {
+        "type": "string",
+        "description": "The type of semi-finished product.  \n* `RECTANGULAR`:  \n  Bar with solid rectangle profile, a.k.a. flat or square bar.  \n  (width `w` × height `h`)\n* `HEXAGONAL`:  \n  Bar with solid hexagonal profile, a.k.a. hex bar.  \n  [Geometry description not yet implemented]\n* `ROUND`:  \n  Bar with solid circular profile, a.k.a. round bar.  \n  (diameter `da`)\n* `HALF_ROUND`:  \n  Bar with solid semi-circle profile, a.k.a. half-round bar.  \n  (diameter `da`)  \n* `TUBE_RECTANGULAR`:  \n  Bar with hollow rectangular profile.  \n  [Geometry description not yet implemented]\n* `TUBE_ROUND`:  \n  Bar with hollow circular profile, a.k.a tube/pipe.  \n  (outer diameter `da`, inner diameter `di`)\n* `PROFILE_I`:  \n  Bar with 'I' profile, a.k.a. beam.  \n  (width `w` × height `h`; thickness `s`)\n* `PROFILE_L`:  \n  Bar with 'L' profile, a.k.a. angle bar.  \n  (width `w` × height `h`; thickness `s`)\n* `PROFILE_T`:  \n  Bar with 'T' profile, a.k.a. T-bar.  \n  (width `w` × height `h`; thickness `s`)\n* `PROFILE_U`:  \n  Bar with 'U' profile, a.k.a. channel.  \n  (width `w` × height `h`; thickness `s`)\n* `SHEET`:  \n  Flat sheet or plate.  \n  (thickness `s`)\n\n[Currently, only the types `RECTANGULAR`, `ROUND`, `TUBE_ROUND`, and\n`SHEET` are supported for defining a *custom* semi-finished product, but\nall types can appear in the description of a *pre-defined* semi-finished\nproduct.]\n",
+        "enum": [
+          "RECTANGULAR",
+          "HEXAGONAL",
+          "ROUND",
+          "HALF_ROUND",
+          "TUBE_RECTANGULAR",
+          "TUBE_ROUND",
+          "PROFILE_I",
+          "PROFILE_L",
+          "PROFILE_T",
+          "PROFILE_U",
+          "SHEET"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "basicAuth": {
+        "type": "http",
+        "scheme": "basic"
+      }
+    }
+  }
+}
