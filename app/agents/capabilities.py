@@ -48,8 +48,8 @@ class CapabilityResolver:
 
         from app.agents.capabilities import capability_resolver
 
-        tools = capability_resolver.resolve(["myapp:items:read", "platform:ai"])
-        # → {"config_list_products", "config_get_product", ..., "ai_complete", "ai_list_models"}
+        tools = capability_resolver.resolve(["example:echo", "platform:ai"])
+        # → {"example_echo", "ai_complete", "ai_list_models", ...}
     """
 
     def __init__(self) -> None:

@@ -2,9 +2,30 @@
 
 > AI-first multi-agent platform foundation. Plug your application in.
 
+[![CI](https://github.com/rattleai/nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/rattleai/nexus/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/rattleai/nexus/actions/workflows/codeql.yml/badge.svg)](https://github.com/rattleai/nexus/actions/workflows/codeql.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](pyproject.toml)
+[![Node 22+](https://img.shields.io/badge/node-22%2B-339933.svg)](frontend/package.json)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 NEXUS is a generic, multi-tenant SaaS platform you fork to build AI applications on top of. The core ships everything you'd otherwise spend a quarter on — agent runtime, multi-provider AI gateway, MCP server, A2A messaging, RAG, billing, auth, jobs, files, audit — and exposes a small, opinionated **plugin contract** so your app code stays cleanly isolated from the platform.
 
 You write a plugin under `app/apps/<your_app>/`. The platform discovers it on startup and wires in your routers, models, MCP tools, agent tools, capabilities, Celery tasks, scopes, and frontend nav. Read [`docs/PLUGINS.md`](docs/PLUGINS.md) to ship your first one.
+
+## Contents
+
+- [Tech stack](#tech-stack)
+- [What you get out of the box](#what-you-get-out-of-the-box)
+- [Quick start](#quick-start)
+- [Build your first plugin](#build-your-first-plugin)
+- [Project layout](#project-layout)
+- [Common commands](#common-commands)
+- [Deployment](#deployment)
+- [Security](#security)
+- [Contributing](#contributing)
+- [Community](#community)
+- [License](#license)
 
 ## Tech stack
 
