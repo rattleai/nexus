@@ -15,6 +15,9 @@ on:
           - staging
           - production
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.event_name == 'workflow_dispatch' && format('deploy-{0}', github.event.inputs.environment) || format('{0}-{1}', github.workflow, github.ref) }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
@@ -439,12 +442,13 @@ jobs:
           exit-code: 1
           severity: CRITICAL,HIGH
 
-  # Production deployment (P0-2: real deployment, not placeholder)
+  # Production deployment. Skipped on forks since the deployment secrets
+  # only exist in the upstream rattleai/nexus repository.
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
     needs: [docker-build-push, security-scan, dependency-audit]
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'rattleai/nexus'
     environment: ${{ github.event.inputs.environment }}
     steps:
       - uses: actions/checkout@v4
@@ -464,8 +468,8 @@ jobs:
         if: vars.DEPLOY_METHOD == 'ecs'
         env:
           AWS_REGION: us-east-1
-          ECS_CLUSTER: nxs-${{ github.event.inputs.environment }}
-          ECS_SERVICE: nxs-api
+          ECS_CLUSTER: ${{ vars.ECS_CLUSTER || format('nxs-{0}', github.event.inputs.environment) }}
+          ECS_SERVICE: ${{ vars.ECS_SERVICE || 'nxs-api' }}
           IMAGE_TAG: sha-${{ github.sha }}
         run: |
           aws ecs update-service \
