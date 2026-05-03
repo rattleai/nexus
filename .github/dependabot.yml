@@ -29,6 +29,11 @@ updates:
       day: monday
     open-pull-requests-limit: 5
     labels: [dependencies, ci]
+    # All third-party actions are pinned to commit SHAs (with the version
+    # tag in a trailing comment). Dependabot keeps both in sync.
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
 
   - package-ecosystem: docker
     directory: /
