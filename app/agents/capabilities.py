@@ -1,7 +1,7 @@
 """Agent capabilities — slug resolution and token-based privilege system.
 
 Part 1: Capability Resolver
-    Maps capability slugs (``cpq:products:write``) to tool name sets.
+    Maps capability slugs (``myapp:items:write``) to tool name sets.
     Built from platform built-in + plugin-declared capabilities.
     Cached per-process, no database dependency.
 
@@ -48,7 +48,7 @@ class CapabilityResolver:
 
         from app.agents.capabilities import capability_resolver
 
-        tools = capability_resolver.resolve(["cpq:products:read", "platform:ai"])
+        tools = capability_resolver.resolve(["myapp:items:read", "platform:ai"])
         # → {"config_list_products", "config_get_product", ..., "ai_complete", "ai_list_models"}
     """
 

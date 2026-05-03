@@ -838,7 +838,7 @@ async def run_agent_stream(
     messages = body.input_data.get("messages", [{"role": "user", "content": str(body.input_data)}])
 
     # Build tool executor and governance checker so agents can actually
-    # invoke tools (CPQ, built-in, tenant-custom) during the streaming run.
+    # invoke tools (plugin-contributed, built-in, tenant-custom) during the streaming run.
     from app.agents.setup import build_tool_executor, build_governance_checker, resolve_datasource_mentions
 
     tool_executor = build_tool_executor(agent, tenant.id, db)

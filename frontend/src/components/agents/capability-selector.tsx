@@ -28,8 +28,8 @@ import { cn } from "@/lib/utils"
 import type { CapabilityCatalog, CapabilityDomain, ToolCapability } from "@/types/agents"
 
 const DOMAIN_ICONS: Record<string, React.ElementType> = {
-  cpq: Package,
   platform: Cpu,
+  example: Package,
 }
 
 const RISK_CONFIG = {

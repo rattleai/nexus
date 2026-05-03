@@ -14,13 +14,11 @@
     "webhooks": "Webhooks",
     "audit_log": "审计日志",
     "developers": "开发者",
-    "products": "产品",
-    "configurations": "配置管理",
-    "configurator": "配置器",
     "account": "账户",
     "settings": "设置",
     "more": "更多",
-    "home": "首页"
+    "home": "首页",
+    "example": "示例"
   },
   "settings_nav": {
     "back_to_console": "返回控制台",

@@ -341,7 +341,7 @@ class Settings(BaseSettings):
     # ── Application plugin feature flags ──
     # Each app plugin checks its flag via the plugin registry.
     # Listed here for documentation; actual gating is in app.plugins.registry.
-    APP_CPQ_ENABLED: bool = True
+    APP_EXAMPLE_ENABLED: bool = True
 
     # (Cloud Drive OAuth settings are defined above — do not duplicate here.)
 

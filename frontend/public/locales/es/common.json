@@ -14,13 +14,11 @@
     "webhooks": "Webhooks",
     "audit_log": "Registro de auditoría",
     "developers": "Desarrolladores",
-    "products": "Productos",
-    "configurations": "Configuraciones",
-    "configurator": "Configurador",
     "account": "Cuenta",
     "settings": "Configuración",
     "more": "Más",
-    "home": "Inicio"
+    "home": "Inicio",
+    "example": "Ejemplo"
   },
   "settings_nav": {
     "back_to_console": "Volver a la consola",
