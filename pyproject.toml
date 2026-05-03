@@ -8,6 +8,22 @@ version = "0.1.0"
 description = "Generic multi-tenant SaaS platform template — FastAPI backend with React frontend"
 readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+license-files = ["LICENSE"]
+authors = [
+    { name = "RattleAI" },
+]
+keywords = ["ai", "agents", "multi-agent", "mcp", "a2a", "rag", "fastapi", "saas", "plugin-architecture", "multi-tenant"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
 dependencies = [
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.34,<1",
@@ -80,6 +96,13 @@ perf = [
 scaffold = [
     "copier>=9.0,<10",
 ]
+
+[project.urls]
+Homepage = "https://github.com/rattleai/nexus"
+Repository = "https://github.com/rattleai/nexus"
+Issues = "https://github.com/rattleai/nexus/issues"
+Changelog = "https://github.com/rattleai/nexus/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/rattleai/nexus/blob/main/docs/PLUGINS.md"
 
 [project.scripts]
 cadprice-mcp = "app.mcp.run:main"

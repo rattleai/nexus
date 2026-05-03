@@ -1,0 +1,13 @@
+# Default owners for everything in the repo.
+# These owners will be requested for review on every pull request.
+*                                   @rattleai/maintainers
+
+# Areas with dedicated owners
+/app/plugins/                       @rattleai/maintainers @rattleai/platform
+/app/agents/                        @rattleai/maintainers @rattleai/platform
+/app/ai/                            @rattleai/maintainers @rattleai/platform
+/app/db/migrations/                 @rattleai/maintainers @rattleai/platform
+/.github/                           @rattleai/maintainers
+/infra/                             @rattleai/maintainers
+/SECURITY.md                        @rattleai/maintainers
+/LICENSE                            @rattleai/maintainers

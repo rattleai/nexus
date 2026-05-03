@@ -2,6 +2,16 @@
   "name": "frontend",
   "private": true,
   "version": "0.0.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rattleai/nexus.git",
+    "directory": "frontend"
+  },
+  "homepage": "https://github.com/rattleai/nexus#readme",
+  "bugs": {
+    "url": "https://github.com/rattleai/nexus/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
