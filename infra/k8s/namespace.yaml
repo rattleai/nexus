@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: cadprice
+  name: nxs
   labels:
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
     app.kubernetes.io/managed-by: kustomize
     # Pod Security Standards — enforce restricted baseline
     pod-security.kubernetes.io/enforce: restricted
@@ -13,8 +13,8 @@ metadata:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: cadprice
-  namespace: cadprice
+  name: nxs
+  namespace: nxs
   labels:
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
 automountServiceAccountToken: false

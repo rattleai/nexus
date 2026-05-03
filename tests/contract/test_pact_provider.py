@@ -34,7 +34,7 @@ def pact_verifier():
         pytest.skip("pact-python not installed (pip install pact-python)")
 
     return Verifier(
-        provider="cadprice-api",
+        provider="nxs-api",
         provider_base_url=PROVIDER_URL,
     )
 

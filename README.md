@@ -1,4 +1,4 @@
-# CADPrice SaaS Platform
+# NEXUS SaaS Platform
 
 Multi-tenant SaaS platform with a FastAPI backend, React frontend, and AI gateway. Supports JWT + OAuth authentication, Stripe billing, background job processing, real-time WebSocket communication, and progressive web app capabilities.
 

@@ -3,7 +3,7 @@
     "name": "frontend"
   },
   "provider": {
-    "name": "cadprice-api"
+    "name": "nxs-api"
   },
   "interactions": [
     {
@@ -136,7 +136,7 @@
           "Content-Type": "application/json"
         },
         "body": {
-          "name": "cadprice",
+          "name": "nxs",
           "capabilities": {}
         },
         "matchingRules": {

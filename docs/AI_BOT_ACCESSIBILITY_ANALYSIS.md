@@ -422,12 +422,12 @@ Gartner projects **40% of enterprise applications** will embed AI agents by end 
 
 ```bash
 # Examples
-cadprice job create --type analysis --data '{"url": "..."}' --output json
-cadprice job list --status pending --output json
-cadprice ai query --model claude-3 --prompt "..." --output json
-cadprice team list --output json
-cadprice billing usage --period 2026-03 --output json
-cadprice webhook create --url https://... --events job.completed --output json
+nxs job create --type analysis --data '{"url": "..."}' --output json
+nxs job list --status pending --output json
+nxs ai query --model claude-3 --prompt "..." --output json
+nxs team list --output json
+nxs billing usage --period 2026-03 --output json
+nxs webhook create --url https://... --events job.completed --output json
 ```
 
 **Implementation**: Use `typer` (already a FastAPI-ecosystem tool) with `rich` for human output and `--output json` for agent output.

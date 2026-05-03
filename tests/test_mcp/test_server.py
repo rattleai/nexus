@@ -13,7 +13,7 @@ def test_create_mcp_server():
 
     # Verify the server was created
     assert mcp is not None
-    assert mcp.name == "cadprice"
+    assert mcp.name == "nxs"
 
 
 @pytest.mark.asyncio

@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     JWT_PRIVATE_KEY: str = ""  # PEM-encoded RSA private key for RS256 JWT signing
     JWT_PUBLIC_KEY: str = ""   # PEM-encoded RSA public key for RS256 JWT verification
     JWT_PUBLIC_KEY_PREVIOUS: str = ""  # Previous public key for seamless key rotation (multi-key JWKS)
+    # JWT_ISSUER / JWT_AUDIENCE are baked into every signed token; changing them after
+    # tokens have been issued in production will cause those tokens to fail validation.
+    # Override via env when standing up a new tenant or rebranding pre-production.
+    JWT_ISSUER: str = "nxs"
+    JWT_AUDIENCE: str = "nxs-api"
     OAUTH_GOOGLE_CLIENT_ID: str = ""
     OAUTH_GOOGLE_CLIENT_SECRET: str = ""
     OAUTH_GITHUB_CLIENT_ID: str = ""
@@ -102,14 +107,14 @@ class Settings(BaseSettings):
     # Web Push (VAPID) — required for push notifications
     VAPID_PRIVATE_KEY: str = ""
     VAPID_PUBLIC_KEY: str = ""
-    VAPID_MAILTO: str = "admin@cadprice.com"
+    VAPID_MAILTO: str = "admin@example.com"
 
     # Firebase Cloud Messaging (for native mobile push)
     FIREBASE_SERVICE_ACCOUNT_JSON: str = ""
 
     # WebAuthn / FIDO2 (biometric authentication)
     WEBAUTHN_RP_ID: str = "localhost"
-    WEBAUTHN_RP_NAME: str = "CAD Price"
+    WEBAUTHN_RP_NAME: str = "NEXUS"
     WEBAUTHN_ORIGIN: str = "http://localhost:3000"
 
     # CDN
@@ -154,7 +159,7 @@ class Settings(BaseSettings):
 
     # ── MCP Server ───────────────────────────────────────────
     MCP_ENABLED: bool = False
-    MCP_SERVER_NAME: str = "cadprice"
+    MCP_SERVER_NAME: str = "nxs"
     MCP_TRANSPORT: str = "http"  # "stdio" or "http"
     MCP_HTTP_PORT: int = 8001
     MCP_LOG_TOOL_CALLS: bool = True

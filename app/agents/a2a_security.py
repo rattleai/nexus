@@ -120,7 +120,9 @@ class A2ASecurityLayer:
         RFC 5869 improves key separation vs salt=None.
         """
         source = settings.ENCRYPTION_KEY or settings.SECRET_KEY
-        salt = hashlib.sha256(f"cadprice-a2a-signing-salt-v1:{self.tenant_id}".encode()).digest()
+        # The literal salt prefix below is part of the KDF input — changing it
+        # derives different keys and invalidates any previously signed messages.
+        salt = hashlib.sha256(f"nxs-a2a-signing-salt-v1:{self.tenant_id}".encode()).digest()
         hkdf = HKDF(
             algorithm=SHA256(),
             length=32,
@@ -132,7 +134,8 @@ class A2ASecurityLayer:
     def derive_encryption_key(self, instance_id: str) -> bytes:
         """Derive a per-instance encryption key for AES-256-GCM using HKDF."""
         source = settings.ENCRYPTION_KEY or settings.SECRET_KEY
-        salt = hashlib.sha256(f"cadprice-a2a-encryption-salt-v1:{self.tenant_id}".encode()).digest()
+        # See note on signing salt above — same applies here.
+        salt = hashlib.sha256(f"nxs-a2a-encryption-salt-v1:{self.tenant_id}".encode()).digest()
         hkdf = HKDF(
             algorithm=SHA256(),
             length=32,

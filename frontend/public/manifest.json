@@ -1,6 +1,6 @@
 {
-  "name": "CAD Price",
-  "short_name": "CADPrice",
+  "name": "NEXUS",
+  "short_name": "NEXUS",
   "description": "AI-powered SaaS platform with agent orchestration",
   "start_url": "/",
   "display": "standalone",

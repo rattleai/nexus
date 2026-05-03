@@ -1,4 +1,4 @@
-"""Job subcommands for the CADPrice CLI."""
+"""Job subcommands for the NEXUS CLI."""
 
 from __future__ import annotations
 

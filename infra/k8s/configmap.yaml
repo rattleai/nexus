@@ -1,16 +1,16 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: cadprice-config
-  namespace: cadprice
+  name: nxs-config
+  namespace: nxs
   labels:
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
 data:
   # Application
   DEBUG: "false"
   API_V1_PREFIX: "/api/v1"
-  CORS_ORIGINS: "https://cadprice.com,https://www.cadprice.com"
-  APP_BASE_URL: "https://cadprice.com"
+  CORS_ORIGINS: "https://example.com,https://www.example.com"
+  APP_BASE_URL: "https://example.com"
 
   # Rate limiting
   RATE_LIMIT_DEFAULT: "100"
@@ -35,7 +35,7 @@ data:
 
   # OpenTelemetry
   OTEL_ENABLED: "true"
-  OTEL_SERVICE_NAME: "cadprice"
+  OTEL_SERVICE_NAME: "nxs"
   OTEL_EXPORTER_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4317"
 
   # Auth
@@ -45,8 +45,8 @@ data:
   JWT_REFRESH_TOKEN_EXPIRE_DAYS: "7"
 
   # Email
-  BREVO_SENDER_EMAIL: "noreply@cadprice.com"
-  BREVO_SENDER_NAME: "CAD Price"
+  BREVO_SENDER_EMAIL: "noreply@example.com"
+  BREVO_SENDER_NAME: "NEXUS"
   EMAIL_VERIFICATION_EXPIRE_HOURS: "24"
   PASSWORD_RESET_EXPIRE_HOURS: "1"
 
@@ -68,9 +68,9 @@ data:
   AI_DEFAULT_FALLBACK_ENABLED: "true"
 
   # WebAuthn
-  WEBAUTHN_RP_ID: "cadprice.com"
-  WEBAUTHN_RP_NAME: "CAD Price"
-  WEBAUTHN_ORIGIN: "https://cadprice.com"
+  WEBAUTHN_RP_ID: "example.com"
+  WEBAUTHN_RP_NAME: "NEXUS"
+  WEBAUTHN_ORIGIN: "https://example.com"
 
   # Push notifications
-  VAPID_MAILTO: "admin@cadprice.com"
+  VAPID_MAILTO: "admin@example.com"

@@ -2,7 +2,7 @@
 
 ## Context
 
-The cadprice codebase is a multi-tenant SaaS platform built with FastAPI, React 19, PostgreSQL 16, Redis 7, and Celery. It has solid foundations — row-level tenant isolation, dual auth (API keys + JWT), RBAC, rate limiting, structured logging, OpenTelemetry, CI/CD with security scanning, and Docker-based deployment. However, compared to gold-standard enterprise SaaS platforms (2025-2026), there are significant gaps that would prevent enterprise adoption, limit scalability, and create compliance risk. This analysis identifies those gaps, prioritizes them, and proposes an implementation roadmap.
+The nxs codebase is a multi-tenant SaaS platform built with FastAPI, React 19, PostgreSQL 16, Redis 7, and Celery. It has solid foundations — row-level tenant isolation, dual auth (API keys + JWT), RBAC, rate limiting, structured logging, OpenTelemetry, CI/CD with security scanning, and Docker-based deployment. However, compared to gold-standard enterprise SaaS platforms (2025-2026), there are significant gaps that would prevent enterprise adoption, limit scalability, and create compliance risk. This analysis identifies those gaps, prioritizes them, and proposes an implementation roadmap.
 
 ---
 

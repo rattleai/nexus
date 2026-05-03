@@ -48,8 +48,8 @@ generate_python() {
         -i /project/openapi.json \
         -g python \
         -o /project/sdk/python \
-        --additional-properties=packageName=cadprice_client \
-        --additional-properties=projectName=cadprice-client \
+        --additional-properties=packageName=nxs_client \
+        --additional-properties=projectName=nxs-client \
         --additional-properties=packageVersion=0.1.0 \
         --additional-properties=generateSourceCodeOnly=true
 
@@ -67,7 +67,7 @@ generate_typescript() {
         -i /project/openapi.json \
         -g typescript-fetch \
         -o /project/sdk/typescript \
-        --additional-properties=npmName=@cadprice/client \
+        --additional-properties=npmName=@nxs/client \
         --additional-properties=npmVersion=0.1.0 \
         --additional-properties=supportsES6=true \
         --additional-properties=typescriptThreePlus=true
@@ -86,7 +86,7 @@ generate_go() {
         -i /project/openapi.json \
         -g go \
         -o /project/sdk/go \
-        --additional-properties=packageName=cadprice \
+        --additional-properties=packageName=nxs \
         --additional-properties=isGoSubmodule=true
 
     echo "Go SDK generated at ${SDK_DIR}/go"

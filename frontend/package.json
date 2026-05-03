@@ -1,7 +1,8 @@
 {
-  "name": "frontend",
+  "name": "@rattleai/nexus-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "NEXUS frontend — React 19 + TypeScript + TanStack Router for the AI-first multi-agent platform.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

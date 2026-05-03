@@ -8,9 +8,10 @@ import { execFileSync } from "child_process"
 export default function globalSetup() {
   try {
     // Clear ALL rate limit and lockout keys so tests start completely fresh
+    const project = process.env.COMPOSE_PROJECT_NAME ?? "nexus"
     execFileSync("docker", [
       "exec",
-      "cadprice_cp-redis-1",
+      `${project}-redis-1`,
       "redis-cli",
       "-a", "changeme",
       "--no-auth-warning",

@@ -464,8 +464,8 @@ jobs:
         if: vars.DEPLOY_METHOD == 'ecs'
         env:
           AWS_REGION: us-east-1
-          ECS_CLUSTER: cadprice-${{ github.event.inputs.environment }}
-          ECS_SERVICE: cadprice-api
+          ECS_CLUSTER: nxs-${{ github.event.inputs.environment }}
+          ECS_SERVICE: nxs-api
           IMAGE_TAG: sha-${{ github.sha }}
         run: |
           aws ecs update-service \

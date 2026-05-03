@@ -1,16 +1,16 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: cadprice-worker
-  namespace: cadprice
+  name: nxs-worker
+  namespace: nxs
   labels:
     app.kubernetes.io/name: worker
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: cadprice-worker
+    name: nxs-worker
   minReplicas: 1
   maxReplicas: 5
   metrics:

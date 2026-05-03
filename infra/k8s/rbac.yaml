@@ -1,28 +1,28 @@
-# Explicit zero-permission Role + RoleBinding for the cadprice ServiceAccount.
+# Explicit zero-permission Role + RoleBinding for the nxs ServiceAccount.
 # Ensures that even if automountServiceAccountToken is later enabled,
 # the SA has no permissions by default (least-privilege).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: cadprice-no-permissions
-  namespace: cadprice
+  name: nxs-no-permissions
+  namespace: nxs
   labels:
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
 # rules intentionally empty — grants zero permissions
 rules: []
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: cadprice-no-permissions
-  namespace: cadprice
+  name: nxs-no-permissions
+  namespace: nxs
   labels:
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
 subjects:
   - kind: ServiceAccount
-    name: cadprice
-    namespace: cadprice
+    name: nxs
+    namespace: nxs
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: cadprice-no-permissions
+  name: nxs-no-permissions

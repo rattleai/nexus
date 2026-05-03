@@ -1,7 +1,7 @@
-# Infrastructure Template Review: CADPrice vs. Pre-Existing Templates
+# Infrastructure Template Review: NEXUS vs. Pre-Existing Templates
 
 **Date:** 2026-03-19
-**Scope:** Evaluate whether CADPrice should keep its current codebase or migrate to one of three pre-existing infrastructure templates.
+**Scope:** Evaluate whether NEXUS should keep its current codebase or migrate to one of three pre-existing infrastructure templates.
 
 ---
 
@@ -27,9 +27,9 @@
 - Copier-based project scaffolding
 - Playwright E2E tests, pytest backend tests
 
-### What CADPrice Already Has That This Template Lacks
+### What NEXUS Already Has That This Template Lacks
 
-| Capability | CADPrice | Template |
+| Capability | NEXUS | Template |
 |---|---|---|
 | Multi-tenancy with RLS | Yes (Row-Level Security at DB level) | No |
 | API key auth with scopes | Yes (per-tenant, fine-grained) | No |
@@ -49,7 +49,7 @@
 | Idempotency keys | Yes | No |
 | GDPR compliance | DSAR, consent tracking, data retention, purge | No |
 | Internationalization | i18next (EN, DE) | No |
-| CLI tool | Typer-based CLI (`cadprice`) | No |
+| CLI tool | Typer-based CLI (`nxs`) | No |
 | Feature flags | Environment + per-tenant overrides | No |
 | Webhook system | HMAC-signed with retry/delivery tracking | No |
 | Rate limiting | Tiered, per-endpoint configurable | No |
@@ -59,7 +59,7 @@
 | Security scanning (SAST) | Bandit, pip-audit, gitleaks, Trivy, cosign | No |
 
 ### Assessment
-The template covers a narrow subset of CADPrice's functionality. It is a starter kit for basic CRUD apps with auth. CADPrice has **35+ models, 25+ route modules, and 19,000+ lines of backend code** built on top of domain-specific logic (AI billing, agent orchestration, multi-tenancy, GDPR) that this template does not address. Migrating would mean rebuilding nearly everything on a simpler foundation.
+The template covers a narrow subset of NEXUS's functionality. It is a starter kit for basic CRUD apps with auth. NEXUS has **35+ models, 25+ route modules, and 19,000+ lines of backend code** built on top of domain-specific logic (AI billing, agent orchestration, multi-tenancy, GDPR) that this template does not address. Migrating would mean rebuilding nearly everything on a simpler foundation.
 
 ---
 
@@ -77,9 +77,9 @@ The template covers a narrow subset of CADPrice's functionality. It is a starter
 - Multi-DB support (PostgreSQL, MySQL, SQLite)
 - 4 domain models (User, Post, Tier, RateLimit)
 
-### What CADPrice Already Has That This Boilerplate Lacks
+### What NEXUS Already Has That This Boilerplate Lacks
 
-| Capability | CADPrice | Boilerplate |
+| Capability | NEXUS | Boilerplate |
 |---|---|---|
 | Multi-tenancy with RLS | Yes | No |
 | API key auth with scopes | Yes | No |
@@ -102,11 +102,11 @@ The template covers a narrow subset of CADPrice's functionality. It is a starter
 | PgBouncer | Yes | No |
 | Security scanning pipeline | Yes | No |
 
-### Overlap With CADPrice
-Both use: FastAPI + SQLAlchemy async + PostgreSQL + Alembic + Redis + JWT + structlog + Ruff + mypy + pytest. The boilerplate's ARQ workers, tiered rate limiting, and caching patterns are conceptually present in CADPrice (via Celery and Redis), though implemented differently.
+### Overlap With NEXUS
+Both use: FastAPI + SQLAlchemy async + PostgreSQL + Alembic + Redis + JWT + structlog + Ruff + mypy + pytest. The boilerplate's ARQ workers, tiered rate limiting, and caching patterns are conceptually present in NEXUS (via Celery and Redis), though implemented differently.
 
 ### Assessment
-This boilerplate provides a cleaner starting point than the Full Stack Template, particularly with its structured logging, tiered rate limiting, and ARQ workers. However, it is a **backend-only scaffold with 4 models** compared to CADPrice's **35+ models and full frontend**. Adopting it would require porting all business logic, which negates the boilerplate's value.
+This boilerplate provides a cleaner starting point than the Full Stack Template, particularly with its structured logging, tiered rate limiting, and ARQ workers. However, it is a **backend-only scaffold with 4 models** compared to NEXUS's **35+ models and full frontend**. Adopting it would require porting all business logic, which negates the boilerplate's value.
 
 ---
 
@@ -120,18 +120,18 @@ This boilerplate provides a cleaner starting point than the Full Stack Template,
 - Selective endpoint exposure via operation ID / tag filtering
 - 3 lines of code to add MCP to any FastAPI app
 
-### How CADPrice Currently Handles MCP
+### How NEXUS Currently Handles MCP
 - Uses `fastmcp` 3.1+ with a dedicated `app/mcp/` module
 - 8 hand-written tool files: AI, agents, billing, files, jobs, team, webhooks, base
 - Supports stdio + HTTP transports
 - Tool annotations (readOnly, costImplication) for Claude
 - `/.well-known/mcp` discovery endpoint
-- Separate CLI entry point (`cadprice-mcp`)
+- Separate CLI entry point (`nxs-mcp`)
 - Per-tenant API key authentication
 
 ### Comparison
 
-| Aspect | CADPrice (fastmcp) | fastapi_mcp |
+| Aspect | NEXUS (fastmcp) | fastapi_mcp |
 |---|---|---|
 | Tool definition | Hand-written, curated per domain | Auto-generated from OpenAPI spec |
 | Tool descriptions | Custom, LLM-optimized | Derived from OpenAPI docs |
@@ -143,13 +143,13 @@ This boilerplate provides a cleaner starting point than the Full Stack Template,
 | Maintenance burden | Must update tools when API changes | Automatic sync with API changes |
 
 ### Assessment
-`fastapi_mcp` is a useful **complementary library**, not a replacement for the platform. It could reduce maintenance if CADPrice wanted auto-generated MCP tools, but CADPrice's hand-written tools offer advantages: curated descriptions optimized for LLMs, custom annotations (cost implications), and selective exposure that doesn't leak internal endpoints. The two approaches could coexist — use `fastapi_mcp` for broad coverage and hand-written tools for critical paths.
+`fastapi_mcp` is a useful **complementary library**, not a replacement for the platform. It could reduce maintenance if NEXUS wanted auto-generated MCP tools, but NEXUS's hand-written tools offer advantages: curated descriptions optimized for LLMs, custom annotations (cost implications), and selective exposure that doesn't leak internal endpoints. The two approaches could coexist — use `fastapi_mcp` for broad coverage and hand-written tools for critical paths.
 
 ---
 
 ## Quantitative Gap Summary
 
-| Metric | CADPrice | Full Stack Template | Boilerplate | fastapi_mcp |
+| Metric | NEXUS | Full Stack Template | Boilerplate | fastapi_mcp |
 |---|---|---|---|---|
 | **Type** | Production SaaS platform | Starter template | Backend scaffold | Library |
 | **Backend LoC** | ~19,000 | ~2,000 | ~3,000 | ~2,500 |
@@ -172,11 +172,11 @@ This boilerplate provides a cleaner starting point than the Full Stack Template,
 
 **Keep the current codebase.** Rationale:
 
-1. **The templates solve a different problem.** They are starting points for new projects. CADPrice is a mature platform (~19,000 LoC, 35+ models, 48+ test files) that has already grown far beyond what any of these templates provide. Migrating would mean rebuilding the same functionality on a slightly different foundation — high cost, no functional gain.
+1. **The templates solve a different problem.** They are starting points for new projects. NEXUS is a mature platform (~19,000 LoC, 35+ models, 48+ test files) that has already grown far beyond what any of these templates provide. Migrating would mean rebuilding the same functionality on a slightly different foundation — high cost, no functional gain.
 
-2. **No architectural misalignment.** CADPrice already uses the same core stack as both templates (FastAPI + SQLAlchemy async + PostgreSQL + Alembic + Redis + JWT + Ruff + mypy + pytest). There is no fundamental architectural debt that a template migration would fix.
+2. **No architectural misalignment.** NEXUS already uses the same core stack as both templates (FastAPI + SQLAlchemy async + PostgreSQL + Alembic + Redis + JWT + Ruff + mypy + pytest). There is no fundamental architectural debt that a template migration would fix.
 
-3. **Domain-specific logic cannot be templated.** CADPrice's value lies in its domain features: multi-tenant AI billing, agent orchestration with governance, GDPR compliance, MCP tooling, and Stripe-integrated wallet systems. No template provides these.
+3. **Domain-specific logic cannot be templated.** NEXUS's value lies in its domain features: multi-tenant AI billing, agent orchestration with governance, GDPR compliance, MCP tooling, and Stripe-integrated wallet systems. No template provides these.
 
 4. **Migration cost is prohibitive.** Rewriting 19,000+ lines of backend code plus a full React frontend to conform to a template's conventions would take significant engineering time with zero net feature gain.
 
@@ -190,4 +190,4 @@ While a full migration is not recommended, the following ideas from the template
 | `fastapi_mcp` for auto-exposing new endpoints | fastapi_mcp | Low | Reduces MCP tool maintenance; complements existing hand-written tools |
 | Copier/cookiecutter scaffolding for new microservices | Full Stack Template | Low | Standardizes future service bootstrapping |
 | CRUDAdmin panel for internal ops | Boilerplate | Medium | Quick internal data inspection without custom admin UI |
-| ARQ as lightweight alternative for simple async tasks | Boilerplate | Medium | Simpler than Celery for non-critical background work (CADPrice already uses Celery, so benefit is marginal) |
+| ARQ as lightweight alternative for simple async tasks | Boilerplate | Medium | Simpler than Celery for non-critical background work (NEXUS already uses Celery, so benefit is marginal) |

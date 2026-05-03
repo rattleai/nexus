@@ -2,7 +2,7 @@
 
 
 
-from app.cli.client import CadpriceClient, CLIError
+from app.cli.client import NexusClient, CLIError
 
 
 def test_cli_error_properties():
@@ -12,14 +12,14 @@ def test_cli_error_properties():
     assert err.hint == "try again"
 
 
-def test_cadprice_client_sets_headers():
-    client = CadpriceClient("http://localhost:8000", "test-key")
+def test_nxs_client_sets_headers():
+    client = NexusClient("http://localhost:8000", "test-key")
     assert client._client.headers["X-API-Key"] == "test-key"
-    assert "cadprice-cli" in client._client.headers["User-Agent"]
+    assert "nxs-cli" in client._client.headers["User-Agent"]
     client.close()
 
 
-def test_cadprice_client_strips_trailing_slash():
-    client = CadpriceClient("http://localhost:8000/", "key")
+def test_nxs_client_strips_trailing_slash():
+    client = NexusClient("http://localhost:8000/", "key")
     assert client.base_url == "http://localhost:8000"
     client.close()

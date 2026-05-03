@@ -42,8 +42,8 @@
        registerType: 'autoUpdate',
        includeAssets: ['favicon.ico'],
        manifest: {
-         name: 'CAD Price',
-         short_name: 'CADPrice',
+         name: 'NEXUS',
+         short_name: 'NEXUS',
          description: 'CAD pricing and job management platform',
          theme_color: '#4f46e5',
          background_color: '#ffffff',
@@ -285,7 +285,7 @@
 1. **Create theme store**
    - File: `frontend/src/stores/theme-store.ts`
    - Zustand store with `theme: 'light' | 'dark' | 'system'`
-   - Persist to `localStorage` key `cadprice-theme`
+   - Persist to `localStorage` key `nxs-theme`
    - Apply `.dark` class to `<html>` element
    - Listen to `prefers-color-scheme` media query when theme is `system`
 
@@ -761,7 +761,7 @@
    - Commands:
      ```bash
      npm install @capacitor/core @capacitor/cli
-     npx cap init "CAD Price" "com.cadprice.app" --web-dir dist
+     npx cap init "NEXUS" "com.nxs.app" --web-dir dist
      npm install @capacitor/ios @capacitor/android
      npx cap add ios
      npx cap add android
@@ -928,15 +928,15 @@ File: `.env.example`
 # PWA / Push Notifications
 VAPID_PRIVATE_KEY=
 VAPID_PUBLIC_KEY=
-VAPID_MAILTO=admin@cadprice.com
+VAPID_MAILTO=admin@example.com
 
 # Firebase (for native push)
 FIREBASE_SERVICE_ACCOUNT_JSON=
 
 # WebAuthn
-WEBAUTHN_RP_ID=cadprice.com
-WEBAUTHN_RP_NAME=CAD Price
-WEBAUTHN_ORIGIN=https://cadprice.com
+WEBAUTHN_RP_ID=example.com
+WEBAUTHN_RP_NAME=NEXUS
+WEBAUTHN_ORIGIN=https://example.com
 
 # CDN
 CDN_BASE_URL=

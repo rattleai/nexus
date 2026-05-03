@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────
-# CAD Price — Terraform Variable Values
+# NEXUS — Terraform Variable Values
 # ──────────────────────────────────────────────────────────────
 # Copy this file to terraform.tfvars and fill in real values.
 # NEVER commit terraform.tfvars to version control.
@@ -13,7 +13,7 @@ environment = "prod"
 # ── Networking ───────────────────────────────────────────────
 
 vpc_cidr        = "10.0.0.0/16"
-domain_name     = "cadprice.com"
+domain_name     = "example.com"
 route53_zone_id = ""  # Leave empty if managing DNS externally
 
 # ── Database ─────────────────────────────────────────────────
@@ -30,7 +30,7 @@ redis_node_type = "cache.t4g.small"
 
 # ── ECS / Containers ────────────────────────────────────────
 
-container_image   = "ghcr.io/your-org/cadprice:latest"
+container_image   = "ghcr.io/your-org/nxs:latest"
 api_cpu           = 1024    # 1 vCPU
 api_memory        = 2048    # 2 GB
 api_desired_count = 2
@@ -58,7 +58,7 @@ brevo_api_key         = ""
 
 # ── CORS ─────────────────────────────────────────────────────
 
-cors_origins = "https://cadprice.com"
+cors_origins = "https://example.com"
 
 # ── S3 ───────────────────────────────────────────────────────
 

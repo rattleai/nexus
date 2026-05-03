@@ -205,7 +205,7 @@ class AgentRuntime:
         with _otel_span(
             "gen_ai.agent.run",
             **{
-                "gen_ai.system": "cadprice",
+                "gen_ai.system": "nxs",
                 "gen_ai.agent.id": str(self.definition.id),
                 "gen_ai.agent.name": self.definition.name,
                 "gen_ai.request.model": self.definition.model,

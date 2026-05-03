@@ -2,7 +2,7 @@
 
 ## Context
 
-PR #48 introduces a product configurator, configurable BOM, and pricing engine into cadprice_cp. The goal is to evaluate this implementation against gold standards from best-in-class CPQ systems (Salesforce CPQ, Oracle CPQ, Tacton, PROS, Epicor), PDM/PLM platforms (Siemens Teamcenter, PTC Windchill, Dassault ENOVIA, Arena PLM), and ERP configurators (SAP S/4HANA Variant Configuration, Microsoft Dynamics 365, Infor CloudSuite). This analysis identifies gaps and improvement opportunities to make the platform truly best-in-class -- bridging CPQ and PDM worlds.
+PR #48 introduces a product configurator, configurable BOM, and pricing engine into nxs_cp. The goal is to evaluate this implementation against gold standards from best-in-class CPQ systems (Salesforce CPQ, Oracle CPQ, Tacton, PROS, Epicor), PDM/PLM platforms (Siemens Teamcenter, PTC Windchill, Dassault ENOVIA, Arena PLM), and ERP configurators (SAP S/4HANA Variant Configuration, Microsoft Dynamics 365, Infor CloudSuite). This analysis identifies gaps and improvement opportunities to make the platform truly best-in-class -- bridging CPQ and PDM worlds.
 
 ---
 

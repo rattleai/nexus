@@ -29,7 +29,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project   = "cadprice"
+      Project   = "nxs"
       ManagedBy = "terraform-bootstrap"
     }
   }
@@ -44,13 +44,13 @@ variable "aws_region" {
 variable "bucket_name" {
   description = "S3 bucket name for Terraform state"
   type        = string
-  default     = "cadprice-terraform-state"
+  default     = "nxs-terraform-state"
 }
 
 variable "dynamodb_table_name" {
   description = "DynamoDB table name for state locking"
   type        = string
-  default     = "cadprice-terraform-locks"
+  default     = "nxs-terraform-locks"
 }
 
 # ── S3 Bucket for State ─────────────────────────────────
