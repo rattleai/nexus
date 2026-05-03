@@ -54,6 +54,21 @@ make fe-build    # also regenerates routeTree.gen.ts
 CI runs the same checks plus SAST (Bandit), dependency audit (pip-audit), secret scan
 (Gitleaks), container scan (Trivy), and CodeQL.
 
+### Pre-commit hooks (recommended)
+
+Install once per clone:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+The hook set in [`.pre-commit-config.yaml`](.pre-commit-config.yaml) runs ruff (lint + format),
+prettier on the frontend, gitleaks on the diff, basic file-hygiene checks (trailing whitespace,
+end-of-file, large files, private keys, merge-conflict markers), and a guard that prevents
+historical brand references from re-entering the codebase. Run on demand with
+`pre-commit run --all-files`.
+
 ## Building a plugin
 
 Most application code goes in `app/apps/<your_plugin>/` (backend) and
