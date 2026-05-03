@@ -59,7 +59,7 @@ import { LoadingState } from "@/components/loading-state"
 import { ErrorState } from "@/components/error-state"
 import { EmptyState } from "@/components/empty-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
-import { CharacteristicGroupsPanel } from "@/components/settings/characteristic-groups-panel"
+import { CharacteristicGroupsPanel } from "@/apps/cpq/components/settings/characteristic-groups-panel"
 import {
   useCharacteristics,
   useCharacteristicGroups,

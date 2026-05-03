@@ -1,5 +1,5 @@
 import { createLazyFileRoute, useParams } from "@tanstack/react-router"
-import { CharacteristicDetail } from "@/components/settings/characteristic-detail"
+import { CharacteristicDetail } from "@/apps/cpq/components/settings/characteristic-detail"
 
 export const Route = createLazyFileRoute("/settings/characteristics/$charId")({
   component: CharacteristicDetailLayout,
