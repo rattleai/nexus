@@ -1,4 +1,4 @@
-"""Webhook subcommands for the CADPrice CLI."""
+"""Webhook subcommands for the NEXUS CLI."""
 
 from __future__ import annotations
 

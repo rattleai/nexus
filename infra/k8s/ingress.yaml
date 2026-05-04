@@ -1,11 +1,11 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: cadprice-api
-  namespace: cadprice
+  name: nxs-api
+  namespace: nxs
   labels:
     app.kubernetes.io/name: api
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
   annotations:
     # cert-manager TLS
     cert-manager.io/cluster-issuer: letsencrypt-prod
@@ -52,27 +52,27 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - cadprice.com
-        - www.cadprice.com
-      secretName: cadprice-tls
+        - example.com
+        - www.example.com
+      secretName: nxs-tls
   rules:
-    - host: cadprice.com
+    - host: example.com
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: cadprice-api
+                name: nxs-api
                 port:
                   name: http
-    - host: www.cadprice.com
+    - host: www.example.com
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: cadprice-api
+                name: nxs-api
                 port:
                   name: http

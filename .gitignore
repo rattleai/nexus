@@ -50,6 +50,10 @@ coverage.xml
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+!**/test*.pem
+!**/test*.key
 
 # Kubernetes secrets (use secrets.yaml.template + SealedSecrets)
 infra/k8s/secrets.yaml
@@ -59,6 +63,10 @@ infra/k8s/secrets.yaml
 # ──────────────────────────────────────────────
 node_modules/
 frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
+frontend/coverage/
+frontend/storybook-static/
 openapi.json
 
 # ──────────────────────────────────────────────

@@ -1,28 +1,28 @@
 {
-  "name": "cadprice",
+  "name": "nxs",
   "version": "1.0.0",
-  "description": "CADPrice SaaS platform — AI gateway, agent orchestration, billing, and file management",
+  "description": "NEXUS SaaS platform — AI gateway, agent orchestration, billing, and file management",
   "mcpServers": {
-    "cadprice": {
+    "nxs": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "-e", "CADPRICE_API_KEY", "ghcr.io/mngapps/cadprice-mcp:latest"],
+      "args": ["run", "-i", "--rm", "-e", "NXS_API_KEY", "ghcr.io/${{ github.repository_owner }}/nxs-mcp:latest"],
       "cwd": "${extensionPath}"
     }
   },
   "settings": [
     {
       "name": "API Key",
-      "description": "Your CADPrice API key (get one at https://cadprice.com/settings/api-keys)",
-      "envVariable": "CADPRICE_API_KEY",
+      "description": "Your NEXUS API key (get one at https://example.com/settings/api-keys)",
+      "envVariable": "NXS_API_KEY",
       "sensitive": true
     },
     {
       "name": "API URL",
-      "description": "API base URL (default: https://api.cadprice.com)",
-      "envVariable": "CADPRICE_API_URL",
+      "description": "API base URL (default: https://api.example.com)",
+      "envVariable": "NXS_API_URL",
       "sensitive": false
     }
   ],
-  "contextFileName": "CADPRICE.md",
+  "contextFileName": "NXS.md",
   "excludeTools": []
 }

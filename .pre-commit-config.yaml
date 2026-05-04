@@ -1,0 +1,61 @@
+# Run on every commit:  pre-commit install
+# Run against the whole repo:  pre-commit run --all-files
+# CI mirrors this configuration in .github/workflows/ci.yml
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: check-yaml
+        args: [--unsafe]   # GitHub Actions YAML uses tags like !reference
+      - id: check-toml
+      - id: check-json
+        exclude: |
+          (?x)^(
+            frontend/tsconfig.*\.json|
+            frontend/components\.json
+          )$
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.4
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        files: ^frontend/.*\.(ts|tsx|js|jsx|json|md|yml|yaml|css)$
+        exclude: |
+          (?x)^(
+            frontend/src/routeTree\.gen\.ts|
+            frontend/package-lock\.json|
+            frontend/dist/|
+            frontend/coverage/
+          )
+
+  - repo: local
+    hooks:
+      - id: no-cadprice-leak
+        name: Prevent CADPrice/cadprice/mngapps from re-entering the codebase
+        entry: bash -c 'if git diff --cached -G "cadprice|CADPrice|Cadprice|CadPrice|CAD Price|mngapps" --name-only | grep -v "^CHANGELOG.md$" | grep -q .; then echo "Forbidden brand reference detected. See CONTRIBUTING.md."; exit 1; fi'
+        language: system
+        pass_filenames: false

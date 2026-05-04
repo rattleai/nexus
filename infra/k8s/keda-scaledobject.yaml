@@ -6,14 +6,14 @@
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: cadprice-worker-scaler
-  namespace: cadprice
+  name: nxs-worker-scaler
+  namespace: nxs
   labels:
     app.kubernetes.io/name: worker
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
 spec:
   scaleTargetRef:
-    name: cadprice-worker
+    name: nxs-worker
   pollingInterval: 15
   cooldownPeriod: 60
   minReplicaCount: 1

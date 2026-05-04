@@ -62,7 +62,7 @@ const DEFAULT_MODELS: AIModel[] = [
 
 export function useModelSelection({
   defaultModel = "gpt-4o",
-  storageKey = "cadprice-selected-model",
+  storageKey = "nxs-selected-model",
 }: UseModelSelectionOptions = {}) {
   const [models] = React.useState<AIModel[]>(DEFAULT_MODELS)
   const [isLoading] = React.useState(false)

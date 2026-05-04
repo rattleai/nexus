@@ -2,7 +2,7 @@
 
 ## Context
 
-The cadprice infrastructure is an application-agnostic, agent-first, AI-first, API-first platform built with Python/FastAPI, PostgreSQL (with RLS), Redis, and Celery. It already has strong security fundamentals: parameterized ORM queries, RLS tenant isolation, AES-256-GCM encryption, JWT+API key auth, OWASP guardrails, agent governance with spending limits, and subprocess sandboxing.
+The nxs infrastructure is an application-agnostic, agent-first, AI-first, API-first platform built with Python/FastAPI, PostgreSQL (with RLS), Redis, and Celery. It already has strong security fundamentals: parameterized ORM queries, RLS tenant isolation, AES-256-GCM encryption, JWT+API key auth, OWASP guardrails, agent governance with spending limits, and subprocess sandboxing.
 
 However, to achieve **production-grade, best-in-class** status for autonomous AI agents, gaps exist in: multi-layered prompt injection defense, database interaction hardening for agent-generated queries, advanced sandboxing, real-time threat detection, agent communication integrity, supply chain verification, and compliance automation. This plan addresses those gaps based on OWASP Top 10 for LLM (2025), NIST AI RMF, MITRE ATLAS, Google SAIF 2.0, and EU AI Act requirements.
 

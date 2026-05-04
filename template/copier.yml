@@ -1,11 +1,11 @@
-# Copier template for CADPrice microservices.
+# Copier template for NEXUS microservices.
 #
 # Usage:
 #   pip install copier
 #   copier copy template/ services/my-new-service
 #
 # Or from a remote repo:
-#   copier copy gh:yourorg/cadprice-template services/my-new-service
+#   copier copy gh:yourorg/nxs-template services/my-new-service
 
 _min_copier_version: "9.0.0"
 _subdirectory: "{{project_slug}}"
@@ -30,7 +30,7 @@ python_package:
 
 description:
   type: str
-  default: "A CADPrice microservice"
+  default: "A NEXUS microservice"
   help: "Short description for pyproject.toml and Docker labels"
 
 port:
@@ -56,8 +56,8 @@ include_redis:
 
 author_name:
   type: str
-  default: "CADPrice Team"
+  default: "NEXUS Team"
 
 author_email:
   type: str
-  default: "team@cadprice.com"
+  default: "team@example.com"

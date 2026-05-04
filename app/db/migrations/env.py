@@ -1,5 +1,7 @@
 import asyncio
+import os
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy import pool
@@ -7,7 +9,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import settings
 from app.db.base import Base
-from app.plugins.registry import discover_plugins  # noqa: E402
+from app.plugins.registry import discover_plugins, registry as plugin_registry  # noqa: E402
 
 # Discover plugins so their models register on Base.metadata
 discover_plugins()
@@ -19,6 +21,18 @@ config = context.config
 # Use DATABASE_MIGRATION_URL if set, otherwise fall back to DATABASE_URL.
 _migration_url = settings.DATABASE_MIGRATION_URL or settings.DATABASE_URL
 config.set_main_option("sqlalchemy.url", _migration_url)
+
+# Compose version_locations from the core path plus every enabled plugin
+# that ships an `app/apps/<name>/migrations/versions/` directory. Plugin
+# migration files chain into the core history via `down_revision`. See
+# docs/PLUGINS.md, "Migrations".
+_repo_root = Path(__file__).resolve().parents[3]
+_version_locations: list[str] = [str(_repo_root / "app" / "db" / "migrations" / "versions")]
+for _plugin in plugin_registry:
+    _candidate = _repo_root / "app" / "apps" / _plugin.name / "migrations" / "versions"
+    if _candidate.is_dir():
+        _version_locations.append(str(_candidate))
+config.set_main_option("version_locations", os.pathsep.join(_version_locations))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

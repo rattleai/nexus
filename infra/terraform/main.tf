@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────
-# CAD Price SaaS Platform — Terraform Root Module
+# NEXUS SaaS Platform — Terraform Root Module
 # ──────────────────────────────────────────────────────────────
 
 terraform {
@@ -20,10 +20,10 @@ terraform {
   # Run `cd infra/terraform/bootstrap && terraform apply` first,
   # then `cd .. && terraform init -migrate-state` to migrate.
   backend "s3" {
-    bucket         = "cadprice-terraform-state"
+    bucket         = "nxs-terraform-state"
     key            = "prod/terraform.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "cadprice-terraform-locks"
+    dynamodb_table = "nxs-terraform-locks"
     encrypt        = true
   }
 }
@@ -33,7 +33,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "cadprice"
+      Project     = "nxs"
       Environment = var.environment
       ManagedBy   = "terraform"
     }
@@ -52,11 +52,11 @@ data "aws_availability_zones" "available" {
 # ── Locals ───────────────────────────────────────────────────
 
 locals {
-  name_prefix = "cadprice-${var.environment}"
+  name_prefix = "nxs-${var.environment}"
   azs         = slice(data.aws_availability_zones.available.names, 0, 2)
 
   common_tags = {
-    Project     = "cadprice"
+    Project     = "nxs"
     Environment = var.environment
   }
 }

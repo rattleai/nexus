@@ -1,11 +1,11 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cadprice-beat
-  namespace: cadprice
+  name: nxs-beat
+  namespace: nxs
   labels:
     app.kubernetes.io/name: beat
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
     app.kubernetes.io/component: scheduler
 spec:
   replicas: 1
@@ -16,17 +16,17 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: beat
-      app.kubernetes.io/part-of: cadprice
+      app.kubernetes.io/part-of: nxs
   template:
     metadata:
       labels:
         app.kubernetes.io/name: beat
-        app.kubernetes.io/part-of: cadprice
+        app.kubernetes.io/part-of: nxs
         app.kubernetes.io/component: scheduler
     spec:
-      serviceAccountName: cadprice
+      serviceAccountName: nxs
       automountServiceAccountToken: false
-      priorityClassName: cadprice-standard
+      priorityClassName: nxs-standard
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
@@ -37,7 +37,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: beat
-          image: ghcr.io/OWNER/cadprice:latest
+          image: ghcr.io/OWNER/nxs:latest
           imagePullPolicy: IfNotPresent
           command:
             - celery
@@ -47,9 +47,9 @@ spec:
             - --loglevel=info
           envFrom:
             - configMapRef:
-                name: cadprice-config
+                name: nxs-config
             - secretRef:
-                name: cadprice-secrets
+                name: nxs-secrets
           env:
             - name: PYTHONPATH
               value: /app
@@ -101,14 +101,14 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: cadprice-beat-pdb
-  namespace: cadprice
+  name: nxs-beat-pdb
+  namespace: nxs
   labels:
     app.kubernetes.io/name: beat
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
 spec:
   minAvailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: beat
-      app.kubernetes.io/part-of: cadprice
+      app.kubernetes.io/part-of: nxs

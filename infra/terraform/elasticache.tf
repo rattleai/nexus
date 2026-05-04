@@ -49,7 +49,7 @@ resource "random_password" "redis_auth" {
 
 resource "aws_elasticache_replication_group" "main" {
   replication_group_id = "${local.name_prefix}-redis"
-  description          = "CAD Price Redis cluster"
+  description          = "NEXUS Redis cluster"
 
   engine               = "redis"
   engine_version       = "7.1"

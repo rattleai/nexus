@@ -1,7 +1,7 @@
 # Gold Standard SaaS Infrastructure Evaluation
 
 **Date**: 2026-03-07
-**Codebase**: CAD Price — Multi-tenant SaaS Platform
+**Codebase**: NEXUS — Multi-tenant SaaS Platform
 **Stack**: FastAPI + PostgreSQL + Redis + React 19 + TailwindCSS v4
 
 ---

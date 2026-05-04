@@ -9,14 +9,14 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: pgbouncer-config
-  namespace: cadprice
+  namespace: nxs
   labels:
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
     app.kubernetes.io/component: database
 data:
   pgbouncer.ini: |
     [databases]
-    cadprice = host=${DB_HOST} port=5432 dbname=cadprice
+    nxs = host=${DB_HOST} port=5432 dbname=nxs
 
     [pgbouncer]
     listen_addr = 0.0.0.0

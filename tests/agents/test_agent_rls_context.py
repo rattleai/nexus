@@ -37,7 +37,7 @@ class TestToolExecutorRLSContext:
         """The tool executor must re-set RLS context before dispatching to registry."""
         from app.agents.setup import build_tool_executor
 
-        definition = make_agent_definition(allowed_tools=["config_create_product"])
+        definition = make_agent_definition(allowed_tools=["example_do_thing"])
         db = make_mock_db()
 
         mock_registry = AsyncMock()
@@ -45,19 +45,19 @@ class TestToolExecutorRLSContext:
         mock_set_ctx = AsyncMock()
 
         with (
-            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["config_create_product"]),
+            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["example_do_thing"]),
             patch("app.agents.tool_registry.tool_registry", mock_registry),
             patch("app.db.session.set_tenant_context", mock_set_ctx),
         ):
             executor = build_tool_executor(definition, TENANT_ID, db)
-            result = await executor("config_create_product", {"name": "Batmobile", "slug": "batmobile"})
+            result = await executor("example_do_thing", {"name": "Batmobile", "slug": "batmobile"})
 
         # set_tenant_context must have been called with the correct tenant_id
         mock_set_ctx.assert_called_once_with(db, str(TENANT_ID))
 
         # The tool registry must have been invoked after the context was set
         mock_registry.invoke.assert_called_once_with(
-            tool_name="config_create_product",
+            tool_name="example_do_thing",
             arguments={"name": "Batmobile", "slug": "batmobile"},
             tenant_id=TENANT_ID,
             db=db,
@@ -69,7 +69,7 @@ class TestToolExecutorRLSContext:
         """Each tool call should re-set context, not just the first one."""
         from app.agents.setup import build_tool_executor
 
-        definition = make_agent_definition(allowed_tools=["config_create_product", "config_list_products"])
+        definition = make_agent_definition(allowed_tools=["example_do_thing", "example_list_things"])
         db = make_mock_db()
 
         mock_registry = AsyncMock()
@@ -77,13 +77,13 @@ class TestToolExecutorRLSContext:
         mock_set_ctx = AsyncMock()
 
         with (
-            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["config_create_product", "config_list_products"]),
+            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["example_do_thing", "example_list_things"]),
             patch("app.agents.tool_registry.tool_registry", mock_registry),
             patch("app.db.session.set_tenant_context", mock_set_ctx),
         ):
             executor = build_tool_executor(definition, TENANT_ID, db)
-            await executor("config_create_product", {"name": "A", "slug": "a"})
-            await executor("config_list_products", {})
+            await executor("example_do_thing", {"name": "A", "slug": "a"})
+            await executor("example_list_things", {})
 
         # Should be called twice -- once per tool invocation
         assert mock_set_ctx.call_count == 2
@@ -106,7 +106,7 @@ class TestToolExecutorRLSContext:
             patch("app.db.session.set_tenant_context", mock_set_ctx),
         ):
             executor = build_tool_executor(definition, TENANT_ID, db)
-            result = await executor("config_create_product", {"name": "A", "slug": "a"})
+            result = await executor("example_do_thing", {"name": "A", "slug": "a"})
 
         assert "not allowed" in result["error"]
         mock_set_ctx.assert_not_called()
@@ -116,7 +116,7 @@ class TestToolExecutorRLSContext:
         """A failing tool invocation should return an error dict, not raise."""
         from app.agents.setup import build_tool_executor
 
-        definition = make_agent_definition(allowed_tools=["config_create_product"])
+        definition = make_agent_definition(allowed_tools=["example_do_thing"])
         db = make_mock_db()
 
         mock_registry = AsyncMock()
@@ -124,12 +124,12 @@ class TestToolExecutorRLSContext:
         mock_set_ctx = AsyncMock()
 
         with (
-            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["config_create_product"]),
+            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["example_do_thing"]),
             patch("app.agents.tool_registry.tool_registry", mock_registry),
             patch("app.db.session.set_tenant_context", mock_set_ctx),
         ):
             executor = build_tool_executor(definition, TENANT_ID, db)
-            result = await executor("config_create_product", {"name": "A", "slug": "a"})
+            result = await executor("example_do_thing", {"name": "A", "slug": "a"})
 
         assert "error" in result
         assert "DB exploded" in result["error"]
@@ -233,15 +233,15 @@ class TestPluginToolErrorRecovery:
 
         # Create a mock plugin whose invoke_tool raises
         mock_plugin = MagicMock()
-        mock_plugin.name = "cpq"
-        mock_plugin.get_agent_tool_definitions.return_value = {"config_create_product": {}}
+        mock_plugin.name = "example"
+        mock_plugin.get_agent_tool_definitions.return_value = {"example_do_thing": {}}
         mock_plugin.invoke_tool = AsyncMock(
             side_effect=RuntimeError("RLS violation")
         )
 
         with patch("app.plugins.registry.registry", [mock_plugin]):
             result = await registry._invoke_plugin_tool(
-                "config_create_product",
+                "example_do_thing",
                 {"name": "Test", "slug": "test"},
                 tenant,
                 db,
@@ -262,15 +262,15 @@ class TestPluginToolErrorRecovery:
         tenant = MagicMock(id=TENANT_ID)
 
         mock_plugin = MagicMock()
-        mock_plugin.name = "cpq"
-        mock_plugin.get_agent_tool_definitions.return_value = {"config_create_product": {}}
+        mock_plugin.name = "example"
+        mock_plugin.get_agent_tool_definitions.return_value = {"example_do_thing": {}}
         mock_plugin.invoke_tool = AsyncMock(
             side_effect=ValueError("bad input")
         )
 
         with patch("app.plugins.registry.registry", [mock_plugin]):
             result = await registry._invoke_plugin_tool(
-                "config_create_product",
+                "example_do_thing",
                 {"name": "Test", "slug": "test"},
                 tenant,
                 db,
@@ -291,8 +291,8 @@ class TestPluginToolErrorRecovery:
         tenant = MagicMock(id=TENANT_ID)
 
         mock_plugin = MagicMock()
-        mock_plugin.name = "cpq"
-        mock_plugin.get_agent_tool_definitions.return_value = {"config_create_product": {}}
+        mock_plugin.name = "example"
+        mock_plugin.get_agent_tool_definitions.return_value = {"example_do_thing": {}}
         mock_plugin.invoke_tool = AsyncMock(
             side_effect=RuntimeError("RLS violation")
         )
@@ -300,7 +300,7 @@ class TestPluginToolErrorRecovery:
         with patch("app.plugins.registry.registry", [mock_plugin]):
             # Must not raise even though rollback failed
             result = await registry._invoke_plugin_tool(
-                "config_create_product",
+                "example_do_thing",
                 {"name": "Test", "slug": "test"},
                 tenant,
                 db,
@@ -400,7 +400,7 @@ class TestRunStreamRLSContext:
         definition = make_agent_definition(
             max_steps_per_run=3,
             max_tokens_per_run=100_000,
-            allowed_tools=["config_create_product"],
+            allowed_tools=["example_do_thing"],
             output_schema={},
             governance_policy={},
         )
@@ -422,7 +422,7 @@ class TestRunStreamRLSContext:
                     content="Let me create a product.",
                     tool_calls=[{
                         "id": "call_1",
-                        "name": "config_create_product",
+                        "name": "example_do_thing",
                         "arguments": '{"name": "Batmobile", "slug": "batmobile"}',
                     }],
                 )
@@ -475,57 +475,7 @@ class TestRunStreamRLSContext:
 
 
 # ===================================================================
-# 6. Migration 0023: CPQ tables get WITH CHECK + FORCE
-# ===================================================================
-
-
-class TestMigration0023:
-    """Verify migration 0023 targets all 19 CPQ tables."""
-
-    def test_all_cpq_tables_listed(self):
-        """The migration must cover every table from migration 0016."""
-        import importlib
-        mod = importlib.import_module(
-            "app.db.migrations.versions.0026_cpq_rls_with_check"
-        )
-
-        expected_tables = {
-            "product_families",
-            "products",
-            "product_versions",
-            "characteristic_groups",
-            "characteristics",
-            "characteristic_values",
-            "characteristic_assignments",
-            "constraint_groups",
-            "constraint_rules",
-            "variant_tables",
-            "product_media",
-            "bom_headers",
-            "bom_items",
-            "configuration_templates",
-            "configuration_sessions",
-            "configuration_selections",
-            "configured_boms",
-            "pricing_rules",
-            "configuration_pricing",
-        }
-
-        assert set(mod.CPQ_RLS_TABLES) == expected_tables
-
-    def test_migration_revision_chain(self):
-        """0026 must depend on 0025."""
-        import importlib
-        mod = importlib.import_module(
-            "app.db.migrations.versions.0026_cpq_rls_with_check"
-        )
-
-        assert mod.revision == "0026_cpq_rls_with_check"
-        assert mod.down_revision == "0025_capability_model"
-
-
-# ===================================================================
-# 7. Regression: tool failure does not break subsequent tool calls
+# 6. Regression: tool failure does not break subsequent tool calls
 # ===================================================================
 
 
@@ -538,7 +488,7 @@ class TestToolFailureIsolation:
         from app.agents.setup import build_tool_executor
 
         definition = make_agent_definition(
-            allowed_tools=["config_create_product", "config_list_products"]
+            allowed_tools=["example_do_thing", "example_list_things"]
         )
         db = make_mock_db()
 
@@ -556,18 +506,18 @@ class TestToolFailureIsolation:
         mock_set_ctx = AsyncMock()
 
         with (
-            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["config_create_product", "config_list_products"]),
+            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["example_do_thing", "example_list_things"]),
             patch("app.agents.tool_registry.tool_registry", mock_registry),
             patch("app.db.session.set_tenant_context", mock_set_ctx),
         ):
             executor = build_tool_executor(definition, TENANT_ID, db)
 
             # First call fails
-            result1 = await executor("config_create_product", {"name": "A", "slug": "a"})
+            result1 = await executor("example_do_thing", {"name": "A", "slug": "a"})
             assert "error" in result1
 
             # Second call should succeed -- context was re-set
-            result2 = await executor("config_list_products", {})
+            result2 = await executor("example_list_things", {})
             assert result2 == {"products": []}
 
         # set_tenant_context called before each invocation

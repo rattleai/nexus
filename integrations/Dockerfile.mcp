@@ -4,8 +4,8 @@
 # that supports Docker-based servers.
 #
 # Usage:
-#   docker build -f integrations/Dockerfile.mcp -t cadprice-mcp .
-#   docker run -i --rm -e CADPRICE_API_KEY=your-key cadprice-mcp
+#   docker build -f integrations/Dockerfile.mcp -t nxs-mcp .
+#   docker run -i --rm -e NXS_API_KEY=your-key nxs-mcp
 
 FROM python:3.12-slim
 

@@ -2,11 +2,11 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cadprice-gpu-worker
-  namespace: cadprice
+  name: nxs-gpu-worker
+  namespace: nxs
   labels:
     app.kubernetes.io/name: gpu-worker
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
     app.kubernetes.io/component: worker
 spec:
   replicas: 0  # Scale up manually or via KEDA when needed
@@ -19,17 +19,17 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: gpu-worker
-      app.kubernetes.io/part-of: cadprice
+      app.kubernetes.io/part-of: nxs
   template:
     metadata:
       labels:
         app.kubernetes.io/name: gpu-worker
-        app.kubernetes.io/part-of: cadprice
+        app.kubernetes.io/part-of: nxs
         app.kubernetes.io/component: worker
     spec:
-      serviceAccountName: cadprice
+      serviceAccountName: nxs
       automountServiceAccountToken: false
-      priorityClassName: cadprice-standard
+      priorityClassName: nxs-standard
       terminationGracePeriodSeconds: 120
       securityContext:
         runAsNonRoot: true
@@ -47,7 +47,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: gpu-worker
-          image: ghcr.io/OWNER/cadprice:latest
+          image: ghcr.io/OWNER/nxs:latest
           imagePullPolicy: IfNotPresent
           command:
             - celery
@@ -60,9 +60,9 @@ spec:
             - gpu
           envFrom:
             - configMapRef:
-                name: cadprice-config
+                name: nxs-config
             - secretRef:
-                name: cadprice-secrets
+                name: nxs-secrets
           env:
             - name: PYTHONPATH
               value: /app

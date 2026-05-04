@@ -198,7 +198,7 @@ def enrich_openapi_schema(schema: dict[str, Any]) -> dict[str, Any]:
     # Add server-level agent metadata
     schema.setdefault("info", {})
     schema["info"]["x-agent-compatible"] = True
-    schema["info"]["x-mcp-server"] = "cadprice-mcp"
+    schema["info"]["x-mcp-server"] = "nxs-mcp"
     schema["info"]["x-auth-methods"] = ["api-key", "oauth-client-credentials"]
 
     return schema

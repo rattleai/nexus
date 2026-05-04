@@ -1,12 +1,12 @@
 # Plugin Distribution Guide
 
-This directory contains manifests and configuration for distributing the CADPrice platform as a native plugin across AI providers.
+This directory contains manifests and configuration for distributing the NEXUS platform as a native plugin across AI providers.
 
 ## Architecture
 
 ```
                     ┌─────────────────────────┐
-                    │   CADPrice MCP Server    │
+                    │   NEXUS MCP Server    │
                     │  (Streamable HTTP/stdio) │
                     └────────────┬────────────┘
                                  │
@@ -28,9 +28,9 @@ Add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "cadprice": {
+    "nxs": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "-e", "CADPRICE_API_KEY", "ghcr.io/mngapps/cadprice-mcp:latest"]
+      "args": ["run", "-i", "--rm", "-e", "NXS_API_KEY", "ghcr.io/${{ github.repository_owner }}/nxs-mcp:latest"]
     }
   }
 }
@@ -42,8 +42,8 @@ MCP servers are consumed natively:
 {
   "tools": [{
     "type": "mcp",
-    "server_label": "cadprice",
-    "server_url": "https://mcp.cadprice.com/mcp",
+    "server_label": "nxs",
+    "server_url": "https://mcp.example.com/mcp",
     "headers": { "Authorization": "Bearer YOUR_API_KEY" }
   }]
 }
@@ -51,14 +51,14 @@ MCP servers are consumed natively:
 
 ### OpenAI (GPT Actions)
 1. Create a Custom GPT in ChatGPT
-2. Add Action → Import from URL: `https://api.cadprice.com/.well-known/ai-plugin.json`
+2. Add Action → Import from URL: `https://api.example.com/.well-known/ai-plugin.json`
 3. Configure authentication (Bearer token with your API key)
 
 ### Langdock
 1. Go to Integrations → Add Integration → MCP Server
-2. Enter URL: `https://mcp.cadprice.com/mcp`
+2. Enter URL: `https://mcp.example.com/mcp`
 3. Select authentication: API Key
-4. Enter your CADPrice API key
+4. Enter your NEXUS API key
 
 ### Microsoft 365 Copilot
 Uses the API plugin manifest at `/.well-known/ai-plugin.json` or the MCP server directly via manifest v2.4:
@@ -66,7 +66,7 @@ Uses the API plugin manifest at `/.well-known/ai-plugin.json` or the MCP server 
 {
   "runtime": {
     "type": "RemoteMCPServer",
-    "spec": { "url": "https://mcp.cadprice.com/mcp" }
+    "spec": { "url": "https://mcp.example.com/mcp" }
   }
 }
 ```
@@ -74,7 +74,7 @@ Uses the API plugin manifest at `/.well-known/ai-plugin.json` or the MCP server 
 ### Gemini CLI
 Install the extension from the GitHub repo:
 ```bash
-gemini extensions install https://github.com/mngapps/cadprice
+gemini extensions install https://github.com/rattleai/nxs
 ```
 Or manually copy `gemini-extension.json` to your extensions directory.
 
@@ -98,4 +98,4 @@ All integrations use one of:
 - **API Key**: Header `X-API-Key` or `Authorization: Bearer <key>`
 - **OAuth 2.1 + PKCE**: For MCP Streamable HTTP transport (production)
 
-Get API keys at: `https://cadprice.com/settings/api-keys`
+Get API keys at: `https://example.com/settings/api-keys`

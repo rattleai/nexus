@@ -1,6 +1,6 @@
 """App plugin protocol and base class.
 
-Each application (CPQ, ERP, CRM, ...) subclasses ``AppPluginBase`` and
+Each application (CRM, ERP, project tracker, ...) subclasses ``AppPluginBase`` and
 exposes a module-level ``PLUGIN`` instance in its ``plugin.py`` file.
 The infrastructure discovers these at startup and wires in the
 contributed routers, models, MCP tools, scopes, etc.
@@ -36,11 +36,11 @@ class ToolCapability:
     """A named group of tools representing a single permission scope.
 
     Used by the capability resolver to map human-friendly scopes
-    (e.g. ``cpq:products:write``) to the underlying tool names that
+    (e.g. ``myapp:items:write``) to the underlying tool names that
     the agent runtime understands.
     """
 
-    slug: str  # e.g. "cpq:products:write"
+    slug: str  # e.g. "myapp:items:write"
     label: str  # e.g. "Create & Edit Products"
     description: str
     tools: tuple[str, ...]  # Tool names this capability grants
@@ -52,8 +52,8 @@ class ToolCapability:
 class CapabilityDomain:
     """Top-level grouping of capabilities, typically one per plugin."""
 
-    slug: str  # e.g. "cpq"
-    label: str  # e.g. "Product Configurator"
+    slug: str  # e.g. "myapp"
+    label: str  # e.g. "Customer Relationship Management"
     icon: str  # Lucide icon name
     capabilities: tuple[ToolCapability, ...]
 
@@ -93,7 +93,7 @@ class AppPluginBase(abc.ABC):
     @property
     @abc.abstractmethod
     def name(self) -> str:
-        """Unique machine-readable name (e.g. ``'cpq'``, ``'erp'``)."""
+        """Unique machine-readable name (e.g. ``'example'``, ``'erp'``, ``'crm'``)."""
         ...
 
     @property
@@ -111,7 +111,7 @@ class AppPluginBase(abc.ABC):
     def feature_flag(self) -> str:
         """Env var that enables/disables this plugin.
 
-        Convention: ``APP_{NAME}_ENABLED`` (e.g. ``APP_CPQ_ENABLED``).
+        Convention: ``APP_{NAME}_ENABLED`` (e.g. ``APP_EXAMPLE_ENABLED``).
         Default behaviour in the registry: enabled when the variable is
         absent or set to a truthy value.
         """

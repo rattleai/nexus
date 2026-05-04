@@ -12,7 +12,7 @@ import typer
 
 from app import __version__
 from app.cli.branding import API_KEY_ENV, BASE_URL_ENV, CLI_DISPLAY_NAME, CLI_NAME
-from app.cli.client import CadpriceClient, CLIError
+from app.cli.client import NexusClient, CLIError
 from app.cli.commands.ai import ai_app
 from app.cli.commands.api_key import api_key_app
 from app.cli.commands.billing import billing_app
@@ -94,7 +94,7 @@ def main(
         raise typer.Exit(code=1)
 
     ctx.ensure_object(dict)
-    ctx.obj["client"] = CadpriceClient(base_url=base_url, api_key=api_key)
+    ctx.obj["client"] = NexusClient(base_url=base_url, api_key=api_key)
     ctx.obj["output"] = output_format
 
 

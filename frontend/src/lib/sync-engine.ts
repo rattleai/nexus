@@ -33,8 +33,8 @@ interface SyncPushResponse {
   }>
 }
 
-const SYNC_VERSION_KEY = "cadprice-sync-version"
-const PENDING_CHANGES_KEY = "cadprice-pending-changes"
+const SYNC_VERSION_KEY = "nxs-sync-version"
+const PENDING_CHANGES_KEY = "nxs-pending-changes"
 
 /**
  * Offline-first sync engine.

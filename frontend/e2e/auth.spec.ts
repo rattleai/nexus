@@ -3,7 +3,7 @@ import { test, expect, TEST_USER } from "./fixtures"
 test.describe("Authentication Flows - Unauthenticated", () => {
   test("landing page shows sign in and register CTAs", async ({ page }) => {
     await page.goto("/")
-    await expect(page.getByText("Welcome to CAD Price")).toBeVisible()
+    await expect(page.getByText("Welcome to NEXUS")).toBeVisible()
     await expect(page.getByRole("link", { name: "Sign In" })).toBeVisible()
     await expect(page.getByRole("link", { name: "Create Account" })).toBeVisible()
   })
@@ -58,7 +58,7 @@ test.describe("Authentication Flows - Unauthenticated", () => {
 
   test("protected route redirects when unauthenticated", async ({ page }) => {
     await page.goto("/jobs")
-    await expect(page.getByText("Welcome to CAD Price")).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText("Welcome to NEXUS")).toBeVisible({ timeout: 10_000 })
   })
 })
 
@@ -67,7 +67,7 @@ test.describe("Authentication Flows - Authenticated", () => {
     await page.getByLabel("User menu").click()
     await page.getByText("Sign out").click()
 
-    await expect(page.getByText("Welcome to CAD Price")).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText("Welcome to NEXUS")).toBeVisible({ timeout: 10_000 })
   })
 
   test("session persists across page reload", async ({ authenticatedPage: page }) => {

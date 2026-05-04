@@ -1,4 +1,4 @@
-"""Export subcommands for the CADPrice CLI."""
+"""Export subcommands for the NEXUS CLI."""
 
 from __future__ import annotations
 
