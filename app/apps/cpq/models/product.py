@@ -19,13 +19,11 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin, VersionMixin
-
 
 # ── Enums ────────────────────────────────────────────────
 
@@ -105,15 +103,14 @@ class Product(SoftDeleteMixin, AuditMixin, VersionMixin, TimestampMixin, Base):
     constraint_groups: Mapped[list[ConstraintGroup]] = relationship(
         back_populates="product", cascade="all, delete-orphan"
     )
-    variant_tables: Mapped[list[VariantTable]] = relationship(
-        back_populates="product", cascade="all, delete-orphan"
-    )
+    variant_tables: Mapped[list[VariantTable]] = relationship(back_populates="product", cascade="all, delete-orphan")
     # Cross-module relationships (lazy string references)
-    bom_headers: Mapped[list["BOMHeader"]] = relationship(  # noqa: F821
-        back_populates="product", cascade="all, delete-orphan",
+    bom_headers: Mapped[list[BOMHeader]] = relationship(  # noqa: F821
+        back_populates="product",
+        cascade="all, delete-orphan",
         foreign_keys="[BOMHeader.product_id]",
     )
-    pricing_rules: Mapped[list["PricingRule"]] = relationship(  # noqa: F821
+    pricing_rules: Mapped[list[PricingRule]] = relationship(  # noqa: F821
         cascade="all, delete-orphan",
         foreign_keys="[PricingRule.product_id]",
     )
@@ -164,9 +161,7 @@ class CharacteristicGroup(SoftDeleteMixin, TimestampMixin, Base):
 
     characteristics: Mapped[list[Characteristic]] = relationship(back_populates="group", cascade="all, delete-orphan")
 
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "slug", name="uq_char_group_slug"),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", "slug", name="uq_char_group_slug"),)
 
 
 class Characteristic(SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
@@ -176,7 +171,9 @@ class Characteristic(SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    group_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("characteristic_groups.id"), nullable=True, index=True)
+    group_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("characteristic_groups.id"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -214,9 +211,7 @@ class CharacteristicValue(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    characteristic_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("characteristics.id"), nullable=False, index=True
-    )
+    characteristic_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("characteristics.id"), nullable=False, index=True)
     value: Mapped[str] = mapped_column(String(500), nullable=False)
     label: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -242,9 +237,7 @@ class CharacteristicAssignment(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     product_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
-    characteristic_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("characteristics.id"), nullable=False, index=True
-    )
+    characteristic_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("characteristics.id"), nullable=False, index=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0)
     is_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     default_value: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -278,9 +271,7 @@ class ConstraintGroup(SoftDeleteMixin, TimestampMixin, Base):
     product: Mapped[Product] = relationship(back_populates="constraint_groups")
     rules: Mapped[list[ConstraintRule]] = relationship(back_populates="group", cascade="all, delete-orphan")
 
-    __table_args__ = (
-        Index("ix_constraint_groups_product", "product_id"),
-    )
+    __table_args__ = (Index("ix_constraint_groups_product", "product_id"),)
 
 
 class ConstraintRule(SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
@@ -300,9 +291,7 @@ class ConstraintRule(SoftDeleteMixin, VersionMixin, TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     product_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
-    group_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("constraint_groups.id"), nullable=True, index=True
-    )
+    group_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("constraint_groups.id"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     constraint_type: Mapped[ConstraintType] = mapped_column(
@@ -341,9 +330,7 @@ class VariantTable(TimestampMixin, Base):
 
     product: Mapped[Product] = relationship(back_populates="variant_tables")
 
-    __table_args__ = (
-        Index("ix_variant_tables_product", "product_id"),
-    )
+    __table_args__ = (Index("ix_variant_tables_product", "product_id"),)
 
 
 # ── Media / Asset Layer ──────────────────────────────────

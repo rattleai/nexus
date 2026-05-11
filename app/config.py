@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     JWT_ALGORITHM: str = "RS256"
     JWT_PRIVATE_KEY: str = ""  # PEM-encoded RSA private key for RS256 JWT signing
-    JWT_PUBLIC_KEY: str = ""   # PEM-encoded RSA public key for RS256 JWT verification
+    JWT_PUBLIC_KEY: str = ""  # PEM-encoded RSA public key for RS256 JWT verification
     JWT_PUBLIC_KEY_PREVIOUS: str = ""  # Previous public key for seamless key rotation (multi-key JWKS)
     OAUTH_GOOGLE_CLIENT_ID: str = ""
     OAUTH_GOOGLE_CLIENT_SECRET: str = ""
@@ -73,16 +73,60 @@ class Settings(BaseSettings):
     PASSWORD_RESET_EXPIRE_HOURS: int = 1
     APP_BASE_URL: str = "http://localhost:3000"
 
-    # Cloud Drive OAuth
-    GOOGLE_DRIVE_CLIENT_ID: str = ""
-    GOOGLE_DRIVE_CLIENT_SECRET: str = ""
-    GOOGLE_DRIVE_REDIRECT_URI: str = ""
-    DROPBOX_APP_KEY: str = ""
-    DROPBOX_APP_SECRET: str = ""
-    DROPBOX_REDIRECT_URI: str = ""
-    ONEDRIVE_CLIENT_ID: str = ""
-    ONEDRIVE_CLIENT_SECRET: str = ""
-    ONEDRIVE_REDIRECT_URI: str = ""
+    # ── Connector System ─────────────────────────────────
+    CONNECTOR_ENABLED: bool = True
+    CONNECTOR_MCP_POOL_MAX_PER_SERVER: int = 3
+    CONNECTOR_MCP_IDLE_TIMEOUT_SECONDS: int = 300
+    CONNECTOR_MCP_CONNECT_TIMEOUT_SECONDS: int = 10
+    CONNECTOR_MCP_REQUEST_TIMEOUT_SECONDS: int = 30
+    CONNECTOR_HTTP_REQUEST_TIMEOUT_SECONDS: int = 30
+    CONNECTOR_TOOL_CACHE_TTL_SECONDS: int = 300
+    CONNECTOR_HEALTH_CHECK_INTERVAL_SECONDS: int = 300
+    CONNECTOR_MAX_CONNECTIONS_PER_TENANT: int = 50
+    CONNECTOR_CREDENTIAL_REFRESH_BUFFER_SECONDS: int = 300
+    CONNECTOR_MAX_TOOL_OUTPUT_BYTES: int = 51200  # 50KB
+
+    # Rate limiting (per user × per connector) — token bucket in Redis
+    CONNECTOR_RATE_LIMIT_REQUESTS_PER_MINUTE: int = 60
+    CONNECTOR_RATE_LIMIT_BURST: int = 30
+
+    # Signed registry verification (P1.3)
+    CONNECTOR_REGISTRY_PUBLIC_KEY_PATH: str = ""
+    CONNECTOR_REGISTRY_URL: str = "https://registry.modelcontextprotocol.io"
+    CONNECTOR_REGISTRY_ALLOW_UNTRUSTED: bool = False
+
+    # Durable execution (P1.4)
+    CONNECTOR_DURABLE_EXECUTION_ENABLED: bool = True
+    CONNECTOR_DURABLE_MAX_ATTEMPTS: int = 3
+    CONNECTOR_DURABLE_RETRY_INITIAL_SECONDS: float = 1.0
+    CONNECTOR_DURABLE_RETRY_BACKOFF: float = 2.0
+
+    # Composio broker (P2.2)
+    COMPOSIO_API_KEY: str = ""
+    COMPOSIO_BASE_URL: str = "https://backend.composio.dev"
+    # Default broker for connectors whose YAML does not specify one.
+    # In-house is the default so tenant OAuth tokens stay inside the deployment
+    # boundary unless an operator explicitly opts in to Composio. Flip to
+    # "composio" when COMPOSIO_API_KEY is configured and the data-residency /
+    # vendor-trust trade-off has been signed off on. Individual connector YAMLs
+    # may still pin broker="composio" regardless of this default.
+    CONNECTOR_DEFAULT_BROKER: str = "in_house"  # "composio" | "in_house"
+
+    # HashiCorp Vault for in-house credentials (P2.3, optional)
+    VAULT_ADDR: str = ""
+    VAULT_TOKEN: str = ""
+    VAULT_TRANSIT_KEY: str = "connector-tokens"
+
+    # Cedar policy engine (P3.1)
+    CONNECTOR_CEDAR_ENABLED: bool = False
+    CONNECTOR_CEDAR_POLICY_DIR: str = "app/authz/policies"
+
+    # Cloud-drive ingest (Dropbox / Google Drive / OneDrive → RAG)
+    CLOUD_DRIVE_MAX_FILE_SIZE_MB: int = 50
+    CLOUD_DRIVE_LIST_PAGE_SIZE: int = 100
+
+    # A2A (P3.2)
+    CONNECTOR_A2A_ENABLED: bool = False
 
     # Billing (Stripe)
     STRIPE_SECRET_KEY: str = ""
@@ -126,13 +170,13 @@ class Settings(BaseSettings):
     # Margin multipliers — applied to provider cost (USD)
     # Platform keys: platform bears provider cost, higher margin
     # BYOK keys: tenant pays provider directly, lower infrastructure fee
-    AI_MARGIN_PLATFORM_KEYS: float = 1.20   # 20% margin on platform-managed keys
-    AI_MARGIN_BYOK_KEYS: float = 1.05       # 5% infrastructure fee on BYOK
+    AI_MARGIN_PLATFORM_KEYS: float = 1.20  # 20% margin on platform-managed keys
+    AI_MARGIN_BYOK_KEYS: float = 1.05  # 5% infrastructure fee on BYOK
 
     AI_WALLET_LOW_BALANCE_THRESHOLD: float = 5.00  # USD threshold for low balance warning
 
     # Auto-refill limits
-    AI_AUTO_REFILL_MIN_AMOUNT: float = 5.00   # Minimum auto-refill amount in USD
+    AI_AUTO_REFILL_MIN_AMOUNT: float = 5.00  # Minimum auto-refill amount in USD
     AI_AUTO_REFILL_MAX_AMOUNT: float = 500.00  # Maximum auto-refill amount in USD
     AI_CACHE_ENABLED: bool = True
     AI_CACHE_TTL_SECONDS: int = 3600
@@ -145,7 +189,7 @@ class Settings(BaseSettings):
     AI_MISTRAL_API_KEY: str = ""
     AI_DEEPSEEK_API_KEY: str = ""
     AI_QWEN_API_KEY: str = ""
-    AI_QWEN_API_BASE: str = ""              # Custom base URL for Qwen (e.g. DashScope)
+    AI_QWEN_API_BASE: str = ""  # Custom base URL for Qwen (e.g. DashScope)
     AI_ALEPH_ALPHA_API_KEY: str = ""
     AI_XAI_API_KEY: str = ""
 
@@ -170,7 +214,7 @@ class Settings(BaseSettings):
     AGENT_MAX_STEPS_PER_RUN: int = 50
     AGENT_MAX_DURATION_SECONDS: int = 300
     AGENT_MAX_TOKENS_PER_RUN: int = 100_000
-    AGENT_SANDBOX_ENABLED: bool = False       # Opt-in code execution sandbox
+    AGENT_SANDBOX_ENABLED: bool = False  # Opt-in code execution sandbox
     AGENT_SANDBOX_MEMORY_MB: int = 256
     AGENT_SANDBOX_CPU_SECONDS: int = 30
     AGENT_SANDBOX_TIMEOUT_SECONDS: int = 60
@@ -180,15 +224,15 @@ class Settings(BaseSettings):
     AGENT_MAX_CONVERSATION_MESSAGES: int = 100  # Max messages in conversation window
 
     # Agent Resilience — configurable stale detection thresholds
-    AGENT_HEARTBEAT_STALE_SECONDS: int = 300        # Mark RUNNING as stale if no heartbeat
-    AGENT_PENDING_STALE_SECONDS: int = 600           # Mark PENDING as failed
-    AGENT_LEGACY_STALE_SECONDS: int = 3600           # Fallback for pre-heartbeat instances
+    AGENT_HEARTBEAT_STALE_SECONDS: int = 300  # Mark RUNNING as stale if no heartbeat
+    AGENT_PENDING_STALE_SECONDS: int = 600  # Mark PENDING as failed
+    AGENT_LEGACY_STALE_SECONDS: int = 3600  # Fallback for pre-heartbeat instances
 
     # Agent Conversations (multi-turn interactive sessions)
-    AGENT_SESSION_IDLE_TIMEOUT_SECONDS: int = 3600    # Default idle timeout for interactive sessions
-    AGENT_SESSION_MAX_TURNS: int = 50                  # Max follow-up turns per conversation
-    AGENT_SESSION_SLIDING_TTL: bool = True             # Extend session TTL on each turn
-    AGENT_CONVERSATION_LOCK_TIMEOUT: int = 30          # Redis lock timeout for concurrent reply safety
+    AGENT_SESSION_IDLE_TIMEOUT_SECONDS: int = 3600  # Default idle timeout for interactive sessions
+    AGENT_SESSION_MAX_TURNS: int = 50  # Max follow-up turns per conversation
+    AGENT_SESSION_SLIDING_TTL: bool = True  # Extend session TTL on each turn
+    AGENT_CONVERSATION_LOCK_TIMEOUT: int = 30  # Redis lock timeout for concurrent reply safety
 
     # Agent Memory
     AGENT_MEMORY_SHORT_TTL_SECONDS: int = 3600
@@ -227,7 +271,7 @@ class Settings(BaseSettings):
     VECTOR_INDEX_TYPE: str = "hnsw"
 
     # HNSW index build parameters — used when creating/rebuilding indexes.
-    HNSW_M: int = 24              # edges per node (higher = better recall, larger index)
+    HNSW_M: int = 24  # edges per node (higher = better recall, larger index)
     HNSW_EF_CONSTRUCTION: int = 128  # build-time search width (higher = better index quality)
 
     # HNSW query-time tuning — controls recall vs. latency trade-off.
@@ -308,7 +352,7 @@ class Settings(BaseSettings):
     # Phase 1 — A2A Security
     AGENT_A2A_SIGNING_ENABLED: bool = True
     AGENT_A2A_ENCRYPTION_ENABLED: bool = True
-    AGENT_A2A_LEGACY_DECRYPT: bool = True              # Allow no-AAD fallback for legacy messages (set False after migration)
+    AGENT_A2A_LEGACY_DECRYPT: bool = True  # Allow no-AAD fallback for legacy messages (set False after migration)
 
     # Phase 1 — Tool Verification
     AGENT_TOOL_SCHEMA_VERIFICATION: bool = True
@@ -330,7 +374,7 @@ class Settings(BaseSettings):
     EVENT_BUS_CONSUMER_GROUP: str = "platform"
     EVENT_BUS_BLOCK_MS: int = 5000
     AGENT_RATE_LIMIT_WINDOW_SECONDS: int = 60
-    AGENT_RATE_LIMIT_FAIL_OPEN: bool = False           # If True, allow requests when Redis rate limiter unavailable (dev only)
+    AGENT_RATE_LIMIT_FAIL_OPEN: bool = False  # If True, allow requests when Redis rate limiter unavailable (dev only)
     OAUTH_CLIENT_CREDENTIALS_ENABLED: bool = False
 
     # ── Application plugin feature flags ──
@@ -338,21 +382,35 @@ class Settings(BaseSettings):
     # Listed here for documentation; actual gating is in app.plugins.registry.
     APP_CPQ_ENABLED: bool = True
 
-    # (Cloud Drive OAuth settings are defined above — do not duplicate here.)
+    # (Connector OAuth credentials are stored per-connector in connector_definitions.)
 
     # Allowed scope values for API keys
     VALID_SCOPES: list[str] = [
-        "jobs:read", "jobs:write",
-        "files:read", "files:write",
-        "api-keys:read", "api-keys:write",
-        "team:read", "team:write",
-        "webhooks:read", "webhooks:write",
-        "billing:read", "billing:write",
+        "jobs:read",
+        "jobs:write",
+        "files:read",
+        "files:write",
+        "api-keys:read",
+        "api-keys:write",
+        "team:read",
+        "team:write",
+        "webhooks:read",
+        "webhooks:write",
+        "billing:read",
+        "billing:write",
         "audit:read",
-        "ai:read", "ai:write", "ai:admin",
-        "mcp:read", "mcp:write",
-        "agents:read", "agents:write", "agents:admin", "agents:execute",
-        "cloud-connections:read", "cloud-connections:write",
+        "ai:read",
+        "ai:write",
+        "ai:admin",
+        "mcp:read",
+        "mcp:write",
+        "agents:read",
+        "agents:write",
+        "agents:admin",
+        "agents:execute",
+        "connections:read",
+        "connections:write",
+        "connections:admin",
         # App-specific scopes are contributed dynamically via plugins.
         # See app.plugins.registry — scopes are appended after discovery.
     ]
@@ -360,11 +418,13 @@ class Settings(BaseSettings):
     # Scopes that must never be granted to API keys.  These control critical
     # infrastructure (key management, audit trail) that should only be
     # accessible from the application UI via JWT-authenticated sessions.
-    INFRASTRUCTURE_SCOPES: frozenset[str] = frozenset({
-        "api-keys:read",
-        "api-keys:write",
-        "audit:read",
-    })
+    INFRASTRUCTURE_SCOPES: frozenset[str] = frozenset(
+        {
+            "api-keys:read",
+            "api-keys:write",
+            "audit:read",
+        }
+    )
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -507,12 +567,13 @@ def _validate_security_config() -> None:
 
     # ── RAG / Vector config validation ────────────────────────
     if settings.VECTOR_QUANTIZATION not in ("full", "half", "binary"):
-        errors.append(
-            f"VECTOR_QUANTIZATION must be 'full', 'half', or 'binary', "
-            f"got '{settings.VECTOR_QUANTIZATION}'"
-        )
+        errors.append(f"VECTOR_QUANTIZATION must be 'full', 'half', or 'binary', got '{settings.VECTOR_QUANTIZATION}'")
     if settings.RAG_CHUNKING_STRATEGY not in (
-        "fixed_size", "recursive", "markdown", "semantic", "late",
+        "fixed_size",
+        "recursive",
+        "markdown",
+        "semantic",
+        "late",
     ):
         errors.append(
             f"RAG_CHUNKING_STRATEGY must be fixed_size|recursive|markdown|semantic|late, "
@@ -520,14 +581,10 @@ def _validate_security_config() -> None:
         )
     if settings.RAG_RERANKER_PROVIDER not in ("none", "cohere", "cross_encoder"):
         errors.append(
-            f"RAG_RERANKER_PROVIDER must be none|cohere|cross_encoder, "
-            f"got '{settings.RAG_RERANKER_PROVIDER}'"
+            f"RAG_RERANKER_PROVIDER must be none|cohere|cross_encoder, got '{settings.RAG_RERANKER_PROVIDER}'"
         )
     if settings.VECTOR_INDEX_TYPE not in ("hnsw", "diskann"):
-        errors.append(
-            f"VECTOR_INDEX_TYPE must be 'hnsw' or 'diskann', "
-            f"got '{settings.VECTOR_INDEX_TYPE}'"
-        )
+        errors.append(f"VECTOR_INDEX_TYPE must be 'hnsw' or 'diskann', got '{settings.VECTOR_INDEX_TYPE}'")
     if not (0.0 <= settings.RAG_QUERY_LOG_SAMPLE_RATE <= 1.0):
         errors.append("RAG_QUERY_LOG_SAMPLE_RATE must be between 0.0 and 1.0")
     if not (0.0 < settings.RAG_QUERY_CACHE_SIMILARITY_THRESHOLD <= 1.0):
@@ -535,23 +592,19 @@ def _validate_security_config() -> None:
 
     # Validate enum values
     if settings.PROMPT_FIREWALL_FAIL_MODE not in ("log", "block"):
-        errors.append(
-            f"PROMPT_FIREWALL_FAIL_MODE must be 'log' or 'block', "
-            f"got '{settings.PROMPT_FIREWALL_FAIL_MODE}'"
-        )
+        errors.append(f"PROMPT_FIREWALL_FAIL_MODE must be 'log' or 'block', got '{settings.PROMPT_FIREWALL_FAIL_MODE}'")
 
     if settings.DATA_CLASSIFICATION_DEFAULT_LEVEL not in (
-        "PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED",
+        "PUBLIC",
+        "INTERNAL",
+        "CONFIDENTIAL",
+        "RESTRICTED",
     ):
-        errors.append(
-            f"Invalid DATA_CLASSIFICATION_DEFAULT_LEVEL: "
-            f"'{settings.DATA_CLASSIFICATION_DEFAULT_LEVEL}'"
-        )
+        errors.append(f"Invalid DATA_CLASSIFICATION_DEFAULT_LEVEL: '{settings.DATA_CLASSIFICATION_DEFAULT_LEVEL}'")
 
     if settings.AGENT_SANDBOX_BACKEND not in ("nsjail", "subprocess", "auto"):
         errors.append(
-            f"AGENT_SANDBOX_BACKEND must be 'nsjail', 'subprocess', or 'auto', "
-            f"got '{settings.AGENT_SANDBOX_BACKEND}'"
+            f"AGENT_SANDBOX_BACKEND must be 'nsjail', 'subprocess', or 'auto', got '{settings.AGENT_SANDBOX_BACKEND}'"
         )
 
     # Validate ranges
@@ -559,16 +612,13 @@ def _validate_security_config() -> None:
         errors.append("AGENT_DB_STATEMENT_TIMEOUT_MS must be between 100 and 300000")
 
     if settings.AGENT_THREAT_ANOMALY_WARN_SIGMA >= settings.AGENT_THREAT_ANOMALY_SUSPEND_SIGMA:
-        errors.append(
-            "AGENT_THREAT_ANOMALY_WARN_SIGMA must be less than SUSPEND_SIGMA"
-        )
+        errors.append("AGENT_THREAT_ANOMALY_WARN_SIGMA must be less than SUSPEND_SIGMA")
 
     # Production security posture warnings
     if not settings.DEBUG:
         if not settings.PROMPT_FIREWALL_ENABLED:
             warnings.warn(
-                "PROMPT_FIREWALL_ENABLED is False in production — "
-                "prompt injection attempts will not be detected.",
+                "PROMPT_FIREWALL_ENABLED is False in production — prompt injection attempts will not be detected.",
                 stacklevel=3,
             )
         if settings.PROMPT_FIREWALL_FAIL_MODE != "block":
@@ -585,13 +635,9 @@ def _validate_security_config() -> None:
             )
         if not settings.AGENT_A2A_ENCRYPTION_ENABLED:
             warnings.warn(
-                "AGENT_A2A_ENCRYPTION_ENABLED is False in production — "
-                "agent-to-agent messages will not be encrypted.",
+                "AGENT_A2A_ENCRYPTION_ENABLED is False in production — agent-to-agent messages will not be encrypted.",
                 stacklevel=3,
             )
 
     if errors:
-        raise RuntimeError(
-            "Agent security configuration errors:\n"
-            + "\n".join(f"  - {e}" for e in errors)
-        )
+        raise RuntimeError("Agent security configuration errors:\n" + "\n".join(f"  - {e}" for e in errors))

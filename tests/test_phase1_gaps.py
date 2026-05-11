@@ -4,28 +4,19 @@ Tests cover: P1.1 (numeric domains), P1.2 (quantity expressions), P1.3 (tiered p
 P1.4 (constraint analysis), P1.5 (N+1 fixes), P1.7 (simulation), P1.8 (cardinality).
 """
 
-import ast
-import math
 import uuid
-from dataclasses import dataclass
 from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
 
+from app.apps.cpq.engine.analyzer import ConstraintAnalyzer
+from app.apps.cpq.engine.bom_resolver import BOMResolver, ResolvedItem
 from app.apps.cpq.engine.engine import (
     CharacteristicInfo,
     ConfiguratorEngine,
-    DomainMap,
     NumericInterval,
-    SnapshotCharacteristic,
-    SnapshotConstraint,
-    _CharTypeProxy,
-    _ValueProxy,
 )
-from app.apps.cpq.engine.analyzer import ConstraintAnalyzer
-from app.apps.cpq.engine.bom_resolver import BOMResolver, ResolvedItem
-
 
 # ── P1.1: NumericInterval Tests ──────────────────────────
 
@@ -132,14 +123,20 @@ class TestBetweenOperator:
         assert result is False
 
     def test_between_boundary_inclusive(self):
-        assert self.engine._evaluate_condition(
-            {"char": "x", "op": "between", "value": [10, 20]},
-            {"x": "10"},
-        ) is True
-        assert self.engine._evaluate_condition(
-            {"char": "x", "op": "between", "value": [10, 20]},
-            {"x": "20"},
-        ) is True
+        assert (
+            self.engine._evaluate_condition(
+                {"char": "x", "op": "between", "value": [10, 20]},
+                {"x": "10"},
+            )
+            is True
+        )
+        assert (
+            self.engine._evaluate_condition(
+                {"char": "x", "op": "between", "value": [10, 20]},
+                {"x": "20"},
+            )
+            is True
+        )
 
     def test_between_missing_char(self):
         result = self.engine._evaluate_condition(
@@ -183,51 +180,55 @@ class TestNumericDomainPropagation:
         assert domains["weight"].max == 100.0
 
     def test_numeric_selection_sets_point(self):
-        from app.db.models import ConstraintType
         domains = {"weight": NumericInterval(min=0, max=100)}
-        result = self.engine._propagate(
-            domains, {"weight": "42"}, [], {}, {"weight"}
-        )
+        result = self.engine._propagate(domains, {"weight": "42"}, [], {}, {"weight"})
         d = result.domains["weight"]
         assert isinstance(d, NumericInterval)
         assert d.is_single_point()
         assert d.min == 42.0
 
     def test_numeric_requires_narrows_interval(self):
-        from app.db.models import ConstraintType
-        rule = self._make_constraint(ConstraintType.REQUIRES, {
-            "if": {"char": "engine", "op": "eq", "value": "V8"},
-            "then": {"char": "weight", "op": "gte", "value": 200},
-        })
+        from app.apps.cpq.models.product import ConstraintType
+
+        rule = self._make_constraint(
+            ConstraintType.REQUIRES,
+            {
+                "if": {"char": "engine", "op": "eq", "value": "V8"},
+                "then": {"char": "weight", "op": "gte", "value": 200},
+            },
+        )
         domains = {
             "engine": {"V8", "V6"},
             "weight": NumericInterval(min=0, max=500),
         }
-        result = self.engine._propagate(
-            domains, {"engine": "V8"}, [rule], {}, {"engine"}
-        )
+        result = self.engine._propagate(domains, {"engine": "V8"}, [rule], {}, {"engine"})
         d = result.domains["weight"]
         assert isinstance(d, NumericInterval)
         assert d.min == 200
         assert d.max == 500
 
     def test_numeric_contradiction(self):
-        from app.db.models import ConstraintType
-        rule1 = self._make_constraint(ConstraintType.REQUIRES, {
-            "if": {"char": "mode", "op": "eq", "value": "A"},
-            "then": {"char": "val", "op": "gte", "value": 100},
-        })
-        rule2 = self._make_constraint(ConstraintType.REQUIRES, {
-            "if": {"char": "mode", "op": "eq", "value": "A"},
-            "then": {"char": "val", "op": "lte", "value": 50},
-        })
+        from app.apps.cpq.models.product import ConstraintType
+
+        rule1 = self._make_constraint(
+            ConstraintType.REQUIRES,
+            {
+                "if": {"char": "mode", "op": "eq", "value": "A"},
+                "then": {"char": "val", "op": "gte", "value": 100},
+            },
+        )
+        rule2 = self._make_constraint(
+            ConstraintType.REQUIRES,
+            {
+                "if": {"char": "mode", "op": "eq", "value": "A"},
+                "then": {"char": "val", "op": "lte", "value": 50},
+            },
+        )
         domains = {
             "mode": {"A", "B"},
             "val": NumericInterval(min=0, max=500),
         }
-        result = self.engine._propagate(
-            domains, {"mode": "A"}, [rule1, rule2], {}, {"mode"}
-        )
+        result = self.engine._propagate(domains, {"mode": "A"}, [rule1, rule2], {}, {"mode"})
         assert "val" in result.contradictions
 
     def test_serialize_numeric_domains(self):
@@ -264,10 +265,16 @@ class TestQuantityExpressions:
 
     def _item(self, qty=Decimal("1"), expr=None):
         return ResolvedItem(
-            part_number="P001", part_name="Part", quantity=qty,
-            unit="EA", unit_cost=Decimal("10"), level=0,
-            parent_part=None, source_bom_item_id="bom1",
-            item_type="component", quantity_expression=expr,
+            part_number="P001",
+            part_name="Part",
+            quantity=qty,
+            unit="EA",
+            unit_cost=Decimal("10"),
+            level=0,
+            parent_part=None,
+            source_bom_item_id="bom1",
+            item_type="component",
+            quantity_expression=expr,
         )
 
     def test_no_expression_keeps_fixed(self):
@@ -276,58 +283,73 @@ class TestQuantityExpressions:
         assert result[0].quantity == Decimal("5")
 
     def test_simple_formula(self):
-        item = self._item(expr={
-            "type": "formula",
-            "expression": "count * 2",
-            "variables": {"count": "panel_count"},
-        })
+        item = self._item(
+            expr={
+                "type": "formula",
+                "expression": "count * 2",
+                "variables": {"count": "panel_count"},
+            }
+        )
         result = self.resolver._resolve_quantities([item], {"panel_count": "5"})
         assert result[0].quantity == Decimal("10.0000")
 
     def test_formula_with_addition(self):
-        item = self._item(expr={
-            "type": "formula",
-            "expression": "count * 2 + 1",
-            "variables": {"count": "panel_count"},
-        })
+        item = self._item(
+            expr={
+                "type": "formula",
+                "expression": "count * 2 + 1",
+                "variables": {"count": "panel_count"},
+            }
+        )
         result = self.resolver._resolve_quantities([item], {"panel_count": "3"})
         assert result[0].quantity == Decimal("7.0000")
 
     def test_missing_variable_keeps_fixed(self):
-        item = self._item(qty=Decimal("5"), expr={
-            "type": "formula",
-            "expression": "count * 2",
-            "variables": {"count": "missing_char"},
-        })
+        item = self._item(
+            qty=Decimal("5"),
+            expr={
+                "type": "formula",
+                "expression": "count * 2",
+                "variables": {"count": "missing_char"},
+            },
+        )
         result = self.resolver._resolve_quantities([item], {})
         assert result[0].quantity == Decimal("5")
 
     def test_division_by_zero_keeps_fixed(self):
-        item = self._item(qty=Decimal("5"), expr={
-            "type": "formula",
-            "expression": "count / zero",
-            "variables": {"count": "a", "zero": "b"},
-        })
+        item = self._item(
+            qty=Decimal("5"),
+            expr={
+                "type": "formula",
+                "expression": "count / zero",
+                "variables": {"count": "a", "zero": "b"},
+            },
+        )
         result = self.resolver._resolve_quantities([item], {"a": "10", "b": "0"})
         assert result[0].quantity == Decimal("5")
 
     def test_negative_result_keeps_fixed(self):
-        item = self._item(qty=Decimal("5"), expr={
-            "type": "formula",
-            "expression": "count - 100",
-            "variables": {"count": "a"},
-        })
+        item = self._item(
+            qty=Decimal("5"),
+            expr={
+                "type": "formula",
+                "expression": "count - 100",
+                "variables": {"count": "a"},
+            },
+        )
         result = self.resolver._resolve_quantities([item], {"a": "1"})
         assert result[0].quantity == Decimal("5")
 
     def test_clamp_min_max(self):
-        item = self._item(expr={
-            "type": "formula",
-            "expression": "count * 100",
-            "variables": {"count": "a"},
-            "min": 1,
-            "max": 50,
-        })
+        item = self._item(
+            expr={
+                "type": "formula",
+                "expression": "count * 100",
+                "variables": {"count": "a"},
+                "min": 1,
+                "max": 50,
+            }
+        )
         result = self.resolver._resolve_quantities([item], {"a": "10"})
         assert result[0].quantity == Decimal("50.0000")
 
@@ -434,7 +456,8 @@ class TestConstraintAnalyzer:
         return CharacteristicInfo(characteristic=char)
 
     def _mock_rule(self, ct_str, expression):
-        from app.db.models import ConstraintType
+        from app.apps.cpq.models.product import ConstraintType
+
         rule = MagicMock()
         rule.id = uuid.uuid4()
         rule.name = f"rule_{ct_str}"
@@ -450,10 +473,13 @@ class TestConstraintAnalyzer:
             "a": self._mock_char("a", values=["1", "2"]),
             "b": self._mock_char("b", values=["x", "y"]),
         }
-        rule = self._mock_rule("requires", {
-            "if": {"char": "a", "op": "eq", "value": "1"},
-            "then": {"char": "b", "value": "x"},
-        })
+        rule = self._mock_rule(
+            "requires",
+            {
+                "if": {"char": "a", "op": "eq", "value": "1"},
+                "then": {"char": "b", "value": "x"},
+            },
+        )
         result = self.analyzer.analyze(char_map, [rule], {})
         assert len(result.cycles) == 0
 
@@ -462,14 +488,20 @@ class TestConstraintAnalyzer:
             "a": self._mock_char("a", values=["1", "2"]),
             "b": self._mock_char("b", values=["x", "y"]),
         }
-        rule1 = self._mock_rule("requires", {
-            "if": {"char": "a", "op": "eq", "value": "1"},
-            "then": {"char": "b", "value": "x"},
-        })
-        rule2 = self._mock_rule("requires", {
-            "if": {"char": "b", "op": "eq", "value": "x"},
-            "then": {"char": "a", "value": "1"},
-        })
+        rule1 = self._mock_rule(
+            "requires",
+            {
+                "if": {"char": "a", "op": "eq", "value": "1"},
+                "then": {"char": "b", "value": "x"},
+            },
+        )
+        rule2 = self._mock_rule(
+            "requires",
+            {
+                "if": {"char": "b", "op": "eq", "value": "x"},
+                "then": {"char": "a", "value": "1"},
+            },
+        )
         result = self.analyzer.analyze(char_map, [rule1, rule2], {})
         assert len(result.cycles) > 0
 
@@ -477,10 +509,13 @@ class TestConstraintAnalyzer:
         char_map = {
             "color": self._mock_char("color", values=["red", "blue", "green"]),
         }
-        rule = self._mock_rule("excludes", {
-            "if": {},
-            "then": {"char": "color", "value": "red"},
-        })
+        rule = self._mock_rule(
+            "excludes",
+            {
+                "if": {},
+                "then": {"char": "color", "value": "red"},
+            },
+        )
         result = self.analyzer.analyze(char_map, [rule], {})
         dead_vals = [d.value for d in result.dead_values]
         assert "red" in dead_vals
@@ -531,9 +566,7 @@ class TestCardinality:
         char.values = []
         info = CharacteristicInfo(characteristic=char, min_select=2, max_select=5)
         # Only 1 selection, min is 2
-        assert self.engine._check_completeness(
-            {"color": info}, {"color": "red"}, {}
-        ) is False
+        assert self.engine._check_completeness({"color": info}, {"color": "red"}, {}) is False
 
     def test_check_completeness_min_met(self):
         char = MagicMock()
@@ -542,9 +575,7 @@ class TestCardinality:
         char.is_multi_select = True
         char.values = []
         info = CharacteristicInfo(characteristic=char, min_select=2, max_select=5)
-        assert self.engine._check_completeness(
-            {"color": info}, {"color": ["red", "blue"]}, {}
-        ) is True
+        assert self.engine._check_completeness({"color": info}, {"color": ["red", "blue"]}, {}) is True
 
     def test_null_cardinality_unconstrained(self):
         char = MagicMock()
@@ -553,9 +584,7 @@ class TestCardinality:
         char.is_multi_select = True
         char.values = []
         info = CharacteristicInfo(characteristic=char, min_select=None, max_select=None)
-        assert self.engine._check_completeness(
-            {"color": info}, {"color": "red"}, {}
-        ) is True
+        assert self.engine._check_completeness({"color": info}, {"color": "red"}, {}) is True
 
     def test_multi_select_builds_list(self):
         char = MagicMock()
@@ -613,7 +642,10 @@ class TestSnapshotLoading:
                     "id": str(uuid.uuid4()),
                     "name": "test",
                     "constraint_type": "requires",
-                    "expression": {"if": {"char": "color", "op": "eq", "value": "red"}, "then": {"char": "color", "value": "red"}},
+                    "expression": {
+                        "if": {"char": "color", "op": "eq", "value": "red"},
+                        "then": {"char": "color", "value": "red"},
+                    },
                     "priority": 10,
                     "is_active": True,
                     "effective_from": None,
@@ -622,7 +654,7 @@ class TestSnapshotLoading:
                 },
             ],
             "variant_tables": {},
-            "dependency_index": {"color": [snapshot["constraints"][0]["id"]] if False else []},
+            "dependency_index": {"color": []},  # repaired below once snapshot id is in scope
             "initial_domains": {"color": ["red", "blue"]},
         }
         # Fix dependency_index
@@ -631,7 +663,7 @@ class TestSnapshotLoading:
 
         loaded = self.engine._load_from_snapshot(snapshot)
         assert loaded is not None
-        char_map, constraints, vtables, prebuilt, domains = loaded
+        char_map, constraints, _vtables, _prebuilt, domains = loaded
         assert "color" in char_map
         assert len(constraints) == 1
         assert isinstance(domains["color"], set)
@@ -667,7 +699,8 @@ class TestSnapshotLoading:
         assert domains["weight"].max == 500
 
     def test_propagate_with_prebuilt_index(self):
-        from app.db.models import ConstraintType
+        from app.apps.cpq.models.product import ConstraintType
+
         rule = MagicMock()
         rule.id = uuid.uuid4()
         rule.name = "test"
@@ -685,7 +718,11 @@ class TestSnapshotLoading:
 
         # With prebuilt index
         result = self.engine._propagate(
-            domains, {"engine": "V8"}, [rule], {}, {"engine"},
+            domains,
+            {"engine": "V8"},
+            [rule],
+            {},
+            {"engine"},
             prebuilt_char_constraints=prebuilt,
         )
         assert "green" not in result.domains["color"]
@@ -697,11 +734,13 @@ class TestSnapshotLoading:
 class TestBOMEagerLoad:
     def test_bom_eager_load_returns_load_option(self):
         from app.apps.cpq.engine.bom_resolver import _bom_eager_load
+
         load = _bom_eager_load(3)
         assert load is not None
 
     def test_bom_eager_load_depth_1(self):
         from app.apps.cpq.engine.bom_resolver import _bom_eager_load
+
         load = _bom_eager_load(1)
         assert load is not None
 
@@ -711,37 +750,48 @@ class TestBOMEagerLoad:
 
 class TestQuantityExpressionValidation:
     def test_valid_expression(self):
-        from app.api.v1.boms import _validate_quantity_expression
+        from app.apps.cpq.api.boms import _validate_quantity_expression
+
         # Should not raise
-        _validate_quantity_expression({
-            "type": "formula",
-            "expression": "count * 2 + 1",
-            "variables": {"count": "panel_count"},
-        })
+        _validate_quantity_expression(
+            {
+                "type": "formula",
+                "expression": "count * 2 + 1",
+                "variables": {"count": "panel_count"},
+            }
+        )
 
     def test_none_is_valid(self):
-        from app.api.v1.boms import _validate_quantity_expression
+        from app.apps.cpq.api.boms import _validate_quantity_expression
+
         _validate_quantity_expression(None)
 
     def test_invalid_type(self):
-        from app.api.v1.boms import _validate_quantity_expression
+        from app.apps.cpq.api.boms import _validate_quantity_expression
+
         with pytest.raises(Exception):
             _validate_quantity_expression({"type": "table"})
 
     def test_unmapped_variable(self):
-        from app.api.v1.boms import _validate_quantity_expression
+        from app.apps.cpq.api.boms import _validate_quantity_expression
+
         with pytest.raises(Exception):
-            _validate_quantity_expression({
-                "type": "formula",
-                "expression": "count * x",
-                "variables": {"count": "panel_count"},
-            })
+            _validate_quantity_expression(
+                {
+                    "type": "formula",
+                    "expression": "count * x",
+                    "variables": {"count": "panel_count"},
+                }
+            )
 
     def test_invalid_syntax(self):
-        from app.api.v1.boms import _validate_quantity_expression
+        from app.apps.cpq.api.boms import _validate_quantity_expression
+
         with pytest.raises(Exception):
-            _validate_quantity_expression({
-                "type": "formula",
-                "expression": "count *** 2",
-                "variables": {"count": "x"},
-            })
+            _validate_quantity_expression(
+                {
+                    "type": "formula",
+                    "expression": "count *** 2",
+                    "variables": {"count": "x"},
+                }
+            )

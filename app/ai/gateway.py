@@ -11,12 +11,11 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass
+from decimal import Decimal
 
 import litellm
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from decimal import Decimal
 
 from app.ai.cost import calculate_billed_amount_usd, get_response_cost, get_response_tokens
 from app.ai.events import AICompletionCompleted, AICompletionFailed, AICompletionRequested
@@ -133,11 +132,13 @@ class AIGateway:
         provider = model_info.provider.value
 
         # Emit request event
-        await emit(AICompletionRequested(
-            tenant_id=str(tenant_id),
-            model=model,
-            request_id=request_id,
-        ))
+        await emit(
+            AICompletionRequested(
+                tenant_id=str(tenant_id),
+                model=model,
+                request_id=request_id,
+            )
+        )
 
         # Build model chain: primary + fallbacks
         models_to_try = [model]
@@ -165,9 +166,7 @@ class AIGateway:
                 try:
                     from app.ai.key_resolver import resolve_api_key as _resolve_key
 
-                    candidate_api_key, candidate_key_source = await _resolve_key(
-                        tenant_id, candidate_info.provider, db
-                    )
+                    candidate_api_key, candidate_key_source = await _resolve_key(tenant_id, candidate_info.provider, db)
                 except Exception:
                     logger.warning(
                         "ai_fallback_key_resolve_failed",
@@ -221,17 +220,19 @@ class AIGateway:
                     ).inc()
 
                 # Emit completion event
-                await emit(AICompletionCompleted(
-                    tenant_id=str(tenant_id),
-                    model=candidate_model,
-                    provider=candidate_provider,
-                    total_tokens=result.total_tokens,
-                    billed_amount_usd=float(result.billed_amount_usd),
-                    cost_usd=result.cost_usd,
-                    latency_ms=result.latency_ms,
-                    key_source=key_source,
-                    request_id=request_id,
-                ))
+                await emit(
+                    AICompletionCompleted(
+                        tenant_id=str(tenant_id),
+                        model=candidate_model,
+                        provider=candidate_provider,
+                        total_tokens=result.total_tokens,
+                        billed_amount_usd=float(result.billed_amount_usd),
+                        cost_usd=result.cost_usd,
+                        latency_ms=result.latency_ms,
+                        key_source=key_source,
+                        request_id=request_id,
+                    )
+                )
 
                 return result
 
@@ -252,20 +253,22 @@ class AIGateway:
                     key_source=key_source,
                 ).inc()
 
-                await emit(AICompletionFailed(
-                    tenant_id=str(tenant_id),
-                    model=model,
-                    provider=candidate_provider,
-                    error="Authentication failed",
-                    request_id=request_id,
-                ))
+                await emit(
+                    AICompletionFailed(
+                        tenant_id=str(tenant_id),
+                        model=model,
+                        provider=candidate_provider,
+                        error="Authentication failed",
+                        request_id=request_id,
+                    )
+                )
                 raise AIAuthenticationError(
                     f"Authentication failed for provider '{candidate_provider}'. Check your API key.",
                     provider=candidate_provider,
                     model=candidate_model,
                 ) from exc
 
-            except (asyncio.TimeoutError, *_TRANSIENT_ERROR_TYPES) as exc:
+            except (TimeoutError, *_TRANSIENT_ERROR_TYPES) as exc:
                 # Transient errors: trip circuit breaker, try fallbacks
                 last_error = exc
                 ai_breaker.record_failure(breaker_key)
@@ -308,16 +311,21 @@ class AIGateway:
         if last_error:
             error_msg = f"{error_msg}: {last_error}"
 
-        await emit(AICompletionFailed(
-            tenant_id=str(tenant_id),
-            model=model,
-            provider=provider,
-            error=str(last_error) if last_error else "all_providers_unavailable",
-            request_id=request_id,
-        ))
+        await emit(
+            AICompletionFailed(
+                tenant_id=str(tenant_id),
+                model=model,
+                provider=provider,
+                error=str(last_error) if last_error else "all_providers_unavailable",
+                request_id=request_id,
+            )
+        )
 
         raise AIProviderUnavailableError(
-            error_msg, provider=provider, model=model, retryable=True,
+            error_msg,
+            provider=provider,
+            model=model,
+            retryable=True,
         )
 
     async def streaming_completion(
@@ -355,12 +363,14 @@ class AIGateway:
 
         kwargs = self._build_litellm_kwargs(model_info, api_key, max_tokens, temperature, top_p)
 
-        await emit(AICompletionRequested(
-            tenant_id=str(tenant_id),
-            model=model,
-            request_id=request_id,
-            stream=True,
-        ))
+        await emit(
+            AICompletionRequested(
+                tenant_id=str(tenant_id),
+                model=model,
+                request_id=request_id,
+                stream=True,
+            )
+        )
 
         try:
             response = await asyncio.wait_for(
@@ -376,23 +386,21 @@ class AIGateway:
             )
             ai_breaker.record_success(breaker_key)
 
-            AI_REQUESTS_TOTAL.labels(
-                provider=provider, model=model, status="success", key_source=key_source
-            ).inc()
+            AI_REQUESTS_TOTAL.labels(provider=provider, model=model, status="success", key_source=key_source).inc()
 
             return response
 
         except _AUTH_ERROR_TYPES as exc:
-            AI_REQUESTS_TOTAL.labels(
-                provider=provider, model=model, status="auth_error", key_source=key_source
-            ).inc()
-            await emit(AICompletionFailed(
-                tenant_id=str(tenant_id),
-                model=model,
-                provider=provider,
-                error="Authentication failed",
-                request_id=request_id,
-            ))
+            AI_REQUESTS_TOTAL.labels(provider=provider, model=model, status="auth_error", key_source=key_source).inc()
+            await emit(
+                AICompletionFailed(
+                    tenant_id=str(tenant_id),
+                    model=model,
+                    provider=provider,
+                    error="Authentication failed",
+                    request_id=request_id,
+                )
+            )
             raise AIAuthenticationError(
                 f"Authentication failed for provider '{provider}'. Check your API key.",
                 provider=provider,
@@ -401,18 +409,20 @@ class AIGateway:
 
         except Exception as exc:
             ai_breaker.record_failure(breaker_key)
-            AI_REQUESTS_TOTAL.labels(
-                provider=provider, model=model, status="error", key_source=key_source
-            ).inc()
-            await emit(AICompletionFailed(
-                tenant_id=str(tenant_id),
-                model=model,
-                provider=provider,
-                error=str(exc),
-                request_id=request_id,
-            ))
+            AI_REQUESTS_TOTAL.labels(provider=provider, model=model, status="error", key_source=key_source).inc()
+            await emit(
+                AICompletionFailed(
+                    tenant_id=str(tenant_id),
+                    model=model,
+                    provider=provider,
+                    error=str(exc),
+                    request_id=request_id,
+                )
+            )
             raise AIGatewayError(
-                f"Streaming failed: {exc}", provider=provider, model=model,
+                f"Streaming failed: {exc}",
+                provider=provider,
+                model=model,
                 retryable=isinstance(exc, (*_TRANSIENT_ERROR_TYPES, asyncio.TimeoutError)),
             ) from exc
 
@@ -466,6 +476,7 @@ class AIGateway:
             # Extract tool calls from LLM response
             if hasattr(choice.message, "tool_calls") and choice.message.tool_calls:
                 import json as _json
+
                 raw_tool_calls = []
                 for tc in choice.message.tool_calls:
                     args = tc.function.arguments
@@ -474,11 +485,13 @@ class AIGateway:
                             args = _json.loads(args)
                         except (_json.JSONDecodeError, TypeError):
                             args = {}
-                    raw_tool_calls.append({
-                        "id": tc.id,
-                        "name": tc.function.name,
-                        "arguments": args,
-                    })
+                    raw_tool_calls.append(
+                        {
+                            "id": tc.id,
+                            "name": tc.function.name,
+                            "arguments": args,
+                        }
+                    )
 
         prompt_tokens, completion_tokens, total_tokens = get_response_tokens(response)
         cost_usd = get_response_cost(response)
@@ -491,9 +504,15 @@ class AIGateway:
         AI_REQUESTS_TOTAL.labels(
             provider=provider, model=model_info.litellm_model, status="success", key_source=key_source
         ).inc()
-        AI_TOKENS_TOTAL.labels(provider=provider, model=model_info.litellm_model, token_type="prompt").inc(prompt_tokens)
-        AI_TOKENS_TOTAL.labels(provider=provider, model=model_info.litellm_model, token_type="completion").inc(completion_tokens)
-        AI_BILLED_USD_TOTAL.labels(provider=provider, model=model_info.litellm_model, key_source=key_source).inc(float(billed_amount_usd))
+        AI_TOKENS_TOTAL.labels(provider=provider, model=model_info.litellm_model, token_type="prompt").inc(
+            prompt_tokens
+        )
+        AI_TOKENS_TOTAL.labels(provider=provider, model=model_info.litellm_model, token_type="completion").inc(
+            completion_tokens
+        )
+        AI_BILLED_USD_TOTAL.labels(provider=provider, model=model_info.litellm_model, key_source=key_source).inc(
+            float(billed_amount_usd)
+        )
         AI_LATENCY_SECONDS.labels(provider=provider, model=model_info.litellm_model).observe(elapsed)
         AI_COST_USD_TOTAL.labels(provider=provider, model=model_info.litellm_model).inc(cost_usd)
 
@@ -534,9 +553,8 @@ class AIGateway:
             kwargs["top_p"] = top_p
 
         # Qwen requires a custom base URL
-        if model_info.provider.value == "qwen":
-            if settings.AI_QWEN_API_BASE:
-                kwargs["api_base"] = settings.AI_QWEN_API_BASE
+        if model_info.provider.value == "qwen" and settings.AI_QWEN_API_BASE:
+            kwargs["api_base"] = settings.AI_QWEN_API_BASE
 
         return kwargs
 

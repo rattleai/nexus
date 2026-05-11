@@ -113,9 +113,13 @@ class QueryPolicy:
     def __post_init__(self):
         """Coerce and validate types from untrusted JSON input."""
         int_fields = [
-            "max_result_rows", "max_joins", "max_subqueries",
-            "statement_timeout_ms", "max_queries_per_minute",
-            "max_result_bytes_per_query", "max_total_db_bytes_per_run",
+            "max_result_rows",
+            "max_joins",
+            "max_subqueries",
+            "statement_timeout_ms",
+            "max_queries_per_minute",
+            "max_result_bytes_per_query",
+            "max_total_db_bytes_per_run",
         ]
         for field_name in int_fields:
             val = getattr(self, field_name)
@@ -206,6 +210,7 @@ class AgentDatabaseGateway:
 
             # 4. Execute the query
             from sqlalchemy import text
+
             result = await db.execute(text(query), params or {})
 
             # 5. Fetch rows with limit enforcement
@@ -216,6 +221,7 @@ class AgentDatabaseGateway:
 
             # 6. Check result byte size
             import json
+
             result_bytes = len(json.dumps(rows, default=str).encode())
             max_bytes = self.policy.max_result_bytes_per_query or settings.AGENT_DB_MAX_RESULT_BYTES
             if result_bytes > max_bytes:
@@ -363,15 +369,25 @@ class AgentDatabaseGateway:
 
     def _extract_tables_from_tokens(self, tokens, tables: set[str]) -> None:
         """Recursively extract table names from parsed SQL tokens."""
-        from sqlparse.sql import Identifier, IdentifierList, Parenthesis, Where
         from sqlparse import tokens as T
+        from sqlparse.sql import Identifier, IdentifierList, Parenthesis, Where
 
         expect_table = False
         for token in tokens:
             if token.ttype is T.Keyword and token.normalized in (
-                "FROM", "JOIN", "INNER JOIN", "LEFT JOIN", "RIGHT JOIN",
-                "FULL JOIN", "CROSS JOIN", "LEFT OUTER JOIN", "RIGHT OUTER JOIN",
-                "FULL OUTER JOIN", "INTO", "UPDATE", "TABLE",
+                "FROM",
+                "JOIN",
+                "INNER JOIN",
+                "LEFT JOIN",
+                "RIGHT JOIN",
+                "FULL JOIN",
+                "CROSS JOIN",
+                "LEFT OUTER JOIN",
+                "RIGHT OUTER JOIN",
+                "FULL OUTER JOIN",
+                "INTO",
+                "UPDATE",
+                "TABLE",
             ):
                 expect_table = True
                 continue
@@ -407,19 +423,24 @@ class AgentDatabaseGateway:
                 for child in token.tokens:
                     if isinstance(child, Parenthesis):
                         self._extract_tables_from_tokens(child.tokens, tables)
-            elif hasattr(token, 'tokens'):
+            elif hasattr(token, "tokens"):
                 self._extract_tables_from_tokens(token.tokens, tables)
 
     async def _check_rate_limit(self) -> None:
         """Check per-agent query rate limit via Redis Lua."""
         max_qpm = self.policy.max_queries_per_minute or settings.AGENT_DB_MAX_QUERIES_PER_MINUTE
         rate_key = _AGENT_QUERY_RATE_KEY.format(
-            tenant_id=self.tenant_id, agent_id=self.agent_id,
+            tenant_id=self.tenant_id,
+            agent_id=self.agent_id,
         )
         try:
             # redis_pool.eval runs a Lua script on the Redis server (not Python eval)
-            result = await redis_pool.eval(  # noqa: S307
-                _RATE_CHECK_LUA, 1, rate_key, str(max_qpm), "60",
+            result = await redis_pool.eval(
+                _RATE_CHECK_LUA,
+                1,
+                rate_key,
+                str(max_qpm),
+                "60",
             )
             if int(result) == -1:
                 raise GatewayViolationError(
@@ -443,6 +464,7 @@ class AgentDatabaseGateway:
         if not isinstance(timeout_ms, int) or timeout_ms < 100 or timeout_ms > 300_000:
             timeout_ms = settings.AGENT_DB_STATEMENT_TIMEOUT_MS
         from sqlalchemy import text
+
         await db.execute(
             text("SET LOCAL statement_timeout = :timeout"),
             {"timeout": str(timeout_ms)},
@@ -456,6 +478,7 @@ class AgentDatabaseGateway:
         but this prevents data leaks if the caller forgot or used the wrong session.
         """
         from sqlalchemy import text
+
         try:
             result = await db.execute(text("SELECT current_setting('app.tenant_id', true)"))
             row = result.scalar_one_or_none()
@@ -488,13 +511,18 @@ class AgentDatabaseGateway:
         """Track cumulative bytes returned to agent for this run."""
         max_total = self.policy.max_total_db_bytes_per_run or (settings.AGENT_DB_MAX_RESULT_BYTES * 10)
         bytes_key = _AGENT_QUERY_BYTES_KEY.format(
-            tenant_id=self.tenant_id, instance_id=self.instance_id,
+            tenant_id=self.tenant_id,
+            instance_id=self.instance_id,
         )
         try:
             # redis_pool.eval runs a Lua script on the Redis server (not Python eval)
-            result = await redis_pool.eval(  # noqa: S307
-                _BYTES_CHECK_LUA, 1, bytes_key,
-                str(result_bytes), str(max_total), "3600",
+            result = await redis_pool.eval(
+                _BYTES_CHECK_LUA,
+                1,
+                bytes_key,
+                str(result_bytes),
+                str(max_total),
+                "3600",
             )
             if int(result) == -1:
                 raise GatewayViolationError(
@@ -530,9 +558,13 @@ class AgentDatabaseGateway:
         except Exception:
             logger.error("agent_db_block_event_failed", exc_info=True)
             from app.agents.security_dlq import enqueue_dead_letter
-            await enqueue_dead_letter("db_query_blocked", {
-                "tenant_id": str(self.tenant_id),
-                "agent_id": self.agent_id,
-                "reason": reason,
-                "query_hash": query_hash,
-            })
+
+            await enqueue_dead_letter(
+                "db_query_blocked",
+                {
+                    "tenant_id": str(self.tenant_id),
+                    "agent_id": self.agent_id,
+                    "reason": reason,
+                    "query_hash": query_hash,
+                },
+            )

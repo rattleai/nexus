@@ -19,8 +19,7 @@ _ENRICHMENTS: dict[tuple[str, str], dict[str, Any]] = {
     },
     ("post", "/ai/completions/async"): {
         "x-agent-hint": (
-            "Submit AI completion for async processing. Returns a Job ID. "
-            "Poll GET /api/v1/jobs/{id} for results."
+            "Submit AI completion for async processing. Returns a Job ID. Poll GET /api/v1/jobs/{id} for results."
         ),
         "x-idempotent": False,
     },
@@ -50,8 +49,7 @@ _ENRICHMENTS: dict[tuple[str, str], dict[str, Any]] = {
     },
     ("post", "/api-keys"): {
         "x-agent-hint": (
-            "Create API keys with specific scopes. "
-            "Store the returned key securely — it cannot be retrieved later."
+            "Create API keys with specific scopes. Store the returned key securely — it cannot be retrieved later."
         ),
         "x-idempotent": False,
     },
@@ -69,8 +67,7 @@ _ENRICHMENTS: dict[tuple[str, str], dict[str, Any]] = {
     },
     ("post", "/webhooks"): {
         "x-agent-hint": (
-            "Create a webhook endpoint. URL must be HTTPS. "
-            "Store the signing_secret to verify deliveries."
+            "Create a webhook endpoint. URL must be HTTPS. Store the signing_secret to verify deliveries."
         ),
         "x-idempotent": False,
     },
@@ -86,10 +83,7 @@ _ENRICHMENTS: dict[tuple[str, str], dict[str, Any]] = {
     },
     # ── Export ──
     ("post", "/export"): {
-        "x-agent-hint": (
-            "Request a GDPR data export. Returns an export ID. "
-            "Poll GET /export/{id} for completion."
-        ),
+        "x-agent-hint": ("Request a GDPR data export. Returns an export ID. Poll GET /export/{id} for completion."),
         "x-idempotent": False,
     },
     ("get", "/export/{export_id}"): {
@@ -98,8 +92,7 @@ _ENRICHMENTS: dict[tuple[str, str], dict[str, Any]] = {
     # ── Auth ──
     ("post", "/oauth/token"): {
         "x-agent-hint": (
-            "Exchange client_id + client_secret for a short-lived JWT. "
-            "Rate limited to 10 requests/minute."
+            "Exchange client_id + client_secret for a short-lived JWT. Rate limited to 10 requests/minute."
         ),
     },
     ("post", "/oauth/clients"): {
@@ -120,8 +113,7 @@ _ENRICHMENTS: dict[tuple[str, str], dict[str, Any]] = {
     # ── Batch ──
     ("post", "/batch"): {
         "x-agent-hint": (
-            "Execute up to 10 sub-requests in a single call. "
-            "Reduces round-trips for multi-step workflows."
+            "Execute up to 10 sub-requests in a single call. Reduces round-trips for multi-step workflows."
         ),
     },
     # ── Health ──
@@ -155,19 +147,13 @@ def filter_internal_paths(schema: dict[str, Any]) -> dict[str, Any]:
 
     filtered = copy.deepcopy(schema)
     paths = filtered.get("paths", {})
-    keys_to_remove = [
-        p for p in paths
-        if any(prefix in p for prefix in _INTERNAL_PATH_PREFIXES)
-    ]
+    keys_to_remove = [p for p in paths if any(prefix in p for prefix in _INTERNAL_PATH_PREFIXES)]
     for key in keys_to_remove:
         del paths[key]
 
     # Strip internal tags from the top-level tags array
     if "tags" in filtered:
-        filtered["tags"] = [
-            t for t in filtered["tags"]
-            if t.get("name", "").lower() not in _INTERNAL_TAGS
-        ]
+        filtered["tags"] = [t for t in filtered["tags"] if t.get("name", "").lower() not in _INTERNAL_TAGS]
 
     return filtered
 

@@ -80,6 +80,4 @@ async def list_tenant_audit_logs(
     if resource_type:
         stmt = stmt.where(AuditLog.resource_type == resource_type)
 
-    return await paginate(
-        db, stmt, AuditLog.occurred_at, limit=limit, cursor=cursor, descending=True
-    )
+    return await paginate(db, stmt, AuditLog.occurred_at, limit=limit, cursor=cursor, descending=True)

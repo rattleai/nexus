@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -19,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.reranker import reranker
 from app.agents.search import (
-    HybridSearchEngine,
     SearchFilters,
     SearchResult,
     SearchSource,
@@ -40,7 +39,7 @@ def _parse_iso_with_tz(value: str, field_name: str) -> datetime:
         parsed = datetime.fromisoformat(value)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid {field_name} format: {value}")
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 # ── Request / Response schemas ───────────────────────────────
@@ -58,9 +57,7 @@ class SearchFilterRequest(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
-    sources: list[str] | None = Field(
-        default=None, description="Sources to search: 'chunks', 'memory'"
-    )
+    sources: list[str] | None = Field(default=None, description="Sources to search: 'chunks', 'memory'")
     filters: SearchFilterRequest | None = None
     limit: int = Field(default=10, ge=1, le=50)
     search_type: str = Field(default="hybrid", description="vector, text, or hybrid")
@@ -178,19 +175,21 @@ async def search(
         for rr in rerank_results:
             if rr.index < len(results):
                 original = results[rr.index]
-                reranked_results.append(SearchResult(
-                    id=original.id,
-                    content=original.content,
-                    score=rr.score,
-                    source=original.source,
-                    source_id=original.source_id,
-                    metadata=original.metadata,
-                    search_type=original.search_type,
-                ))
+                reranked_results.append(
+                    SearchResult(
+                        id=original.id,
+                        content=original.content,
+                        score=rr.score,
+                        source=original.source,
+                        source_id=original.source_id,
+                        metadata=original.metadata,
+                        search_type=original.search_type,
+                    )
+                )
         results = reranked_results
         reranked = True
     else:
-        results = results[:request.limit]
+        results = results[: request.limit]
 
     elapsed = time.monotonic() - start
 

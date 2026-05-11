@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.agents.sandbox import ExecutionSandbox, SandboxConfig, SandboxResult
+from app.agents.sandbox import ExecutionSandbox, SandboxConfig
 
 
 class TestSandboxExecution:

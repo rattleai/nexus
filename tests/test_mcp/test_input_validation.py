@@ -20,7 +20,10 @@ async def test_ai_complete_empty_messages():
     """Test that empty messages list is rejected."""
     with pytest.raises(McpError, match="cannot be empty"):
         await ai_complete(
-            model="gpt-4o", messages=[], tenant=_make_tenant(), db=AsyncMock(),
+            model="gpt-4o",
+            messages=[],
+            tenant=_make_tenant(),
+            db=AsyncMock(),
         )
 
 
@@ -30,7 +33,10 @@ async def test_ai_complete_too_many_messages():
     messages = [{"role": "user", "content": "hi"}] * 201
     with pytest.raises(McpError, match="Too many messages"):
         await ai_complete(
-            model="gpt-4o", messages=messages, tenant=_make_tenant(), db=AsyncMock(),
+            model="gpt-4o",
+            messages=messages,
+            tenant=_make_tenant(),
+            db=AsyncMock(),
         )
 
 
@@ -63,7 +69,9 @@ async def test_job_create_empty_type():
     """Test that empty job type is rejected."""
     with pytest.raises(McpError, match="cannot be empty"):
         await job_create(
-            job_type="", tenant=_make_tenant(), db=AsyncMock(),
+            job_type="",
+            tenant=_make_tenant(),
+            db=AsyncMock(),
         )
 
 
@@ -85,7 +93,10 @@ async def test_team_invite_invalid_email():
     """Test that invalid emails are rejected."""
     with pytest.raises(McpError, match="Invalid email"):
         await team_invite(
-            email="not-valid", role="member", tenant=_make_tenant(), db=AsyncMock(),
+            email="not-valid",
+            role="member",
+            tenant=_make_tenant(),
+            db=AsyncMock(),
         )
 
 

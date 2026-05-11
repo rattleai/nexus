@@ -71,7 +71,9 @@ async def get_unread_count(
 ):
     """Get unread notification count."""
     result = await db.execute(
-        select(func.count()).select_from(Notification).where(
+        select(func.count())
+        .select_from(Notification)
+        .where(
             Notification.user_id == user.id,
             Notification.tenant_id == user.tenant_id,
             Notification.read_at.is_(None),

@@ -32,6 +32,7 @@
     "agent_definitions": "Agent Definitions",
     "provider_keys": "Provider Keys",
     "integrations": "Integrations",
+    "connectors": "Connectors",
     "api_keys": "API Keys",
     "webhooks": "Webhooks",
     "organization": "Organization",

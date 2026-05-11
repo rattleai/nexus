@@ -20,14 +20,13 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import re as _re
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
 import structlog
-
-import re as _re
 
 from app.agents.events import AgentStepCompleted
 from app.agents.models import AgentDefinition, AgentInstance
@@ -40,14 +39,15 @@ logger = structlog.stdlib.get_logger()
 def _sanitize_error(exc: Exception, max_len: int = 2000) -> str:
     """Sanitize error messages to prevent leaking sensitive data."""
     msg = str(exc)
-    msg = _re.sub(r'(sk-|pk_|Bearer\s+)\S+', '[REDACTED]', msg)
-    msg = _re.sub(r'(/Users/|/home/|/var/)\S+', '[PATH]', msg)
+    msg = _re.sub(r"(sk-|pk_|Bearer\s+)\S+", "[REDACTED]", msg)
+    msg = _re.sub(r"(/Users/|/home/|/var/)\S+", "[PATH]", msg)
     return msg[:max_len]
 
 
 # OpenTelemetry tracing — returns a no-op context manager when OTEL is not available
 try:
     from opentelemetry import trace
+
     _tracer = trace.get_tracer("app.agents.runtime")
 except ImportError:
     _tracer = None
@@ -143,7 +143,8 @@ class AgentRuntime:
         partial progress survives worker crashes.  Best-effort: failures are
         logged but never crash the run.
         """
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
+
         from sqlalchemy import update
         from sqlalchemy.exc import PendingRollbackError
 
@@ -274,7 +275,7 @@ class AgentRuntime:
                             step_span=step_span,
                         )
 
-                        step_duration = int((time.monotonic() - step_start) * 1000)
+                        int((time.monotonic() - step_start) * 1000)
 
                         # Checkpoint progress after each step (heartbeat + partial metrics)
                         if db is not None:
@@ -292,12 +293,14 @@ class AgentRuntime:
                             step=step_num,
                         )
                         result.finish_reason = "error"
-                        result.steps.append(StepResult(
-                            step_number=step_num,
-                            action="error",
-                            content=f"LLM call timed out after {settings.AI_REQUEST_TIMEOUT_SECONDS}s",
-                            duration_ms=int((time.monotonic() - step_start) * 1000),
-                        ))
+                        result.steps.append(
+                            StepResult(
+                                step_number=step_num,
+                                action="error",
+                                content=f"LLM call timed out after {settings.AI_REQUEST_TIMEOUT_SECONDS}s",
+                                duration_ms=int((time.monotonic() - step_start) * 1000),
+                            )
+                        )
                         break
 
                     except Exception as exc:
@@ -310,12 +313,14 @@ class AgentRuntime:
                         )
                         result.finish_reason = "error"
                         safe_msg = _sanitize_error(exc, max_len=500)
-                        result.steps.append(StepResult(
-                            step_number=step_num,
-                            action="error",
-                            content=safe_msg,
-                            duration_ms=int((time.monotonic() - step_start) * 1000),
-                        ))
+                        result.steps.append(
+                            StepResult(
+                                step_number=step_num,
+                                action="error",
+                                content=safe_msg,
+                                duration_ms=int((time.monotonic() - step_start) * 1000),
+                            )
+                        )
                         if step_span:
                             step_span.set_attribute("error", True)
                             step_span.set_attribute("agent.error", safe_msg[:200])
@@ -337,6 +342,7 @@ class AgentRuntime:
             # Record OTel metrics for the completed run
             with contextlib.suppress(Exception):
                 from app.core.otel_metrics import record_agent_run
+
                 record_agent_run(
                     agent_name=self.definition.name,
                     status=result.finish_reason,
@@ -421,7 +427,8 @@ class AgentRuntime:
                         "function": {
                             "name": tc_raw["name"],
                             "arguments": (
-                                tc_raw["arguments"] if isinstance(tc_raw["arguments"], str)
+                                tc_raw["arguments"]
+                                if isinstance(tc_raw["arguments"], str)
                                 else json.dumps(tc_raw["arguments"])
                             ),
                         },
@@ -431,46 +438,55 @@ class AgentRuntime:
             conversation.append(assistant_msg)
 
             # Execute all tool calls from this LLM response
-            use_parallel = (
-                len(tool_calls) > 1
-                and getattr(self.definition, "parallel_tool_execution", True)
-            )
+            use_parallel = len(tool_calls) > 1 and getattr(self.definition, "parallel_tool_execution", True)
 
             if use_parallel:
                 # Parallel execution via asyncio.gather
                 tool_results_list = await self._run_tools_parallel(
-                    tool_calls, tool_executor, governance_checker,
-                    instance_id, step_num, result,
+                    tool_calls,
+                    tool_executor,
+                    governance_checker,
+                    instance_id,
+                    step_num,
+                    result,
                 )
             else:
                 # Sequential execution
                 tool_results_list = await self._run_tools_sequential(
-                    tool_calls, tool_executor, governance_checker,
-                    instance_id, step_num, result,
+                    tool_calls,
+                    tool_executor,
+                    governance_checker,
+                    instance_id,
+                    step_num,
+                    result,
                 )
 
             # Process results in order: append to conversation, record steps
-            for tc, tool_result in zip(tool_calls, tool_results_list):
+            for tc, tool_result in zip(tool_calls, tool_results_list, strict=False):
                 tool_result_str = str(tool_result)
                 if len(tool_result_str) > _MAX_TOOL_OUTPUT:
                     tool_result_str = tool_result_str[:_MAX_TOOL_OUTPUT] + "... [truncated]"
 
                 step_duration = int((time.monotonic() - step_start) * 1000)
-                result.steps.append(StepResult(
-                    step_number=step_num,
-                    action="tool_call",
-                    tool_name=tc.name,
-                    tool_result=tool_result,
-                    tokens_used=step_tokens,
-                    cost_usd=step_cost,
-                    duration_ms=step_duration,
-                ))
+                result.steps.append(
+                    StepResult(
+                        step_number=step_num,
+                        action="tool_call",
+                        tool_name=tc.name,
+                        tool_result=tool_result,
+                        tokens_used=step_tokens,
+                        cost_usd=step_cost,
+                        duration_ms=step_duration,
+                    )
+                )
 
-                conversation.append({
-                    "role": "tool",
-                    "tool_call_id": tc.call_id,
-                    "content": tool_result_str,
-                })
+                conversation.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.call_id,
+                        "content": tool_result_str,
+                    }
+                )
 
                 # Emit step event (best-effort)
                 with contextlib.suppress(Exception):
@@ -497,6 +513,7 @@ class AgentRuntime:
 
             # Validate output against schema and content policy
             from app.agents.validation import validate_agent_output
+
             is_valid, validation_errors, sanitized = validate_agent_output(
                 output_content,
                 governance_policy=self.definition.governance_policy,
@@ -515,13 +532,15 @@ class AgentRuntime:
             # Use sanitized output (PII redacted if configured)
             output_content = sanitized
 
-            result.steps.append(StepResult(
-                step_number=step_num,
-                action="response",
-                content=output_content,
-                tokens_used=step_tokens,
-                cost_usd=step_cost,
-            ))
+            result.steps.append(
+                StepResult(
+                    step_number=step_num,
+                    action="response",
+                    content=output_content,
+                    tokens_used=step_tokens,
+                    cost_usd=step_cost,
+                )
+            )
             result.output = output_content
             result.finish_reason = "completed"
             if step_span:
@@ -561,14 +580,14 @@ class AgentRuntime:
                 )
             except TimeoutError:
                 tool_result = {
-                    "error": f"Tool '{tc.name}' timed out after "
-                    f"{settings.AGENT_TOOL_EXECUTION_TIMEOUT}s",
+                    "error": f"Tool '{tc.name}' timed out after {settings.AGENT_TOOL_EXECUTION_TIMEOUT}s",
                 }
 
         # Record OTel tool duration metric
         tool_duration = int((time.monotonic() - tool_start) * 1000)
         with contextlib.suppress(Exception):
             from app.core.otel_metrics import record_tool_call
+
             record_tool_call(tool_name=tc.name, duration_ms=tool_duration)
 
         return tool_result
@@ -641,7 +660,7 @@ class AgentRuntime:
         yield {"event": "run_started", "data": {"instance_id": str(instance_id), "agent_id": str(self.definition.id)}}
 
         result = RunResult()
-        start_time = time.monotonic()
+        time.monotonic()
 
         if db is not None:
             await self._load_tenant_tool_schemas(db)
@@ -721,7 +740,16 @@ class AgentRuntime:
                     yield {"event": "content_delta", "data": {"content": completion.content}}
                 if completion.tool_calls:
                     assistant_msg["tool_calls"] = [
-                        {"id": tc_raw["id"], "type": "function", "function": {"name": tc_raw["name"], "arguments": tc_raw["arguments"] if isinstance(tc_raw["arguments"], str) else json.dumps(tc_raw["arguments"])}}
+                        {
+                            "id": tc_raw["id"],
+                            "type": "function",
+                            "function": {
+                                "name": tc_raw["name"],
+                                "arguments": tc_raw["arguments"]
+                                if isinstance(tc_raw["arguments"], str)
+                                else json.dumps(tc_raw["arguments"]),
+                            },
+                        }
                         for tc_raw in completion.tool_calls
                     ]
                 conversation.append(assistant_msg)
@@ -742,9 +770,16 @@ class AgentRuntime:
                             )
                         except Exception as gov_exc:
                             from app.agents.governance import GovernanceViolationError
+
                             if isinstance(gov_exc, GovernanceViolationError):
-                                yield {"event": "error", "data": {"message": str(gov_exc), "type": "governance_violation"}}
-                                yield {"event": "run_completed", "data": {"finish_reason": "governance_violation", "output": ""}}
+                                yield {
+                                    "event": "error",
+                                    "data": {"message": str(gov_exc), "type": "governance_violation"},
+                                }
+                                yield {
+                                    "event": "run_completed",
+                                    "data": {"finish_reason": "governance_violation", "output": ""},
+                                }
                                 return
                             raise
 
@@ -760,7 +795,9 @@ class AgentRuntime:
 
                     yield {"event": "tool_result", "data": {"tool_name": tc.name, "result": str(tool_result)[:2000]}}
 
-                    conversation.append({"role": "tool", "tool_call_id": tc.call_id, "content": str(tool_result)[:_MAX_TOOL_OUTPUT]})
+                    conversation.append(
+                        {"role": "tool", "tool_call_id": tc.call_id, "content": str(tool_result)[:_MAX_TOOL_OUTPUT]}
+                    )
 
                 yield {"event": "step_completed", "data": {"step_number": step_num, "action": "tool_call"}}
 
@@ -770,6 +807,7 @@ class AgentRuntime:
             else:
                 output_content = completion.content
                 from app.agents.validation import validate_agent_output
+
                 _, _, sanitized = validate_agent_output(
                     output_content,
                     governance_policy=self.definition.governance_policy,
@@ -783,12 +821,15 @@ class AgentRuntime:
                 if db is not None:
                     await self._checkpoint_progress(instance_id, result, step_num, db)
 
-                yield {"event": "run_completed", "data": {
-                    "finish_reason": "completed",
-                    "output": sanitized,
-                    "total_tokens": result.total_tokens,
-                    "total_cost_usd": result.total_cost_usd,
-                }}
+                yield {
+                    "event": "run_completed",
+                    "data": {
+                        "finish_reason": "completed",
+                        "output": sanitized,
+                        "total_tokens": result.total_tokens,
+                        "total_cost_usd": result.total_cost_usd,
+                    },
+                }
                 return
 
         yield {"event": "run_completed", "data": {"finish_reason": "max_steps", "output": result.output}}
@@ -841,39 +882,46 @@ class AgentRuntime:
             return None
 
         from app.agents.tool_registry import tool_registry
+
         builtin_tools = tool_registry.list_builtin_tools()
 
         tools = []
         for tool_name in allowed:
             if tool_name in builtin_tools:
                 info = builtin_tools[tool_name]
-                tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "description": info.get("description", ""),
-                        "parameters": info.get("input_schema", {"type": "object", "properties": {}}),
-                    },
-                })
+                tools.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "description": info.get("description", ""),
+                            "parameters": info.get("input_schema", {"type": "object", "properties": {}}),
+                        },
+                    }
+                )
             elif tool_name in self._tenant_tool_schemas:
                 info = self._tenant_tool_schemas[tool_name]
-                tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "description": info.get("description", f"Custom tool: {tool_name}"),
-                        "parameters": info.get("input_schema", {"type": "object", "properties": {}}),
-                    },
-                })
+                tools.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "description": info.get("description", f"Custom tool: {tool_name}"),
+                            "parameters": info.get("input_schema", {"type": "object", "properties": {}}),
+                        },
+                    }
+                )
             else:
-                tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "description": f"Custom tool: {tool_name}",
-                        "parameters": {"type": "object", "properties": {}},
-                    },
-                })
+                tools.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "description": f"Custom tool: {tool_name}",
+                            "parameters": {"type": "object", "properties": {}},
+                        },
+                    }
+                )
         return tools if tools else None
 
     async def _load_tenant_tool_schemas(self, db: Any) -> None:
@@ -890,6 +938,7 @@ class AgentRuntime:
 
         try:
             from sqlalchemy import select
+
             from app.agents.models import TenantTool
 
             stmt = select(TenantTool).where(
@@ -963,6 +1012,7 @@ class AgentRuntime:
             if memory_config.get("shared_memory_enabled", False):
                 try:
                     from app.agents.memory import AgentMemoryManager
+
                     mem = AgentMemoryManager(db)
                     shared_entries = await mem.list_definition_memory(
                         definition_id=self.definition.id,

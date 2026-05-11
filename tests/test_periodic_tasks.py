@@ -7,28 +7,36 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Ensure the tasks module can be imported without a real database by mocking
-# create_engine at import time.  The _SyncSession created at module level in
-# app.workers.tasks will be a MagicMock, which periodic.py re-exports.
+# create_engine at import time.  The _AdminSyncSession created at module
+# level in app.workers.tasks will be a MagicMock, which periodic.py
+# re-exports for the cross-tenant admin sweeps.
 _mock_engine = MagicMock()
 _mock_session_cls = MagicMock()
 
-with patch("sqlalchemy.create_engine", return_value=_mock_engine), \
-     patch("sqlalchemy.orm.sessionmaker", return_value=_mock_session_cls):
+with (
+    patch("sqlalchemy.create_engine", return_value=_mock_engine),
+    patch("sqlalchemy.orm.sessionmaker", return_value=_mock_session_cls),
+):
     # Drop cached modules so they get re-imported with the patches active
     sys.modules.pop("app.workers.tasks", None)
     sys.modules.pop("app.workers.periodic", None)
     import app.workers.periodic
-    import app.workers.tasks  # noqa: F401 — imported for side-effect
+    import app.workers.tasks
 
 
 @pytest.fixture
 def mock_sync_session():
-    """Mock the sync session used by periodic tasks."""
+    """Mock the admin sync session used by periodic sweeps.
+
+    Periodic tasks moved from ``_SyncSession`` to ``_AdminSyncSession``
+    in the connector PR so cross-tenant cleanups bypass RLS via the
+    superuser connection. Patch the new symbol.
+    """
     session = MagicMock()
     ctx = MagicMock()
     ctx.__enter__ = MagicMock(return_value=session)
     ctx.__exit__ = MagicMock(return_value=False)
-    with patch("app.workers.periodic._SyncSession", return_value=ctx):
+    with patch("app.workers.periodic._AdminSyncSession", return_value=ctx):
         yield session
 
 

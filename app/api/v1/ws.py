@@ -7,16 +7,15 @@ Supports heartbeat (server ping every 30s) and event-based messaging.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import uuid
 
 import jwt
 import structlog
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
-from sqlalchemy import select
 
 from app.config import settings
 from app.core.websocket import manager
-from app.db.session import async_session_factory
 
 logger = structlog.stdlib.get_logger()
 
@@ -90,10 +89,8 @@ async def websocket_endpoint(
             pass
         finally:
             heartbeat_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await heartbeat_task
-            except asyncio.CancelledError:
-                pass
     finally:
         await manager.disconnect(conn_id)
 

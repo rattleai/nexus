@@ -275,9 +275,7 @@ class TestBillingEndpoints:
         from app.api.deps import get_current_tenant, get_current_user_from_token
 
         tenant_id = uuid.uuid4()
-        user = MagicMock(
-            id=uuid.uuid4(), tenant_id=tenant_id, is_active=True
-        )
+        user = MagicMock(id=uuid.uuid4(), tenant_id=tenant_id, is_active=True)
         tenant = MagicMock(id=tenant_id)
         app.dependency_overrides[get_current_user_from_token] = lambda: user
         app.dependency_overrides[get_current_tenant] = lambda: tenant
@@ -286,6 +284,7 @@ class TestBillingEndpoints:
         # RequireRole needs membership check
         membership = MagicMock()
         from app.db.models import UserRole
+
         membership.role = UserRole.OWNER
         member_result = MagicMock()
         member_result.scalar_one_or_none.return_value = membership

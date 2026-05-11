@@ -89,9 +89,7 @@ class AIQuotaEnforcer:
         req_limit = get_plan_limit(plan, QuotaMetric.AI_REQUESTS_DAY)
         if req_limit != -1:
             try:
-                current_requests = await get_current_usage(
-                    tenant.id, QuotaMetric.AI_REQUESTS_DAY, fail_open=False
-                )
+                current_requests = await get_current_usage(tenant.id, QuotaMetric.AI_REQUESTS_DAY, fail_open=False)
             except Exception:
                 raise HTTPException(
                     status_code=503,
@@ -114,9 +112,7 @@ class AIQuotaEnforcer:
         token_limit = get_plan_limit(plan, QuotaMetric.AI_TOKENS_MONTH)
         if token_limit != -1:
             try:
-                current_tokens = await get_current_usage(
-                    tenant.id, QuotaMetric.AI_TOKENS_MONTH, fail_open=False
-                )
+                current_tokens = await get_current_usage(tenant.id, QuotaMetric.AI_TOKENS_MONTH, fail_open=False)
             except Exception:
                 raise HTTPException(
                     status_code=503,

@@ -15,9 +15,7 @@ logger = structlog.stdlib.get_logger()
 
 async def get_effective_plan(tenant_id: uuid.UUID, db: AsyncSession) -> str:
     """Get the effective plan for a tenant, considering subscription status."""
-    result = await db.execute(
-        select(Subscription).where(Subscription.tenant_id == tenant_id)
-    )
+    result = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
     subscription = result.scalar_one_or_none()
 
     if subscription and subscription.status.value in ("active", "trialing"):
@@ -71,7 +69,6 @@ async def enforce_plan_limit(
                 "current": current_value,
                 "limit": limit,
                 "plan": plan,
-                "message": f"Your {plan} plan allows {limit} {metric.value}. "
-                f"Upgrade your plan to increase this limit.",
+                "message": f"Your {plan} plan allows {limit} {metric.value}. Upgrade your plan to increase this limit.",
             },
         )

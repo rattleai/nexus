@@ -19,9 +19,9 @@ import structlog
 
 from app.config import settings
 from app.docprocessor.chunking import (
-    ChunkMetadata,
-    ChunkingStrategy,
     Chunker,
+    ChunkingStrategy,
+    ChunkMetadata,
     FixedSizeChunker,
 )
 
@@ -52,22 +52,29 @@ class LateChunker(Chunker):
                 detail="RAG_LATE_CHUNKING_ENABLED is False, falling back to fixed_size",
             )
             return FixedSizeChunker().chunk(
-                text, chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+                text,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
             )
 
         # Use fixed-size chunking for boundaries, but mark with LATE strategy
         base_chunks = FixedSizeChunker().chunk(
-            text, chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            text,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
         )
 
         # Re-tag metadata with LATE strategy
         return [
-            (chunk_text, ChunkMetadata(
-                chunk_index=meta.chunk_index,
-                content_hash=meta.content_hash,
-                strategy=ChunkingStrategy.LATE,
-                section_title=meta.section_title,
-                heading_hierarchy=meta.heading_hierarchy,
-            ))
+            (
+                chunk_text,
+                ChunkMetadata(
+                    chunk_index=meta.chunk_index,
+                    content_hash=meta.content_hash,
+                    strategy=ChunkingStrategy.LATE,
+                    section_title=meta.section_title,
+                    heading_hierarchy=meta.heading_hierarchy,
+                ),
+            )
             for chunk_text, meta in base_chunks
         ]

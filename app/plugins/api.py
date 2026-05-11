@@ -59,7 +59,7 @@ async def get_plugin_health():
     async def _check(plugin):  # type: ignore[no-untyped-def]
         try:
             return plugin.name, await asyncio.wait_for(plugin.health_check(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return plugin.name, {"status": "unhealthy", "error": "health check timed out"}
         except Exception as exc:
             return plugin.name, {"status": "unhealthy", "error": str(exc)}

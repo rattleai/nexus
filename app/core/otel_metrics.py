@@ -76,15 +76,21 @@ def record_agent_run(
     """Record an agent run completion."""
     with contextlib.suppress(Exception):
         _ensure_instruments()
-        _agent_runs_counter.add(1, {
-            "gen_ai.agent.name": agent_name,
-            "gen_ai.response.finish_reason": status,
-        })
-        if tokens > 0:
-            _client_token_usage.add(tokens, {
+        _agent_runs_counter.add(
+            1,
+            {
                 "gen_ai.agent.name": agent_name,
-                "gen_ai.token.type": "total",
-            })
+                "gen_ai.response.finish_reason": status,
+            },
+        )
+        if tokens > 0:
+            _client_token_usage.add(
+                tokens,
+                {
+                    "gen_ai.agent.name": agent_name,
+                    "gen_ai.token.type": "total",
+                },
+            )
 
 
 def record_step_duration(
@@ -97,11 +103,14 @@ def record_step_duration(
     """Record the duration of an agent step."""
     with contextlib.suppress(Exception):
         _ensure_instruments()
-        _agent_step_duration.record(duration_ms, {
-            "gen_ai.agent.name": agent_name,
-            "gen_ai.agent.step_number": step_number,
-            "agent.action": action,
-        })
+        _agent_step_duration.record(
+            duration_ms,
+            {
+                "gen_ai.agent.name": agent_name,
+                "gen_ai.agent.step_number": step_number,
+                "agent.action": action,
+            },
+        )
 
 
 def record_tool_call(
@@ -113,10 +122,13 @@ def record_tool_call(
     """Record a tool call execution."""
     with contextlib.suppress(Exception):
         _ensure_instruments()
-        _agent_tool_duration.record(duration_ms, {
-            "gen_ai.tool.name": tool_name,
-            "gen_ai.response.finish_reason": status,
-        })
+        _agent_tool_duration.record(
+            duration_ms,
+            {
+                "gen_ai.tool.name": tool_name,
+                "gen_ai.response.finish_reason": status,
+            },
+        )
 
 
 def record_llm_request(
@@ -129,17 +141,26 @@ def record_llm_request(
     """Record an LLM API request."""
     with contextlib.suppress(Exception):
         _ensure_instruments()
-        _client_requests_counter.add(1, {
-            "gen_ai.request.model": model,
-            "gen_ai.system": provider,
-        })
+        _client_requests_counter.add(
+            1,
+            {
+                "gen_ai.request.model": model,
+                "gen_ai.system": provider,
+            },
+        )
         if prompt_tokens > 0:
-            _client_token_usage.add(prompt_tokens, {
-                "gen_ai.request.model": model,
-                "gen_ai.token.type": "input",
-            })
+            _client_token_usage.add(
+                prompt_tokens,
+                {
+                    "gen_ai.request.model": model,
+                    "gen_ai.token.type": "input",
+                },
+            )
         if completion_tokens > 0:
-            _client_token_usage.add(completion_tokens, {
-                "gen_ai.request.model": model,
-                "gen_ai.token.type": "output",
-            })
+            _client_token_usage.add(
+                completion_tokens,
+                {
+                    "gen_ai.request.model": model,
+                    "gen_ai.token.type": "output",
+                },
+            )

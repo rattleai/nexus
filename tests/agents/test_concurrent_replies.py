@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 
-from app.agents.models import AgentStatus, InstanceStatus, SessionStatus
-
+from app.agents.models import SessionStatus
 
 # ── Helpers ────────────────────────────────────────────────────────────
 

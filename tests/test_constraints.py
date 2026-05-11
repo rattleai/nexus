@@ -12,7 +12,11 @@ from app.main import create_app
 
 def _make_tenant():
     return MagicMock(
-        id=uuid.uuid4(), name="Test", slug="test", plan="free", is_active=True,
+        id=uuid.uuid4(),
+        name="Test",
+        slug="test",
+        plan="free",
+        is_active=True,
     )
 
 
@@ -41,12 +45,19 @@ async def constraint_client():
 @pytest.mark.asyncio
 async def test_create_constraint_rule_requires_auth(constraint_client):
     client, _ = constraint_client
-    response = await client.post("/api/v1/constraints/rules", json={
-        "product_id": str(uuid.uuid4()),
-        "name": "Engine requires transmission",
-        "constraint_type": "requires",
-        "expression": {"type": "requires", "if": {"char": "engine", "op": "eq", "value": "V8"}, "then": {"char": "transmission", "op": "in", "value": ["auto"]}},
-    })
+    response = await client.post(
+        "/api/v1/constraints/rules",
+        json={
+            "product_id": str(uuid.uuid4()),
+            "name": "Engine requires transmission",
+            "constraint_type": "requires",
+            "expression": {
+                "type": "requires",
+                "if": {"char": "engine", "op": "eq", "value": "V8"},
+                "then": {"char": "transmission", "op": "in", "value": ["auto"]},
+            },
+        },
+    )
     assert response.status_code == 401
 
 
@@ -61,14 +72,17 @@ async def test_validate_expression_requires(constraint_client):
     try:
         mock_key = _make_api_key(tenant)
         with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=mock_key):
-            response = await client.post("/api/v1/constraints/rules/validate", json={
-                "constraint_type": "requires",
-                "expression": {
-                    "type": "requires",
-                    "if": {"char": "engine", "op": "eq", "value": "V8"},
-                    "then": {"char": "transmission", "op": "in", "value": ["auto_6"]},
+            response = await client.post(
+                "/api/v1/constraints/rules/validate",
+                json={
+                    "constraint_type": "requires",
+                    "expression": {
+                        "type": "requires",
+                        "if": {"char": "engine", "op": "eq", "value": "V8"},
+                        "then": {"char": "transmission", "op": "in", "value": ["auto_6"]},
+                    },
                 },
-            })
+            )
         assert response.status_code == 200
         data = response.json()
         assert data["is_valid"] is True
@@ -87,10 +101,13 @@ async def test_validate_expression_missing_if(constraint_client):
     try:
         mock_key = _make_api_key(tenant)
         with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=mock_key):
-            response = await client.post("/api/v1/constraints/rules/validate", json={
-                "constraint_type": "requires",
-                "expression": {"type": "requires", "then": {"char": "x", "op": "eq", "value": "y"}},
-            })
+            response = await client.post(
+                "/api/v1/constraints/rules/validate",
+                json={
+                    "constraint_type": "requires",
+                    "expression": {"type": "requires", "then": {"char": "x", "op": "eq", "value": "y"}},
+                },
+            )
         assert response.status_code == 200
         data = response.json()
         assert data["is_valid"] is False
@@ -109,14 +126,17 @@ async def test_validate_expression_excludes(constraint_client):
     try:
         mock_key = _make_api_key(tenant)
         with patch("app.api.deps._resolve_api_key", new_callable=AsyncMock, return_value=mock_key):
-            response = await client.post("/api/v1/constraints/rules/validate", json={
-                "constraint_type": "excludes",
-                "expression": {
-                    "type": "excludes",
-                    "if": {"char": "trim", "op": "eq", "value": "base"},
-                    "then": {"char": "sunroof", "op": "eq", "value": "panoramic"},
+            response = await client.post(
+                "/api/v1/constraints/rules/validate",
+                json={
+                    "constraint_type": "excludes",
+                    "expression": {
+                        "type": "excludes",
+                        "if": {"char": "trim", "op": "eq", "value": "base"},
+                        "then": {"char": "sunroof", "op": "eq", "value": "panoramic"},
+                    },
                 },
-            })
+            )
         assert response.status_code == 200
         assert response.json()["is_valid"] is True
     finally:

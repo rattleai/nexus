@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime
 from typing import Any
 
-import json
-
 from pydantic import BaseModel, Field, field_validator
-
 
 _MAX_METADATA_BYTES = 65536  # 64KB
 
@@ -32,8 +30,8 @@ class DataSourceCreate(BaseModel):
     mime_type: str | None = Field(default=None, max_length=100)
     file_size: int | None = Field(default=None, ge=0)
     url: str | None = Field(default=None, max_length=2048)
-    cloud_provider: str | None = Field(default=None, description="One of: google_drive, dropbox, onedrive")
-    cloud_connection_id: uuid.UUID | None = None
+    cloud_provider: str | None = Field(default=None, description="Connector slug (e.g. google-workspace, dropbox)")
+    cloud_connection_id: uuid.UUID | None = Field(default=None, description="Connection ID from the connector system")
     cloud_file_id: str | None = Field(default=None, max_length=500)
     content: str | None = Field(default=None, description="Pasted text content (for source_type=paste)")
     metadata: dict[str, Any] | None = None
@@ -59,8 +57,8 @@ class DataSourceRead(BaseModel):
     mime_type: str | None
     file_size: int | None
     url: str | None
-    cloud_provider: str | None
-    cloud_connection_id: uuid.UUID | None
+    cloud_provider: str | None = Field(None, alias="connector_slug")
+    cloud_connection_id: uuid.UUID | None = Field(None, alias="connection_id")
     cloud_file_id: str | None
     extraction_error: str | None
     chunk_count: int
@@ -78,6 +76,29 @@ class DataSourceList(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ── Cloud-drive browse ───────────────────────────────────
+
+
+class DriveItemRead(BaseModel):
+    """One entry in a cloud-drive folder listing."""
+
+    id: str
+    name: str
+    path: str
+    is_folder: bool
+    size: int | None = None
+    mime_type: str | None = None
+    modified_at: datetime | None = None
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class DriveListingRead(BaseModel):
+    """One page of a cloud-drive folder listing."""
+
+    items: list[DriveItemRead]
+    cursor: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -119,9 +140,7 @@ class ConfigItemProvenanceRead(BaseModel):
 
 class DataSourceSearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="Natural language search query")
-    data_source_ids: list[uuid.UUID] | None = Field(
-        default=None, description="Limit search to specific data sources"
-    )
+    data_source_ids: list[uuid.UUID] | None = Field(default=None, description="Limit search to specific data sources")
     top_k: int = Field(default=10, ge=1, le=100, description="Number of results to return")
 
 
@@ -150,9 +169,7 @@ class ExtractionPreview(BaseModel):
         default_factory=dict,
         description="Count of detected entity types, e.g. {'product': 2, 'characteristic': 15}",
     )
-    sample_chunks: list[DataSourceChunkRead] = Field(
-        default_factory=list, description="First few chunks as a preview"
-    )
+    sample_chunks: list[DataSourceChunkRead] = Field(default_factory=list, description="First few chunks as a preview")
     extraction_error: str | None = None
 
     model_config = {"from_attributes": True}

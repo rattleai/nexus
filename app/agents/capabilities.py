@@ -92,7 +92,9 @@ class CapabilityResolver:
         # Assign all three atomically (single-statement swap) so that a
         # concurrent resolve() never sees a partially-built index.
         self._slug_to_tools, self._tool_to_slug, self._domains = (
-            slug_to_tools, tool_to_slug, domains,
+            slug_to_tools,
+            tool_to_slug,
+            domains,
         )
 
     def _ensure_index(self) -> None:
@@ -148,6 +150,97 @@ class CapabilityResolver:
     def invalidate(self) -> None:
         """Clear the cached index (e.g. after hot-reloading plugins in tests)."""
         self._slug_to_tools, self._tool_to_slug, self._domains = None, None, None
+
+    # ── Connector capability extension (tenant-specific) ───
+
+    async def resolve_with_connectors(
+        self,
+        capability_slugs: list[str],
+        tenant_id: uuid.UUID,
+        db: Any,
+    ) -> set[str]:
+        """Resolve capability slugs including tenant-specific connector capabilities.
+
+        Connector capabilities are prefixed with ``connectors:`` and are
+        resolved dynamically from the tenant's active connections.
+        Non-connector slugs are resolved from the static global index.
+        """
+        from app.config import settings
+
+        # Split into global and connector slugs
+        global_slugs = [s for s in capability_slugs if not s.startswith("connectors:")]
+        connector_slugs = [s for s in capability_slugs if s.startswith("connectors:")]
+
+        # Resolve global capabilities
+        tools = self.resolve(global_slugs) if global_slugs else set()
+
+        # Resolve connector capabilities
+        if connector_slugs and settings.CONNECTOR_ENABLED:
+            try:
+                from app.connectors.capabilities import build_connector_capability_domains
+
+                domains = await build_connector_capability_domains(tenant_id, db)
+                # Build a temporary slug → tools index from connector domains
+                connector_index: dict[str, tuple[str, ...]] = {}
+                for domain in domains:
+                    for cap in domain.capabilities:
+                        connector_index[cap.slug] = cap.tools
+
+                for slug in connector_slugs:
+                    if slug in connector_index:
+                        tools.update(connector_index[slug])
+                    else:
+                        logger.debug("connector_capability_slug_unknown", slug=slug)
+            except Exception:
+                logger.debug("connector_capability_resolve_failed", exc_info=True)
+
+        return tools
+
+    async def resolve_agent_tools_with_connectors(
+        self,
+        definition: Any,
+        tenant_id: uuid.UUID,
+        db: Any,
+    ) -> list[str]:
+        """Like ``resolve_agent_tools`` but includes connector capabilities.
+
+        Use this when building the tool list for an agent that may have
+        connector capabilities assigned.
+        """
+        capabilities = getattr(definition, "capabilities", None) or []
+        allowed_tools = getattr(definition, "allowed_tools", None) or []
+
+        if capabilities:
+            has_connector_caps = any(c.startswith("connectors:") for c in capabilities)
+            if has_connector_caps:
+                tools = await self.resolve_with_connectors(capabilities, tenant_id, db)
+            else:
+                tools = self.resolve(capabilities)
+            tools.update(allowed_tools)
+            return sorted(tools)
+
+        return list(allowed_tools)
+
+    async def get_catalog_with_connectors(
+        self,
+        tenant_id: uuid.UUID,
+        db: Any,
+    ) -> list[CapabilityDomain]:
+        """Return the full capability catalog including connector domains."""
+        from app.config import settings
+
+        catalog = self.get_catalog()
+
+        if settings.CONNECTOR_ENABLED:
+            try:
+                from app.connectors.capabilities import build_connector_capability_domains
+
+                connector_domains = await build_connector_capability_domains(tenant_id, db)
+                catalog.extend(connector_domains)
+            except Exception:
+                logger.debug("connector_catalog_build_failed", exc_info=True)
+
+        return catalog
 
 
 # Module-level singleton
@@ -312,9 +405,7 @@ class CapabilityManager:
         # Cache previous key version for rotation grace period
         self._previous_keys: list[bytes] = []
         if self._CURRENT_KEY_VERSION > 1:
-            self._previous_keys.append(
-                self._derive_signing_key(self._CURRENT_KEY_VERSION - 1)
-            )
+            self._previous_keys.append(self._derive_signing_key(self._CURRENT_KEY_VERSION - 1))
 
     @staticmethod
     def _derive_signing_key(version: int = 1) -> bytes:
@@ -323,11 +414,7 @@ class CapabilityManager:
         Uses HKDF-SHA256 with a versioned info string for key rotation support.
         """
         # Try version-specific key first, fall back to primary
-        source = (
-            getattr(settings, f"ENCRYPTION_KEY_V{version}", "")
-            or settings.ENCRYPTION_KEY
-            or settings.SECRET_KEY
-        )
+        source = getattr(settings, f"ENCRYPTION_KEY_V{version}", "") or settings.ENCRYPTION_KEY or settings.SECRET_KEY
         # Deterministic salt provides better key separation than salt=None
         # (RFC 5869 recommends a non-secret random value or application-specific constant)
         salt = hashlib.sha256(b"cadprice-capability-salt-v1").digest()
@@ -415,8 +502,7 @@ class CapabilityManager:
         for prev_key in self._previous_keys:
             expected_sig = self._sign(token, signing_key=prev_key)
             if hmac.compare_digest(token.signature, expected_sig):
-                logger.info("capability_token_verified_with_previous_key",
-                            token_id=token.token_id)
+                logger.info("capability_token_verified_with_previous_key", token_id=token.token_id)
                 return True
         return False
 
@@ -501,16 +587,20 @@ class CapabilityManager:
     def _sign(self, token: CapabilityToken, *, signing_key: bytes | None = None) -> str:
         """Create HMAC-SHA256 signature for a capability token."""
         key = signing_key or self._signing_key
-        payload = json.dumps({
-            "token_id": token.token_id,
-            "instance_id": token.instance_id,
-            "tenant_id": token.tenant_id,
-            "agent_id": token.agent_id,
-            "scope": token.scope.to_dict(),
-            "issued_at": token.issued_at,
-            "expires_at": token.expires_at,
-            "parent_token_id": token.parent_token_id,
-        }, sort_keys=True, separators=(",", ":"))
+        payload = json.dumps(
+            {
+                "token_id": token.token_id,
+                "instance_id": token.instance_id,
+                "tenant_id": token.tenant_id,
+                "agent_id": token.agent_id,
+                "scope": token.scope.to_dict(),
+                "issued_at": token.issued_at,
+                "expires_at": token.expires_at,
+                "parent_token_id": token.parent_token_id,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         return hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()
 
 

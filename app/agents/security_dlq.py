@@ -28,11 +28,14 @@ _DLQ_MAX_SIZE = 10_000
 
 async def enqueue_dead_letter(event_type: str, data: dict[str, Any]) -> None:
     """Enqueue a failed security event for later replay."""
-    entry = json.dumps({
-        "type": event_type,
-        "data": data,
-        "ts": time.time(),
-    }, default=str)
+    entry = json.dumps(
+        {
+            "type": event_type,
+            "data": data,
+            "ts": time.time(),
+        },
+        default=str,
+    )
     try:
         pipe = redis_pool.pipeline()
         pipe.lpush(_DLQ_KEY, entry)

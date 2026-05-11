@@ -149,6 +149,7 @@ class WorkflowRunFailed(DomainEvent):
 @dataclass
 class ConversationStarted(DomainEvent):
     """Emitted when a new interactive conversation session begins."""
+
     tenant_id: str = ""
     session_id: str = ""
     agent_id: str = ""
@@ -157,6 +158,7 @@ class ConversationStarted(DomainEvent):
 @dataclass
 class ConversationTurnCompleted(DomainEvent):
     """Emitted after each turn in an interactive conversation completes."""
+
     tenant_id: str = ""
     session_id: str = ""
     instance_id: str = ""
@@ -168,6 +170,7 @@ class ConversationTurnCompleted(DomainEvent):
 @dataclass
 class ConversationEnded(DomainEvent):
     """Emitted when an interactive conversation session is closed."""
+
     tenant_id: str = ""
     session_id: str = ""
     total_turns: int = 0
@@ -181,6 +184,7 @@ class ConversationEnded(DomainEvent):
 @dataclass
 class AgentDBQueryBlocked(DomainEvent):
     """Emitted when the DB gateway blocks an agent query."""
+
     tenant_id: str = ""
     instance_id: str = ""
     agent_id: str = ""
@@ -191,6 +195,7 @@ class AgentDBQueryBlocked(DomainEvent):
 @dataclass
 class PromptInjectionDetected(DomainEvent):
     """Emitted when the prompt firewall detects a potential injection."""
+
     tenant_id: str = ""
     instance_id: str = ""
     agent_id: str = ""
@@ -202,6 +207,7 @@ class PromptInjectionDetected(DomainEvent):
 @dataclass
 class AgentThreatDetected(DomainEvent):
     """Emitted when the threat detection engine flags anomalous behavior."""
+
     tenant_id: str = ""
     instance_id: str = ""
     agent_id: str = ""
@@ -214,6 +220,7 @@ class AgentThreatDetected(DomainEvent):
 @dataclass
 class AgentCapabilityEscalation(DomainEvent):
     """Emitted when an agent requests elevated capabilities."""
+
     tenant_id: str = ""
     instance_id: str = ""
     agent_id: str = ""
@@ -224,6 +231,7 @@ class AgentCapabilityEscalation(DomainEvent):
 @dataclass
 class ToolSchemaViolation(DomainEvent):
     """Emitted when a tool's schema drifts from its registered hash."""
+
     tenant_id: str = ""
     tool_name: str = ""
     expected_hash: str = ""
@@ -233,6 +241,7 @@ class ToolSchemaViolation(DomainEvent):
 @dataclass
 class A2AMessageSecurityEvent(DomainEvent):
     """Emitted when A2A message security detects an issue."""
+
     tenant_id: str = ""
     from_instance: str = ""
     to_instance: str = ""
@@ -242,6 +251,7 @@ class A2AMessageSecurityEvent(DomainEvent):
 @dataclass
 class DataClassificationViolation(DomainEvent):
     """Emitted when an agent accesses data above its classification level."""
+
     tenant_id: str = ""
     instance_id: str = ""
     agent_id: str = ""
@@ -252,6 +262,7 @@ class DataClassificationViolation(DomainEvent):
 @dataclass
 class ComplianceCheckCompleted(DomainEvent):
     """Emitted when a compliance check run finishes."""
+
     tenant_id: str = ""
     framework: str = ""  # "owasp_llm", "nist_ai_rmf", "eu_ai_act"
     passed: int = 0

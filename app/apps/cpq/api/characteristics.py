@@ -11,8 +11,6 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.rate_limit import ApiKeyRateLimiter
-from app.apps.cpq.engine.engine import ConfiguratorEngine
-from app.core.audit import AuditAction, emit_audit_event
 from app.apps.cpq.api.schemas_configurator import (
     CharacteristicAssignmentCreate,
     CharacteristicAssignmentResponse,
@@ -27,9 +25,7 @@ from app.apps.cpq.api.schemas_configurator import (
     CharacteristicValueResponse,
     CharacteristicValueUpdate,
 )
-from app.core.pagination import CursorPage, paginate
-from app.core.tenant import tenant_query
-from app.db.base import optimistic_version_bump
+from app.apps.cpq.engine.engine import ConfiguratorEngine
 from app.apps.cpq.models.product import (
     Characteristic,
     CharacteristicAssignment,
@@ -38,6 +34,10 @@ from app.apps.cpq.models.product import (
     CharacteristicValue,
     Product,
 )
+from app.core.audit import AuditAction, emit_audit_event
+from app.core.pagination import CursorPage, paginate
+from app.core.tenant import tenant_query
+from app.db.base import optimistic_version_bump
 from app.db.models import Tenant
 
 _api_key_rate_limit = ApiKeyRateLimiter()
@@ -68,8 +68,11 @@ async def create_group(
     )
     db.add(group)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="characteristic_group",
-        resource_id=str(group.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="characteristic_group",
+        resource_id=str(group.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(group)
@@ -88,9 +91,7 @@ async def list_groups(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = tenant_query(select(CharacteristicGroup), tenant).where(
-        CharacteristicGroup.deleted_at.is_(None)
-    )
+    stmt = tenant_query(select(CharacteristicGroup), tenant).where(CharacteristicGroup.deleted_at.is_(None))
     return await paginate(db, stmt, CharacteristicGroup.created_at, limit=limit, cursor=cursor, descending=True)
 
 
@@ -117,8 +118,12 @@ async def update_group(
     for field, value in changes.items():
         setattr(group, field, value)
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="characteristic_group",
-        resource_id=str(group.id), tenant_id=tenant.id, changes=changes,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="characteristic_group",
+        resource_id=str(group.id),
+        tenant_id=tenant.id,
+        changes=changes,
     )
     await db.flush()
     await db.refresh(group)
@@ -146,8 +151,11 @@ async def delete_group(
         raise HTTPException(status_code=404, detail="Characteristic group not found")
     group.deleted_at = datetime.now(UTC)
     await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="characteristic_group",
-        resource_id=str(group.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.DELETE,
+        resource_type="characteristic_group",
+        resource_id=str(group.id),
+        tenant_id=tenant.id,
     )
     await db.commit()
 
@@ -184,8 +192,11 @@ async def create_characteristic(
     )
     db.add(char)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="characteristic",
-        resource_id=str(char.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="characteristic",
+        resource_id=str(char.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(char, attribute_names=["values"])
@@ -245,9 +256,7 @@ async def assign_characteristic(
 ):
     # Validate product exists
     product_result = await db.execute(
-        tenant_query(select(Product), tenant).where(
-            Product.id == body.product_id, Product.deleted_at.is_(None)
-        )
+        tenant_query(select(Product), tenant).where(Product.id == body.product_id, Product.deleted_at.is_(None))
     )
     if not product_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Product not found")
@@ -272,8 +281,11 @@ async def assign_characteristic(
     )
     db.add(assignment)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="characteristic_assignment",
-        resource_id=str(assignment.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="characteristic_assignment",
+        resource_id=str(assignment.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(assignment)
@@ -293,9 +305,9 @@ async def list_assignments(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(CharacteristicAssignment), tenant).where(
-            CharacteristicAssignment.product_id == product_id
-        ).order_by(CharacteristicAssignment.display_order)
+        tenant_query(select(CharacteristicAssignment), tenant)
+        .where(CharacteristicAssignment.product_id == product_id)
+        .order_by(CharacteristicAssignment.display_order)
     )
     return result.scalars().all()
 
@@ -312,9 +324,7 @@ async def update_assignment(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(CharacteristicAssignment), tenant).where(
-            CharacteristicAssignment.id == assignment_id
-        )
+        tenant_query(select(CharacteristicAssignment), tenant).where(CharacteristicAssignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
     if not assignment:
@@ -325,8 +335,11 @@ async def update_assignment(
         setattr(assignment, key, value)
 
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="characteristic_assignment",
-        resource_id=str(assignment.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="characteristic_assignment",
+        resource_id=str(assignment.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(assignment)
@@ -346,17 +359,18 @@ async def remove_assignment(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(CharacteristicAssignment), tenant).where(
-            CharacteristicAssignment.id == assignment_id
-        )
+        tenant_query(select(CharacteristicAssignment), tenant).where(CharacteristicAssignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
     product_id = assignment.product_id
     await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="characteristic_assignment",
-        resource_id=str(assignment.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.DELETE,
+        resource_type="characteristic_assignment",
+        resource_id=str(assignment.id),
+        tenant_id=tenant.id,
     )
     await db.delete(assignment)
     await db.commit()
@@ -411,8 +425,12 @@ async def update_characteristic(
         setattr(char, field, value)
     await optimistic_version_bump(db, char)
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="characteristic",
-        resource_id=str(char.id), tenant_id=tenant.id, changes=changes,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="characteristic",
+        resource_id=str(char.id),
+        tenant_id=tenant.id,
+        changes=changes,
     )
     await db.flush()
     await db.refresh(char, attribute_names=["values"])
@@ -440,8 +458,11 @@ async def delete_characteristic(
         raise HTTPException(status_code=404, detail="Characteristic not found")
     char.deleted_at = datetime.now(UTC)
     await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="characteristic",
-        resource_id=str(char.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.DELETE,
+        resource_type="characteristic",
+        resource_id=str(char.id),
+        tenant_id=tenant.id,
     )
     await db.commit()
 
@@ -482,8 +503,11 @@ async def add_value(
     )
     db.add(val)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="characteristic_value",
-        resource_id=str(val.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="characteristic_value",
+        resource_id=str(val.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(val)
@@ -516,8 +540,12 @@ async def update_value(
     for field, value in changes.items():
         setattr(val, field, value)
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="characteristic_value",
-        resource_id=str(val.id), tenant_id=tenant.id, changes=changes,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="characteristic_value",
+        resource_id=str(val.id),
+        tenant_id=tenant.id,
+        changes=changes,
     )
     await db.flush()
     await db.refresh(val)
@@ -546,8 +574,11 @@ async def delete_value(
     if not val:
         raise HTTPException(status_code=404, detail="Characteristic value not found")
     await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="characteristic_value",
-        resource_id=str(val.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.DELETE,
+        resource_type="characteristic_value",
+        resource_id=str(val.id),
+        tenant_id=tenant.id,
     )
     await db.delete(val)
     await db.commit()

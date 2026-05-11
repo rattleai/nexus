@@ -16,7 +16,7 @@ as a catch-all so new endpoints are immediately usable.
 from __future__ import annotations
 
 import structlog
-from fastapi import Depends, FastAPI, Request
+from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
@@ -29,16 +29,19 @@ logger = structlog.stdlib.get_logger()
 # non-infrastructure entities here.
 # NEVER add: auth, admin, tenants, api-keys, oauth, webauthn, audit, push, sync.
 # These are critical infrastructure that must only be managed from the application UI.
-_INFRA_ALLOWED_TAGS = frozenset({
-    "jobs",
-    "files",
-    "billing",
-    "webhooks",
-    "ai",
-    "agents",
-    "team",
-    "cloud-connections",
-})
+_INFRA_ALLOWED_TAGS = frozenset(
+    {
+        "jobs",
+        "files",
+        "billing",
+        "webhooks",
+        "ai",
+        "agents",
+        "team",
+        "connectors",
+        "connections",
+    }
+)
 
 _INFRA_ALLOWED_PATH_PREFIXES = (
     "/api/v1/jobs",
@@ -48,7 +51,8 @@ _INFRA_ALLOWED_PATH_PREFIXES = (
     "/api/v1/ai",
     "/api/v1/agents",
     "/api/v1/team",
-    "/api/v1/cloud-connections",
+    "/api/v1/connectors",
+    "/api/v1/connections",
 )
 
 # Extend allowlists with plugin contributions
@@ -70,26 +74,28 @@ _ALLOWED_PATH_PREFIXES = _INFRA_ALLOWED_PATH_PREFIXES + tuple(_plugin_prefixes)
 
 # Operation IDs of hand-written tools that should take precedence.
 # If an auto-generated tool would conflict, it's skipped.
-_HANDWRITTEN_OPERATION_IDS = frozenset({
-    "ai_complete",
-    "ai_list_models",
-    "ai_get_usage",
-    "job_create",
-    "job_list",
-    "job_get",
-    "job_cancel",
-    "billing_get_wallet_balance",
-    "billing_list_plans",
-    "billing_get_subscription",
-    "file_upload",
-    "file_download",
-    "file_list",
-    "team_list_members",
-    "team_invite",
-    "webhook_list",
-    "webhook_create",
-    "webhook_delete",
-})
+_HANDWRITTEN_OPERATION_IDS = frozenset(
+    {
+        "ai_complete",
+        "ai_list_models",
+        "ai_get_usage",
+        "job_create",
+        "job_list",
+        "job_get",
+        "job_cancel",
+        "billing_get_wallet_balance",
+        "billing_list_plans",
+        "billing_get_subscription",
+        "file_upload",
+        "file_download",
+        "file_list",
+        "team_list_members",
+        "team_invite",
+        "webhook_list",
+        "webhook_create",
+        "webhook_delete",
+    }
+)
 
 
 def _should_include_operation(
@@ -112,10 +118,7 @@ def _should_include_operation(
         return False
 
     # At least one tag must be in the allowlist
-    if not tags or not _ALLOWED_TAGS.intersection(t.lower() for t in tags):
-        return False
-
-    return True
+    return not (not tags or not _ALLOWED_TAGS.intersection(t.lower() for t in tags))
 
 
 class _MCPAuthMiddleware(BaseHTTPMiddleware):
@@ -138,10 +141,10 @@ class _MCPAuthMiddleware(BaseHTTPMiddleware):
             )
 
         # Validate the key and resolve tenant
-        from app.api.auth import hash_api_key
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
 
+        from app.api.auth import hash_api_key
         from app.db.models import ApiKey
         from app.db.session import async_session_factory
 

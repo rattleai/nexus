@@ -7,7 +7,6 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.rate_limit import ApiKeyRateLimiter
@@ -21,11 +20,11 @@ from app.apps.cpq.api.schemas_configurator import (
     ProductVersionCreate,
     ProductVersionResponse,
 )
+from app.apps.cpq.models.product import Product, ProductFamily, ProductStatus, ProductVersion
 from app.core.audit import AuditAction, emit_audit_event
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
 from app.db.base import optimistic_version_bump
-from app.apps.cpq.models.product import Product, ProductFamily, ProductStatus, ProductVersion
 from app.db.models import Tenant
 
 _api_key_rate_limit = ApiKeyRateLimiter()
@@ -56,8 +55,11 @@ async def create_product_family(
     )
     db.add(family)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="product_family",
-        resource_id=str(family.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="product_family",
+        resource_id=str(family.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(family)
@@ -124,13 +126,17 @@ async def update_product_family(
     changes = body.model_dump(exclude_unset=True)
     for field, value in changes.items():
         if field == "metadata":
-            setattr(family, "metadata_", value)
+            family.metadata_ = value
         else:
             setattr(family, field, value)
     await optimistic_version_bump(db, family)
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="product_family",
-        resource_id=str(family.id), tenant_id=tenant.id, changes=changes,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="product_family",
+        resource_id=str(family.id),
+        tenant_id=tenant.id,
+        changes=changes,
     )
     await db.flush()
     await db.refresh(family)
@@ -158,8 +164,11 @@ async def delete_product_family(
         raise HTTPException(status_code=404, detail="Product family not found")
     family.deleted_at = datetime.now(UTC)
     await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="product_family",
-        resource_id=str(family.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.DELETE,
+        resource_type="product_family",
+        resource_id=str(family.id),
+        tenant_id=tenant.id,
     )
     await db.commit()
 
@@ -190,8 +199,11 @@ async def create_product(
     )
     db.add(product)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="product",
-        resource_id=str(product.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="product",
+        resource_id=str(product.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(product)
@@ -231,9 +243,7 @@ async def get_product(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(Product), tenant).where(
-            Product.id == product_id, Product.deleted_at.is_(None)
-        )
+        tenant_query(select(Product), tenant).where(Product.id == product_id, Product.deleted_at.is_(None))
     )
     product = result.scalar_one_or_none()
     if not product:
@@ -253,9 +263,7 @@ async def update_product(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(Product), tenant).where(
-            Product.id == product_id, Product.deleted_at.is_(None)
-        )
+        tenant_query(select(Product), tenant).where(Product.id == product_id, Product.deleted_at.is_(None))
     )
     product = result.scalar_one_or_none()
     if not product:
@@ -264,15 +272,19 @@ async def update_product(
     changes = body.model_dump(exclude_unset=True)
     for field, value in changes.items():
         if field == "metadata":
-            setattr(product, "metadata_", value)
+            product.metadata_ = value
         elif field == "status":
             product.status = ProductStatus(value)
         else:
             setattr(product, field, value)
     await optimistic_version_bump(db, product)
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="product",
-        resource_id=str(product.id), tenant_id=tenant.id, changes=changes,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="product",
+        resource_id=str(product.id),
+        tenant_id=tenant.id,
+        changes=changes,
     )
     await db.flush()
     await db.refresh(product)
@@ -291,17 +303,18 @@ async def delete_product(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(Product), tenant).where(
-            Product.id == product_id, Product.deleted_at.is_(None)
-        )
+        tenant_query(select(Product), tenant).where(Product.id == product_id, Product.deleted_at.is_(None))
     )
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     product.deleted_at = datetime.now(UTC)
     await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="product",
-        resource_id=str(product.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.DELETE,
+        resource_type="product",
+        resource_id=str(product.id),
+        tenant_id=tenant.id,
     )
     await db.commit()
 
@@ -322,9 +335,7 @@ async def publish_product_version(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(Product), tenant).where(
-            Product.id == product_id, Product.deleted_at.is_(None)
-        )
+        tenant_query(select(Product), tenant).where(Product.id == product_id, Product.deleted_at.is_(None))
     )
     product = result.scalar_one_or_none()
     if not product:
@@ -332,13 +343,12 @@ async def publish_product_version(
 
     # Get next version number
     max_result = await db.execute(
-        select(func.coalesce(func.max(ProductVersion.version_number), 0)).where(
-            ProductVersion.product_id == product_id
-        )
+        select(func.coalesce(func.max(ProductVersion.version_number), 0)).where(ProductVersion.product_id == product_id)
     )
     next_version = max_result.scalar() + 1
 
     from app.apps.cpq.engine.snapshot import compile_snapshot
+
     snapshot = await compile_snapshot(db, product_id, tenant.id)
     snapshot["version_number"] = next_version
 
@@ -353,8 +363,11 @@ async def publish_product_version(
     )
     db.add(version)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="product_version",
-        resource_id=str(version.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="product_version",
+        resource_id=str(version.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(version)
@@ -391,8 +404,11 @@ async def recompile_product_version(
     version.snapshot = snapshot
 
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="product_version",
-        resource_id=str(version.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="product_version",
+        resource_id=str(version.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(version)
@@ -439,16 +455,17 @@ async def activate_product_version(
         raise HTTPException(status_code=404, detail="Product version not found")
 
     # Deactivate all other versions
-    all_versions = await db.execute(
-        select(ProductVersion).where(ProductVersion.product_id == product_id)
-    )
+    all_versions = await db.execute(select(ProductVersion).where(ProductVersion.product_id == product_id))
     for v in all_versions.scalars().all():
         v.is_active = False
 
     version.is_active = True
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="product_version",
-        resource_id=str(version.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="product_version",
+        resource_id=str(version.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(version)

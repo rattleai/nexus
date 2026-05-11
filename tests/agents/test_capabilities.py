@@ -12,9 +12,7 @@ from app.agents.capabilities import (
     CapabilityManager,
     CapabilityScope,
     CapabilityToken,
-    capability_manager,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 

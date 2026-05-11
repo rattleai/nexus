@@ -41,9 +41,7 @@ class TestJWT:
         assert payload["type"] == "access"
 
     def test_expired_token_raises(self):
-        token = create_access_token(
-            {"sub": "user-123"}, expires_delta=timedelta(seconds=-1)
-        )
+        token = create_access_token({"sub": "user-123"}, expires_delta=timedelta(seconds=-1))
         with pytest.raises(jwt.ExpiredSignatureError):
             decode_access_token(token)
 

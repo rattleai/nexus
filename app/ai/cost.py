@@ -6,7 +6,7 @@ platform margin based on key source (BYOK vs platform-managed).
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_UP
+from decimal import ROUND_UP, Decimal
 
 import structlog
 

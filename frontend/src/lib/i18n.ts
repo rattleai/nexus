@@ -26,6 +26,7 @@ export const ns = [
   "api_keys",
   "billing",
   "webhooks",
+  "connectors",
   "audit_log",
   "chat",
   "notifications",

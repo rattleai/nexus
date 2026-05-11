@@ -19,9 +19,8 @@ Requires:
 
 from __future__ import annotations
 
-import os
-
 import pytest
+
 
 # Skip all eval tests unless --evals flag is passed
 def pytest_addoption(parser):
@@ -69,6 +68,7 @@ def deepeval_available():
     """Check if deepeval is installed."""
     try:
         import deepeval
+
         return True
     except ImportError:
         pytest.skip("deepeval not installed (pip install deepeval)")

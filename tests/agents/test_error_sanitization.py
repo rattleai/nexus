@@ -15,7 +15,6 @@ import pytest
 
 from app.agents.db_gateway import AgentDatabaseGateway, GatewayViolationError, QueryPolicy
 
-
 # ── Helpers ────────────────────────────────────────────────────────────
 
 
@@ -72,9 +71,7 @@ class TestErrorSanitization:
     async def test_connection_refused_sanitized(self, mock_redis_pool):
         """RuntimeError with internal hostname/port must not appear in result.error."""
         gw = _make_gateway()
-        sensitive_error = RuntimeError(
-            "Connection to secret-db.internal:5432 refused"
-        )
+        sensitive_error = RuntimeError("Connection to secret-db.internal:5432 refused")
         db, tenant_result = _make_db_that_raises(sensitive_error)
         tenant_result.scalar_one_or_none.return_value = str(gw.tenant_id)
 
@@ -93,8 +90,7 @@ class TestErrorSanitization:
         """Auth errors with credentials must not leak to client."""
         gw = _make_gateway()
         sensitive_error = Exception(
-            'FATAL: password authentication failed for user "admin_readonly" '
-            'on host "db-primary-rw.vpc.internal"'
+            'FATAL: password authentication failed for user "admin_readonly" on host "db-primary-rw.vpc.internal"'
         )
         db, tenant_result = _make_db_that_raises(sensitive_error)
         tenant_result.scalar_one_or_none.return_value = str(gw.tenant_id)
@@ -113,7 +109,7 @@ class TestErrorSanitization:
         gw = _make_gateway()
         sensitive_error = Exception(
             'ERROR: column "secret_column" of relation "internal_payments" does not exist '
-            'LINE 1: SELECT secret_column FROM internal_payments ^'
+            "LINE 1: SELECT secret_column FROM internal_payments ^"
         )
         db, tenant_result = _make_db_that_raises(sensitive_error)
         tenant_result.scalar_one_or_none.return_value = str(gw.tenant_id)
@@ -130,8 +126,7 @@ class TestErrorSanitization:
         """Timeout errors must not reveal server-side config."""
         gw = _make_gateway()
         sensitive_error = Exception(
-            "canceling statement due to statement timeout; "
-            "server=10.0.5.42, port=5432, pid=12345"
+            "canceling statement due to statement timeout; server=10.0.5.42, port=5432, pid=12345"
         )
         db, tenant_result = _make_db_that_raises(sensitive_error)
         tenant_result.scalar_one_or_none.return_value = str(gw.tenant_id)

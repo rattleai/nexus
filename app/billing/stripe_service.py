@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.email import EmailTemplate, send_email
 from app.core.redis import redis_pool
-from app.db.models import CreditPack, Plan, Subscription, SubscriptionStatus, Tenant, UsageRecord, User
+from app.db.models import CreditPack, Plan, Subscription, SubscriptionStatus, Tenant, User
 
 logger = structlog.stdlib.get_logger()
 
@@ -93,9 +93,7 @@ async def create_checkout_session(
         raise ValueError("Invalid plan or plan has no Stripe price ID")
 
     # Load or create Stripe customer
-    sub_result = await db.execute(
-        select(Subscription).where(Subscription.tenant_id == tenant_id)
-    )
+    sub_result = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
     subscription = sub_result.scalar_one_or_none()
     customer_id = subscription.stripe_customer_id if subscription else None
 
@@ -109,7 +107,9 @@ async def create_checkout_session(
         from app.db.models import TenantMembership, UserRole
 
         owner_result = await db.execute(
-            select(User).join(TenantMembership).where(
+            select(User)
+            .join(TenantMembership)
+            .where(
                 TenantMembership.tenant_id == tenant_id,
                 TenantMembership.role == UserRole.OWNER,
             )
@@ -183,9 +183,7 @@ async def create_subscription(
 
 async def cancel_subscription(tenant_id: uuid.UUID, db: AsyncSession) -> Subscription | None:
     """Cancel a tenant's subscription at period end."""
-    result = await db.execute(
-        select(Subscription).where(Subscription.tenant_id == tenant_id)
-    )
+    result = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
     subscription = result.scalar_one_or_none()
     if not subscription or not subscription.stripe_subscription_id:
         return None
@@ -226,17 +224,13 @@ async def create_credit_pack_checkout(
     stripe = _get_stripe()
 
     # Load credit pack
-    pack_result = await db.execute(
-        select(CreditPack).where(CreditPack.id == pack_id, CreditPack.is_active.is_(True))
-    )
+    pack_result = await db.execute(select(CreditPack).where(CreditPack.id == pack_id, CreditPack.is_active.is_(True)))
     pack = pack_result.scalar_one_or_none()
     if not pack or not pack.stripe_price_id:
         raise ValueError("Invalid credit pack or pack has no Stripe price ID")
 
     # Load or create Stripe customer
-    sub_result = await db.execute(
-        select(Subscription).where(Subscription.tenant_id == tenant_id)
-    )
+    sub_result = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
     subscription = sub_result.scalar_one_or_none()
     customer_id = subscription.stripe_customer_id if subscription else None
 
@@ -249,7 +243,9 @@ async def create_credit_pack_checkout(
         from app.db.models import TenantMembership, UserRole
 
         owner_result = await db.execute(
-            select(User).join(TenantMembership).where(
+            select(User)
+            .join(TenantMembership)
+            .where(
                 TenantMembership.tenant_id == tenant_id,
                 TenantMembership.role == UserRole.OWNER,
             )
@@ -288,9 +284,7 @@ async def create_setup_intent(
     stripe = _get_stripe()
 
     # Get Stripe customer ID
-    sub_result = await db.execute(
-        select(Subscription).where(Subscription.tenant_id == tenant_id)
-    )
+    sub_result = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
     subscription = sub_result.scalar_one_or_none()
     if not subscription or not subscription.stripe_customer_id:
         raise ValueError("No billing account found. Please set up billing first.")
@@ -315,9 +309,7 @@ async def configure_auto_refill(
     """Configure auto-refill settings on the tenant's wallet."""
     from app.db.models.ai import DollarWallet
 
-    result = await db.execute(
-        select(DollarWallet).where(DollarWallet.tenant_id == tenant_id)
-    )
+    result = await db.execute(select(DollarWallet).where(DollarWallet.tenant_id == tenant_id))
     wallet = result.scalar_one_or_none()
     if not wallet:
         # Create wallet if it doesn't exist
@@ -326,9 +318,7 @@ async def configure_auto_refill(
         wallet = await wallet_service._get_or_create_wallet(tenant_id, db)
 
     # Verify the payment method belongs to this tenant's Stripe customer
-    sub_result = await db.execute(
-        select(Subscription).where(Subscription.tenant_id == tenant_id)
-    )
+    sub_result = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
     subscription = sub_result.scalar_one_or_none()
     if not subscription or not subscription.stripe_customer_id:
         raise ValueError("No billing account found. Please set up billing first.")
@@ -359,9 +349,7 @@ async def disable_auto_refill(tenant_id: uuid.UUID, db: AsyncSession) -> None:
     """Disable auto-refill for the tenant's wallet."""
     from app.db.models.ai import DollarWallet
 
-    result = await db.execute(
-        select(DollarWallet).where(DollarWallet.tenant_id == tenant_id)
-    )
+    result = await db.execute(select(DollarWallet).where(DollarWallet.tenant_id == tenant_id))
     wallet = result.scalar_one_or_none()
     if wallet:
         wallet.auto_refill_enabled = False
@@ -369,9 +357,7 @@ async def disable_auto_refill(tenant_id: uuid.UUID, db: AsyncSession) -> None:
     logger.info("auto_refill_disabled", tenant_id=str(tenant_id))
 
 
-async def handle_webhook_event(
-    event_id: str, event_type: str, event_data: dict, db: AsyncSession
-) -> None:
+async def handle_webhook_event(event_id: str, event_type: str, event_data: dict, db: AsyncSession) -> None:
     """Process a Stripe webhook event with idempotency protection."""
     # Atomic claim: SET NX prevents TOCTOU race on concurrent deliveries
     if not await _try_claim_event(event_id):
@@ -417,9 +403,7 @@ async def _handle_subscription_updated(data: dict, db: AsyncSession) -> None:
     stripe_sub_id = data["object"]["id"]
     status = data["object"]["status"]
 
-    result = await db.execute(
-        select(Subscription).where(Subscription.stripe_subscription_id == stripe_sub_id)
-    )
+    result = await db.execute(select(Subscription).where(Subscription.stripe_subscription_id == stripe_sub_id))
     subscription = result.scalar_one_or_none()
     if not subscription:
         logger.warning("stripe_subscription_not_found", stripe_sub_id=stripe_sub_id)
@@ -454,9 +438,7 @@ async def _handle_subscription_deleted(data: dict, db: AsyncSession) -> None:
     """Handle subscription cancellation — downgrade tenant to free."""
     stripe_sub_id = data["object"]["id"]
 
-    result = await db.execute(
-        select(Subscription).where(Subscription.stripe_subscription_id == stripe_sub_id)
-    )
+    result = await db.execute(select(Subscription).where(Subscription.stripe_subscription_id == stripe_sub_id))
     subscription = result.scalar_one_or_none()
     if not subscription:
         return
@@ -489,9 +471,7 @@ async def _handle_invoice_paid(data: dict, db: AsyncSession) -> None:
     customer_id = invoice.get("customer")
     amount_paid = invoice.get("amount_paid") or 0
 
-    result = await db.execute(
-        select(Subscription).where(Subscription.stripe_customer_id == customer_id)
-    )
+    result = await db.execute(select(Subscription).where(Subscription.stripe_customer_id == customer_id))
     subscription = result.scalar_one_or_none()
     if not subscription:
         logger.info("invoice_paid_no_subscription", invoice_id=invoice["id"])
@@ -521,9 +501,7 @@ async def _handle_payment_failed(data: dict, db: AsyncSession) -> None:
     invoice = data["object"]
     customer_id = invoice.get("customer")
 
-    result = await db.execute(
-        select(Subscription).where(Subscription.stripe_customer_id == customer_id)
-    )
+    result = await db.execute(select(Subscription).where(Subscription.stripe_customer_id == customer_id))
     subscription = result.scalar_one_or_none()
     if not subscription:
         return
@@ -561,9 +539,7 @@ async def _handle_checkout_completed(data: dict, db: AsyncSession) -> None:
         await _handle_subscription_checkout(session, metadata, db)
 
 
-async def _handle_credit_pack_checkout(
-    session: dict, metadata: dict, db: AsyncSession
-) -> None:
+async def _handle_credit_pack_checkout(session: dict, metadata: dict, db: AsyncSession) -> None:
     """Credit the tenant's wallet after a credit pack purchase."""
     from app.ai.wallet import wallet_service
 
@@ -617,9 +593,7 @@ async def _handle_credit_pack_checkout(
     )
 
 
-async def _handle_subscription_checkout(
-    session: dict, metadata: dict, db: AsyncSession
-) -> None:
+async def _handle_subscription_checkout(session: dict, metadata: dict, db: AsyncSession) -> None:
     """Create or update subscription record after subscription checkout."""
     tenant_id_str = metadata.get("tenant_id")
     plan_id_str = metadata.get("plan_id")
@@ -634,14 +608,13 @@ async def _handle_subscription_checkout(
         tenant_id = uuid.UUID(tenant_id_str)
         plan_id = uuid.UUID(plan_id_str)
     except (ValueError, AttributeError):
-        logger.error("checkout_invalid_uuid_metadata", session_id=session["id"],
-                      tenant_id=tenant_id_str, plan_id=plan_id_str)
+        logger.error(
+            "checkout_invalid_uuid_metadata", session_id=session["id"], tenant_id=tenant_id_str, plan_id=plan_id_str
+        )
         return
 
     # Check if subscription already exists
-    existing = await db.execute(
-        select(Subscription).where(Subscription.tenant_id == tenant_id)
-    )
+    existing = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
     subscription = existing.scalar_one_or_none()
 
     # Load Stripe subscription for period info and verify price matches plan
@@ -712,7 +685,9 @@ async def _notify_tenant_owner(
         from app.db.models import TenantMembership, UserRole
 
         owner_result = await db.execute(
-            select(User).join(TenantMembership).where(
+            select(User)
+            .join(TenantMembership)
+            .where(
                 TenantMembership.tenant_id == tenant_id,
                 TenantMembership.role == UserRole.OWNER,
             )
@@ -741,9 +716,7 @@ async def report_usage_to_stripe(
     stripe = _get_stripe()
 
     # Get customer ID
-    result = await db.execute(
-        select(Subscription).where(Subscription.tenant_id == tenant_id)
-    )
+    result = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
     subscription = result.scalar_one_or_none()
     if not subscription or not subscription.stripe_customer_id:
         logger.warning("usage_report_no_customer", tenant_id=str(tenant_id))
@@ -794,7 +767,9 @@ async def get_usage_summary(
 
     # Count resources in parallel-safe sequential queries (same session)
     jobs_result = await db.execute(
-        select(func.count()).select_from(Job).where(
+        select(func.count())
+        .select_from(Job)
+        .where(
             Job.tenant_id == tenant_id,
             Job.deleted_at.is_(None),
         )
@@ -802,7 +777,9 @@ async def get_usage_summary(
     jobs_count = jobs_result.scalar() or 0
 
     api_keys_result = await db.execute(
-        select(func.count()).select_from(ApiKey).where(
+        select(func.count())
+        .select_from(ApiKey)
+        .where(
             ApiKey.tenant_id == tenant_id,
             ApiKey.active.is_(True),
         )
@@ -810,7 +787,9 @@ async def get_usage_summary(
     api_keys_count = api_keys_result.scalar() or 0
 
     members_result = await db.execute(
-        select(func.count()).select_from(TenantMembership).where(
+        select(func.count())
+        .select_from(TenantMembership)
+        .where(
             TenantMembership.tenant_id == tenant_id,
         )
     )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import structlog
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, text
@@ -11,6 +12,9 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin
+
+if TYPE_CHECKING:
+    from app.db.models.core import User
 
 logger = structlog.stdlib.get_logger()
 
@@ -26,18 +30,20 @@ class OAuthAccount(TimestampMixin, Base):
     refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    user: Mapped["User"] = relationship(back_populates="oauth_accounts")
+    user: Mapped[User] = relationship(back_populates="oauth_accounts")
 
     __table_args__ = (UniqueConstraint("provider", "provider_user_id", name="uq_oauth_provider_user"),)
 
     def set_access_token(self, plaintext: str) -> None:
         from app.core.encryption import encrypt
+
         self.access_token = encrypt(plaintext)
 
     def get_access_token(self) -> str | None:
         if not self.access_token:
             return None
         from app.core.encryption import decrypt
+
         try:
             return decrypt(self.access_token)
         except Exception:
@@ -46,12 +52,14 @@ class OAuthAccount(TimestampMixin, Base):
 
     def set_refresh_token(self, plaintext: str) -> None:
         from app.core.encryption import encrypt
+
         self.refresh_token = encrypt(plaintext)
 
     def get_refresh_token(self) -> str | None:
         if not self.refresh_token:
             return None
         from app.core.encryption import decrypt
+
         try:
             return decrypt(self.refresh_token)
         except Exception:

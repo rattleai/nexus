@@ -51,8 +51,7 @@ HNSW_EF_CONSTRUCTION = 128
 def _create_enum(name: str, values: list[str]) -> None:
     val_list = ", ".join(f"'{v}'" for v in values)
     op.execute(
-        f"DO $$ BEGIN CREATE TYPE {name} AS ENUM ({val_list}); "
-        f"EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
+        f"DO $$ BEGIN CREATE TYPE {name} AS ENUM ({val_list}); EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
     )
 
 
@@ -326,8 +325,13 @@ def _create_core_tables() -> None:
         sa.Column(
             "status",
             PG_ENUM(
-                "pending", "processing", "completed", "failed", "cancelled",
-                name="jobstatus", create_type=False,
+                "pending",
+                "processing",
+                "completed",
+                "failed",
+                "cancelled",
+                name="jobstatus",
+                create_type=False,
             ),
             server_default=sa.text("'pending'"),
             nullable=False,
@@ -399,8 +403,13 @@ def _create_core_tables() -> None:
         sa.Column(
             "status",
             PG_ENUM(
-                "active", "past_due", "canceled", "trialing", "incomplete",
-                name="subscriptionstatus", create_type=False,
+                "active",
+                "past_due",
+                "canceled",
+                "trialing",
+                "incomplete",
+                name="subscriptionstatus",
+                create_type=False,
             ),
             server_default=sa.text("'active'"),
             nullable=False,
@@ -421,8 +430,16 @@ def _create_core_tables() -> None:
         sa.Column(
             "provider",
             PG_ENUM(
-                "openai", "anthropic", "google", "mistral", "deepseek", "qwen", "aleph_alpha", "xai",
-                name="aiprovider", create_type=False,
+                "openai",
+                "anthropic",
+                "google",
+                "mistral",
+                "deepseek",
+                "qwen",
+                "aleph_alpha",
+                "xai",
+                name="aiprovider",
+                create_type=False,
             ),
             nullable=False,
         ),
@@ -501,8 +518,13 @@ def _create_core_tables() -> None:
         sa.Column(
             "type",
             PG_ENUM(
-                "topup", "consumption", "refund", "adjustment", "bonus",
-                name="wallettransactiontype", create_type=False,
+                "topup",
+                "consumption",
+                "refund",
+                "adjustment",
+                "bonus",
+                name="wallettransactiontype",
+                create_type=False,
             ),
             nullable=False,
         ),
@@ -686,8 +708,12 @@ def _create_auth_mobile_webhook_tables() -> None:
         sa.Column(
             "status",
             PG_ENUM(
-                "pending", "accepted", "expired", "revoked",
-                name="invitationstatus", create_type=False,
+                "pending",
+                "accepted",
+                "expired",
+                "revoked",
+                name="invitationstatus",
+                create_type=False,
             ),
             server_default=sa.text("'pending'"),
             nullable=False,
@@ -784,9 +810,14 @@ def _create_gdpr_tables() -> None:
         sa.Column(
             "consent_type",
             PG_ENUM(
-                "terms_of_service", "privacy_policy", "marketing", "data_processing",
-                "cookies", "third_party_sharing",
-                name="consent_type", create_type=False,
+                "terms_of_service",
+                "privacy_policy",
+                "marketing",
+                "data_processing",
+                "cookies",
+                "third_party_sharing",
+                name="consent_type",
+                create_type=False,
             ),
             nullable=False,
         ),
@@ -810,16 +841,26 @@ def _create_gdpr_tables() -> None:
         sa.Column(
             "request_type",
             PG_ENUM(
-                "access", "rectification", "erasure", "portability", "restriction", "objection",
-                name="dsar_type", create_type=False,
+                "access",
+                "rectification",
+                "erasure",
+                "portability",
+                "restriction",
+                "objection",
+                name="dsar_type",
+                create_type=False,
             ),
             nullable=False,
         ),
         sa.Column(
             "status",
             PG_ENUM(
-                "received", "in_progress", "completed", "rejected",
-                name="dsar_status", create_type=False,
+                "received",
+                "in_progress",
+                "completed",
+                "rejected",
+                name="dsar_status",
+                create_type=False,
             ),
             nullable=False,
             server_default="received",
@@ -925,8 +966,14 @@ def _create_agent_tables() -> None:
         sa.Column(
             "status",
             PG_ENUM(
-                "pending", "running", "waiting_approval", "completed", "failed", "cancelled",
-                name="workflow_run_status", create_type=False,
+                "pending",
+                "running",
+                "waiting_approval",
+                "completed",
+                "failed",
+                "cancelled",
+                name="workflow_run_status",
+                create_type=False,
             ),
             server_default="pending",
         ),
@@ -1007,8 +1054,14 @@ def _create_agent_tables() -> None:
         sa.Column(
             "status",
             PG_ENUM(
-                "pending", "running", "paused", "completed", "failed", "cancelled",
-                name="instance_status", create_type=False,
+                "pending",
+                "running",
+                "paused",
+                "completed",
+                "failed",
+                "cancelled",
+                name="instance_status",
+                create_type=False,
             ),
             server_default="pending",
         ),
@@ -1036,7 +1089,9 @@ def _create_agent_tables() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.UniqueConstraint(
-            "tenant_id", "definition_id", "idempotency_key",
+            "tenant_id",
+            "definition_id",
+            "idempotency_key",
             name="uq_agent_instance_idempotency",
         ),
     )
@@ -1254,8 +1309,7 @@ def _create_agent_tables() -> None:
     )
     # Partial unique index for system presets (tenant_id IS NULL)
     op.execute(
-        "CREATE UNIQUE INDEX uq_capability_preset_system_slug "
-        "ON capability_presets (slug) WHERE tenant_id IS NULL"
+        "CREATE UNIQUE INDEX uq_capability_preset_system_slug ON capability_presets (slug) WHERE tenant_id IS NULL"
     )
 
 
@@ -1294,8 +1348,12 @@ def _create_cpq_tables() -> None:
         sa.Column(
             "status",
             PG_ENUM(
-                "draft", "active", "deprecated", "archived",
-                name="productstatus", create_type=False,
+                "draft",
+                "active",
+                "deprecated",
+                "archived",
+                name="productstatus",
+                create_type=False,
             ),
             nullable=False,
             server_default="draft",
@@ -1369,8 +1427,12 @@ def _create_cpq_tables() -> None:
         sa.Column(
             "char_type",
             PG_ENUM(
-                "enum", "numeric", "boolean", "text",
-                name="characteristictype", create_type=False,
+                "enum",
+                "numeric",
+                "boolean",
+                "text",
+                name="characteristictype",
+                create_type=False,
             ),
             nullable=False,
         ),
@@ -1491,8 +1553,14 @@ def _create_cpq_tables() -> None:
         sa.Column(
             "constraint_type",
             PG_ENUM(
-                "requires", "excludes", "selection_condition", "default_value", "formula", "table",
-                name="constrainttype", create_type=False,
+                "requires",
+                "excludes",
+                "selection_condition",
+                "default_value",
+                "formula",
+                "table",
+                name="constrainttype",
+                create_type=False,
             ),
             nullable=False,
         ),
@@ -1584,8 +1652,12 @@ def _create_cpq_tables() -> None:
         sa.Column(
             "item_type",
             PG_ENUM(
-                "component", "sub_assembly", "phantom", "reference",
-                name="bomitemtype", create_type=False,
+                "component",
+                "sub_assembly",
+                "phantom",
+                "reference",
+                name="bomitemtype",
+                create_type=False,
             ),
             server_default="component",
         ),
@@ -1653,8 +1725,12 @@ def _create_cpq_tables() -> None:
         sa.Column(
             "status",
             PG_ENUM(
-                "in_progress", "complete", "invalid", "locked",
-                name="configurationstatus", create_type=False,
+                "in_progress",
+                "complete",
+                "invalid",
+                "locked",
+                name="configurationstatus",
+                create_type=False,
             ),
             server_default="in_progress",
         ),
@@ -1754,9 +1830,15 @@ def _create_cpq_tables() -> None:
         sa.Column(
             "rule_type",
             PG_ENUM(
-                "base_price", "option_surcharge", "volume_discount", "conditional",
-                "formula", "tiered", "margin",
-                name="pricingruletype", create_type=False,
+                "base_price",
+                "option_surcharge",
+                "volume_discount",
+                "conditional",
+                "formula",
+                "tiered",
+                "margin",
+                name="pricingruletype",
+                create_type=False,
             ),
             nullable=False,
         ),
@@ -1821,8 +1903,11 @@ def _create_datasource_scaffolding() -> None:
         sa.Column(
             "provider",
             PG_ENUM(
-                "google_drive", "dropbox", "onedrive",
-                name="cloudprovider", create_type=False,
+                "google_drive",
+                "dropbox",
+                "onedrive",
+                name="cloudprovider",
+                create_type=False,
             ),
             nullable=False,
         ),
@@ -1860,16 +1945,24 @@ def _create_datasource_scaffolding() -> None:
         sa.Column(
             "source_type",
             PG_ENUM(
-                "upload", "cloud_drive", "url", "paste",
-                name="datasourcetype", create_type=False,
+                "upload",
+                "cloud_drive",
+                "url",
+                "paste",
+                name="datasourcetype",
+                create_type=False,
             ),
             nullable=False,
         ),
         sa.Column(
             "status",
             PG_ENUM(
-                "pending", "processing", "ready", "error",
-                name="datasourcestatus", create_type=False,
+                "pending",
+                "processing",
+                "ready",
+                "error",
+                name="datasourcestatus",
+                create_type=False,
             ),
             server_default="pending",
             nullable=False,
@@ -1882,8 +1975,11 @@ def _create_datasource_scaffolding() -> None:
         sa.Column(
             "cloud_provider",
             PG_ENUM(
-                "google_drive", "dropbox", "onedrive",
-                name="cloudprovider", create_type=False,
+                "google_drive",
+                "dropbox",
+                "onedrive",
+                name="cloudprovider",
+                create_type=False,
             ),
             nullable=True,
         ),
@@ -1959,7 +2055,7 @@ def _create_partitioned_chunks() -> None:
     # (from 0022+0027+0028+0032+0036). Columns kept broad/nullable where the
     # original migrations added them via ALTER TABLE.
     op.execute(
-        f"""
+        """
         CREATE TABLE data_source_chunks (
             id UUID NOT NULL,
             tenant_id UUID NOT NULL REFERENCES tenants(id),
@@ -1998,32 +2094,16 @@ def _create_partitioned_chunks() -> None:
 
     # Parent-level indexes (propagate to partitions)
     op.execute("CREATE INDEX ix_dsc_part_tenant ON data_source_chunks (tenant_id)")
+    op.execute("CREATE INDEX ix_dsc_part_tenant_source ON data_source_chunks (tenant_id, data_source_id)")
+    op.execute("CREATE INDEX ix_dsc_part_tenant_type ON data_source_chunks (tenant_id, content_type)")
+    op.execute("CREATE INDEX ix_dsc_part_tenant_indexed ON data_source_chunks (tenant_id, indexed_at)")
+    op.execute("CREATE INDEX ix_dsc_part_content_tsv ON data_source_chunks USING gin (content_tsv)")
     op.execute(
-        "CREATE INDEX ix_dsc_part_tenant_source ON data_source_chunks (tenant_id, data_source_id)"
+        "CREATE INDEX ix_dsc_parent_chunk ON data_source_chunks (parent_chunk_id) WHERE parent_chunk_id IS NOT NULL"
     )
-    op.execute(
-        "CREATE INDEX ix_dsc_part_tenant_type ON data_source_chunks (tenant_id, content_type)"
-    )
-    op.execute(
-        "CREATE INDEX ix_dsc_part_tenant_indexed ON data_source_chunks (tenant_id, indexed_at)"
-    )
-    op.execute(
-        "CREATE INDEX ix_dsc_part_content_tsv ON data_source_chunks USING gin (content_tsv)"
-    )
-    op.execute(
-        "CREATE INDEX ix_dsc_parent_chunk ON data_source_chunks (parent_chunk_id) "
-        "WHERE parent_chunk_id IS NOT NULL"
-    )
-    op.execute(
-        "CREATE INDEX ix_dsc_chunk_level ON data_source_chunks (tenant_id, chunk_level)"
-    )
-    op.execute(
-        "CREATE INDEX ix_dsc_deleted_at ON data_source_chunks (deleted_at) "
-        "WHERE deleted_at IS NOT NULL"
-    )
-    op.execute(
-        "CREATE INDEX ix_dsc_source_content_hash ON data_source_chunks (data_source_id, content_hash)"
-    )
+    op.execute("CREATE INDEX ix_dsc_chunk_level ON data_source_chunks (tenant_id, chunk_level)")
+    op.execute("CREATE INDEX ix_dsc_deleted_at ON data_source_chunks (deleted_at) WHERE deleted_at IS NOT NULL")
+    op.execute("CREATE INDEX ix_dsc_source_content_hash ON data_source_chunks (data_source_id, content_hash)")
 
     # Per-partition HNSW indexes (PostgreSQL doesn't allow HNSW on a
     # partitioned parent directly). Final 0037 tuning parameters.
@@ -2304,10 +2384,7 @@ def _create_rag_infrastructure() -> None:
         WITH DATA
         """
     )
-    op.execute(
-        "CREATE UNIQUE INDEX ix_mv_tenant_chunk_stats_tenant "
-        "ON mv_tenant_chunk_stats (tenant_id)"
-    )
+    op.execute("CREATE UNIQUE INDEX ix_mv_tenant_chunk_stats_tenant ON mv_tenant_chunk_stats (tenant_id)")
 
 
 # ── 11. Triggers and functions ──────────────────────────────────────
@@ -2460,18 +2537,27 @@ SYSTEM_CAPABILITY_PRESETS: list[dict] = [
         "name": "Full Product Manager",
         "slug": "full-product-manager",
         "description": (
-            "Full read/write/delete access to all product configurator "
-            "capabilities plus AI and file tools."
+            "Full read/write/delete access to all product configurator capabilities plus AI and file tools."
         ),
         "icon": "ShieldCheck",
         "capabilities": [
-            "cpq:products:read", "cpq:products:write", "cpq:products:delete",
-            "cpq:characteristics:read", "cpq:characteristics:write",
-            "cpq:constraints:read", "cpq:constraints:write", "cpq:constraints:delete",
+            "cpq:products:read",
+            "cpq:products:write",
+            "cpq:products:delete",
+            "cpq:characteristics:read",
+            "cpq:characteristics:write",
+            "cpq:constraints:read",
+            "cpq:constraints:write",
+            "cpq:constraints:delete",
             "cpq:bom:write",
-            "cpq:pricing:read", "cpq:pricing:write", "cpq:pricing:delete",
-            "cpq:configurator", "cpq:data", "cpq:versioning",
-            "platform:ai", "platform:files",
+            "cpq:pricing:read",
+            "cpq:pricing:write",
+            "cpq:pricing:delete",
+            "cpq:configurator",
+            "cpq:data",
+            "cpq:versioning",
+            "platform:ai",
+            "platform:files",
         ],
         "governance_overrides": {
             "require_approval_for_capabilities": [
@@ -2484,14 +2570,13 @@ SYSTEM_CAPABILITY_PRESETS: list[dict] = [
         "id": str(uuid.uuid5(uuid.NAMESPACE_DNS, "preset:read-only-analyst")),
         "name": "Read-Only Analyst",
         "slug": "read-only-analyst",
-        "description": (
-            "View-only access to products, characteristics, constraints, and "
-            "pricing simulations."
-        ),
+        "description": ("View-only access to products, characteristics, constraints, and pricing simulations."),
         "icon": "Eye",
         "capabilities": [
-            "cpq:products:read", "cpq:characteristics:read",
-            "cpq:constraints:read", "cpq:pricing:read",
+            "cpq:products:read",
+            "cpq:characteristics:read",
+            "cpq:constraints:read",
+            "cpq:pricing:read",
             "cpq:configurator",
             "platform:ai",
         ],
@@ -2502,15 +2587,19 @@ SYSTEM_CAPABILITY_PRESETS: list[dict] = [
         "name": "Configuration Builder",
         "slug": "configuration-builder",
         "description": (
-            "Create and manage product configurators: products, characteristics, "
-            "constraints, and versions."
+            "Create and manage product configurators: products, characteristics, constraints, and versions."
         ),
         "icon": "Wrench",
         "capabilities": [
-            "cpq:products:read", "cpq:products:write",
-            "cpq:characteristics:read", "cpq:characteristics:write",
-            "cpq:constraints:read", "cpq:constraints:write",
-            "cpq:configurator", "cpq:data", "cpq:versioning",
+            "cpq:products:read",
+            "cpq:products:write",
+            "cpq:characteristics:read",
+            "cpq:characteristics:write",
+            "cpq:constraints:read",
+            "cpq:constraints:write",
+            "cpq:configurator",
+            "cpq:data",
+            "cpq:versioning",
             "platform:ai",
         ],
         "governance_overrides": {},
@@ -2522,8 +2611,10 @@ SYSTEM_CAPABILITY_PRESETS: list[dict] = [
         "description": "Manage pricing rules and simulate pricing for product configurations.",
         "icon": "DollarSign",
         "capabilities": [
-            "cpq:products:read", "cpq:characteristics:read",
-            "cpq:pricing:read", "cpq:pricing:write",
+            "cpq:products:read",
+            "cpq:characteristics:read",
+            "cpq:pricing:read",
+            "cpq:pricing:write",
             "cpq:configurator",
             "platform:ai",
         ],
@@ -2533,10 +2624,7 @@ SYSTEM_CAPABILITY_PRESETS: list[dict] = [
         "id": str(uuid.uuid5(uuid.NAMESPACE_DNS, "preset:code-assistant")),
         "name": "Code Assistant",
         "slug": "code-assistant",
-        "description": (
-            "AI-powered code execution with file access for data processing "
-            "and analysis."
-        ),
+        "description": ("AI-powered code execution with file access for data processing and analysis."),
         "icon": "Code",
         "capabilities": ["platform:ai", "platform:files", "platform:code"],
         "governance_overrides": {"max_spend_per_run_usd": 2.0},

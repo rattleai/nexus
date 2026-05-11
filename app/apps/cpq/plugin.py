@@ -8,7 +8,8 @@ instance at discovery time.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from app.plugins.base import (
     AppPluginBase,
@@ -24,7 +25,6 @@ if TYPE_CHECKING:
 
 
 class CPQPlugin(AppPluginBase):
-
     @property
     def name(self) -> str:
         return "cpq"

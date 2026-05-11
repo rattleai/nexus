@@ -1,14 +1,12 @@
 """Pydantic request/response schemas for the product configurator domain."""
 
+import json
 import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-import json
-
 from pydantic import BaseModel, Field, field_validator, model_validator
-
 
 _MAX_METADATA_BYTES = 65536  # 64KB
 
@@ -254,9 +252,8 @@ class CharacteristicAssignmentCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_cardinality(self):
-        if self.min_select is not None and self.max_select is not None:
-            if self.min_select > self.max_select:
-                raise ValueError("min_select cannot exceed max_select")
+        if self.min_select is not None and self.max_select is not None and self.min_select > self.max_select:
+            raise ValueError("min_select cannot exceed max_select")
         return self
 
 
@@ -269,9 +266,8 @@ class CharacteristicAssignmentUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_cardinality(self):
-        if self.min_select is not None and self.max_select is not None:
-            if self.min_select > self.max_select:
-                raise ValueError("min_select cannot exceed max_select")
+        if self.min_select is not None and self.max_select is not None and self.min_select > self.max_select:
+            raise ValueError("min_select cannot exceed max_select")
         return self
 
 
@@ -676,7 +672,9 @@ class PricingRuleCreate(BaseModel):
     product_id: uuid.UUID
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
-    rule_type: str = Field(..., pattern=r"^(base_price|option_surcharge|volume_discount|conditional|formula|tiered|margin)$")
+    rule_type: str = Field(
+        ..., pattern=r"^(base_price|option_surcharge|volume_discount|conditional|formula|tiered|margin)$"
+    )
     expression: dict[str, Any]
     priority: int = 0
     is_active: bool = True

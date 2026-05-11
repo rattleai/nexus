@@ -62,11 +62,11 @@ class AgentExecutionError(Exception):
 def _sanitize_error(exc: Exception, max_len: int = 2000) -> str:
     """Sanitize error messages to prevent leaking sensitive data."""
     msg = str(exc)
-    msg = re.sub(r'(sk-|pk_|Bearer\s+)\S+', '[REDACTED]', msg)
-    msg = re.sub(r'AKIA[A-Z0-9]{16}', '[AWS_KEY_REDACTED]', msg)
-    msg = re.sub(r'(postgresql|mysql|redis|mongodb)://\S+', '[DB_URL_REDACTED]', msg)
-    msg = re.sub(r'(?i)(password|secret|token|key)\s*[=:]\s*\S+', r'\1=[REDACTED]', msg)
-    msg = re.sub(r'(/Users/|/home/|/var/)\S+', '[PATH]', msg)
+    msg = re.sub(r"(sk-|pk_|Bearer\s+)\S+", "[REDACTED]", msg)
+    msg = re.sub(r"AKIA[A-Z0-9]{16}", "[AWS_KEY_REDACTED]", msg)
+    msg = re.sub(r"(postgresql|mysql|redis|mongodb)://\S+", "[DB_URL_REDACTED]", msg)
+    msg = re.sub(r"(?i)(password|secret|token|key)\s*[=:]\s*\S+", r"\1=[REDACTED]", msg)
+    msg = re.sub(r"(/Users/|/home/|/var/)\S+", "[PATH]", msg)
     return msg[:max_len]
 
 
@@ -165,12 +165,14 @@ class AgentExecutor:
 
         # Check tenant circuit breaker
         from app.agents.governance import GovernanceEngine as _GovEngine
+
         cb_open, cb_reason = await _GovEngine.check_tenant_circuit_breaker(tenant_id)
         if cb_open:
             raise AgentExecutionError(f"Agent execution paused: {cb_reason}")
 
         # Create capability token
         from app.agents.capabilities import CapabilityScope, capability_manager
+
         cap_scope = CapabilityScope(
             tools=definition.allowed_tools or [],
             max_spend_usd=float(definition.governance_policy.get("max_spend_per_run_usd", 0) or 0),
@@ -189,6 +191,7 @@ class AgentExecutor:
         # Run prompt firewall on input messages
         canary_token = ""
         from app.ai.prompt_firewall import PromptFirewall
+
         firewall = PromptFirewall(
             tenant_id=str(tenant_id),
             agent_id=str(definition_id),
@@ -198,15 +201,17 @@ class AgentExecutor:
         fw_result = firewall.scan_input(messages)
         canary_token = fw_result.canary_token
         if fw_result.should_block:
-            raise AgentExecutionError(
-                f"Prompt firewall blocked input: {fw_result.violations[0]['detail'][:200]}"
-            )
+            raise AgentExecutionError(f"Prompt firewall blocked input: {fw_result.violations[0]['detail'][:200]}")
 
         # Resolve @data_source mentions in user messages
         messages = await self._resolve_datasource_mentions(messages, tenant_id)
 
         # Set up tool executor and governance (created once, not per-call)
-        tool_executor = self._build_tool_executor(definition, tenant_id)
+        tool_executor = self._build_tool_executor(
+            definition,
+            tenant_id,
+            agent_instance_id=instance.id,
+        )
         governance_checker = self._build_governance_checker(definition, tenant_id)
 
         # Run the agent
@@ -244,13 +249,16 @@ class AgentExecutor:
                 if step.action == "response" and step.content:
                     new_messages.append({"role": "assistant", "content": step.content})
                 elif step.action == "tool_call":
-                    new_messages.append({
-                        "role": "assistant",
-                        "content": f"[Tool: {step.tool_name}]",
-                    })
+                    new_messages.append(
+                        {
+                            "role": "assistant",
+                            "content": f"[Tool: {step.tool_name}]",
+                        }
+                    )
 
             # Truncate to prevent unbounded JSONB growth
             from app.config import settings
+
             max_msgs = settings.AGENT_SESSION_MAX_MESSAGES
             if len(new_messages) > max_msgs:
                 new_messages = new_messages[-max_msgs:]
@@ -275,6 +283,7 @@ class AgentExecutor:
             # Threat detection scoring
             with _ctxlib.suppress(Exception):
                 from app.agents.threat_detection import RunMetrics, ThreatDetectionEngine
+
                 td_engine = ThreatDetectionEngine(
                     tenant_id=str(tenant_id),
                     agent_id=str(definition_id),
@@ -397,9 +406,7 @@ class AgentExecutor:
             raise AgentExecutionError(f"Instance {instance_id} not found")
 
         if instance.status not in (InstanceStatus.RUNNING, InstanceStatus.PENDING):
-            raise AgentExecutionError(
-                f"Instance {instance_id} is not running (status={instance.status.value})"
-            )
+            raise AgentExecutionError(f"Instance {instance_id} is not running (status={instance.status.value})")
 
         instance.status = InstanceStatus.CANCELLED
         instance.completed_at = datetime.now(UTC)
@@ -421,7 +428,9 @@ class AgentExecutor:
         return instance
 
     async def _load_definition(
-        self, definition_id: uuid.UUID, tenant_id: uuid.UUID | None = None,
+        self,
+        definition_id: uuid.UUID,
+        tenant_id: uuid.UUID | None = None,
     ) -> AgentDefinition | None:
         conditions = [
             AgentDefinition.id == definition_id,
@@ -466,14 +475,25 @@ class AgentExecutor:
         self,
         definition: AgentDefinition,
         tenant_id: uuid.UUID,
+        *,
+        agent_instance_id: uuid.UUID | None = None,
+        actor_user_id: uuid.UUID | None = None,
     ):
         """Build a tool executor function that resolves and invokes tools.
 
-        Returns an async callable: (tool_name, arguments) → result
+        Returns an async callable: (tool_name, arguments) → result.
+        ``actor_user_id`` is threaded through so connector tools enforce
+        per-user confused-deputy prevention (P0.2).
         """
         from app.agents.setup import build_tool_executor
 
-        return build_tool_executor(definition, tenant_id, self.db)
+        return build_tool_executor(
+            definition,
+            tenant_id,
+            self.db,
+            actor_user_id=actor_user_id,
+            agent_instance_id=agent_instance_id,
+        )
 
     def _build_governance_checker(
         self,

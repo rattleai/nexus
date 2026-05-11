@@ -55,7 +55,11 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "slug": {"type": "string", "description": "Lowercase with underscores"},
                 "char_type": {"type": "string", "enum": ["enum", "numeric", "boolean", "text"]},
                 "group_id": {"type": "string", "description": "Optional CharacteristicGroup UUID"},
-                "values": {"type": "array", "description": "For enum type: [{value, label, ...}]", "items": {"type": "object"}},
+                "values": {
+                    "type": "array",
+                    "description": "For enum type: [{value, label, ...}]",
+                    "items": {"type": "object"},
+                },
                 "numeric_min": {"type": "number"},
                 "numeric_max": {"type": "number"},
                 "numeric_step": {"type": "number"},
@@ -74,7 +78,14 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "characteristic_id": {"type": "string"},
-                "values": {"type": "array", "items": {"type": "object", "properties": {"value": {"type": "string"}, "label": {"type": "string"}}, "required": ["value", "label"]}},
+                "values": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"value": {"type": "string"}, "label": {"type": "string"}},
+                        "required": ["value", "label"],
+                    },
+                },
             },
             "required": ["characteristic_id", "values"],
         },
@@ -104,7 +115,11 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "description": "Create a constraint group to organize related rules.",
         "input_schema": {
             "type": "object",
-            "properties": {"product_id": {"type": "string"}, "name": {"type": "string"}, "description": {"type": "string"}},
+            "properties": {
+                "product_id": {"type": "string"},
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+            },
             "required": ["product_id", "name"],
         },
     },
@@ -115,7 +130,10 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "properties": {
                 "product_id": {"type": "string"},
                 "name": {"type": "string"},
-                "constraint_type": {"type": "string", "enum": ["requires", "excludes", "selection_condition", "default_value", "formula", "table"]},
+                "constraint_type": {
+                    "type": "string",
+                    "enum": ["requires", "excludes", "selection_condition", "default_value", "formula", "table"],
+                },
                 "expression": {"type": "object", "description": "JSONB AST expression"},
                 "group_id": {"type": "string"},
                 "description": {"type": "string"},
@@ -126,7 +144,11 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "config_validate_constraints": {
         "description": "Validate constraints for a product: detect cycles, dead values, coverage gaps.",
-        "input_schema": {"type": "object", "properties": {"product_id": {"type": "string"}}, "required": ["product_id"]},
+        "input_schema": {
+            "type": "object",
+            "properties": {"product_id": {"type": "string"}},
+            "required": ["product_id"],
+        },
     },
     "config_simulate_configuration": {
         "description": "Simulate constraint propagation with a set of selections.",
@@ -148,7 +170,13 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "description": "Create a 150% super BOM header for a product.",
         "input_schema": {
             "type": "object",
-            "properties": {"product_id": {"type": "string"}, "name": {"type": "string"}, "description": {"type": "string"}, "bom_type": {"type": "string", "default": "manufacturing"}, "is_primary": {"type": "boolean", "default": True}},
+            "properties": {
+                "product_id": {"type": "string"},
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "bom_type": {"type": "string", "default": "manufacturing"},
+                "is_primary": {"type": "boolean", "default": True},
+            },
             "required": ["product_id", "name"],
         },
     },
@@ -157,11 +185,20 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "input_schema": {
             "type": "object",
             "properties": {
-                "bom_header_id": {"type": "string"}, "part_number": {"type": "string"}, "part_name": {"type": "string"},
-                "quantity": {"type": "number", "default": 1.0}, "selection_condition": {"type": "object"},
-                "item_type": {"type": "string", "enum": ["component", "sub_assembly", "phantom", "reference"], "default": "component"},
-                "parent_item_id": {"type": "string"}, "description": {"type": "string"},
-                "unit_of_measure": {"type": "string", "default": "EA"}, "unit_cost": {"type": "number"},
+                "bom_header_id": {"type": "string"},
+                "part_number": {"type": "string"},
+                "part_name": {"type": "string"},
+                "quantity": {"type": "number", "default": 1.0},
+                "selection_condition": {"type": "object"},
+                "item_type": {
+                    "type": "string",
+                    "enum": ["component", "sub_assembly", "phantom", "reference"],
+                    "default": "component",
+                },
+                "parent_item_id": {"type": "string"},
+                "description": {"type": "string"},
+                "unit_of_measure": {"type": "string", "default": "EA"},
+                "unit_cost": {"type": "number"},
             },
             "required": ["bom_header_id", "part_number", "part_name"],
         },
@@ -170,20 +207,28 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "description": "Batch-create multiple BOM items at once.",
         "input_schema": {
             "type": "object",
-            "properties": {"bom_header_id": {"type": "string"}, "items": {"type": "array", "items": {"type": "object"}}},
+            "properties": {
+                "bom_header_id": {"type": "string"},
+                "items": {"type": "array", "items": {"type": "object"}},
+            },
             "required": ["bom_header_id", "items"],
         },
     },
     "config_resolve_bom": {
         "description": "Resolve a configured BOM from a configuration session (150% -> 100%).",
-        "input_schema": {"type": "object", "properties": {"session_id": {"type": "string"}}, "required": ["session_id"]},
+        "input_schema": {
+            "type": "object",
+            "properties": {"session_id": {"type": "string"}},
+            "required": ["session_id"],
+        },
     },
     "config_create_variant_table": {
         "description": "Create a variant table for tabular constraint lookups.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "product_id": {"type": "string"}, "name": {"type": "string"},
+                "product_id": {"type": "string"},
+                "name": {"type": "string"},
                 "columns": {"type": "array", "items": {"type": "object"}},
                 "rows": {"type": "array", "items": {"type": "object"}},
                 "input_columns": {"type": "array", "items": {"type": "string"}},
@@ -198,8 +243,10 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "input_schema": {
             "type": "object",
             "properties": {
-                "product_id": {"type": "string"}, "name": {"type": "string"},
-                "table_data": {"type": "object"}, "input_columns": {"type": "array", "items": {"type": "string"}},
+                "product_id": {"type": "string"},
+                "name": {"type": "string"},
+                "table_data": {"type": "object"},
+                "input_columns": {"type": "array", "items": {"type": "string"}},
                 "output_columns": {"type": "array", "items": {"type": "string"}},
             },
             "required": ["product_id", "name", "table_data", "input_columns", "output_columns"],
@@ -210,10 +257,24 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "input_schema": {
             "type": "object",
             "properties": {
-                "product_id": {"type": "string"}, "name": {"type": "string"},
-                "rule_type": {"type": "string", "enum": ["base_price", "option_surcharge", "volume_discount", "conditional", "formula", "tiered", "margin"]},
-                "expression": {"type": "object"}, "priority": {"type": "integer", "default": 10},
-                "currency": {"type": "string", "default": "EUR"}, "description": {"type": "string"},
+                "product_id": {"type": "string"},
+                "name": {"type": "string"},
+                "rule_type": {
+                    "type": "string",
+                    "enum": [
+                        "base_price",
+                        "option_surcharge",
+                        "volume_discount",
+                        "conditional",
+                        "formula",
+                        "tiered",
+                        "margin",
+                    ],
+                },
+                "expression": {"type": "object"},
+                "priority": {"type": "integer", "default": 10},
+                "currency": {"type": "string", "default": "EUR"},
+                "description": {"type": "string"},
             },
             "required": ["product_id", "name", "rule_type", "expression"],
         },
@@ -236,27 +297,55 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "config_extract_document": {
         "description": "Extract structured content from a data source file.",
-        "input_schema": {"type": "object", "properties": {"data_source_id": {"type": "string"}}, "required": ["data_source_id"]},
+        "input_schema": {
+            "type": "object",
+            "properties": {"data_source_id": {"type": "string"}},
+            "required": ["data_source_id"],
+        },
     },
     "config_search_datasources": {
         "description": "Search across tenant data sources using semantic similarity.",
-        "input_schema": {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}}, "required": ["query"]},
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}},
+            "required": ["query"],
+        },
     },
     "config_update_product": {
         "description": "Update an existing product.",
         "input_schema": {
             "type": "object",
-            "properties": {"product_id": {"type": "string"}, "name": {"type": "string"}, "description": {"type": "string"}, "status": {"type": "string"}, "sku_prefix": {"type": "string"}},
+            "properties": {
+                "product_id": {"type": "string"},
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "status": {"type": "string"},
+                "sku_prefix": {"type": "string"},
+            },
             "required": ["product_id"],
         },
     },
     "config_delete_product": {
         "description": "Soft-delete a product.",
-        "input_schema": {"type": "object", "properties": {"product_id": {"type": "string"}}, "required": ["product_id"]},
+        "input_schema": {
+            "type": "object",
+            "properties": {"product_id": {"type": "string"}},
+            "required": ["product_id"],
+        },
     },
     "config_update_constraint_rule": {
         "description": "Update an existing constraint rule.",
-        "input_schema": {"type": "object", "properties": {"rule_id": {"type": "string"}, "name": {"type": "string"}, "expression": {"type": "object"}, "priority": {"type": "integer"}, "is_active": {"type": "boolean"}}, "required": ["rule_id"]},
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "rule_id": {"type": "string"},
+                "name": {"type": "string"},
+                "expression": {"type": "object"},
+                "priority": {"type": "integer"},
+                "is_active": {"type": "boolean"},
+            },
+            "required": ["rule_id"],
+        },
     },
     "config_delete_constraint_rule": {
         "description": "Soft-delete a constraint rule.",
@@ -264,7 +353,17 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "config_update_pricing_rule": {
         "description": "Update an existing pricing rule.",
-        "input_schema": {"type": "object", "properties": {"rule_id": {"type": "string"}, "name": {"type": "string"}, "expression": {"type": "object"}, "priority": {"type": "integer"}, "is_active": {"type": "boolean"}}, "required": ["rule_id"]},
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "rule_id": {"type": "string"},
+                "name": {"type": "string"},
+                "expression": {"type": "object"},
+                "priority": {"type": "integer"},
+                "is_active": {"type": "boolean"},
+            },
+            "required": ["rule_id"],
+        },
     },
     "config_delete_pricing_rule": {
         "description": "Soft-delete a pricing rule.",
@@ -272,11 +371,19 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "config_list_variant_tables": {
         "description": "List variant tables for a product.",
-        "input_schema": {"type": "object", "properties": {"product_id": {"type": "string"}}, "required": ["product_id"]},
+        "input_schema": {
+            "type": "object",
+            "properties": {"product_id": {"type": "string"}},
+            "required": ["product_id"],
+        },
     },
     "config_create_product_family": {
         "description": "Create a product family for grouping related products.",
-        "input_schema": {"type": "object", "properties": {"name": {"type": "string"}, "slug": {"type": "string"}, "description": {"type": "string"}}, "required": ["name", "slug"]},
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}, "slug": {"type": "string"}, "description": {"type": "string"}},
+            "required": ["name", "slug"],
+        },
     },
     "config_list_product_families": {
         "description": "List product families for the tenant.",
@@ -284,7 +391,15 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "config_create_characteristic_group": {
         "description": "Create a characteristic group for organizing characteristics.",
-        "input_schema": {"type": "object", "properties": {"name": {"type": "string"}, "description": {"type": "string"}, "display_order": {"type": "integer", "default": 0}}, "required": ["name"]},
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "display_order": {"type": "integer", "default": 0},
+            },
+            "required": ["name"],
+        },
     },
     "config_list_characteristic_groups": {
         "description": "List characteristic groups.",
@@ -292,18 +407,37 @@ CPQ_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "config_create_session": {
         "description": "Create a configuration session for a product.",
-        "input_schema": {"type": "object", "properties": {"product_id": {"type": "string"}, "product_version_id": {"type": "string"}}, "required": ["product_id"]},
+        "input_schema": {
+            "type": "object",
+            "properties": {"product_id": {"type": "string"}, "product_version_id": {"type": "string"}},
+            "required": ["product_id"],
+        },
     },
     "config_get_session": {
         "description": "Get a configuration session with its current selections.",
-        "input_schema": {"type": "object", "properties": {"session_id": {"type": "string"}}, "required": ["session_id"]},
+        "input_schema": {
+            "type": "object",
+            "properties": {"session_id": {"type": "string"}},
+            "required": ["session_id"],
+        },
     },
     "config_make_selection": {
         "description": "Make a selection in a configuration session.",
-        "input_schema": {"type": "object", "properties": {"session_id": {"type": "string"}, "characteristic_slug": {"type": "string"}, "value": {"type": "string"}}, "required": ["session_id", "characteristic_slug", "value"]},
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string"},
+                "characteristic_slug": {"type": "string"},
+                "value": {"type": "string"},
+            },
+            "required": ["session_id", "characteristic_slug", "value"],
+        },
     },
     "config_list_sessions": {
         "description": "List configuration sessions, optionally filtered by product.",
-        "input_schema": {"type": "object", "properties": {"product_id": {"type": "string"}, "limit": {"type": "integer", "default": 20}}},
+        "input_schema": {
+            "type": "object",
+            "properties": {"product_id": {"type": "string"}, "limit": {"type": "integer", "default": 20}},
+        },
     },
 }

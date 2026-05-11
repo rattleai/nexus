@@ -35,6 +35,7 @@ class BatchConfig(BaseModel):
 
 class AgentOptimizations(BaseModel):
     """Optimizations available for agent requests."""
+
     lean_headers: bool = True
     lean_headers_description: str = (
         "Agent requests skip browser-only headers (CSP, X-Frame-Options, HSTS, "
@@ -46,8 +47,7 @@ class AgentOptimizations(BaseModel):
     gzip_description: str = "Responses >1KB are gzip-compressed. Send Accept-Encoding: gzip."
     idempotency_keys: bool = True
     idempotency_description: str = (
-        "Send X-Idempotency-Key header on POST/PUT/PATCH for safe retries. "
-        "Cached for 24 hours."
+        "Send X-Idempotency-Key header on POST/PUT/PATCH for safe retries. Cached for 24 hours."
     )
     prefer_minimal: bool = True
     prefer_minimal_description: str = (
@@ -55,9 +55,7 @@ class AgentOptimizations(BaseModel):
         "only {id, status} instead of the full resource."
     )
     error_hints: bool
-    error_hints_description: str = (
-        "Error responses include an agent-friendly 'hint' field with actionable guidance."
-    )
+    error_hints_description: str = "Error responses include an agent-friendly 'hint' field with actionable guidance."
 
 
 class AgentCapabilities(BaseModel):

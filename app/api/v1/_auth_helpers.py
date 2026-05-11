@@ -82,16 +82,14 @@ async def check_mfa_required(
     """
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
     login_tenant = tenant_result.scalar_one_or_none()
-    tenant_requires_mfa = (login_tenant and login_tenant.settings or {}).get("require_mfa", False)
+    tenant_requires_mfa = ((login_tenant and login_tenant.settings) or {}).get("require_mfa", False)
 
     if not (getattr(user, "mfa_enabled", False) or tenant_requires_mfa):
         return None
 
     from app.db.models.mobile import WebAuthnCredential
 
-    cred_result = await db.execute(
-        select(WebAuthnCredential).where(WebAuthnCredential.user_id == user.id).limit(1)
-    )
+    cred_result = await db.execute(select(WebAuthnCredential).where(WebAuthnCredential.user_id == user.id).limit(1))
     has_webauthn = cred_result.scalar_one_or_none() is not None
 
     if not has_webauthn:

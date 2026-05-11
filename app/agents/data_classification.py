@@ -30,6 +30,7 @@ logger = structlog.stdlib.get_logger()
 
 class DataLevel(IntEnum):
     """Data classification levels (ordered by sensitivity)."""
+
     PUBLIC = 0
     INTERNAL = 1
     CONFIDENTIAL = 2
@@ -62,9 +63,16 @@ _INTERNAL_PII_PATTERNS: dict[str, re.Pattern] = {
 
 # Keywords indicating RESTRICTED classification
 _RESTRICTED_KEYWORDS = {
-    "top secret", "classified", "eyes only", "trade secret",
-    "attorney-client", "hipaa", "phi", "protected health",
-    "material nonpublic", "mnpi",
+    "top secret",
+    "classified",
+    "eyes only",
+    "trade secret",
+    "attorney-client",
+    "hipaa",
+    "phi",
+    "protected health",
+    "material nonpublic",
+    "mnpi",
 }
 
 # Column name patterns for automatic classification
@@ -91,8 +99,7 @@ _COLUMN_CLASSIFICATION: dict[str, DataLevel] = {
 # Pre-compiled column patterns using underscore word boundaries to prevent
 # false positives (e.g. "ssn" should NOT match "permission").
 _COLUMN_CLASSIFICATION_RE: list[tuple[re.Pattern, DataLevel]] = [
-    (re.compile(rf"(?:^|_){re.escape(pattern)}(?:_|$)"), level)
-    for pattern, level in _COLUMN_CLASSIFICATION.items()
+    (re.compile(rf"(?:^|_){re.escape(pattern)}(?:_|$)"), level) for pattern, level in _COLUMN_CLASSIFICATION.items()
 ]
 
 

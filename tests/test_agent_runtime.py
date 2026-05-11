@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.agents.runtime import AgentRuntime, RunResult, StepResult
+from app.agents.runtime import AgentRuntime, RunResult
 
 
 def _make_definition(**overrides):
@@ -15,8 +15,8 @@ def _make_definition(**overrides):
     mock = MagicMock()
     mock.system_prompt = overrides.get("system_prompt", "You are a helpful assistant.")
     mock.model = overrides.get("model", "gpt-4o")
-    mock.temperature = overrides.get("temperature", None)
-    mock.max_tokens = overrides.get("max_tokens", None)
+    mock.temperature = overrides.get("temperature")
+    mock.max_tokens = overrides.get("max_tokens")
     mock.max_steps_per_run = overrides.get("max_steps_per_run", 50)
     mock.max_duration_seconds = overrides.get("max_duration_seconds", 300)
     mock.max_tokens_per_run = overrides.get("max_tokens_per_run", 100_000)

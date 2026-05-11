@@ -8,7 +8,20 @@ from datetime import datetime
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -40,7 +53,9 @@ class TenantAIProviderKey(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    provider: Mapped[AIProvider] = mapped_column(Enum(AIProvider, values_callable=lambda e: [m.value for m in e]), nullable=False)
+    provider: Mapped[AIProvider] = mapped_column(
+        Enum(AIProvider, values_callable=lambda e: [m.value for m in e]), nullable=False
+    )
     encrypted_api_key: Mapped[str] = mapped_column(Text, nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), default="default")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -99,9 +114,7 @@ class DollarWallet(TimestampMixin, VersionMixin, Base):
     auto_refill_amount_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     stripe_payment_method_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    __table_args__ = (
-        CheckConstraint("balance_usd >= 0", name="ck_dollar_wallet_balance_non_negative"),
-    )
+    __table_args__ = (CheckConstraint("balance_usd >= 0", name="ck_dollar_wallet_balance_non_negative"),)
 
 
 class WalletTransactionType(enum.StrEnum):
@@ -119,7 +132,9 @@ class WalletTransaction(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    type: Mapped[WalletTransactionType] = mapped_column(Enum(WalletTransactionType, values_callable=lambda e: [m.value for m in e]), nullable=False)
+    type: Mapped[WalletTransactionType] = mapped_column(
+        Enum(WalletTransactionType, values_callable=lambda e: [m.value for m in e]), nullable=False
+    )
     amount_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
     balance_after_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
     provider_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
@@ -127,9 +142,7 @@ class WalletTransaction(Base):
     reference_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
 
     __table_args__ = (
         Index("ix_wallet_tx_tenant_created", "tenant_id", "created_at"),
@@ -165,9 +178,7 @@ class AIUsageLog(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     key_source: Mapped[str] = mapped_column(String(20), default="platform")
     request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
 
     __table_args__ = (
         Index("ix_ai_usage_tenant_created", "tenant_id", "created_at"),
@@ -191,6 +202,4 @@ class PromptTemplate(SoftDeleteMixin, TimestampMixin, Base):
     variables: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "name", name="uq_tenant_prompt_name"),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_tenant_prompt_name"),)

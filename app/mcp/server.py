@@ -392,7 +392,11 @@ def create_mcp_server() -> FastMCP:
         try:
             check_scopes(api_key, "webhooks:write")
             result = await _webhook_create(
-                url=url, events=events, description=description, tenant=tenant, db=db,
+                url=url,
+                events=events,
+                description=description,
+                tenant=tenant,
+                db=db,
             )
             _log_tool_call("webhook_create", str(tenant.id))
             return json.dumps(result)
@@ -528,23 +532,25 @@ def create_mcp_server() -> FastMCP:
 
         Use this to understand your spending and identify cost-saving opportunities.
         """
-        return json.dumps({
-            "name": "analyze_usage",
-            "description": "Analyze AI usage patterns and spending",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        "Analyze my AI usage data and provide:\n"
-                        "1. Total spend and token usage trends\n"
-                        "2. Most-used models and their cost efficiency\n"
-                        "3. Suggestions to reduce costs\n\n"
-                        "First call ai_get_usage and billing_get_wallet_balance, "
-                        "then provide the analysis."
-                    ),
-                }
-            ],
-        })
+        return json.dumps(
+            {
+                "name": "analyze_usage",
+                "description": "Analyze AI usage patterns and spending",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Analyze my AI usage data and provide:\n"
+                            "1. Total spend and token usage trends\n"
+                            "2. Most-used models and their cost efficiency\n"
+                            "3. Suggestions to reduce costs\n\n"
+                            "First call ai_get_usage and billing_get_wallet_balance, "
+                            "then provide the analysis."
+                        ),
+                    }
+                ],
+            }
+        )
 
     @mcp.prompt()
     async def troubleshoot_job() -> str:
@@ -552,22 +558,24 @@ def create_mcp_server() -> FastMCP:
 
         Use this when a background job has failed and you need to understand why.
         """
-        return json.dumps({
-            "name": "troubleshoot_job",
-            "description": "Diagnose a failed job and suggest remediation",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        "A job has failed. Please:\n"
-                        "1. Call job_list with status='failed' to find recent failures\n"
-                        "2. Call job_get on the failed job to see the error\n"
-                        "3. Explain the root cause and suggest how to fix it\n"
-                        "4. If appropriate, suggest retrying with corrected parameters"
-                    ),
-                }
-            ],
-        })
+        return json.dumps(
+            {
+                "name": "troubleshoot_job",
+                "description": "Diagnose a failed job and suggest remediation",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "A job has failed. Please:\n"
+                            "1. Call job_list with status='failed' to find recent failures\n"
+                            "2. Call job_get on the failed job to see the error\n"
+                            "3. Explain the root cause and suggest how to fix it\n"
+                            "4. If appropriate, suggest retrying with corrected parameters"
+                        ),
+                    }
+                ],
+            }
+        )
 
     @mcp.prompt()
     async def optimize_costs() -> str:
@@ -575,24 +583,26 @@ def create_mcp_server() -> FastMCP:
 
         Use this to get recommendations on reducing costs or upgrading plans.
         """
-        return json.dumps({
-            "name": "optimize_costs",
-            "description": "Review billing and suggest optimizations",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        "Review my billing and usage to optimize costs:\n"
-                        "1. Call billing_get_wallet_balance to check token balance\n"
-                        "2. Call billing_get_subscription to see current plan\n"
-                        "3. Call billing_list_plans to see available plans\n"
-                        "4. Call ai_get_usage to see usage patterns\n"
-                        "5. Recommend whether to change plans or switch models "
-                        "for better cost efficiency"
-                    ),
-                }
-            ],
-        })
+        return json.dumps(
+            {
+                "name": "optimize_costs",
+                "description": "Review billing and suggest optimizations",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Review my billing and usage to optimize costs:\n"
+                            "1. Call billing_get_wallet_balance to check token balance\n"
+                            "2. Call billing_get_subscription to see current plan\n"
+                            "3. Call billing_list_plans to see available plans\n"
+                            "4. Call ai_get_usage to see usage patterns\n"
+                            "5. Recommend whether to change plans or switch models "
+                            "for better cost efficiency"
+                        ),
+                    }
+                ],
+            }
+        )
 
     # ── Plugin MCP Tools ─────────────────────────────────────
     from app.plugins.registry import registry as _plugin_registry

@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import importlib
 import os
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import structlog
 
@@ -38,8 +38,21 @@ class PluginRegistry:
         return dict(self._plugins)
 
     def register(self, plugin: AppPluginBase) -> None:
-        if plugin.name in self._plugins:
-            raise ValueError(f"Duplicate plugin name: {plugin.name}")
+        existing = self._plugins.get(plugin.name)
+        if existing is not None:
+            # Idempotent re-registration of the same plugin is a no-op:
+            # both `app.main` and the alembic env import-time hook call
+            # `discover_plugins()`, and any consumer that imports both
+            # would otherwise raise. We only fail when the SAME name is
+            # backed by a *different* plugin object (genuine collision).
+            if existing is plugin or type(existing) is type(plugin):
+                logger.debug("plugin_already_registered", name=plugin.name)
+                return
+            raise ValueError(
+                f"Duplicate plugin name '{plugin.name}': "
+                f"already registered by {type(existing).__name__}, "
+                f"now attempted by {type(plugin).__name__}."
+            )
         self._plugins[plugin.name] = plugin
         logger.info(
             "plugin_registered",

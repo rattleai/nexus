@@ -1,25 +1,18 @@
 """Tests for OAuth social login endpoints and service layer."""
 
 import json
-import uuid
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from httpx import Response as HttpxResponse
 
+from app.api.v1.oauth_social import _generate_tenant_slug
 from app.core.oauth import (
-    OAuthUserProfile,
     _build_providers,
-    exchange_code_for_tokens,
     fetch_user_profile,
     generate_authorize_url,
-    get_configured_providers,
     get_provider_config,
     validate_state,
 )
-from app.api.v1.oauth_social import _generate_tenant_slug
-
 
 # ── Provider config tests ──────────────────────────────
 
@@ -100,9 +93,7 @@ class TestStateManagement:
 
                     # Mock redis import in the function
                     with patch.dict("sys.modules", {"app.core.redis": MagicMock(redis_pool=mock_redis)}):
-                        url = await generate_authorize_url(
-                            "google", "http://localhost:3000/auth/callback/google"
-                        )
+                        url = await generate_authorize_url("google", "http://localhost:3000/auth/callback/google")
 
                     assert "accounts.google.com" in url
                     assert "client_id=google-id" in url

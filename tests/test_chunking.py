@@ -8,7 +8,6 @@ import pytest
 
 from app.docprocessor.chunking import (
     ChunkingStrategy,
-    ChunkMetadata,
     FixedSizeChunker,
     MarkdownChunker,
     RecursiveChunker,
@@ -36,7 +35,7 @@ class TestFixedSizeChunker:
         text = "word " * 500  # ~2500 chars
         result = chunker.chunk(text, chunk_size=200, chunk_overlap=50)
         assert len(result) > 1
-        for i, (chunk_text, meta) in enumerate(result):
+        for i, (_chunk_text, meta) in enumerate(result):
             assert meta.chunk_index == i
             assert meta.content_hash  # Non-empty hash
 
@@ -158,9 +157,7 @@ class TestSemanticChunker:
         assert result[0][1].strategy == ChunkingStrategy.FIXED_SIZE
 
     def test_split_sentences(self):
-        sentences = SemanticChunker._split_sentences(
-            "Hello world. How are you? Fine thanks!"
-        )
+        sentences = SemanticChunker._split_sentences("Hello world. How are you? Fine thanks!")
         assert len(sentences) == 3
 
     def test_cosine_similarity_identical(self):

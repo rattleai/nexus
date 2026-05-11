@@ -314,14 +314,13 @@ class EmbeddingGateway:
         if miss_indices:
             miss_texts = [texts[i] for i in miss_indices]
             embeddings = await self._call_provider_batch(miss_texts, info, dims)
-            for idx, embedding in zip(miss_indices, embeddings):
+            for idx, embedding in zip(miss_indices, embeddings, strict=False):
                 results[idx] = embedding
 
             if settings.EMBEDDING_CACHE_ENABLED:
                 # Single pipelined SET for all misses instead of N sequential SETs
                 miss_map = {
-                    _cache_key(info.model_name, dims, texts[idx]): embeddings[j]
-                    for j, idx in enumerate(miss_indices)
+                    _cache_key(info.model_name, dims, texts[idx]): embeddings[j] for j, idx in enumerate(miss_indices)
                 }
                 await self._cache_mset(miss_map)
 
@@ -330,7 +329,10 @@ class EmbeddingGateway:
     # ── Provider implementations ─────────────────────────────
 
     async def _call_provider(
-        self, text: str, info: EmbeddingModelInfo, dimensions: int,
+        self,
+        text: str,
+        info: EmbeddingModelInfo,
+        dimensions: int,
     ) -> list[float]:
         """Route to the correct provider."""
         breaker_key = info.provider.value
@@ -347,22 +349,29 @@ class EmbeddingGateway:
             embedding_breaker.record_success(breaker_key)
             elapsed = time.monotonic() - start
             EMBEDDING_LATENCY_SECONDS.labels(
-                provider=info.provider.value, model=info.model_name,
+                provider=info.provider.value,
+                model=info.model_name,
             ).observe(elapsed)
             EMBEDDING_REQUESTS_TOTAL.labels(
-                provider=info.provider.value, model=info.model_name, status="success",
+                provider=info.provider.value,
+                model=info.model_name,
+                status="success",
             ).inc()
             return result[0]
         except EmbeddingGatewayError:
             embedding_breaker.record_failure(breaker_key)
             EMBEDDING_REQUESTS_TOTAL.labels(
-                provider=info.provider.value, model=info.model_name, status="error",
+                provider=info.provider.value,
+                model=info.model_name,
+                status="error",
             ).inc()
             raise
         except Exception as exc:
             embedding_breaker.record_failure(breaker_key)
             EMBEDDING_REQUESTS_TOTAL.labels(
-                provider=info.provider.value, model=info.model_name, status="error",
+                provider=info.provider.value,
+                model=info.model_name,
+                status="error",
             ).inc()
             raise EmbeddingGatewayError(
                 f"Embedding generation failed: {_sanitize_error(exc)}",
@@ -371,7 +380,10 @@ class EmbeddingGateway:
             ) from exc
 
     async def _call_provider_batch(
-        self, texts: list[str], info: EmbeddingModelInfo, dimensions: int,
+        self,
+        texts: list[str],
+        info: EmbeddingModelInfo,
+        dimensions: int,
     ) -> list[list[float]]:
         """Route batch to the correct provider."""
         breaker_key = info.provider.value
@@ -388,22 +400,29 @@ class EmbeddingGateway:
             embedding_breaker.record_success(breaker_key)
             elapsed = time.monotonic() - start
             EMBEDDING_LATENCY_SECONDS.labels(
-                provider=info.provider.value, model=info.model_name,
+                provider=info.provider.value,
+                model=info.model_name,
             ).observe(elapsed)
             EMBEDDING_REQUESTS_TOTAL.labels(
-                provider=info.provider.value, model=info.model_name, status="success",
+                provider=info.provider.value,
+                model=info.model_name,
+                status="success",
             ).inc()
             return result
         except EmbeddingGatewayError:
             embedding_breaker.record_failure(breaker_key)
             EMBEDDING_REQUESTS_TOTAL.labels(
-                provider=info.provider.value, model=info.model_name, status="error",
+                provider=info.provider.value,
+                model=info.model_name,
+                status="error",
             ).inc()
             raise
         except Exception as exc:
             embedding_breaker.record_failure(breaker_key)
             EMBEDDING_REQUESTS_TOTAL.labels(
-                provider=info.provider.value, model=info.model_name, status="error",
+                provider=info.provider.value,
+                model=info.model_name,
+                status="error",
             ).inc()
             raise EmbeddingGatewayError(
                 f"Batch embedding generation failed: {_sanitize_error(exc)}",
@@ -435,7 +454,10 @@ class EmbeddingGateway:
         return await handler(texts, info, dimensions)
 
     async def _generate_openai(
-        self, texts: list[str], info: EmbeddingModelInfo, dimensions: int,
+        self,
+        texts: list[str],
+        info: EmbeddingModelInfo,
+        dimensions: int,
     ) -> list[list[float]]:
         """Generate embeddings via OpenAI API."""
         api_key = self._resolve_api_key(EmbeddingProvider.OPENAI)
@@ -462,19 +484,23 @@ class EmbeddingGateway:
             data = response.json()
             usage = data.get("usage", {})
             EMBEDDING_TOKENS_TOTAL.labels(
-                provider="openai", model=info.model_name,
+                provider="openai",
+                model=info.model_name,
             ).inc(usage.get("total_tokens", 0))
             sorted_data = sorted(data["data"], key=lambda x: x["index"])
             return [item["embedding"] for item in sorted_data]
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             raise EmbeddingGatewayError(
-                f"Unexpected response from OpenAI embedding API",
+                "Unexpected response from OpenAI embedding API",
                 provider="openai",
                 model=info.model_name,
             ) from exc
 
     async def _generate_cohere(
-        self, texts: list[str], info: EmbeddingModelInfo, dimensions: int,
+        self,
+        texts: list[str],
+        info: EmbeddingModelInfo,
+        dimensions: int,
     ) -> list[list[float]]:
         """Generate embeddings via Cohere API.
 
@@ -509,13 +535,16 @@ class EmbeddingGateway:
             return data["embeddings"]["float"]
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             raise EmbeddingGatewayError(
-                f"Unexpected response from Cohere embedding API",
+                "Unexpected response from Cohere embedding API",
                 provider="cohere",
                 model=info.model_name,
             ) from exc
 
     async def _generate_voyage(
-        self, texts: list[str], info: EmbeddingModelInfo, dimensions: int,
+        self,
+        texts: list[str],
+        info: EmbeddingModelInfo,
+        dimensions: int,
     ) -> list[list[float]]:
         """Generate embeddings via Voyage AI API.
 
@@ -549,23 +578,23 @@ class EmbeddingGateway:
             return [item["embedding"] for item in sorted_data]
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             raise EmbeddingGatewayError(
-                f"Unexpected response from Voyage embedding API",
+                "Unexpected response from Voyage embedding API",
                 provider="voyage",
                 model=info.model_name,
             ) from exc
 
     async def _generate_google(
-        self, texts: list[str], info: EmbeddingModelInfo, dimensions: int,
+        self,
+        texts: list[str],
+        info: EmbeddingModelInfo,
+        dimensions: int,
     ) -> list[list[float]]:
         """Generate embeddings via Google Generative AI API."""
         api_key = self._resolve_api_key(EmbeddingProvider.GOOGLE)
         truncated = [t[:8192] for t in texts]
 
         # Google's batch embedding endpoint accepts multiple content items
-        requests_body = [
-            {"model": f"models/{info.model_name}", "content": {"parts": [{"text": t}]}}
-            for t in truncated
-        ]
+        requests_body = [{"model": f"models/{info.model_name}", "content": {"parts": [{"text": t}]}} for t in truncated]
 
         body: dict[str, Any] = {"requests": requests_body}
 
@@ -588,7 +617,10 @@ class EmbeddingGateway:
             ) from exc
 
     async def _generate_local(
-        self, texts: list[str], info: EmbeddingModelInfo, dimensions: int,
+        self,
+        texts: list[str],
+        info: EmbeddingModelInfo,
+        dimensions: int,
     ) -> list[list[float]]:
         """Generate embeddings via a local model server."""
         base_url = settings.EMBEDDING_LOCAL_URL
@@ -615,7 +647,7 @@ class EmbeddingGateway:
             return [item["embedding"] for item in sorted_data]
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             raise EmbeddingGatewayError(
-                f"Unexpected response from local embedding server",
+                "Unexpected response from local embedding server",
                 provider="local",
                 model=info.model_name,
             ) from exc
@@ -670,7 +702,11 @@ class EmbeddingGateway:
         return results
 
     async def _cache_set(
-        self, model: str, dimensions: int, text: str, embedding: list[float],
+        self,
+        model: str,
+        dimensions: int,
+        text: str,
+        embedding: list[float],
     ) -> None:
         """Store an embedding in Redis cache with TTL."""
         key = _cache_key(model, dimensions, text)

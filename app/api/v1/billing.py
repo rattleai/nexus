@@ -137,9 +137,7 @@ class SetupIntentResponse(BaseModel):
 @router.get("/plans", response_model=list[PlanResponse])
 async def list_plans(db: AsyncSession = Depends(get_db)):
     """List all available subscription plans."""
-    result = await db.execute(
-        select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.price_cents.asc())
-    )
+    result = await db.execute(select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.price_cents.asc()))
     return result.scalars().all()
 
 
@@ -157,9 +155,7 @@ async def get_subscription(
 ):
     """Get the current tenant's subscription."""
     result = await db.execute(
-        select(Subscription)
-        .options(selectinload(Subscription.plan))
-        .where(Subscription.tenant_id == tenant.id)
+        select(Subscription).options(selectinload(Subscription.plan)).where(Subscription.tenant_id == tenant.id)
     )
     subscription = result.scalar_one_or_none()
     if not subscription:
@@ -256,9 +252,7 @@ async def create_checkout(
     from app.billing.stripe_service import create_checkout_session
 
     try:
-        url = await create_checkout_session(
-            user.tenant_id, body.plan_id, body.return_url, db
-        )
+        url = await create_checkout_session(user.tenant_id, body.plan_id, body.return_url, db)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid checkout parameters") from None
     except Exception:
@@ -288,9 +282,7 @@ async def create_billing_portal(
     if not settings.stripe_configured:
         raise HTTPException(status_code=503, detail="Billing not configured")
 
-    result = await db.execute(
-        select(Subscription).where(Subscription.tenant_id == user.tenant_id)
-    )
+    result = await db.execute(select(Subscription).where(Subscription.tenant_id == user.tenant_id))
     subscription = result.scalar_one_or_none()
     if not subscription or not subscription.stripe_customer_id:
         raise HTTPException(status_code=404, detail="No billing account found")
@@ -308,9 +300,7 @@ async def create_billing_portal(
 async def list_credit_packs(db: AsyncSession = Depends(get_db)):
     """List available credit packs for wallet top-up."""
     result = await db.execute(
-        select(CreditPack)
-        .where(CreditPack.is_active.is_(True))
-        .order_by(CreditPack.display_order.asc())
+        select(CreditPack).where(CreditPack.is_active.is_(True)).order_by(CreditPack.display_order.asc())
     )
     return result.scalars().all()
 
@@ -463,6 +453,7 @@ async def get_usage(
         raise HTTPException(400, "days must be between 1 and 365")
 
     from app.billing.stripe_service import get_usage_summary
+
     return await get_usage_summary(tenant.id, db, days=days)
 
 
@@ -488,9 +479,7 @@ async def stripe_webhook(
         import stripe
 
         stripe.api_key = settings.STRIPE_SECRET_KEY
-        event = stripe.Webhook.construct_event(
-            body, sig_header, settings.STRIPE_WEBHOOK_SECRET
-        )
+        event = stripe.Webhook.construct_event(body, sig_header, settings.STRIPE_WEBHOOK_SECRET)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid payload") from None
     except stripe.error.SignatureVerificationError:

@@ -32,7 +32,8 @@ async def test_governance_spend_limit_fails_closed_when_redis_unavailable():
 
     with (
         patch("app.agents.governance.redis_pool", mock_redis),
-        patch("app.agents.governance.emit", new_callable=AsyncMock),pytest.raises(GovernanceViolationError) as exc_info
+        patch("app.agents.governance.emit", new_callable=AsyncMock),
+        pytest.raises(GovernanceViolationError) as exc_info,
     ):
         await engine.check(
             action="tool_call",
@@ -62,7 +63,8 @@ async def test_governance_rate_limit_fails_closed_when_redis_unavailable():
 
     with (
         patch("app.agents.governance.redis_pool", mock_redis),
-        patch("app.agents.governance.emit", new_callable=AsyncMock),pytest.raises(GovernanceViolationError) as exc_info
+        patch("app.agents.governance.emit", new_callable=AsyncMock),
+        pytest.raises(GovernanceViolationError) as exc_info,
     ):
         await engine.check(
             action="tool_call",

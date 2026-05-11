@@ -45,6 +45,7 @@ logger = structlog.stdlib.get_logger()
 # OpenTelemetry tracing — no-op when OTEL is unavailable
 try:
     from opentelemetry import trace
+
     _rag_tracer = trace.get_tracer("app.agents.search")
 except ImportError:
     _rag_tracer = None
@@ -169,19 +170,14 @@ async def _apply_vector_search_settings(db: AsyncSession) -> None:
     """
     if _use_diskann():
         await db.execute(
-            text(
-                f"SET LOCAL diskann.query_search_list_size = "
-                f"{int(settings.DISKANN_QUERY_SEARCH_LIST_SIZE)}"
-            )
+            text(f"SET LOCAL diskann.query_search_list_size = {int(settings.DISKANN_QUERY_SEARCH_LIST_SIZE)}")
         )
         return
 
     # HNSW path — ef_search tunes candidates evaluated per query (default 40
     # is too low for 1536-dim vectors; 100 provides meaningfully better recall).
     # Stable since pgvector 0.5.0 — no exception handling needed.
-    await db.execute(
-        text(f"SET LOCAL hnsw.ef_search = {int(settings.HNSW_EF_SEARCH)}")
-    )
+    await db.execute(text(f"SET LOCAL hnsw.ef_search = {int(settings.HNSW_EF_SEARCH)}"))
 
     # iterative_scan (pgvector >=0.8.0): re-enters the index when filtered
     # candidates are exhausted, preventing under-fetching on selective WHERE
@@ -339,10 +335,7 @@ class HybridSearchEngine:
         chunks. Deduplicates parents that multiple children point to. All
         queries are tenant-scoped to prevent cross-tenant content disclosure.
         """
-        child_ids = [
-            r.id for r in results
-            if r.source == SearchSource.CHUNKS
-        ]
+        child_ids = [r.id for r in results if r.source == SearchSource.CHUNKS]
         if not child_ids:
             return results
 
@@ -359,10 +352,7 @@ class HybridSearchEngine:
             text(sql),
             {"chunk_ids": child_ids, "tenant_id": str(tenant_id)},
         )
-        child_to_parent = {
-            row["id"]: row["parent_chunk_id"]
-            for row in result.mappings().all()
-        }
+        child_to_parent = {row["id"]: row["parent_chunk_id"] for row in result.mappings().all()}
 
         if not child_to_parent:
             return results
@@ -389,20 +379,22 @@ class HybridSearchEngine:
             parent_id = child_to_parent.get(r.id)
             if parent_id and parent_id in parents and parent_id not in seen_parents:
                 parent = parents[parent_id]
-                resolved.append(SearchResult(
-                    id=parent_id,
-                    content=parent["content"] or "",
-                    score=r.score,
-                    source=r.source,
-                    source_id=str(parent["data_source_id"]) if parent["data_source_id"] else "",
-                    metadata={
-                        **r.metadata,
-                        "resolved_from_child": r.id,
-                        "section_title": parent["section_title"],
-                        "content_type": parent["content_type"],
-                    },
-                    search_type=r.search_type,
-                ))
+                resolved.append(
+                    SearchResult(
+                        id=parent_id,
+                        content=parent["content"] or "",
+                        score=r.score,
+                        source=r.source,
+                        source_id=str(parent["data_source_id"]) if parent["data_source_id"] else "",
+                        metadata={
+                            **r.metadata,
+                            "resolved_from_child": r.id,
+                            "section_title": parent["section_title"],
+                            "content_type": parent["content_type"],
+                        },
+                        search_type=r.search_type,
+                    )
+                )
                 seen_parents.add(parent_id)
             elif parent_id and parent_id in seen_parents:
                 continue  # Skip duplicate parent
@@ -468,18 +460,32 @@ class HybridSearchEngine:
 
         if search_type == SearchType.HYBRID and query_embedding is not None:
             return await self._hybrid_chunk_search(
-                query_embedding, query, where, params, limit,
-                vector_weight, text_weight, db,
+                query_embedding,
+                query,
+                where,
+                params,
+                limit,
+                vector_weight,
+                text_weight,
+                db,
             )
         elif search_type == SearchType.VECTOR and query_embedding is not None:
             return await self._vector_chunk_search(
-                query_embedding, where, params, limit, db,
+                query_embedding,
+                where,
+                params,
+                limit,
+                db,
             )
         elif search_type == SearchType.TEXT:
             return await self._text_chunk_search(query, where, params, limit, db)
         elif query_embedding is not None:
             return await self._vector_chunk_search(
-                query_embedding, where, params, limit, db,
+                query_embedding,
+                where,
+                params,
+                limit,
+                db,
             )
         else:
             return await self._text_chunk_search(query, where, params, limit, db)
@@ -704,17 +710,19 @@ class HybridSearchEngine:
                 content = str(val)[:1000] if val is not None else ""
                 source_ref = ""
 
-            search_results.append(SearchResult(
-                id=row["key"],
-                content=content,
-                score=float(row["score"] or 0),
-                source=SearchSource.MEMORY,
-                metadata={
-                    "namespace": row["namespace"],
-                    "source": source_ref,
-                },
-                search_type=SearchType.VECTOR,
-            ))
+            search_results.append(
+                SearchResult(
+                    id=row["key"],
+                    content=content,
+                    score=float(row["score"] or 0),
+                    source=SearchSource.MEMORY,
+                    metadata={
+                        "namespace": row["namespace"],
+                        "source": source_ref,
+                    },
+                    search_type=SearchType.VECTOR,
+                )
+            )
         return search_results
 
 

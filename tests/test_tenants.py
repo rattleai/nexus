@@ -149,7 +149,9 @@ async def test_create_tenant_duplicate_slug(tenant_client):
     client, app = tenant_client
 
     mock_db = AsyncMock()
-    mock_db.commit = AsyncMock(
+    # The create handler raises during db.flush() (not commit) so it can
+    # rollback and surface 409 before the audit-log path runs.
+    mock_db.flush = AsyncMock(
         side_effect=IntegrityError("duplicate key", params=None, orig=Exception("unique constraint"))
     )
 

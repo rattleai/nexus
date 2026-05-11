@@ -10,13 +10,9 @@ Covers:
 
 from __future__ import annotations
 
-import os
 from unittest.mock import patch
 
-import pytest
-
 from app.agents.data_classification import DataClassifier, DataLevel, DLPEnforcer
-
 
 # ── TestDataLevel ─────────────────────────────────────────────────────
 
@@ -213,9 +209,7 @@ class TestDataExfiltrationAttacks:
             mock_settings.DATA_CLASSIFICATION_ENABLED = True
             mock_settings.DATA_CLASSIFICATION_DEFAULT_LEVEL = "INTERNAL"
             enforcer = DLPEnforcer(max_level=DataLevel.INTERNAL)
-            allowed, reason = enforcer.check_access(
-                "The user's SSN is 123-45-6789"
-            )
+            allowed, _reason = enforcer.check_access("The user's SSN is 123-45-6789")
         assert allowed is False
 
     def test_mixed_pii_all_redacted(self):

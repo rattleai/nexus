@@ -66,10 +66,12 @@ class EntityExtractor:
 
             response = await ai_gateway.complete(
                 model=settings.RAG_CONTEXTUAL_MODEL,  # Cheap model
-                messages=[{
-                    "role": "user",
-                    "content": _EXTRACTION_PROMPT.format(text=chunk_text[:3000]),
-                }],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": _EXTRACTION_PROMPT.format(text=chunk_text[:3000]),
+                    }
+                ],
                 max_tokens=500,
                 temperature=0.0,
             )

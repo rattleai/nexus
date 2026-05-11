@@ -49,8 +49,10 @@ class InstanceStatus(enum.StrEnum):
 VALID_INSTANCE_TRANSITIONS: dict[InstanceStatus, set[InstanceStatus]] = {
     InstanceStatus.PENDING: {InstanceStatus.RUNNING, InstanceStatus.CANCELLED, InstanceStatus.FAILED},
     InstanceStatus.RUNNING: {
-        InstanceStatus.COMPLETED, InstanceStatus.FAILED,
-        InstanceStatus.CANCELLED, InstanceStatus.PAUSED,
+        InstanceStatus.COMPLETED,
+        InstanceStatus.FAILED,
+        InstanceStatus.CANCELLED,
+        InstanceStatus.PAUSED,
     },
     InstanceStatus.PAUSED: {InstanceStatus.RUNNING, InstanceStatus.CANCELLED, InstanceStatus.FAILED},
     InstanceStatus.COMPLETED: set(),
@@ -110,7 +112,9 @@ class AgentDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Version
     slug: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
     status: Mapped[AgentStatus] = mapped_column(
-        Enum(AgentStatus, name="agent_status", values_callable=lambda e: [m.value for m in e]), default=AgentStatus.DRAFT, nullable=False,
+        Enum(AgentStatus, name="agent_status", values_callable=lambda e: [m.value for m in e]),
+        default=AgentStatus.DRAFT,
+        nullable=False,
     )
 
     # AI configuration
@@ -184,11 +188,15 @@ class AgentInstance(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     definition_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("agent_definitions.id"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("agent_definitions.id"),
+        nullable=False,
     )
 
     status: Mapped[InstanceStatus] = mapped_column(
-        Enum(InstanceStatus, name="instance_status", values_callable=lambda e: [m.value for m in e]), default=InstanceStatus.PENDING, nullable=False,
+        Enum(InstanceStatus, name="instance_status", values_callable=lambda e: [m.value for m in e]),
+        default=InstanceStatus.PENDING,
+        nullable=False,
     )
 
     # Execution tracking
@@ -218,18 +226,24 @@ class AgentInstance(Base, TimestampMixin):
 
     # Parent conversation session (for multi-turn interactive runs)
     session_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("agent_sessions.id"), nullable=True,
+        UUID(as_uuid=True),
+        ForeignKey("agent_sessions.id"),
+        nullable=True,
     )
 
     # Parent workflow run (if spawned by orchestrator)
     workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("workflow_runs.id"), nullable=True,
+        UUID(as_uuid=True),
+        ForeignKey("workflow_runs.id"),
+        nullable=True,
     )
 
     # Relationships
     definition: Mapped[AgentDefinition] = relationship(back_populates="instances")
     sessions: Mapped[list[AgentSession]] = relationship(
-        back_populates="instance", foreign_keys="AgentSession.instance_id", lazy="raise",
+        back_populates="instance",
+        foreign_keys="AgentSession.instance_id",
+        lazy="raise",
     )
 
     @validates("status")
@@ -242,9 +256,7 @@ class AgentInstance(Base, TimestampMixin):
         old_status = InstanceStatus(state) if isinstance(state, str) else state
         valid_next = VALID_INSTANCE_TRANSITIONS.get(old_status)
         if valid_next is not None and new_status not in valid_next:
-            raise ValueError(
-                f"Invalid agent instance status transition: {old_status.value} -> {new_status.value}"
-            )
+            raise ValueError(f"Invalid agent instance status transition: {old_status.value} -> {new_status.value}")
         return new_status
 
 
@@ -268,16 +280,22 @@ class AgentSession(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     instance_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("agent_instances.id"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("agent_instances.id"),
+        nullable=False,
     )
 
     # Direct link to the agent definition (for listing conversations per agent)
     definition_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("agent_definitions.id"), nullable=True,
+        UUID(as_uuid=True),
+        ForeignKey("agent_definitions.id"),
+        nullable=True,
     )
 
     status: Mapped[SessionStatus] = mapped_column(
-        Enum(SessionStatus, name="session_status", values_callable=lambda e: [m.value for m in e]), default=SessionStatus.ACTIVE, nullable=False,
+        Enum(SessionStatus, name="session_status", values_callable=lambda e: [m.value for m in e]),
+        default=SessionStatus.ACTIVE,
+        nullable=False,
     )
     messages: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, server_default="{}")
@@ -314,7 +332,9 @@ class AgentMemoryEntry(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     instance_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("agent_instances.id"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("agent_instances.id"),
+        nullable=False,
     )
 
     namespace: Mapped[str] = mapped_column(String(100), default="default", server_default="default")
@@ -351,7 +371,9 @@ class AgentDefinitionMemoryEntry(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     definition_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("agent_definitions.id", ondelete="CASCADE"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("agent_definitions.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     namespace: Mapped[str] = mapped_column(String(100), default="shared", server_default="shared")
@@ -376,9 +398,7 @@ class WorkflowDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Vers
     """
 
     __tablename__ = "workflow_definitions"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "slug", name="uq_workflow_def_tenant_slug"),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", "slug", name="uq_workflow_def_tenant_slug"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
@@ -387,7 +407,9 @@ class WorkflowDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Vers
     slug: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
     status: Mapped[WorkflowStatus] = mapped_column(
-        Enum(WorkflowStatus, name="workflow_status", values_callable=lambda e: [m.value for m in e]), default=WorkflowStatus.DRAFT, nullable=False,
+        Enum(WorkflowStatus, name="workflow_status", values_callable=lambda e: [m.value for m in e]),
+        default=WorkflowStatus.DRAFT,
+        nullable=False,
     )
 
     # DAG definition: list of steps with agent references and transitions
@@ -409,19 +431,20 @@ class WorkflowRun(Base, TimestampMixin):
     """
 
     __tablename__ = "workflow_runs"
-    __table_args__ = (
-        Index("ix_workflow_run_tenant_status", "tenant_id", "status"),
-    )
+    __table_args__ = (Index("ix_workflow_run_tenant_status", "tenant_id", "status"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     workflow_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("workflow_definitions.id"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("workflow_definitions.id"),
+        nullable=False,
     )
 
     status: Mapped[WorkflowRunStatus] = mapped_column(
         Enum(WorkflowRunStatus, name="workflow_run_status", values_callable=lambda e: [m.value for m in e]),
-        default=WorkflowRunStatus.PENDING, nullable=False,
+        default=WorkflowRunStatus.PENDING,
+        nullable=False,
     )
 
     # Current state: which steps are active, completed, pending
@@ -448,9 +471,7 @@ class TenantTool(Base, TimestampMixin, SoftDeleteMixin):
     """
 
     __tablename__ = "tenant_tools"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "tool_name", name="uq_tenant_tool_name"),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", "tool_name", name="uq_tenant_tool_name"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
@@ -458,7 +479,9 @@ class TenantTool(Base, TimestampMixin, SoftDeleteMixin):
     tool_name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
     source: Mapped[ToolSource] = mapped_column(
-        Enum(ToolSource, name="tool_source", values_callable=lambda e: [m.value for m in e]), default=ToolSource.TENANT, nullable=False,
+        Enum(ToolSource, name="tool_source", values_callable=lambda e: [m.value for m in e]),
+        default=ToolSource.TENANT,
+        nullable=False,
     )
 
     # MCP tool schema
@@ -477,7 +500,9 @@ class TenantTool(Base, TimestampMixin, SoftDeleteMixin):
     schema_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     tool_signature_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     trust_level: Mapped[str] = mapped_column(
-        String(20), default="untrusted", server_default="untrusted",
+        String(20),
+        default="untrusted",
+        server_default="untrusted",
     )  # "verified", "trusted", "untrusted"
 
     # Health/status
@@ -498,9 +523,7 @@ class AgentPolicy(Base, TimestampMixin, VersionMixin):
     """
 
     __tablename__ = "agent_policies"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "name", name="uq_agent_policy_name"),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_agent_policy_name"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
@@ -538,9 +561,7 @@ class CapabilityPreset(Base, TimestampMixin, SoftDeleteMixin):
     """
 
     __tablename__ = "capability_presets"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "slug", name="uq_capability_preset_slug"),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", "slug", name="uq_capability_preset_slug"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)

@@ -9,7 +9,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-
 # ── Completion Request/Response ───────────────────────────
 
 
@@ -25,7 +24,9 @@ class AICompletionRequest(BaseModel):
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     top_p: float | None = Field(default=None, ge=0.0, le=1.0)
     stream: bool = Field(default=False)
-    template_id: uuid.UUID | None = Field(default=None, description="Optional prompt template to prepend as system message")
+    template_id: uuid.UUID | None = Field(
+        default=None, description="Optional prompt template to prepend as system message"
+    )
     fallback_models: list[str] | None = Field(default=None, max_length=3)
 
     @field_validator("messages")

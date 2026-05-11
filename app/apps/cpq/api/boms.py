@@ -12,7 +12,6 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import RequireScopes, get_current_tenant, get_db
 from app.api.rate_limit import ApiKeyRateLimiter
-from app.core.audit import AuditAction, emit_audit_event
 from app.apps.cpq.api.schemas_configurator import (
     BOMHeaderCreate,
     BOMHeaderDetailResponse,
@@ -24,11 +23,11 @@ from app.apps.cpq.api.schemas_configurator import (
     BOMItemUpdate,
     WhereUsedResponse,
 )
+from app.apps.cpq.models.bom import BOMHeader, BOMItem, BOMItemType
+from app.core.audit import AuditAction, emit_audit_event
 from app.core.pagination import CursorPage, paginate
 from app.core.tenant import tenant_query
 from app.db.base import optimistic_version_bump
-from app.apps.cpq.models.bom import BOMHeader, BOMItem, BOMItemType
-from app.apps.cpq.models.product import Product
 from app.db.models import Tenant
 
 _api_key_rate_limit = ApiKeyRateLimiter()
@@ -59,9 +58,7 @@ def _validate_quantity_expression(expr: dict | None) -> None:
                     detail=f"Variable '{node.id}' in expression is not mapped in 'variables'",
                 )
     except SyntaxError:
-        raise HTTPException(
-            status_code=422, detail=f"quantity_expression.expression has invalid syntax: {formula_str}"
-        )
+        raise HTTPException(status_code=422, detail=f"quantity_expression.expression has invalid syntax: {formula_str}")
 
 
 # ── BOM Headers ──────────────────────────────────────────
@@ -90,8 +87,11 @@ async def create_bom(
     )
     db.add(bom)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="bom_header",
-        resource_id=str(bom.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="bom_header",
+        resource_id=str(bom.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(bom)
@@ -111,9 +111,8 @@ async def list_boms(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = (
-        tenant_query(select(BOMHeader), tenant)
-        .where(BOMHeader.product_id == product_id, BOMHeader.deleted_at.is_(None))
+    stmt = tenant_query(select(BOMHeader), tenant).where(
+        BOMHeader.product_id == product_id, BOMHeader.deleted_at.is_(None)
     )
     return await paginate(db, stmt, BOMHeader.created_at, limit=limit, cursor=cursor, descending=True)
 
@@ -151,9 +150,7 @@ async def update_bom(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(BOMHeader), tenant).where(
-            BOMHeader.id == bom_id, BOMHeader.deleted_at.is_(None)
-        )
+        tenant_query(select(BOMHeader), tenant).where(BOMHeader.id == bom_id, BOMHeader.deleted_at.is_(None))
     )
     bom = result.scalar_one_or_none()
     if not bom:
@@ -163,8 +160,12 @@ async def update_bom(
         setattr(bom, field, value)
     await optimistic_version_bump(db, bom)
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="bom_header",
-        resource_id=str(bom.id), tenant_id=tenant.id, changes=changes,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="bom_header",
+        resource_id=str(bom.id),
+        tenant_id=tenant.id,
+        changes=changes,
     )
     await db.flush()
     await db.refresh(bom)
@@ -183,17 +184,18 @@ async def delete_bom(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(BOMHeader), tenant).where(
-            BOMHeader.id == bom_id, BOMHeader.deleted_at.is_(None)
-        )
+        tenant_query(select(BOMHeader), tenant).where(BOMHeader.id == bom_id, BOMHeader.deleted_at.is_(None))
     )
     bom = result.scalar_one_or_none()
     if not bom:
         raise HTTPException(status_code=404, detail="BOM not found")
     bom.deleted_at = datetime.now(UTC)
     await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="bom_header",
-        resource_id=str(bom.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.DELETE,
+        resource_type="bom_header",
+        resource_id=str(bom.id),
+        tenant_id=tenant.id,
     )
     await db.commit()
 
@@ -214,9 +216,7 @@ async def add_bom_item(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(BOMHeader), tenant).where(
-            BOMHeader.id == bom_id, BOMHeader.deleted_at.is_(None)
-        )
+        tenant_query(select(BOMHeader), tenant).where(BOMHeader.id == bom_id, BOMHeader.deleted_at.is_(None))
     )
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="BOM not found")
@@ -245,8 +245,11 @@ async def add_bom_item(
     )
     db.add(item)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="bom_item",
-        resource_id=str(item.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="bom_item",
+        resource_id=str(item.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(item, attribute_names=["children"])
@@ -286,8 +289,11 @@ async def update_bom_item(
             setattr(item, field, value)
     await optimistic_version_bump(db, item)
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="bom_item",
-        resource_id=str(item.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="bom_item",
+        resource_id=str(item.id),
+        tenant_id=tenant.id,
     )
     await db.flush()
     await db.refresh(item, attribute_names=["children"])
@@ -316,8 +322,11 @@ async def delete_bom_item(
         raise HTTPException(status_code=404, detail="BOM item not found")
     item.deleted_at = datetime.now(UTC)
     await emit_audit_event(
-        db, action=AuditAction.DELETE, resource_type="bom_item",
-        resource_id=str(item.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.DELETE,
+        resource_type="bom_item",
+        resource_id=str(item.id),
+        tenant_id=tenant.id,
     )
     await db.commit()
 
@@ -334,9 +343,7 @@ async def reorder_bom_items(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        tenant_query(select(BOMItem), tenant).where(
-            BOMItem.bom_header_id == bom_id, BOMItem.deleted_at.is_(None)
-        )
+        tenant_query(select(BOMItem), tenant).where(BOMItem.bom_header_id == bom_id, BOMItem.deleted_at.is_(None))
     )
     items_by_id = {item.id: item for item in result.scalars().all()}
 
@@ -365,9 +372,7 @@ async def where_used(
     result = await db.execute(
         tenant_query(select(BOMItem), tenant)
         .where(BOMItem.part_number == part_number, BOMItem.deleted_at.is_(None))
-        .options(
-            selectinload(BOMItem.bom_header).selectinload(BOMHeader.product)
-        )
+        .options(selectinload(BOMItem.bom_header).selectinload(BOMHeader.product))
     )
     items = result.scalars().all()
 

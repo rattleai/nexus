@@ -7,7 +7,7 @@ engine and RAG pipeline to track retrieval effectiveness.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import structlog
@@ -69,33 +69,28 @@ class RAGEvaluator:
 
     @staticmethod
     def _compute_recall(
-        results: list[dict[str, Any]], ground_truth: list[str],
+        results: list[dict[str, Any]],
+        ground_truth: list[str],
     ) -> float:
         """Compute context recall: fraction of relevant docs that were retrieved."""
         if not ground_truth:
             return 0.0
 
         retrieved_texts = {r.get("content", "") for r in results}
-        hits = sum(
-            1 for gt in ground_truth
-            if any(gt in rt or rt in gt for rt in retrieved_texts)
-        )
+        hits = sum(1 for gt in ground_truth if any(gt in rt or rt in gt for rt in retrieved_texts))
         return hits / len(ground_truth)
 
     @staticmethod
     def _compute_precision(
-        results: list[dict[str, Any]], ground_truth: list[str],
+        results: list[dict[str, Any]],
+        ground_truth: list[str],
     ) -> float:
         """Compute context precision: fraction of retrieved docs that are relevant."""
         if not results:
             return 0.0
 
         hits = sum(
-            1 for r in results
-            if any(
-                gt in r.get("content", "") or r.get("content", "") in gt
-                for gt in ground_truth
-            )
+            1 for r in results if any(gt in r.get("content", "") or r.get("content", "") in gt for gt in ground_truth)
         )
         return hits / len(results)
 

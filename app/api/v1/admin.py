@@ -110,9 +110,7 @@ async def get_system_stats(db: AsyncSession = Depends(get_db)):
     ).scalar() or 0
     active_tenants = (
         await db.execute(
-            select(func.count())
-            .select_from(Tenant)
-            .where(Tenant.deleted_at.is_(None), Tenant.is_active.is_(True))
+            select(func.count()).select_from(Tenant).where(Tenant.deleted_at.is_(None), Tenant.is_active.is_(True))
         )
     ).scalar() or 0
 
@@ -122,22 +120,16 @@ async def get_system_stats(db: AsyncSession = Depends(get_db)):
     ).scalar() or 0
     active_users = (
         await db.execute(
-            select(func.count())
-            .select_from(User)
-            .where(User.deleted_at.is_(None), User.is_active.is_(True))
+            select(func.count()).select_from(User).where(User.deleted_at.is_(None), User.is_active.is_(True))
         )
     ).scalar() or 0
 
     # Job counts
-    total_jobs = (
-        await db.execute(select(func.count()).select_from(Job).where(Job.deleted_at.is_(None)))
-    ).scalar() or 0
+    total_jobs = (await db.execute(select(func.count()).select_from(Job).where(Job.deleted_at.is_(None)))).scalar() or 0
 
     # Jobs by status
     status_counts = await db.execute(
-        select(Job.status, func.count())
-        .where(Job.deleted_at.is_(None))
-        .group_by(Job.status)
+        select(Job.status, func.count()).where(Job.deleted_at.is_(None)).group_by(Job.status)
     )
     jobs_by_status = {row[0].value: row[1] for row in status_counts.all()}
 
@@ -145,9 +137,7 @@ async def get_system_stats(db: AsyncSession = Depends(get_db)):
     week_ago = datetime.now(UTC) - timedelta(days=7)
     recent = (
         await db.execute(
-            select(func.count())
-            .select_from(User)
-            .where(User.created_at >= week_ago, User.deleted_at.is_(None))
+            select(func.count()).select_from(User).where(User.created_at >= week_ago, User.deleted_at.is_(None))
         )
     ).scalar() or 0
 

@@ -12,11 +12,13 @@ T = TypeVar("T")
 
 class HealthStatusResponse(BaseModel):
     """Public health response — aggregate status only."""
+
     status: str
 
 
 class HealthResponse(BaseModel):
     """Admin-only detailed health response."""
+
     status: str
     version: str
     services: dict[str, bool]
@@ -66,6 +68,7 @@ class TenantCreate(BaseModel):
     def validate_settings_depth(cls, v: dict | None) -> dict | None:
         if v is not None:
             import json
+
             serialized = json.dumps(v)
             if len(serialized) > 10_000:
                 raise ValueError("settings JSON too large (max 10KB)")
@@ -83,6 +86,7 @@ class TenantUpdate(BaseModel):
     def validate_settings_depth(cls, v: dict | None) -> dict | None:
         if v is not None:
             import json
+
             serialized = json.dumps(v)
             if len(serialized) > 10_000:
                 raise ValueError("settings JSON too large (max 10KB)")
@@ -115,9 +119,10 @@ class ApiKeyCreate(BaseModel):
     def validate_scopes(cls, v: list[str] | None) -> list[str] | None:
         if v is not None:
             from app.config import settings
+
             invalid = [s for s in v if s not in settings.VALID_SCOPES]
             if invalid:
-                valid = ', '.join(settings.VALID_SCOPES)
+                valid = ", ".join(settings.VALID_SCOPES)
                 raise ValueError(f"Invalid scopes: {', '.join(invalid)}. Valid: {valid}")
         return v
 
@@ -157,6 +162,7 @@ class JobCreate(BaseModel):
     def validate_payload_size(cls, v: dict | None) -> dict | None:
         if v is not None:
             import json
+
             serialized = json.dumps(v)
             if len(serialized) > 1_000_000:
                 raise ValueError("payload too large (max 1MB)")

@@ -97,15 +97,19 @@ async def generate_authorize_url(
     linking_user_id_hmac = None
     if linking_user_id:
         linking_user_id_hmac = hmac.new(
-            settings.SECRET_KEY.encode(), linking_user_id.encode(), hashlib.sha256,
+            settings.SECRET_KEY.encode(),
+            linking_user_id.encode(),
+            hashlib.sha256,
         ).hexdigest()
 
-    state_data = json.dumps({
-        "provider": provider,
-        "redirect_uri": redirect_uri,
-        "linking_user_id": linking_user_id,
-        "linking_user_id_hmac": linking_user_id_hmac,
-    })
+    state_data = json.dumps(
+        {
+            "provider": provider,
+            "redirect_uri": redirect_uri,
+            "linking_user_id": linking_user_id,
+            "linking_user_id_hmac": linking_user_id_hmac,
+        }
+    )
     await redis_pool.setex(f"oauth:state:{state_hash}", _STATE_TTL_SECONDS, state_data)
 
     params = {
@@ -249,6 +253,8 @@ def verify_linking_user_id(state_data: dict) -> bool:
     if not linking_user_id or not stored_hmac:
         return False
     expected = hmac.new(
-        settings.SECRET_KEY.encode(), linking_user_id.encode(), hashlib.sha256,
+        settings.SECRET_KEY.encode(),
+        linking_user_id.encode(),
+        hashlib.sha256,
     ).hexdigest()
     return hmac.compare_digest(expected, stored_hmac)

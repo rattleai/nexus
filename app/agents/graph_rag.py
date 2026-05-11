@@ -78,11 +78,14 @@ class GraphRAGEngine:
                 WHERE dsc.tenant_id = :tenant_id
             """
 
-            result = await db.execute(text(sql), {
-                "tenant_id": str(tenant_id),
-                "chunk_ids": chunk_ids,
-                "max_results": max_graph_results,
-            })
+            result = await db.execute(
+                text(sql),
+                {
+                    "tenant_id": str(tenant_id),
+                    "chunk_ids": chunk_ids,
+                    "max_results": max_graph_results,
+                },
+            )
             rows = result.mappings().all()
 
             # Add graph results with reduced score (graph connections are secondary)
@@ -91,19 +94,21 @@ class GraphRAGEngine:
 
             for row in rows:
                 if str(row["id"]) not in existing_ids:
-                    results.append(SearchResult(
-                        id=str(row["id"]),
-                        content=row["content"] or "",
-                        score=min_score * 0.8 * float(row["graph_weight"]),
-                        source=SearchSource.CHUNKS,
-                        source_id=str(row["data_source_id"]) if row["data_source_id"] else "",
-                        metadata={
-                            "section_title": row["section_title"],
-                            "content_type": row["content_type"],
-                            "source": "graph_rag",
-                        },
-                        search_type=SearchType.HYBRID,
-                    ))
+                    results.append(
+                        SearchResult(
+                            id=str(row["id"]),
+                            content=row["content"] or "",
+                            score=min_score * 0.8 * float(row["graph_weight"]),
+                            source=SearchSource.CHUNKS,
+                            source_id=str(row["data_source_id"]) if row["data_source_id"] else "",
+                            metadata={
+                                "section_title": row["section_title"],
+                                "content_type": row["content_type"],
+                                "source": "graph_rag",
+                            },
+                            search_type=SearchType.HYBRID,
+                        )
+                    )
 
             if rows:
                 logger.info(

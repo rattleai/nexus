@@ -17,8 +17,9 @@ def resolve_bom_async(self, session_id: str, tenant_id: str) -> dict:
     may exceed request timeout.
     """
     import asyncio
-    from app.db.session import get_session
+
     from app.apps.cpq.engine.bom_resolver import BOMResolver
+    from app.db.session import get_session
 
     async def _resolve():
         resolver = BOMResolver()
@@ -45,10 +46,12 @@ def bulk_validate_sessions(self, product_id: str, tenant_id: str) -> dict:
     Useful after constraint rules are modified.
     """
     import asyncio
+
     from sqlalchemy import select
-    from app.db.session import get_session
-    from app.apps.cpq.models.configurator import ConfigurationSession, ConfigurationStatus
+
     from app.apps.cpq.engine.validator import ConfigurationValidator
+    from app.apps.cpq.models.configurator import ConfigurationSession, ConfigurationStatus
+    from app.db.session import get_session
 
     async def _validate():
         validator = ConfigurationValidator()

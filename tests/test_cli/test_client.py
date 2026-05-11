@@ -1,7 +1,5 @@
 """Tests for the CLI HTTP client."""
 
-
-
 from app.cli.client import CadpriceClient, CLIError
 
 

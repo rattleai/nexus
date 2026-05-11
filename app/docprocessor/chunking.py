@@ -17,7 +17,7 @@ import hashlib
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 from app.config import settings
 
@@ -108,14 +108,16 @@ class FixedSizeChunker(Chunker):
 
             chunk_text = text[start:end].strip()
             if chunk_text:
-                results.append((
-                    chunk_text,
-                    ChunkMetadata(
-                        chunk_index=idx,
-                        content_hash=_content_hash(chunk_text),
-                        strategy=ChunkingStrategy.FIXED_SIZE,
-                    ),
-                ))
+                results.append(
+                    (
+                        chunk_text,
+                        ChunkMetadata(
+                            chunk_index=idx,
+                            content_hash=_content_hash(chunk_text),
+                            strategy=ChunkingStrategy.FIXED_SIZE,
+                        ),
+                    )
+                )
                 idx += 1
 
             start = end - chunk_overlap
@@ -133,7 +135,7 @@ class RecursiveChunker(Chunker):
     chunks exceed the target size.
     """
 
-    _SEPARATORS = ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " "]
+    _SEPARATORS: ClassVar[list[str]] = ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " "]
 
     def chunk(
         self,
@@ -156,18 +158,23 @@ class RecursiveChunker(Chunker):
         results: list[tuple[str, ChunkMetadata]] = []
         for idx, chunk_text in enumerate(merged[:_MAX_CHUNKS]):
             if chunk_text.strip():
-                results.append((
-                    chunk_text.strip(),
-                    ChunkMetadata(
-                        chunk_index=idx,
-                        content_hash=_content_hash(chunk_text.strip()),
-                        strategy=ChunkingStrategy.RECURSIVE,
-                    ),
-                ))
+                results.append(
+                    (
+                        chunk_text.strip(),
+                        ChunkMetadata(
+                            chunk_index=idx,
+                            content_hash=_content_hash(chunk_text.strip()),
+                            strategy=ChunkingStrategy.RECURSIVE,
+                        ),
+                    )
+                )
         return results
 
     def _split_recursive(
-        self, text: str, separators: list[str], chunk_size: int,
+        self,
+        text: str,
+        separators: list[str],
+        chunk_size: int,
     ) -> list[str]:
         """Recursively split text using separator hierarchy."""
         if len(text) <= chunk_size:
@@ -175,7 +182,7 @@ class RecursiveChunker(Chunker):
 
         if not separators:
             # No more separators — hard split
-            return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+            return [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
 
         sep = separators[0]
         remaining_seps = separators[1:]
@@ -202,7 +209,10 @@ class RecursiveChunker(Chunker):
         return chunks
 
     def _merge_with_overlap(
-        self, chunks: list[str], chunk_size: int, overlap: int,
+        self,
+        chunks: list[str],
+        chunk_size: int,
+        overlap: int,
     ) -> list[str]:
         """Add overlap between consecutive chunks."""
         if not chunks or overlap <= 0:
@@ -261,16 +271,18 @@ class MarkdownChunker(Chunker):
                 continue
 
             if len(full_text) <= chunk_size:
-                results.append((
-                    full_text,
-                    ChunkMetadata(
-                        chunk_index=idx,
-                        content_hash=_content_hash(full_text),
-                        strategy=ChunkingStrategy.MARKDOWN,
-                        section_title=heading or None,
-                        heading_hierarchy=list(heading_stack),
-                    ),
-                ))
+                results.append(
+                    (
+                        full_text,
+                        ChunkMetadata(
+                            chunk_index=idx,
+                            content_hash=_content_hash(full_text),
+                            strategy=ChunkingStrategy.MARKDOWN,
+                            section_title=heading or None,
+                            heading_hierarchy=list(heading_stack),
+                        ),
+                    )
+                )
                 idx += 1
             else:
                 # Sub-chunk large sections with FixedSizeChunker
@@ -279,16 +291,18 @@ class MarkdownChunker(Chunker):
                 for sub_text, _ in sub_chunks:
                     if idx >= _MAX_CHUNKS:
                         break
-                    results.append((
-                        sub_text,
-                        ChunkMetadata(
-                            chunk_index=idx,
-                            content_hash=_content_hash(sub_text),
-                            strategy=ChunkingStrategy.MARKDOWN,
-                            section_title=heading or None,
-                            heading_hierarchy=list(heading_stack),
-                        ),
-                    ))
+                    results.append(
+                        (
+                            sub_text,
+                            ChunkMetadata(
+                                chunk_index=idx,
+                                content_hash=_content_hash(sub_text),
+                                strategy=ChunkingStrategy.MARKDOWN,
+                                section_title=heading or None,
+                                heading_hierarchy=list(heading_stack),
+                            ),
+                        )
+                    )
                     idx += 1
 
             if idx >= _MAX_CHUNKS:
@@ -320,7 +334,7 @@ class MarkdownChunker(Chunker):
 
         # Content before first heading
         if headings[0].start() > 0:
-            pre_content = safe_text[:headings[0].start()]
+            pre_content = safe_text[: headings[0].start()]
             for key, val in protected.items():
                 pre_content = pre_content.replace(key, val)
             if pre_content.strip():
@@ -364,7 +378,9 @@ class SemanticChunker(Chunker):
         # is a fallback that delegates to FixedSizeChunker.
         # Use chunk_async() for the full semantic pipeline.
         return FixedSizeChunker().chunk(
-            text, chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            text,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
         )
 
     async def chunk_async(
@@ -408,26 +424,28 @@ class SemanticChunker(Chunker):
         for idx, group in enumerate(groups[:_MAX_CHUNKS]):
             chunk_text = " ".join(group).strip()
             if chunk_text:
-                results.append((
-                    chunk_text,
-                    ChunkMetadata(
-                        chunk_index=idx,
-                        content_hash=_content_hash(chunk_text),
-                        strategy=ChunkingStrategy.SEMANTIC,
-                    ),
-                ))
+                results.append(
+                    (
+                        chunk_text,
+                        ChunkMetadata(
+                            chunk_index=idx,
+                            content_hash=_content_hash(chunk_text),
+                            strategy=ChunkingStrategy.SEMANTIC,
+                        ),
+                    )
+                )
         return results
 
     @staticmethod
     def _split_sentences(text: str) -> list[str]:
         """Split text into sentences."""
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = re.split(r"(?<=[.!?])\s+", text)
         return [s.strip() for s in sentences if s.strip()]
 
     @staticmethod
     def _cosine_similarity(a: list[float], b: list[float]) -> float:
         """Compute cosine similarity between two vectors."""
-        dot = sum(x * y for x, y in zip(a, b))
+        dot = sum(x * y for x, y in zip(a, b, strict=False))
         norm_a = sum(x * x for x in a) ** 0.5
         norm_b = sum(x * x for x in b) ** 0.5
         if norm_a == 0 or norm_b == 0:

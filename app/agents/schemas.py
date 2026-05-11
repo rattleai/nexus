@@ -127,7 +127,7 @@ class AgentDefinitionResponse(BaseModel):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
     @model_validator(mode="after")
-    def _compute_resolved_tools(self) -> "AgentDefinitionResponse":
+    def _compute_resolved_tools(self) -> AgentDefinitionResponse:
         """Populate resolved_tools from capabilities + allowed_tools."""
         if not self.resolved_tools:
             from app.agents.capabilities import capability_resolver
@@ -196,6 +196,7 @@ class AgentSessionResponse(BaseModel):
 
 class ConversationStartRequest(BaseModel):
     """Start a new interactive conversation with an agent."""
+
     input_data: dict[str, Any] = {}
     idle_timeout_seconds: int | None = Field(None, ge=60, le=86400)
 
@@ -207,11 +208,13 @@ class ConversationStartRequest(BaseModel):
 
 class ConversationReplyRequest(BaseModel):
     """Send a follow-up message in an existing conversation."""
+
     message: str = Field(..., min_length=1, max_length=100_000)
 
 
 class ConversationSessionResponse(BaseModel):
     """Extended session response for interactive conversations."""
+
     id: uuid.UUID
     tenant_id: uuid.UUID
     definition_id: uuid.UUID | None
@@ -287,9 +290,7 @@ class WorkflowDefinitionCreate(BaseModel):
         for step in v["steps"]:
             pattern = step.get("pattern", "single")
             if pattern == "supervisor" and not step.get("worker_agent_ids"):
-                raise ValueError(
-                    f"Supervisor step '{step['name']}' requires 'worker_agent_ids' list"
-                )
+                raise ValueError(f"Supervisor step '{step['name']}' requires 'worker_agent_ids' list")
         return v
 
     @field_validator("governance", "metadata")
@@ -365,6 +366,7 @@ class TenantToolCreate(BaseModel):
         if v is None:
             return v
         from urllib.parse import urlparse
+
         parsed = urlparse(v)
         if parsed.scheme != "https":
             raise ValueError("Only HTTPS URLs are allowed")
@@ -372,10 +374,17 @@ class TenantToolCreate(BaseModel):
             raise ValueError("URL must have a valid hostname")
         # Block private/reserved IP ranges (SSRF protection)
         import ipaddress
+
         try:
             ip = ipaddress.ip_address(parsed.hostname)
-            if (ip.is_private or ip.is_loopback or ip.is_link_local
-                    or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
+            ):
                 raise ValueError("URLs pointing to private/internal networks are not allowed")
         except ValueError as exc:
             if "not allowed" in str(exc):
@@ -438,7 +447,9 @@ class AgentPolicyCreate(BaseModel):
     approval_default_action: Literal["deny", "approve"] = "deny"
     max_requests_per_minute: int | None = Field(None, ge=1, le=10_000)
     max_agent_requests_per_minute: int | None = Field(
-        None, ge=1, le=100_000,
+        None,
+        ge=1,
+        le=100_000,
         description="Aggregate rate limit across ALL instances of the same agent definition",
     )
     max_steps_per_run: int | None = Field(None, ge=1, le=10_000)

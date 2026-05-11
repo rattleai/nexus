@@ -12,7 +12,11 @@ from app.main import create_app
 
 def _make_tenant():
     return MagicMock(
-        id=uuid.uuid4(), name="Test", slug="test", plan="free", is_active=True,
+        id=uuid.uuid4(),
+        name="Test",
+        slug="test",
+        plan="free",
+        is_active=True,
     )
 
 
@@ -41,10 +45,13 @@ async def bom_client():
 @pytest.mark.asyncio
 async def test_create_bom_requires_auth(bom_client):
     client, _ = bom_client
-    response = await client.post("/api/v1/boms", json={
-        "product_id": str(uuid.uuid4()),
-        "name": "Manufacturing BOM",
-    })
+    response = await client.post(
+        "/api/v1/boms",
+        json={
+            "product_id": str(uuid.uuid4()),
+            "name": "Manufacturing BOM",
+        },
+    )
     assert response.status_code == 401
 
 
@@ -83,10 +90,13 @@ async def test_get_bom_not_found(bom_client):
 @pytest.mark.asyncio
 async def test_add_bom_item_requires_auth(bom_client):
     client, _ = bom_client
-    response = await client.post(f"/api/v1/boms/{uuid.uuid4()}/items", json={
-        "part_number": "ENG-001",
-        "part_name": "Engine Assembly",
-    })
+    response = await client.post(
+        f"/api/v1/boms/{uuid.uuid4()}/items",
+        json={
+            "part_number": "ENG-001",
+            "part_name": "Engine Assembly",
+        },
+    )
     assert response.status_code == 401
 
 

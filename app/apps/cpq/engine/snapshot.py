@@ -40,9 +40,7 @@ async def compile_snapshot(
     and initial domains. Used to avoid DB round-trips during propagation.
     """
     # Load product
-    product_result = await db.execute(
-        select(Product).where(Product.id == product_id)
-    )
+    product_result = await db.execute(select(Product).where(Product.id == product_id))
     product = product_result.scalar_one()
 
     # Load characteristics with values
@@ -52,10 +50,7 @@ async def compile_snapshot(
             CharacteristicAssignment.product_id == product_id,
             CharacteristicAssignment.tenant_id == tenant_id,
         )
-        .options(
-            selectinload(CharacteristicAssignment.characteristic)
-            .selectinload(Characteristic.values)
-        )
+        .options(selectinload(CharacteristicAssignment.characteristic).selectinload(Characteristic.values))
     )
 
     characteristics: dict[str, dict] = {}

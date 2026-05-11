@@ -52,6 +52,7 @@ def _cache_set(key: str) -> None:
         _NOT_REVOKED_CACHE.clear()
     _NOT_REVOKED_CACHE[key] = time.monotonic()
 
+
 # argon2id primary, bcrypt as deprecated fallback for existing hashes.
 # passlib auto-flags bcrypt hashes as needing rehash.
 pwd_context = CryptContext(schemes=["argon2", "bcrypt"], default="argon2", deprecated=["bcrypt"])
@@ -163,6 +164,7 @@ async def is_token_revoked(jti: str) -> bool:
 
     try:
         from app.core.redis import redis_pool
+
         result = await redis_pool.get(f"jwt:revoked:{jti}")
         if result is not None:
             # Token IS revoked — remove any stale cache entry
@@ -194,6 +196,7 @@ async def revoke_access_token(jti: str, ttl_seconds: int | None = None) -> None:
         return
     try:
         from app.core.redis import redis_pool
+
         ttl = ttl_seconds or (settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60)
         await redis_pool.setex(f"jwt:revoked:{jti}", ttl, "1")
     except Exception as exc:
@@ -210,6 +213,7 @@ async def revoke_all_user_tokens(user_id: str) -> None:
     """
     try:
         from app.core.redis import redis_pool
+
         ttl = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
         await redis_pool.setex(f"jwt:user_revoked:{user_id}", ttl, str(int(datetime.now(UTC).timestamp())))
     except Exception as exc:
@@ -231,6 +235,7 @@ async def is_user_token_revoked(user_id: str, issued_at: int) -> bool:
 
     try:
         from app.core.redis import redis_pool
+
         revoked_since = await redis_pool.get(f"jwt:user_revoked:{user_id}")
         if revoked_since and issued_at < int(revoked_since):
             _NOT_REVOKED_CACHE.pop(cache_key, None)
@@ -283,6 +288,7 @@ def _export_jwk(pem_key: str, kid_suffix: str = "") -> dict | None:
     """Export a PEM public key as JWK dict."""
     try:
         from jwt import PyJWK
+
         pem = pem_key.replace("\\n", "\n")
         jwk = PyJWK.from_pem(pem.encode())
         key_dict = jwk.key.export(as_dict=True)

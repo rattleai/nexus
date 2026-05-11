@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import structlog
-from starlette.websockets import WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocket
 
 logger = structlog.stdlib.get_logger()
 
@@ -41,9 +41,7 @@ class ConnectionManager:
     def active_count(self) -> int:
         return len(self._connections)
 
-    async def connect(
-        self, ws: WebSocket, user_id: uuid.UUID, tenant_id: uuid.UUID
-    ) -> str:
+    async def connect(self, ws: WebSocket, user_id: uuid.UUID, tenant_id: uuid.UUID) -> str:
         """Accept and register a WebSocket connection. Returns connection ID."""
         await ws.accept()
         conn_id = str(uuid.uuid4())
@@ -88,9 +86,7 @@ class ConnectionManager:
         conn_ids = set(self._connections.keys())
         return await self._send_to_connections(conn_ids, event)
 
-    async def _send_to_connections(
-        self, conn_ids: set[str], event: dict[str, Any]
-    ) -> int:
+    async def _send_to_connections(self, conn_ids: set[str], event: dict[str, Any]) -> int:
         """Send event to a set of connections, removing any that fail."""
         import json
 

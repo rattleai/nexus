@@ -8,7 +8,7 @@ from typing import Any
 
 import structlog
 
-from app.docprocessor.base import ExtractionResult, ExtractedSection, ExtractedTable
+from app.docprocessor.base import ExtractedSection, ExtractedTable, ExtractionResult
 
 logger = structlog.stdlib.get_logger()
 

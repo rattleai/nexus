@@ -62,7 +62,6 @@ class CadpriceClient:
         if idempotency_key:
             headers["X-Idempotency-Key"] = idempotency_key
 
-        last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES + 1):
             try:
                 response = self._client.request(
@@ -73,7 +72,6 @@ class CadpriceClient:
                     headers=headers,
                 )
             except httpx.ConnectError as exc:
-                last_exc = exc
                 if attempt < _MAX_RETRIES:
                     time.sleep(_RETRY_BACKOFF_BASE * (2**attempt))
                     continue
@@ -83,7 +81,6 @@ class CadpriceClient:
                     hint=f"Is the API server running? Check {BASE_URL_ENV}.",
                 ) from exc
             except httpx.TimeoutException as exc:
-                last_exc = exc
                 if attempt < _MAX_RETRIES:
                     time.sleep(_RETRY_BACKOFF_BASE * (2**attempt))
                     continue

@@ -67,11 +67,7 @@ async def send_push_notification(
 
     # Mark expired subscriptions as inactive
     if expired_ids:
-        await db.execute(
-            update(PushSubscription)
-            .where(PushSubscription.id.in_(expired_ids))
-            .values(active=False)
-        )
+        await db.execute(update(PushSubscription).where(PushSubscription.id.in_(expired_ids)).values(active=False))
         await db.commit()
 
     logger.info("push_sent", user_id=str(user_id), sent=sent, expired=len(expired_ids))
@@ -98,14 +94,16 @@ async def _send_web_push(
         return False
 
     try:
-        from pywebpush import webpush, WebPushException
+        from pywebpush import webpush
 
-        payload = json.dumps({
-            "title": title,
-            "body": body,
-            "data": data or {},
-            "url": url,
-        })
+        payload = json.dumps(
+            {
+                "title": title,
+                "body": body,
+                "data": data or {},
+                "url": url,
+            }
+        )
 
         webpush(
             subscription_info=subscription_data,
@@ -149,6 +147,7 @@ async def _send_fcm(
                 return False
 
             import json as json_mod
+
             cred = firebase_admin.credentials.Certificate(json_mod.loads(firebase_service_account))
             firebase_admin.initialize_app(cred)
 

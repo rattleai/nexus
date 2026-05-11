@@ -13,8 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.agents.compliance import AgentCard, ComplianceEngine, ComplianceReport
-
+from app.agents.compliance import ComplianceEngine, ComplianceReport
 
 # ── TestOWASPLLMChecks ────────────────────────────────────────────────
 
@@ -25,7 +24,9 @@ class TestOWASPLLMChecks:
     def _run(self, definition, *, frameworks=None):
         engine = ComplianceEngine(tenant_id="test-tenant")
         return engine.run_compliance_checks(
-            [definition], [], frameworks=frameworks,
+            [definition],
+            [],
+            frameworks=frameworks,
         )
 
     def test_prompt_injection_pass(self):
@@ -124,7 +125,9 @@ class TestEUAIActChecks:
     def _run(self, definition, *, frameworks=None):
         engine = ComplianceEngine(tenant_id="test-tenant")
         return engine.run_compliance_checks(
-            [definition], [], frameworks=frameworks,
+            [definition],
+            [],
+            frameworks=frameworks,
         )
 
     def test_risk_management_pass(self):
@@ -248,7 +251,9 @@ class TestComplianceReport:
                 "governance_policy": {"max_spend_per_run_usd": 1.0},
             }
             report = engine.run_compliance_checks(
-                [definition], [], frameworks=["owasp_llm"],
+                [definition],
+                [],
+                frameworks=["owasp_llm"],
             )
         # Only OWASP checks should be present; no NIST or EU checks
         frameworks_found = {c.framework for c in report.checks}
@@ -310,10 +315,19 @@ class TestAgentCard:
         card = self._engine().generate_agent_card(definition)
         d = card.to_dict()
         expected_keys = {
-            "agent_id", "agent_name", "description", "model",
-            "capabilities", "limitations", "allowed_tools",
-            "governance", "risk_level", "data_classification_max",
-            "sandbox_enabled", "human_oversight", "last_updated",
+            "agent_id",
+            "agent_name",
+            "description",
+            "model",
+            "capabilities",
+            "limitations",
+            "allowed_tools",
+            "governance",
+            "risk_level",
+            "data_classification_max",
+            "sandbox_enabled",
+            "human_oversight",
+            "last_updated",
         }
         assert expected_keys == set(d.keys())
         assert d["human_oversight"] is True
