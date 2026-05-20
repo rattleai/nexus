@@ -22,7 +22,9 @@ class SSOConfiguration(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, unique=True)
-    provider_type: Mapped[SSOProvider] = mapped_column(Enum(SSOProvider, values_callable=lambda e: [m.value for m in e]), nullable=False)
+    provider_type: Mapped[SSOProvider] = mapped_column(
+        Enum(SSOProvider, values_callable=lambda e: [m.value for m in e]), nullable=False
+    )
     entity_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
     metadata_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     certificate: Mapped[str | None] = mapped_column(Text, nullable=True)

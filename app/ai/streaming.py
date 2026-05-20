@@ -9,11 +9,11 @@ callback for wallet deduction and usage logging.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 import uuid
 from collections.abc import AsyncGenerator, Callable, Coroutine
-from decimal import Decimal
 from typing import Any
 
 import structlog
@@ -107,10 +107,8 @@ async def sse_stream_response(
         finally:
             # Ensure the LiteLLM stream is properly closed
             if hasattr(litellm_stream, "aclose"):
-                try:
+                with contextlib.suppress(Exception):
                     await litellm_stream.aclose()
-                except Exception:
-                    pass
 
         # Estimate tokens if not provided by the final chunk
         if not completion_tokens and total_content:
@@ -123,7 +121,9 @@ async def sse_stream_response(
             import litellm as _litellm
 
             prompt_cost_per, completion_cost_per = _litellm.cost_per_token(
-                model=model, prompt_tokens=1, completion_tokens=1,
+                model=model,
+                prompt_tokens=1,
+                completion_tokens=1,
             )
             cost_usd = (prompt_tokens * prompt_cost_per) + (completion_tokens * completion_cost_per)
         except Exception:

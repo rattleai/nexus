@@ -7,7 +7,7 @@ the API to expose available models.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from app.config import settings
 from app.db.models.ai import AIProvider

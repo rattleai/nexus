@@ -85,6 +85,7 @@ async def test_token_exchange_invalid_credentials():
         app.include_router(oauth_router, prefix="/api/v1", tags=["oauth"])
 
         from app.api.deps import get_db
+
         app.dependency_overrides[get_db] = fake_db
 
         transport = ASGITransport(app=app)

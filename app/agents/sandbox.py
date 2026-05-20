@@ -34,31 +34,81 @@ import structlog
 logger = structlog.stdlib.get_logger()
 
 # Modules that are always safe to import in the sandbox
-_DEFAULT_ALLOWED_IMPORTS = frozenset({
-    "math", "random", "string", "re", "json", "csv",
-    "datetime", "time", "collections", "itertools", "functools",
-    "operator", "decimal", "fractions", "statistics",
-    "hashlib", "hmac", "base64", "binascii",
-    "textwrap", "difflib", "unicodedata",
-    "copy", "pprint", "dataclasses", "typing",
-    "io", "enum", "abc", "contextlib",
-})
+_DEFAULT_ALLOWED_IMPORTS = frozenset(
+    {
+        "math",
+        "random",
+        "string",
+        "re",
+        "json",
+        "csv",
+        "datetime",
+        "time",
+        "collections",
+        "itertools",
+        "functools",
+        "operator",
+        "decimal",
+        "fractions",
+        "statistics",
+        "hashlib",
+        "hmac",
+        "base64",
+        "binascii",
+        "textwrap",
+        "difflib",
+        "unicodedata",
+        "copy",
+        "pprint",
+        "dataclasses",
+        "typing",
+        "io",
+        "enum",
+        "abc",
+        "contextlib",
+    }
+)
 
-_BLOCKED_IMPORTS = frozenset({
-    "os", "sys", "subprocess", "shutil", "signal", "ctypes",
-    "importlib", "code", "codeop", "compileall",
-    "socket", "http", "urllib", "requests", "httpx",
-    "multiprocessing", "threading", "concurrent",
-    "pickle", "shelve", "marshal",
-    "pathlib",
-    "builtins", "__builtin__",
-    "pty", "termios", "fcntl",
-    "pwd", "grp",
-    "ssl", "secrets",
-    "webbrowser",
-    "tempfile", "glob",
-    "sysconfig", "site",
-})
+_BLOCKED_IMPORTS = frozenset(
+    {
+        "os",
+        "sys",
+        "subprocess",
+        "shutil",
+        "signal",
+        "ctypes",
+        "importlib",
+        "code",
+        "codeop",
+        "compileall",
+        "socket",
+        "http",
+        "urllib",
+        "requests",
+        "httpx",
+        "multiprocessing",
+        "threading",
+        "concurrent",
+        "pickle",
+        "shelve",
+        "marshal",
+        "pathlib",
+        "builtins",
+        "__builtin__",
+        "pty",
+        "termios",
+        "fcntl",
+        "pwd",
+        "grp",
+        "ssl",
+        "secrets",
+        "webbrowser",
+        "tempfile",
+        "glob",
+        "sysconfig",
+        "site",
+    }
+)
 
 
 @dataclass
@@ -160,10 +210,12 @@ class ExecutionSandbox:
             env["SANDBOX_BLOCKED_IMPORTS"] = ",".join(sorted(_BLOCKED_IMPORTS))
 
             import time
+
             start = time.monotonic()
 
             process = await asyncio.create_subprocess_exec(
-                "python3", wrapper_file,
+                "python3",
+                wrapper_file,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=sandbox_dir,
@@ -195,8 +247,8 @@ class ExecutionSandbox:
             duration_ms = int((time.monotonic() - start) * 1000)
 
             # Truncate output to prevent memory exhaustion
-            stdout = stdout_bytes[:self.config.max_output_bytes].decode("utf-8", errors="replace")
-            stderr = stderr_bytes[:self.config.max_output_bytes].decode("utf-8", errors="replace")
+            stdout = stdout_bytes[: self.config.max_output_bytes].decode("utf-8", errors="replace")
+            stderr = stderr_bytes[: self.config.max_output_bytes].decode("utf-8", errors="replace")
 
             # Read result file if it exists
             return_value = None
@@ -241,7 +293,7 @@ class ExecutionSandbox:
         All paths and configuration come from environment variables, not
         string interpolation, to prevent code injection.
         """
-        return '''
+        return """
 import resource
 import sys
 import os
@@ -334,4 +386,4 @@ except MemoryError:
 except Exception as e:
     print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)
     sys.exit(1)
-'''
+"""

@@ -17,7 +17,6 @@ import uuid
 from typing import Any
 
 import structlog
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.stdlib.get_logger()
@@ -205,6 +204,7 @@ class EntitlementsEngine:
     async def _get_tenant_plan(self, tenant_id: uuid.UUID, db: AsyncSession) -> str:
         """Resolve the tenant's current plan."""
         from app.db.models import Tenant
+
         tenant = await db.get(Tenant, tenant_id)
         if not tenant:
             return "free"

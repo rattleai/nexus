@@ -10,14 +10,17 @@ from __future__ import annotations
 from typing import Any
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.stdlib.get_logger()
 
 
 async def agent_list(
-    *, tenant: Any, db: AsyncSession, status: str | None = None,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+    status: str | None = None,
 ) -> dict:
     """List agent definitions for the tenant."""
     from app.agents.models import AgentDefinition, AgentStatus
@@ -54,10 +57,14 @@ async def agent_list(
 
 
 async def agent_get(
-    *, tenant: Any, db: AsyncSession, agent_id: str,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+    agent_id: str,
 ) -> dict:
     """Get details of a specific agent definition."""
     import uuid
+
     from app.agents.models import AgentDefinition
     from app.db.session import set_tenant_context
 
@@ -83,12 +90,17 @@ async def agent_get(
 
 
 async def agent_run(
-    *, tenant: Any, db: AsyncSession,
-    agent_id: str, input_messages: list[dict] | None = None,
-    api_key: str = "", key_source: str = "mcp",
+    *,
+    tenant: Any,
+    db: AsyncSession,
+    agent_id: str,
+    input_messages: list[dict] | None = None,
+    api_key: str = "",
+    key_source: str = "mcp",
 ) -> dict:
     """Execute an agent and return the result."""
     import uuid
+
     from app.agents.executor import AgentExecutor
     from app.db.session import set_tenant_context
 
@@ -100,7 +112,8 @@ async def agent_run(
     effective_source = key_source or "mcp"
 
     # Entitlement check
-    from app.billing.entitlements import entitlements, EntitlementDenied
+    from app.billing.entitlements import EntitlementDenied, entitlements
+
     try:
         await entitlements.require_feature(tenant.id, "agents:execute", db=db)
     except EntitlementDenied:
@@ -108,6 +121,7 @@ async def agent_run(
 
     # Audit event
     from app.core.audit import AuditAction, emit_audit_event
+
     await emit_audit_event(
         db,
         action=AuditAction.CREATE,
@@ -151,11 +165,15 @@ async def agent_run(
 
 
 async def agent_instances(
-    *, tenant: Any, db: AsyncSession,
-    agent_id: str | None = None, status: str | None = None,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+    agent_id: str | None = None,
+    status: str | None = None,
 ) -> dict:
     """List agent instances, optionally filtered by agent or status."""
     import uuid
+
     from app.agents.models import AgentInstance, InstanceStatus
     from app.db.session import set_tenant_context
 
@@ -191,16 +209,21 @@ async def agent_instances(
 async def agent_approvals(*, tenant: Any, db: AsyncSession) -> dict:
     """List pending approval requests for the tenant."""
     from app.agents.governance import GovernanceEngine
+
     approvals = await GovernanceEngine.list_pending_approvals(tenant.id)
     return {"approvals": approvals, "count": len(approvals)}
 
 
 async def agent_approve(
-    *, tenant: Any, db: AsyncSession,
-    approval_id: str, decision: str,
+    *,
+    tenant: Any,
+    db: AsyncSession,
+    approval_id: str,
+    decision: str,
 ) -> dict:
     """Resolve an approval request (approve or deny)."""
     import json
+
     from app.agents.governance import GovernanceEngine
     from app.core.redis import redis_pool
 

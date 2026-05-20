@@ -110,13 +110,15 @@ def _after_flush(session: Session, flush_context: Any) -> None:
             if not entity_id:
                 continue
 
-            changes_to_add.append(ChangeLog(
-                tenant_id=tenant_id,
-                entity_type=entity_type,
-                entity_id=entity_id,
-                operation="create",
-                changed_fields=None,
-            ))
+            changes_to_add.append(
+                ChangeLog(
+                    tenant_id=tenant_id,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    operation="create",
+                    changed_fields=None,
+                )
+            )
 
             instance.sync_checksum = _compute_checksum(instance)
 
@@ -137,13 +139,15 @@ def _after_flush(session: Session, flush_context: Any) -> None:
             if not changed_fields:
                 continue
 
-            changes_to_add.append(ChangeLog(
-                tenant_id=tenant_id,
-                entity_type=entity_type,
-                entity_id=entity_id,
-                operation="update",
-                changed_fields=changed_fields,
-            ))
+            changes_to_add.append(
+                ChangeLog(
+                    tenant_id=tenant_id,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    operation="update",
+                    changed_fields=changed_fields,
+                )
+            )
 
             instance.sync_checksum = _compute_checksum(instance)
 
@@ -160,13 +164,15 @@ def _after_flush(session: Session, flush_context: Any) -> None:
             if not entity_id:
                 continue
 
-            changes_to_add.append(ChangeLog(
-                tenant_id=tenant_id,
-                entity_type=entity_type,
-                entity_id=entity_id,
-                operation="delete",
-                changed_fields=None,
-            ))
+            changes_to_add.append(
+                ChangeLog(
+                    tenant_id=tenant_id,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    operation="delete",
+                    changed_fields=None,
+                )
+            )
 
         if changes_to_add:
             for cl in changes_to_add:

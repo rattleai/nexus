@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import math
 import time
-import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -166,25 +165,35 @@ class ThreatDetectionEngine:
             new_mean = old_mean + delta / n
             delta2 = new_value - new_mean
             # Running M2 (sum of squared differences)
-            old_m2 = old_std ** 2 * (n - 1) if n > 1 else 0
+            old_m2 = old_std**2 * (n - 1) if n > 1 else 0
             new_m2 = old_m2 + delta * delta2
             new_std = math.sqrt(new_m2 / n) if n > 0 else 0.0
             return new_mean, new_std
 
         baseline.avg_steps, baseline.std_steps = update_stat(
-            baseline.avg_steps, baseline.std_steps, metrics.steps,
+            baseline.avg_steps,
+            baseline.std_steps,
+            metrics.steps,
         )
         baseline.avg_tokens, baseline.std_tokens = update_stat(
-            baseline.avg_tokens, baseline.std_tokens, metrics.tokens,
+            baseline.avg_tokens,
+            baseline.std_tokens,
+            metrics.tokens,
         )
         baseline.avg_cost, baseline.std_cost = update_stat(
-            baseline.avg_cost, baseline.std_cost, metrics.cost_usd,
+            baseline.avg_cost,
+            baseline.std_cost,
+            metrics.cost_usd,
         )
         baseline.avg_tool_calls, baseline.std_tool_calls = update_stat(
-            baseline.avg_tool_calls, baseline.std_tool_calls, metrics.tool_calls,
+            baseline.avg_tool_calls,
+            baseline.std_tool_calls,
+            metrics.tool_calls,
         )
         baseline.avg_duration_ms, baseline.std_duration_ms = update_stat(
-            baseline.avg_duration_ms, baseline.std_duration_ms, metrics.duration_ms,
+            baseline.avg_duration_ms,
+            baseline.std_duration_ms,
+            metrics.duration_ms,
         )
 
         # Update typical tools (most frequently used)
@@ -224,7 +233,12 @@ class ThreatDetectionEngine:
             "steps": (metrics.steps, baseline.avg_steps, baseline.std_steps, "excessive_steps"),
             "tokens": (metrics.tokens, baseline.avg_tokens, baseline.std_tokens, "excessive_tokens"),
             "cost": (metrics.cost_usd, baseline.avg_cost, baseline.std_cost, "cost_outlier"),
-            "tool_calls": (metrics.tool_calls, baseline.avg_tool_calls, baseline.std_tool_calls, "excessive_tool_calls"),
+            "tool_calls": (
+                metrics.tool_calls,
+                baseline.avg_tool_calls,
+                baseline.std_tool_calls,
+                "excessive_tool_calls",
+            ),
             "duration": (metrics.duration_ms, baseline.avg_duration_ms, baseline.std_duration_ms, "excessive_duration"),
         }
 
@@ -234,7 +248,10 @@ class ThreatDetectionEngine:
             if not math.isfinite(value) or not math.isfinite(mean) or not math.isfinite(std):
                 logger.warning(
                     "threat_detection_non_finite_metric",
-                    name=name, value=value, mean=mean, std=std,
+                    name=name,
+                    value=value,
+                    mean=mean,
+                    std=std,
                 )
                 continue
 
@@ -284,12 +301,14 @@ class ThreatDetectionEngine:
         """Record per-step metrics for real-time anomaly detection."""
         key = _RUN_METRICS_KEY.format(tenant_id=self.tenant_id, instance_id=instance_id)
         try:
-            entry = json.dumps({
-                "ts": time.time(),
-                "tokens": tokens,
-                "cost": cost_usd,
-                "tool": tool_name,
-            })
+            entry = json.dumps(
+                {
+                    "ts": time.time(),
+                    "tokens": tokens,
+                    "cost": cost_usd,
+                    "tool": tool_name,
+                }
+            )
             pipe = redis_pool.pipeline()
             pipe.lpush(key, entry)
             pipe.expire(key, 3600)
@@ -318,13 +337,17 @@ class ThreatDetectionEngine:
         except Exception:
             logger.error("threat_event_emission_failed", exc_info=True)
             from app.agents.security_dlq import enqueue_dead_letter
-            await enqueue_dead_letter("threat_detected", {
-                "tenant_id": self.tenant_id,
-                "instance_id": instance_id,
-                "agent_id": self.agent_id,
-                "anomaly_score": score.total_score,
-                "action": score.action,
-            })
+
+            await enqueue_dead_letter(
+                "threat_detected",
+                {
+                    "tenant_id": self.tenant_id,
+                    "instance_id": instance_id,
+                    "agent_id": self.agent_id,
+                    "anomaly_score": score.total_score,
+                    "action": score.action,
+                },
+            )
 
         logger.warning(
             "agent_threat_detected",

@@ -131,7 +131,12 @@ async def callback(
         if not verify_linking_user_id(state_data):
             raise HTTPException(status_code=400, detail="Invalid account linking state")
         return await _handle_account_linking(
-            linking_user_id, provider, profile, token_data, db, response,
+            linking_user_id,
+            provider,
+            profile,
+            token_data,
+            db,
+            response,
         )
 
     # === Sign-in / Sign-up flow ===
@@ -147,9 +152,7 @@ async def callback(
 
     if oauth_account:
         # Returning user — update tokens and sign in
-        user_result = await db.execute(
-            select(User).where(User.id == oauth_account.user_id, User.deleted_at.is_(None))
-        )
+        user_result = await db.execute(select(User).where(User.id == oauth_account.user_id, User.deleted_at.is_(None)))
         user = user_result.scalar_one_or_none()
         if not user or not user.is_active:
             raise HTTPException(status_code=403, detail="Account is disabled")
@@ -199,9 +202,7 @@ async def callback(
         )
 
     # 2. Check if a User with the same email exists (implicit link)
-    existing_user_result = await db.execute(
-        select(User).where(User.email == email, User.deleted_at.is_(None))
-    )
+    existing_user_result = await db.execute(select(User).where(User.email == email, User.deleted_at.is_(None)))
     existing_user = existing_user_result.scalar_one_or_none()
 
     if existing_user:
@@ -245,15 +246,20 @@ async def callback(
             )
 
         access_token, expires_in = await issue_tokens_for_user(
-            existing_user, existing_user.tenant_id, db, response,
+            existing_user,
+            existing_user.tenant_id,
+            db,
+            response,
         )
         await db.commit()
 
-        await emit(OAuthAccountLinked(
-            user_id=str(existing_user.id),
-            provider=provider,
-            email=email,
-        ))
+        await emit(
+            OAuthAccountLinked(
+                user_id=str(existing_user.id),
+                provider=provider,
+                email=email,
+            )
+        )
 
         logger.info("oauth_implicit_link", user_id=str(existing_user.id), provider=provider)
 
@@ -332,7 +338,10 @@ async def callback(
             if retry_user and retry_user.is_active:
                 retry_user.last_login_at = datetime.now(UTC)
                 access_token, expires_in = await issue_tokens_for_user(
-                    retry_user, retry_user.tenant_id, db, response,
+                    retry_user,
+                    retry_user.tenant_id,
+                    db,
+                    response,
                 )
                 await db.commit()
                 role = await get_user_role(retry_user, retry_user.tenant_id, db)
@@ -350,7 +359,9 @@ async def callback(
                         created_at=retry_user.created_at,
                     ),
                 )
-        raise HTTPException(status_code=409, detail="Account could not be created — email or provider conflict") from None
+        raise HTTPException(
+            status_code=409, detail="Account could not be created — email or provider conflict"
+        ) from None
 
     await db.refresh(user)
 
@@ -385,9 +396,7 @@ async def list_oauth_accounts(
     db: AsyncSession = Depends(get_db),
 ):
     """List the current user's linked OAuth accounts."""
-    result = await db.execute(
-        select(OAuthAccount).where(OAuthAccount.user_id == user.id)
-    )
+    result = await db.execute(select(OAuthAccount).where(OAuthAccount.user_id == user.id))
     return result.scalars().all()
 
 
@@ -415,10 +424,12 @@ async def unlink_provider(
     """Remove a linked OAuth account. Cannot remove last auth method."""
     # Lock the user's OAuth accounts to prevent TOCTOU race on concurrent unlinks
     result = await db.execute(
-        select(OAuthAccount).where(
+        select(OAuthAccount)
+        .where(
             OAuthAccount.user_id == user.id,
             OAuthAccount.provider == provider,
-        ).with_for_update()
+        )
+        .with_for_update()
     )
     oauth_account = result.scalar_one_or_none()
     if not oauth_account:
@@ -426,10 +437,12 @@ async def unlink_provider(
 
     # Check user retains at least one auth method (under lock)
     other_oauth_result = await db.execute(
-        select(OAuthAccount).where(
+        select(OAuthAccount)
+        .where(
             OAuthAccount.user_id == user.id,
             OAuthAccount.provider != provider,
-        ).with_for_update()
+        )
+        .with_for_update()
     )
     has_other_oauth = other_oauth_result.scalar_one_or_none() is not None
     has_password = user.password_hash is not None
@@ -458,9 +471,7 @@ async def _handle_account_linking(
     """Handle the account linking flow (user explicitly linking a provider)."""
     import uuid
 
-    user_result = await db.execute(
-        select(User).where(User.id == uuid.UUID(linking_user_id), User.deleted_at.is_(None))
-    )
+    user_result = await db.execute(select(User).where(User.id == uuid.UUID(linking_user_id), User.deleted_at.is_(None)))
     user = user_result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
@@ -486,11 +497,13 @@ async def _handle_account_linking(
     access_token, expires_in = await issue_tokens_for_user(user, user.tenant_id, db, response)
     await db.commit()
 
-    await emit(OAuthAccountLinked(
-        user_id=str(user.id),
-        provider=provider,
-        email=profile.email,
-    ))
+    await emit(
+        OAuthAccountLinked(
+            user_id=str(user.id),
+            provider=provider,
+            email=profile.email,
+        )
+    )
 
     role = await get_user_role(user, user.tenant_id, db)
     logger.info("oauth_account_linked", user_id=str(user.id), provider=provider)

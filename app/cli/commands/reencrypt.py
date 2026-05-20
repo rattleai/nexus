@@ -31,7 +31,9 @@ def reencrypt_all(dry_run: bool = False) -> dict[str, int]:
     from app.core.encryption import decrypt, encrypt
 
     # Use sync engine for CLI operations
-    sync_url = str(settings.DATABASE_URL).replace("+asyncpg", "+psycopg2").replace("postgresql://", "postgresql+psycopg2://")
+    sync_url = (
+        str(settings.DATABASE_URL).replace("+asyncpg", "+psycopg2").replace("postgresql://", "postgresql+psycopg2://")
+    )
     if "+asyncpg" in sync_url:
         sync_url = sync_url.replace("+asyncpg", "")
     engine = create_engine(sync_url)
@@ -44,11 +46,13 @@ def reencrypt_all(dry_run: bool = False) -> dict[str, int]:
             updated = 0
 
             # Find all rows with v1 ciphertexts
-            rows = conn.execute(text(
-                f'SELECT id, "{column}" FROM "{table}" '  # noqa: S608
-                f'WHERE "{column}" IS NOT NULL '
-                f"AND (\"{column}\" LIKE 'v1:%%' OR \"{column}\" NOT LIKE 'v2:%%')"
-            )).fetchall()
+            rows = conn.execute(
+                text(
+                    f'SELECT id, "{column}" FROM "{table}" '
+                    f'WHERE "{column}" IS NOT NULL '
+                    f"AND (\"{column}\" LIKE 'v1:%%' OR \"{column}\" NOT LIKE 'v2:%%')"
+                )
+            ).fetchall()
 
             for row in rows:
                 row_id, ciphertext = row
@@ -63,11 +67,12 @@ def reencrypt_all(dry_run: bool = False) -> dict[str, int]:
                         continue  # Already v2
 
                     if dry_run:
-                        print(f"  [DRY RUN] Would re-encrypt {table}.{column} id={row_id}")  # noqa: T201
+                        print(f"  [DRY RUN] Would re-encrypt {table}.{column} id={row_id}")
                     else:
-                        conn.execute(text(
-                            f'UPDATE "{table}" SET "{column}" = :new_ct WHERE id = :id'  # noqa: S608
-                        ), {"new_ct": new_ciphertext, "id": row_id})
+                        conn.execute(
+                            text(f'UPDATE "{table}" SET "{column}" = :new_ct WHERE id = :id'),
+                            {"new_ct": new_ciphertext, "id": row_id},
+                        )
 
                     updated += 1
                 except Exception as exc:
@@ -82,6 +87,6 @@ def reencrypt_all(dry_run: bool = False) -> dict[str, int]:
             results[key] = updated
             if updated > 0:
                 action = "would update" if dry_run else "updated"
-                print(f"  {key}: {action} {updated} rows")  # noqa: T201
+                print(f"  {key}: {action} {updated} rows")
 
     return results

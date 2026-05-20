@@ -57,9 +57,9 @@ TEMPLATES: dict[str, dict[str, str]] = {
             "<p>Hello {display_name},</p>"
             "<p>Please verify your email address by clicking the button below:</p>"
             '<a href="{verify_url}" style="display:inline-block;padding:12px 24px;'
-            'background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;'
+            "background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;"
             'font-weight:600">Verify Email</a>'
-            "<p style=\"margin-top:24px;color:#6b7280;font-size:14px\">"
+            '<p style="margin-top:24px;color:#6b7280;font-size:14px">'
             "This link expires in 24 hours. If you didn't create an account, "
             "you can safely ignore this email.</p></div>"
         ),
@@ -79,9 +79,9 @@ TEMPLATES: dict[str, dict[str, str]] = {
             "<p>Hello {display_name},</p>"
             "<p>We received a request to reset your password:</p>"
             '<a href="{reset_url}" style="display:inline-block;padding:12px 24px;'
-            'background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;'
+            "background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;"
             'font-weight:600">Reset Password</a>'
-            "<p style=\"margin-top:24px;color:#6b7280;font-size:14px\">"
+            '<p style="margin-top:24px;color:#6b7280;font-size:14px">'
             "This link expires in 1 hour. If you didn't request this, "
             "ignore this email.</p></div>"
         ),
@@ -101,7 +101,7 @@ TEMPLATES: dict[str, dict[str, str]] = {
             "<p><strong>{inviter_name}</strong> has invited you to join "
             "<strong>{tenant_name}</strong> as a <strong>{role}</strong>.</p>"
             '<a href="{invite_url}" style="display:inline-block;padding:12px 24px;'
-            'background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;'
+            "background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;"
             'font-weight:600">Accept Invitation</a>'
             '<p style="margin-top:24px;color:#6b7280;font-size:14px">'
             "This invitation expires in 7 days.</p></div>"
@@ -109,26 +109,19 @@ TEMPLATES: dict[str, dict[str, str]] = {
     },
     EmailTemplate.JOB_COMPLETED: {
         "subject": "Job completed: {job_type}",
-        "body": (
-            "Your job {job_id} ({job_type}) has completed successfully.\n\n"
-            "View results: {job_url}"
-        ),
+        "body": ("Your job {job_id} ({job_type}) has completed successfully.\n\nView results: {job_url}"),
         "html": (
             '<div style="font-family:sans-serif;max-width:600px;margin:0 auto">'
             '<h2 style="color:#16a34a">Job Completed</h2>'
             "<p>Your job <strong>{job_id}</strong> ({job_type}) has completed.</p>"
             '<a href="{job_url}" style="display:inline-block;padding:12px 24px;'
-            'background:#16a34a;color:#fff;text-decoration:none;border-radius:6px;'
+            "background:#16a34a;color:#fff;text-decoration:none;border-radius:6px;"
             'font-weight:600">View Results</a></div>'
         ),
     },
     EmailTemplate.JOB_FAILED: {
         "subject": "Job failed: {job_type}",
-        "body": (
-            "Your job {job_id} ({job_type}) has failed.\n\n"
-            "Error: {error}\n\n"
-            "View details: {job_url}"
-        ),
+        "body": ("Your job {job_id} ({job_type}) has failed.\n\nError: {error}\n\nView details: {job_url}"),
         "html": (
             '<div style="font-family:sans-serif;max-width:600px;margin:0 auto">'
             '<h2 style="color:#dc2626">Job Failed</h2>'
@@ -136,7 +129,7 @@ TEMPLATES: dict[str, dict[str, str]] = {
             '<p style="background:#fef2f2;padding:12px;border-radius:6px;'
             'color:#991b1b">Error: {error}</p>'
             '<a href="{job_url}" style="display:inline-block;padding:12px 24px;'
-            'background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;'
+            "background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;"
             'font-weight:600">View Details</a></div>'
         ),
     },
@@ -175,7 +168,7 @@ TEMPLATES: dict[str, dict[str, str]] = {
             "<p>Hello {display_name},</p>"
             "<p>Your data export is ready for download:</p>"
             '<a href="{download_url}" style="display:inline-block;padding:12px 24px;'
-            'background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;'
+            "background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;"
             'font-weight:600">Download Export</a>'
             '<p style="margin-top:24px;color:#6b7280;font-size:14px">'
             "This link expires in 48 hours.</p></div>"
@@ -231,7 +224,7 @@ TEMPLATES: dict[str, dict[str, str]] = {
             "<strong>{plan_name}</strong>.</p>"
             "<p>Please update your payment method to avoid service interruption:</p>"
             '<a href="{billing_url}" style="display:inline-block;padding:12px 24px;'
-            'background:#dc2626;color:#fff;text-decoration:none;border-radius:6px;'
+            "background:#dc2626;color:#fff;text-decoration:none;border-radius:6px;"
             'font-weight:600">Update Payment Method</a></div>'
         ),
     },
@@ -251,7 +244,7 @@ TEMPLATES: dict[str, dict[str, str]] = {
             "<p>You can continue using the service until the end of your "
             "billing period.</p>"
             '<a href="{billing_url}" style="display:inline-block;padding:12px 24px;'
-            'background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;'
+            "background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;"
             'font-weight:600">Resubscribe</a></div>'
         ),
     },

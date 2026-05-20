@@ -7,7 +7,8 @@ describe("cn utility", () => {
   })
 
   it("handles conditional classes", () => {
-    expect(cn("base", false && "hidden", "visible")).toBe("base visible")
+    const showHidden = false as boolean
+    expect(cn("base", showHidden && "hidden", "visible")).toBe("base visible")
   })
 
   it("resolves tailwind conflicts (last wins)", () => {

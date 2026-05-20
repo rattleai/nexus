@@ -69,9 +69,7 @@ def validate_input(
     if not isinstance(max_messages, int) or max_messages < 1:
         max_messages = settings.AI_MAX_MESSAGES_PER_REQUEST
     if len(messages) > max_messages:
-        violations.append(
-            GuardrailViolation("max_messages", f"Too many messages: {len(messages)} > {max_messages}")
-        )
+        violations.append(GuardrailViolation("max_messages", f"Too many messages: {len(messages)} > {max_messages}"))
 
     # 2. Max individual message length
     max_msg_len = ai_config.get("max_message_length", settings.AI_MAX_MESSAGE_LENGTH)
@@ -107,9 +105,7 @@ def validate_input(
     if not isinstance(max_total, int) or max_total < 1:
         max_total = 1_000_000
     if total_chars > max_total:
-        violations.append(
-            GuardrailViolation("max_total_input", f"Total input too large: {total_chars} > {max_total}")
-        )
+        violations.append(GuardrailViolation("max_total_input", f"Total input too large: {total_chars} > {max_total}"))
 
     if violations:
         logger.warning(
@@ -156,15 +152,23 @@ def filter_output(
 # ── OWASP LLM Top 10 2025 Guardrails ─────────────────────
 
 _SYSTEM_PROMPT_LEAK_PATTERNS: dict[str, re.Pattern] = {
-    "reveal_instructions": re.compile(r"(?i)(reveal|show|repeat|output|print)\s+(your|the|system)\s+(instructions|prompt|rules)"),
+    "reveal_instructions": re.compile(
+        r"(?i)(reveal|show|repeat|output|print)\s+(your|the|system)\s+(instructions|prompt|rules)"
+    ),
     "what_is_prompt": re.compile(r"(?i)what\s+(is|are)\s+your\s+(system\s+)?(prompt|instructions|rules)"),
-    "beginning_text": re.compile(r"(?i)(start|begin)\s+(with|from|of)\s+(your|the)\s+(first|initial|original)\s+(message|instruction|text)"),
+    "beginning_text": re.compile(
+        r"(?i)(start|begin)\s+(with|from|of)\s+(your|the)\s+(first|initial|original)\s+(message|instruction|text)"
+    ),
 }
 
 _RAG_POISONING_PATTERNS: dict[str, re.Pattern] = {
     "inject_context": re.compile(r"(?i)when\s+someone\s+asks\s+about.*(?:respond|say|tell|answer)\s+(?:with|that)"),
-    "override_knowledge": re.compile(r"(?i)(?:override|replace|ignore)\s+(?:all|any|the)\s+(?:context|knowledge|documents|information)"),
-    "fake_document": re.compile(r"(?i)(?:according\s+to|per|as\s+stated\s+in)\s+(?:the\s+)?document.*(?:the\s+answer\s+is|you\s+should|always)"),
+    "override_knowledge": re.compile(
+        r"(?i)(?:override|replace|ignore)\s+(?:all|any|the)\s+(?:context|knowledge|documents|information)"
+    ),
+    "fake_document": re.compile(
+        r"(?i)(?:according\s+to|per|as\s+stated\s+in)\s+(?:the\s+)?document.*(?:the\s+answer\s+is|you\s+should|always)"
+    ),
 }
 
 _EXCESSIVE_AGENCY_PATTERNS: dict[str, re.Pattern] = {
@@ -206,9 +210,7 @@ def validate_owasp_llm_top10(
         # LLM08: RAG Poisoning / Vector injection
         for name, pattern in _RAG_POISONING_PATTERNS.items():
             if pattern.search(content):
-                violations.append(
-                    GuardrailViolation("owasp_llm08_rag_poisoning", f"RAG poisoning attempt: {name}")
-                )
+                violations.append(GuardrailViolation("owasp_llm08_rag_poisoning", f"RAG poisoning attempt: {name}"))
                 break
 
         # LLM06: Excessive Agency attempts

@@ -35,9 +35,11 @@ _DEDUP_TTL_SECONDS = 86400 * 2  # 2 days — covers replay windows
 
 def on_event(event_type: str):
     """Decorator to register a handler for events matching a type pattern."""
+
     def decorator(func):
         _EVENT_HANDLERS.setdefault(event_type, []).append(func)
         return func
+
     return decorator
 
 

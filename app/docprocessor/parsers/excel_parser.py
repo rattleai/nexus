@@ -8,7 +8,7 @@ from typing import Any
 
 import structlog
 
-from app.docprocessor.base import ExtractionResult, ExtractedSection, ExtractedTable
+from app.docprocessor.base import ExtractedSection, ExtractedTable, ExtractionResult
 
 logger = structlog.stdlib.get_logger()
 
@@ -55,7 +55,7 @@ class ExcelParser:
                 all_text_parts: list[str] = []
                 cells_read: list[int] = [0]
 
-                for sheet_name in wb.sheetnames[:self.MAX_SHEETS]:
+                for sheet_name in wb.sheetnames[: self.MAX_SHEETS]:
                     if cells_read[0] >= self.MAX_TOTAL_CELLS:
                         break
                     ws = wb[sheet_name]
@@ -91,8 +91,7 @@ class ExcelParser:
         if cells_read is None:
             cells_read = [0]
 
-        row_count = 0
-        for row in ws.iter_rows():
+        for row_count, row in enumerate(ws.iter_rows()):
             if row_count >= self.MAX_ROWS_PER_SHEET:
                 break
             if cells_read[0] >= self.MAX_TOTAL_CELLS:
@@ -109,7 +108,6 @@ class ExcelParser:
             # Skip completely empty rows
             if any(v for v in row_values):
                 rows_data.append(row_values)
-            row_count += 1
 
         if not rows_data:
             return None, None

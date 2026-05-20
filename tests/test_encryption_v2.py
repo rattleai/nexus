@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 
 
@@ -29,9 +27,9 @@ def test_decrypt_v2_roundtrip():
 
 def test_decrypt_v1_still_works():
     """v1 (Fernet) ciphertexts should still be decryptable."""
-    from app.core.encryption import _get_key, decrypt
-
     from cryptography.fernet import Fernet
+
+    from app.core.encryption import _get_key, decrypt
 
     # Manually create a v1 ciphertext
     key = _get_key(1)

@@ -80,6 +80,7 @@ async def _check_rate(key: str, max_requests: int, window: int) -> int:
         pipe = redis_pool.pipeline()
         pipe.zremrangebyscore(key, 0, window_start)
         import secrets as _secrets
+
         pipe.zadd(key, {f"{now}:{_secrets.token_hex(4)}": now})
         pipe.zcard(key)
         pipe.expire(key, window)

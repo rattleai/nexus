@@ -40,8 +40,7 @@ def _validate_group_name(group_name: str) -> None:
     """Validate group_name contains only safe characters for Redis keys."""
     if not _SAFE_NAME_RE.match(group_name):
         raise ValueError(
-            f"Invalid group_name '{group_name}': must be 1-128 alphanumeric "
-            "characters, dots, hyphens, or underscores."
+            f"Invalid group_name '{group_name}': must be 1-128 alphanumeric characters, dots, hyphens, or underscores."
         )
 
 
@@ -163,10 +162,7 @@ class A2ACommunicator:
         # Filter out stale messages
         if max_age_seconds is not None and raw_messages:
             now = time.time()
-            raw_messages = [
-                m for m in raw_messages
-                if (now - m.timestamp) <= max_age_seconds
-            ]
+            raw_messages = [m for m in raw_messages if (now - m.timestamp) <= max_age_seconds]
 
         return raw_messages
 
@@ -265,13 +261,15 @@ class A2ACommunicator:
         caps_key = _CAPABILITIES_KEY.format(tenant_id=tenant_id, instance_id=instance_id)
         await redis_pool.set(
             caps_key,
-            json.dumps({
-                "instance_id": capability.instance_id,
-                "agent_name": capability.agent_name,
-                "capabilities": capability.capabilities,
-                "model": capability.model,
-                "status": capability.status,
-            }),
+            json.dumps(
+                {
+                    "instance_id": capability.instance_id,
+                    "agent_name": capability.agent_name,
+                    "capabilities": capability.capabilities,
+                    "model": capability.model,
+                    "status": capability.status,
+                }
+            ),
             ex=3600,  # Expire after 1 hour
         )
 

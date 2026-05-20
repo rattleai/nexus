@@ -142,10 +142,12 @@ async def test_file_list():
     mock_db = AsyncMock()
 
     mock_storage = MagicMock()
-    mock_storage.list_objects = MagicMock(return_value=[
-        f"tenants/{tenant.id}/abc_file1.txt",
-        f"tenants/{tenant.id}/def_file2.csv",
-    ])
+    mock_storage.list_objects = MagicMock(
+        return_value=[
+            f"tenants/{tenant.id}/abc_file1.txt",
+            f"tenants/{tenant.id}/def_file2.csv",
+        ]
+    )
 
     with patch("app.mcp.tools.files._get_storage", return_value=mock_storage):
         result = await file_list(tenant=tenant, db=mock_db)

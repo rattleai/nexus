@@ -117,9 +117,7 @@ async def job_get(job_id: str, *, tenant: Any, db: AsyncSession) -> dict:
     except ValueError as exc:
         raise tool_error("Invalid job ID format") from exc
 
-    result = await db.execute(
-        select(Job).where(Job.id == uid, Job.tenant_id == tenant.id)
-    )
+    result = await db.execute(select(Job).where(Job.id == uid, Job.tenant_id == tenant.id))
     job = result.scalar_one_or_none()
 
     if not job:
@@ -150,11 +148,7 @@ async def job_cancel(job_id: str, *, tenant: Any, db: AsyncSession) -> dict:
     except ValueError as exc:
         raise tool_error("Invalid job ID format") from exc
 
-    result = await db.execute(
-        select(Job)
-        .where(Job.id == uid, Job.tenant_id == tenant.id)
-        .with_for_update()
-    )
+    result = await db.execute(select(Job).where(Job.id == uid, Job.tenant_id == tenant.id).with_for_update())
     job = result.scalar_one_or_none()
 
     if not job:

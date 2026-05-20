@@ -15,15 +15,12 @@ Import direction contract:
 from __future__ import annotations
 
 import abc
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from typing import Callable
-
 if TYPE_CHECKING:
     from fastapi import APIRouter
-    from fastapi import Request
-    from fastapi.responses import JSONResponse
     from fastmcp import FastMCP
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -184,6 +181,14 @@ class AppPluginBase(abc.ABC):
         Returns ``None`` if the tool is not handled by this plugin.
         """
         return None
+
+    def get_connector_definitions(self) -> list[dict[str, Any]]:
+        """Return connector definitions this plugin contributes.
+
+        Each dict should match the ``ConnectorDefinition`` schema:
+        ``slug``, ``name``, ``connector_type``, ``auth_type``, etc.
+        """
+        return []
 
     def get_celery_config(self) -> dict[str, Any]:
         """Return ``{"autodiscover": [...], "task_routes": {...}, "beat_schedule": {...}}``."""

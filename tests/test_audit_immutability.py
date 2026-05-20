@@ -26,16 +26,13 @@ pytestmark = pytest.mark.skipif(
 async def test_audit_log_update_blocked(db: AsyncSession):
     """UPDATE on audit_logs should be rejected by the trigger."""
     log_id = uuid.uuid4()
-    await db.execute(text(
-        "INSERT INTO audit_logs (id, action, resource_type) "
-        "VALUES (:id, 'CREATE', 'test')"
-    ), {"id": str(log_id)})
+    await db.execute(
+        text("INSERT INTO audit_logs (id, action, resource_type) VALUES (:id, 'CREATE', 'test')"), {"id": str(log_id)}
+    )
     await db.flush()
 
     with pytest.raises(Exception, match="immutable"):
-        await db.execute(text(
-            "UPDATE audit_logs SET action = 'MODIFIED' WHERE id = :id"
-        ), {"id": str(log_id)})
+        await db.execute(text("UPDATE audit_logs SET action = 'MODIFIED' WHERE id = :id"), {"id": str(log_id)})
 
     await db.rollback()
 
@@ -44,16 +41,13 @@ async def test_audit_log_update_blocked(db: AsyncSession):
 async def test_audit_log_delete_blocked(db: AsyncSession):
     """DELETE on audit_logs should be rejected by the trigger."""
     log_id = uuid.uuid4()
-    await db.execute(text(
-        "INSERT INTO audit_logs (id, action, resource_type) "
-        "VALUES (:id, 'CREATE', 'test')"
-    ), {"id": str(log_id)})
+    await db.execute(
+        text("INSERT INTO audit_logs (id, action, resource_type) VALUES (:id, 'CREATE', 'test')"), {"id": str(log_id)}
+    )
     await db.flush()
 
     with pytest.raises(Exception, match="immutable"):
-        await db.execute(text(
-            "DELETE FROM audit_logs WHERE id = :id"
-        ), {"id": str(log_id)})
+        await db.execute(text("DELETE FROM audit_logs WHERE id = :id"), {"id": str(log_id)})
 
     await db.rollback()
 
@@ -62,14 +56,11 @@ async def test_audit_log_delete_blocked(db: AsyncSession):
 async def test_audit_log_insert_allowed(db: AsyncSession):
     """INSERT on audit_logs should still work (append-only)."""
     log_id = uuid.uuid4()
-    await db.execute(text(
-        "INSERT INTO audit_logs (id, action, resource_type) "
-        "VALUES (:id, 'CREATE', 'test')"
-    ), {"id": str(log_id)})
+    await db.execute(
+        text("INSERT INTO audit_logs (id, action, resource_type) VALUES (:id, 'CREATE', 'test')"), {"id": str(log_id)}
+    )
 
-    result = await db.execute(text(
-        "SELECT action FROM audit_logs WHERE id = :id"
-    ), {"id": str(log_id)})
+    result = await db.execute(text("SELECT action FROM audit_logs WHERE id = :id"), {"id": str(log_id)})
     row = result.fetchone()
     assert row is not None
     assert row[0] == "CREATE"
@@ -81,23 +72,18 @@ async def test_audit_log_insert_allowed(db: AsyncSession):
 async def test_audit_log_purge_bypass(db: AsyncSession):
     """GUC bypass should allow DELETE for compliance-mandated purge."""
     log_id = uuid.uuid4()
-    await db.execute(text(
-        "INSERT INTO audit_logs (id, action, resource_type) "
-        "VALUES (:id, 'CREATE', 'test')"
-    ), {"id": str(log_id)})
+    await db.execute(
+        text("INSERT INTO audit_logs (id, action, resource_type) VALUES (:id, 'CREATE', 'test')"), {"id": str(log_id)}
+    )
     await db.flush()
 
     # Enable the bypass
     await db.execute(text("SELECT set_config('app.audit_purge_enabled', 'true', true)"))
 
     # DELETE should now succeed
-    await db.execute(text(
-        "DELETE FROM audit_logs WHERE id = :id"
-    ), {"id": str(log_id)})
+    await db.execute(text("DELETE FROM audit_logs WHERE id = :id"), {"id": str(log_id)})
 
-    result = await db.execute(text(
-        "SELECT id FROM audit_logs WHERE id = :id"
-    ), {"id": str(log_id)})
+    result = await db.execute(text("SELECT id FROM audit_logs WHERE id = :id"), {"id": str(log_id)})
     assert result.fetchone() is None
 
     # Reset the bypass

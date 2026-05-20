@@ -10,7 +10,6 @@ import pytest
 
 from app.agents.a2a_security import A2ASecurityLayer, SecureMessage
 
-
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
@@ -35,7 +34,7 @@ def _make_redis_mock() -> MagicMock:
     # return 0 = sequence number accepted (not a replay).
     # NOTE: This is redis_pool.eval which runs Lua on the Redis server,
     # not Python's built-in eval().
-    mock_redis.eval = AsyncMock(return_value=0)  # noqa: S307
+    mock_redis.eval = AsyncMock(return_value=0)
     return mock_redis
 
 
@@ -193,7 +192,7 @@ class TestReplayProtection:
     async def test_duplicate_rejected(self):
         mock_redis = _make_redis_mock()
         # Lua script returns 1 = replay detected (seq already seen)
-        mock_redis.eval = AsyncMock(return_value=1)  # noqa: S307
+        mock_redis.eval = AsyncMock(return_value=1)
 
         with patch("app.agents.a2a_security.redis_pool", mock_redis):
             security = _make_security()
@@ -421,6 +420,7 @@ class TestEncryptedMessageAAD:
             # Decryption should fail because AAD (which includes from_instance)
             # no longer matches what was used during encryption
             from cryptography.exceptions import InvalidTag
+
             with pytest.raises(InvalidTag):
                 security.decrypt_message(msg)
 

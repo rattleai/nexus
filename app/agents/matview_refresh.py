@@ -18,9 +18,7 @@ async def refresh_matviews() -> None:
 
     async with async_session_factory() as session:
         try:
-            await session.execute(text(
-                "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_tenant_chunk_stats"
-            ))
+            await session.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_tenant_chunk_stats"))
             await session.commit()
             logger.info("matview_refreshed", view="mv_tenant_chunk_stats")
         except Exception:

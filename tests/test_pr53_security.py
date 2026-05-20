@@ -8,10 +8,9 @@ resource-ID validation.
 
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 from urllib.parse import quote
 
+import pytest
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -26,22 +25,27 @@ def _make_tenant(tenant_id=None):
 class TestEscapeLike:
     def test_normal_string(self):
         from app.core.query_utils import escape_like
+
         assert escape_like("hello world") == "hello world"
 
     def test_percent_escaped(self):
         from app.core.query_utils import escape_like
+
         assert escape_like("100%") == r"100\%"
 
     def test_underscore_escaped(self):
         from app.core.query_utils import escape_like
+
         assert escape_like("a_b") == r"a\_b"
 
     def test_backslash_escaped(self):
         from app.core.query_utils import escape_like
+
         assert escape_like(r"a\b") == r"a\\b"
 
     def test_combined_metacharacters(self):
         from app.core.query_utils import escape_like
+
         assert escape_like("%_\\") == "\\%\\_\\\\"
 
 
@@ -54,7 +58,9 @@ class TestWebParserSSRF:
         from app.docprocessor.parsers.web_parser import WebParser
 
         parser = WebParser()
-        with patch("app.core.url_validation.validate_webhook_url_async", new_callable=AsyncMock, return_value="URL blocked"):
+        with patch(
+            "app.core.url_validation.validate_webhook_url_async", new_callable=AsyncMock, return_value="URL blocked"
+        ):
             result = await parser.parse_url("http://169.254.169.254/latest/meta-data/")
         assert "error" in result.metadata
         assert "blocked" in result.metadata["error"].lower()
@@ -84,6 +90,7 @@ class TestWebParserSSRF:
 class TestErrorSanitization:
     def test_sanitize_api_key(self):
         from app.agents.executor import _sanitize_error
+
         exc = Exception("Failed with key sk-abc123xyz")
         result = _sanitize_error(exc)
         assert "sk-abc123" not in result
@@ -91,6 +98,7 @@ class TestErrorSanitization:
 
     def test_sanitize_aws_key(self):
         from app.agents.executor import _sanitize_error
+
         exc = Exception("Auth failed: AKIAIOSFODNN7EXAMPLE")
         result = _sanitize_error(exc)
         assert "AKIAIOSFODNN7EXAMPLE" not in result
@@ -98,6 +106,7 @@ class TestErrorSanitization:
 
     def test_sanitize_db_url(self):
         from app.agents.executor import _sanitize_error
+
         exc = Exception("Connection to postgresql://user:pass@host/db failed")
         result = _sanitize_error(exc)
         assert "user:pass" not in result
@@ -105,12 +114,14 @@ class TestErrorSanitization:
 
     def test_sanitize_password(self):
         from app.agents.executor import _sanitize_error
+
         exc = Exception("password=s3cret123 token=abc")
         result = _sanitize_error(exc)
         assert "s3cret123" not in result
 
     def test_truncation(self):
         from app.agents.executor import _sanitize_error
+
         exc = Exception("x" * 5000)
         result = _sanitize_error(exc)
         assert len(result) == 2000
@@ -158,14 +169,14 @@ class TestJSONParserDepthLimit:
 
         # Build a deeply nested dict (25 levels)
         d: dict = {"leaf": "value"}
-        for i in range(25):
+        for _i in range(25):
             d = {"level": d}
 
         result = JSONParser._flatten_dict(d)
         # Should not recurse beyond 20 levels - should have JSON-serialized value
         assert len(result) > 0
         # The key should stop nesting at depth 20
-        max_dots = max(k.count(".") for k in result.keys())
+        max_dots = max(k.count(".") for k in result)
         assert max_dots <= 20
 
 
@@ -195,121 +206,12 @@ class TestTokenDecryptionFallback:
 # ── Cloud Drive Query Injection ─────────────────────────────────────
 
 
-class TestOneDriveQueryEscaping:
-    @pytest.mark.asyncio
-    async def test_search_query_is_url_encoded(self):
-        """Verify that special chars in OneDrive search are URL-encoded."""
-        from app.integrations.cloud_drives.onedrive import OneDriveConnector
-
-        connector = OneDriveConnector()
-        malicious_query = "test') or true or ('"
-
-        # Mock httpx to capture the URL
-        captured_urls: list[str] = []
-
-        class _FakeResp:
-            status_code = 200
-            def raise_for_status(self): pass
-            def json(self): return {"value": []}
-
-        class _FakeClient:
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): pass
-            async def get(self, url, **kw):
-                captured_urls.append(url)
-                return _FakeResp()
-
-        with patch("httpx.AsyncClient", return_value=_FakeClient()):
-            await connector.list_files("fake_token", query=malicious_query)
-
-        assert len(captured_urls) == 1
-        # The raw malicious string should NOT appear in the URL
-        assert malicious_query not in captured_urls[0]
-        # The URL-encoded version should be present
-        assert quote(malicious_query) in captured_urls[0]
-
-    def test_folder_id_rejects_path_traversal(self):
-        """Validate that folder_id with path traversal chars is rejected."""
-        from app.integrations.cloud_drives.base import validate_resource_id
-
-        with pytest.raises(ValueError, match="Invalid folder_id"):
-            validate_resource_id("../../../etc/passwd", "folder_id")
-
-    def test_folder_id_allows_valid_id(self):
-        from app.integrations.cloud_drives.base import validate_resource_id
-
-        # Should not raise
-        validate_resource_id("ABC123-def_456.78", "folder_id")
-
-    def test_folder_id_rejects_empty(self):
-        from app.integrations.cloud_drives.base import validate_resource_id
-
-        with pytest.raises(ValueError):
-            validate_resource_id("", "folder_id")
-
-
-class TestGoogleDriveQueryEscaping:
-    @pytest.mark.asyncio
-    async def test_single_quotes_escaped_in_search(self):
-        """Verify that single quotes in Google Drive search are escaped."""
-        from app.integrations.cloud_drives.google_drive import GoogleDriveConnector
-
-        connector = GoogleDriveConnector()
-        malicious_query = "file' or 1=1 or name contains '"
-
-        captured_params: list[dict] = []
-
-        class _FakeResp:
-            status_code = 200
-            def raise_for_status(self): pass
-            def json(self): return {"files": []}
-
-        class _FakeClient:
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): pass
-            async def get(self, url, headers=None, params=None):
-                if params:
-                    captured_params.append(params)
-                return _FakeResp()
-
-        with patch("httpx.AsyncClient", return_value=_FakeClient()):
-            await connector.list_files("fake_token", query=malicious_query)
-
-        assert len(captured_params) >= 1
-        q_value = captured_params[0]["q"]
-        # The raw unescaped single quote should not appear unescaped
-        assert "file' or" not in q_value
-        # The escaped version should be present
-        assert "file\\' or" in q_value
-
-
-class TestCloudDriveErrorIsolation:
-    @pytest.mark.asyncio
-    async def test_onedrive_raises_cloud_drive_error(self):
-        """Verify that httpx errors are wrapped in CloudDriveError."""
-        import httpx
-        from app.integrations.cloud_drives.base import CloudDriveError
-        from app.integrations.cloud_drives.onedrive import OneDriveConnector
-
-        connector = OneDriveConnector()
-
-        class _FakeResp:
-            status_code = 403
-            request = httpx.Request("GET", "https://graph.microsoft.com/test")
-            def raise_for_status(self):
-                raise httpx.HTTPStatusError("Forbidden", request=self.request, response=self)  # type: ignore[arg-type]
-            def json(self): return {}
-
-        class _FakeClient:
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): pass
-            async def get(self, url, **kw): return _FakeResp()
-
-        with patch("httpx.AsyncClient", return_value=_FakeClient()):
-            with pytest.raises(CloudDriveError) as exc_info:
-                await connector.list_files("fake_token")
-            assert exc_info.value.status_code == 403
-            assert exc_info.value.provider == "onedrive"
+# TestOneDriveQueryEscaping, TestGoogleDriveQueryEscaping, and
+# TestCloudDriveErrorIsolation were removed with PR #67: the legacy
+# app/integrations/cloud_drives/ module is deleted in favor of the
+# unified connector framework. Equivalent coverage for the new drive
+# adapters lives under tests/connectors/ (OAuth escaping is enforced
+# by the broker layer; CloudDriveError is replaced by DriveAdapterError).
 
 
 # ── Parser File Size Limits ─────────────────────────────────────────
@@ -353,6 +255,7 @@ class TestParserFileSizeLimits:
 class TestMIMEMagicValidation:
     def test_mime_mismatch_prefers_magic_type(self):
         import sys
+
         from app.docprocessor.processor import DocumentProcessor
 
         processor = DocumentProcessor()
@@ -365,6 +268,7 @@ class TestMIMEMagicValidation:
 
     def test_mime_match_keeps_declared(self):
         import sys
+
         from app.docprocessor.processor import DocumentProcessor
 
         processor = DocumentProcessor()
@@ -376,6 +280,7 @@ class TestMIMEMagicValidation:
 
     def test_magic_unavailable_falls_back(self):
         import sys
+
         from app.docprocessor.processor import DocumentProcessor
 
         processor = DocumentProcessor()
@@ -394,6 +299,7 @@ class TestChunkDeletionTenantFilter:
     def test_datasources_reprocess_includes_tenant_filter(self):
         """Static check that the reprocess endpoint filters chunks by tenant."""
         import inspect
+
         from app.api.v1 import datasources
 
         source = inspect.getsource(datasources)

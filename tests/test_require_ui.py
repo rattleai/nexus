@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.api.deps import RequireUI, get_current_tenant, get_db
+from app.api.deps import get_current_tenant, get_db
 from app.config import settings
 from app.main import create_app
 
@@ -79,6 +79,7 @@ async def test_api_keys_create_rejects_api_key_auth(test_app):
     api_key = _make_api_key(tenant)
 
     mock_db = AsyncMock()
+
     async def _override_db():
         yield mock_db
 
@@ -107,6 +108,7 @@ async def test_api_keys_list_rejects_api_key_auth(test_app):
     api_key = _make_api_key(tenant)
 
     mock_db = AsyncMock()
+
     async def _override_db():
         yield mock_db
 
@@ -132,6 +134,7 @@ async def test_api_keys_revoke_rejects_api_key_auth(test_app):
     api_key = _make_api_key(tenant)
 
     mock_db = AsyncMock()
+
     async def _override_db():
         yield mock_db
 
@@ -169,6 +172,7 @@ async def test_create_api_key_rejects_infrastructure_scopes(test_app):
     user = _make_user(tenant)
 
     mock_db = AsyncMock()
+
     async def _override_db():
         yield mock_db
 
@@ -218,6 +222,7 @@ async def test_audit_logs_reject_api_key_auth(test_app):
     api_key = _make_api_key(tenant)
 
     mock_db = AsyncMock()
+
     async def _override_db():
         yield mock_db
 

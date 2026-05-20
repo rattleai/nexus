@@ -7,6 +7,7 @@ import {
   KeyRound,
   Key,
   Webhook,
+  Plug,
   Users,
   CreditCard,
   Shield,
@@ -56,6 +57,7 @@ const SETTINGS_NAV_GROUPS: NavGroup[] = [
   {
     labelKey: "settings_nav.integrations",
     items: [
+      { href: "/settings/connectors", labelKey: "settings_nav.connectors", icon: Plug },
       { href: "/settings/api-keys", labelKey: "settings_nav.api_keys", icon: Key },
       { href: "/settings/webhooks", labelKey: "settings_nav.webhooks", icon: Webhook },
     ],

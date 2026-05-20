@@ -3,6 +3,9 @@
 Application-agnostic — used by docprocessor, agents, and application plugins.
 Application-specific models (e.g. ConfigItemProvenance) live in their
 respective plugin packages.
+
+Cloud drive connections are now managed by the connector system
+(``app.connectors.models.TenantConnection``).
 """
 
 from __future__ import annotations
@@ -12,7 +15,6 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean,
     DateTime,
     Enum,
     ForeignKey,
@@ -29,12 +31,12 @@ from sqlalchemy.types import UserDefinedType
 class VectorPrecision(enum.StrEnum):
     """Vector storage precision modes for pgvector columns."""
 
-    FULL = "full"      # float32 vector(N) — 4 bytes/dim
-    HALF = "half"      # float16 halfvec(N) — 2 bytes/dim (50% savings)
+    FULL = "full"  # float32 vector(N) — 4 bytes/dim
+    HALF = "half"  # float16 halfvec(N) — 2 bytes/dim (50% savings)
     BINARY = "binary"  # 1-bit bit(N) — 0.125 bytes/dim (97% savings)
 
-from app.db.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin
 
+from app.db.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin
 
 # ── Enums ────────────────────────────────────────────────
 
@@ -51,43 +53,6 @@ class DataSourceStatus(enum.StrEnum):
     PROCESSING = "processing"
     READY = "ready"
     ERROR = "error"
-
-
-class CloudProvider(enum.StrEnum):
-    GOOGLE_DRIVE = "google_drive"
-    DROPBOX = "dropbox"
-    ONEDRIVE = "onedrive"
-
-
-# ── Cloud Connection ────────────────────────────────────
-
-
-class CloudConnection(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
-    """OAuth connection to a cloud storage provider, scoped to a tenant."""
-
-    __tablename__ = "cloud_connections"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    provider: Mapped[CloudProvider] = mapped_column(
-        Enum(CloudProvider, values_callable=lambda e: [m.value for m in e]),
-        nullable=False,
-    )
-    account_email: Mapped[str] = mapped_column(String(255), nullable=False)
-    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    access_token_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
-    refresh_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
-    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    scopes: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-
-    # Relationships
-    data_sources: Mapped[list[DataSource]] = relationship(back_populates="cloud_connection")
-
-    __table_args__ = (
-        Index("ix_cloud_connections_tenant", "tenant_id"),
-        Index("ix_cloud_connections_tenant_provider", "tenant_id", "provider"),
-    )
 
 
 # ── Data Source ──────────────────────────────────────────
@@ -119,15 +84,25 @@ class DataSource(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
     # URL info
     url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
-    # Cloud drive info
-    cloud_provider: Mapped[CloudProvider | None] = mapped_column(
-        Enum(CloudProvider, values_callable=lambda e: [m.value for m in e], create_constraint=False),
+    # Connector-based cloud drive info (references the unified connector system)
+    connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("tenant_connections.id", ondelete="SET NULL"),
         nullable=True,
     )
-    cloud_connection_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("cloud_connections.id"), nullable=True, index=True
-    )
+    connector_slug: Mapped[str | None] = mapped_column(String(100), nullable=True)
     cloud_file_id: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # The user who created this DataSource — used as ``actor_user_id`` when
+    # the Celery extraction task invokes connector tools, so per-user
+    # TenantConnection resolution (confused-deputy protection) still applies
+    # outside the request thread. Nullable so system-created sources
+    # (migrations, background seeds) don't need a synthetic user row.
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Extraction results
     extraction_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
@@ -174,9 +149,7 @@ class VectorType(UserDefinedType):
 
     def __eq__(self, other):
         return (
-            isinstance(other, VectorType)
-            and self.dimensions == other.dimensions
-            and self.precision == other.precision
+            isinstance(other, VectorType) and self.dimensions == other.dimensions and self.precision == other.precision
         )
 
     def __hash__(self):
@@ -197,6 +170,7 @@ class VectorType(UserDefinedType):
 
         Always returns list[float] or None — never leaks raw driver strings.
         """
+
         def process(value):
             if value is None:
                 return None
@@ -208,6 +182,7 @@ class VectorType(UserDefinedType):
                     return []
                 return [float(x) for x in stripped.split(",") if x.strip()]
             return None
+
         return process
 
 
@@ -237,7 +212,8 @@ class DataSourceChunk(TimestampMixin, Base):
     # Used as the primary search column when VECTOR_QUANTIZATION="half" is enabled.
     # The full-precision column is kept for accuracy-sensitive operations.
     embedding_halfvec: Mapped[list | None] = mapped_column(
-        VectorType(1536, precision="half"), nullable=True,
+        VectorType(1536, precision="half"),
+        nullable=True,
     )
     # Auto-maintained tsvector for full-text search (GIN indexed, trigger-updated).
     # Column type is tsvector in PostgreSQL; mapped as Text here since SQLAlchemy
@@ -254,21 +230,24 @@ class DataSourceChunk(TimestampMixin, Base):
 
     # Parent-child retrieval — small child chunks for matching, parent chunks for context
     parent_chunk_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, index=True,
+        UUID(as_uuid=True),
+        nullable=True,
+        index=True,
     )
     chunk_level: Mapped[str | None] = mapped_column(
-        String(20), nullable=True, server_default="standard",
+        String(20),
+        nullable=True,
+        server_default="standard",
     )
 
     # Versioning — content_hash for incremental re-indexing, deleted_at for soft-delete
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     # Relationships
     data_source: Mapped[DataSource] = relationship(back_populates="chunks")
 
-    __table_args__ = (
-        Index("ix_data_source_chunks_tenant_source", "tenant_id", "data_source_id"),
-    )
+    __table_args__ = (Index("ix_data_source_chunks_tenant_source", "tenant_id", "data_source_id"),)

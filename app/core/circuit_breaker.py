@@ -135,10 +135,7 @@ class CircuitBreaker:
             if len(self._failures) <= max_keys:
                 return
             now = time.time()
-            stale_keys = [
-                k for k, t in self._last_failure_time.items()
-                if now - t > self.recovery_timeout * 2
-            ]
+            stale_keys = [k for k, t in self._last_failure_time.items() if now - t > self.recovery_timeout * 2]
             for k in stale_keys:
                 self._failures.pop(k, None)
                 self._last_failure_time.pop(k, None)

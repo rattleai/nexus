@@ -74,4 +74,22 @@ export const queryKeys = {
     models: () => ["ai", "models"] as const,
   },
 
+  connectors: {
+    all: ["connectors"] as const,
+    list: (category?: string) => ["connectors", "list", category] as const,
+    detail: (slug: string) => ["connectors", "detail", slug] as const,
+  },
+
+  connections: {
+    all: ["connections"] as const,
+    list: () => ["connections", "list"] as const,
+    detail: (id: string) => ["connections", "detail", id] as const,
+    tools: (id: string) => ["connections", "tools", id] as const,
+  },
+
+  cloudDrive: {
+    all: ["cloud-drive"] as const,
+    listing: (connectionId: string, path: string, cursor?: string | null) =>
+      ["cloud-drive", "listing", connectionId, path, cursor ?? null] as const,
+  },
 } as const

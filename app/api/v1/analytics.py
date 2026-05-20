@@ -6,8 +6,6 @@ Unauthenticated, fire-and-forget — uses sendBeacon on the client side.
 
 from __future__ import annotations
 
-from typing import Any
-
 import structlog
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field

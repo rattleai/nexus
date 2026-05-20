@@ -92,19 +92,13 @@ class CRAGEvaluator:
             grade_counts[doc.grade.value] += 1
 
         # Filter: keep CORRECT and AMBIGUOUS from graded batch, drop INCORRECT
-        kept_graded = [
-            doc.result for doc in graded
-            if doc.grade != DocumentGrade.INCORRECT
-        ]
+        kept_graded = [doc.result for doc in graded if doc.grade != DocumentGrade.INCORRECT]
         # Append ungraded passthrough results — they retain their original ranking
         kept = kept_graded + passthrough
 
         # Determine reformulation based on graded subset only
         total_graded = len(graded)
-        incorrect_ratio = (
-            grade_counts[DocumentGrade.INCORRECT.value] / total_graded
-            if total_graded > 0 else 0
-        )
+        incorrect_ratio = grade_counts[DocumentGrade.INCORRECT.value] / total_graded if total_graded > 0 else 0
         needs_reformulation = incorrect_ratio > threshold
 
         logger.info(
@@ -135,27 +129,26 @@ class CRAGEvaluator:
         try:
             from app.ai.gateway import ai_gateway
 
-            doc_texts = [
-                f"[Doc {i+1}]: {r.content[:500]}"
-                for i, r in enumerate(results)
-            ]
+            doc_texts = [f"[Doc {i + 1}]: {r.content[:500]}" for i, r in enumerate(results)]
 
             docs_block = "\n\n".join(doc_texts)
 
             response = await ai_gateway.complete(
                 model=settings.RAG_HYDE_MODEL,  # Cheap model for grading
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        "Grade each document's relevance to the query. "
-                        "Reply with ONLY one line per document in format: "
-                        "Doc N: CORRECT/AMBIGUOUS/INCORRECT\n\n"
-                        "CORRECT = directly answers the query\n"
-                        "AMBIGUOUS = partially relevant but incomplete\n"
-                        "INCORRECT = irrelevant to the query\n\n"
-                        f"Query: {query}\n\n{docs_block}"
-                    ),
-                }],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            "Grade each document's relevance to the query. "
+                            "Reply with ONLY one line per document in format: "
+                            "Doc N: CORRECT/AMBIGUOUS/INCORRECT\n\n"
+                            "CORRECT = directly answers the query\n"
+                            "AMBIGUOUS = partially relevant but incomplete\n"
+                            "INCORRECT = irrelevant to the query\n\n"
+                            f"Query: {query}\n\n{docs_block}"
+                        ),
+                    }
+                ],
                 max_tokens=200,
                 temperature=0.0,
             )
@@ -171,10 +164,7 @@ class CRAGEvaluator:
         except Exception:
             logger.debug("crag_grading_failed", exc_info=True)
             # On failure, assume all documents are CORRECT (safe fallback)
-            return [
-                GradedDocument(result=r, grade=DocumentGrade.CORRECT)
-                for r in results
-            ]
+            return [GradedDocument(result=r, grade=DocumentGrade.CORRECT) for r in results]
 
     def _parse_grades(
         self,

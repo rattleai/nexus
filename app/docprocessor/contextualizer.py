@@ -74,14 +74,16 @@ class ChunkContextualizer:
 
             response = await ai_gateway.complete(
                 model=settings.RAG_CONTEXTUAL_MODEL,
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        f"Summarize this document in 1-2 sentences. "
-                        f"Focus on the main topic and purpose.\n\n"
-                        f"Document: {document_name}\n\n{truncated}"
-                    ),
-                }],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Summarize this document in 1-2 sentences. "
+                            f"Focus on the main topic and purpose.\n\n"
+                            f"Document: {document_name}\n\n{truncated}"
+                        ),
+                    }
+                ],
                 max_tokens=_MAX_SUMMARY_TOKENS,
                 temperature=0.0,
             )

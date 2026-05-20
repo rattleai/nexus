@@ -34,15 +34,17 @@ class QueryDecomposer:
 
             response = await ai_gateway.complete(
                 model=settings.RAG_CONTEXTUAL_MODEL,  # Cheap model (Haiku)
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        "Split this query into independent sub-questions. "
-                        "Return each sub-question on a separate line. "
-                        "If the query is already simple, return it unchanged.\n\n"
-                        f"Query: {query}"
-                    ),
-                }],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            "Split this query into independent sub-questions. "
+                            "Return each sub-question on a separate line. "
+                            "If the query is already simple, return it unchanged.\n\n"
+                            f"Query: {query}"
+                        ),
+                    }
+                ],
                 max_tokens=200,
                 temperature=0.0,
             )

@@ -76,11 +76,11 @@ async def test_ai_complete_unknown_model():
         pytest.raises(McpError, match="Unknown model"),
     ):
         await ai_complete(
-                model="nonexistent",
-                messages=[{"role": "user", "content": "hello"}],
-                tenant=tenant,
-                db=mock_db,
-            )
+            model="nonexistent",
+            messages=[{"role": "user", "content": "hello"}],
+            tenant=tenant,
+            db=mock_db,
+        )
 
 
 @pytest.mark.asyncio

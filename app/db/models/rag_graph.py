@@ -8,9 +8,8 @@ alongside Product X?").
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Index, String, Text, func
+from sqlalchemy import Float, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,9 +30,7 @@ class RAGEntity(TimestampMixin, Base):
     embedding_vec: Mapped[list | None] = mapped_column(VectorType(1536), nullable=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, default=dict)
 
-    __table_args__ = (
-        Index("ix_rag_entities_tenant_name_type", "tenant_id", "name", "entity_type", unique=True),
-    )
+    __table_args__ = (Index("ix_rag_entities_tenant_name_type", "tenant_id", "name", "entity_type", unique=True),)
 
 
 class RAGRelationship(TimestampMixin, Base):

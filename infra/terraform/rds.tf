@@ -110,7 +110,7 @@ resource "aws_db_parameter_group" "main" {
   # Prevent individual queries from consuming excessive temp disk
   parameter {
     name  = "temp_file_limit"
-    value = "1048576"  # 1 GB in KB
+    value = "1048576" # 1 GB in KB
   }
 
   lifecycle { create_before_destroy = true }
@@ -181,8 +181,8 @@ resource "aws_db_instance" "main" {
   performance_insights_enabled          = true
   performance_insights_retention_period = 7
   performance_insights_kms_key_id       = aws_kms_key.rds.arn
-  monitoring_interval             = 60
-  monitoring_role_arn             = aws_iam_role.rds_monitoring.arn
+  monitoring_interval                   = 60
+  monitoring_role_arn                   = aws_iam_role.rds_monitoring.arn
 
   # Logging
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
@@ -201,8 +201,8 @@ resource "aws_iam_role" "rds_monitoring" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
       Principal = { Service = "monitoring.rds.amazonaws.com" }
     }]
   })

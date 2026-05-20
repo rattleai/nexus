@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -110,7 +109,8 @@ class TestEmbeddingGateway:
             with patch.object(gateway, "_cache_mget", side_effect=mock_mget):
                 with patch.object(gateway, "_cache_mset", new_callable=AsyncMock):
                     with patch.object(
-                        gateway, "_call_provider_batch",
+                        gateway,
+                        "_call_provider_batch",
                         return_value=[emb2],
                     ):
                         results = await gateway.generate_batch(["text1", "text2"])

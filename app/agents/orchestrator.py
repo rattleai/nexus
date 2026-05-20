@@ -15,7 +15,7 @@ import asyncio
 import json as _json
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 import structlog
 from sqlalchemy import select
@@ -207,7 +207,9 @@ class AgentOrchestrator:
 
                 # Find next step via transitions
                 current_step_name = self._resolve_next_step(
-                    current_step_name, transitions, step_result,
+                    current_step_name,
+                    transitions,
+                    step_result,
                 )
 
             # Workflow completed
@@ -293,15 +295,30 @@ class AgentOrchestrator:
             try:
                 if pattern == "parallel":
                     coro = self._execute_parallel(
-                        step_def, step_input, tenant_id, api_key, key_source, workflow_run,
+                        step_def,
+                        step_input,
+                        tenant_id,
+                        api_key,
+                        key_source,
+                        workflow_run,
                     )
                 elif pattern == "supervisor":
                     coro = self._execute_supervisor(
-                        step_def, step_input, tenant_id, api_key, key_source, workflow_run,
+                        step_def,
+                        step_input,
+                        tenant_id,
+                        api_key,
+                        key_source,
+                        workflow_run,
                     )
                 else:
                     coro = self._execute_single(
-                        step_def, step_input, tenant_id, api_key, key_source, workflow_run,
+                        step_def,
+                        step_input,
+                        tenant_id,
+                        api_key,
+                        key_source,
+                        workflow_run,
                     )
 
                 if timeout:
@@ -327,8 +344,7 @@ class AgentOrchestrator:
                 else:
                     if isinstance(exc, TimeoutError):
                         raise OrchestrationError(
-                            f"Step '{step_name}' timed out after {timeout}s "
-                            f"(attempted {max_retries + 1} times)"
+                            f"Step '{step_name}' timed out after {timeout}s (attempted {max_retries + 1} times)"
                         ) from exc
                     raise
 
@@ -449,19 +465,20 @@ class AgentOrchestrator:
 
         # Load worker descriptions for the supervisor prompt
         from app.agents.models import AgentDefinition as AgentDef
+
         worker_descriptions = []
         for wid in worker_agent_ids:
-            result = await self.db.execute(
-                select(AgentDef).where(AgentDef.id == uuid.UUID(wid))
-            )
+            result = await self.db.execute(select(AgentDef).where(AgentDef.id == uuid.UUID(wid)))
             worker = result.scalar_one_or_none()
             if worker:
-                worker_descriptions.append({
-                    "agent_id": wid,
-                    "name": worker.name,
-                    "description": worker.description,
-                    "allowed_tools": worker.allowed_tools,
-                })
+                worker_descriptions.append(
+                    {
+                        "agent_id": wid,
+                        "name": worker.name,
+                        "description": worker.description,
+                        "allowed_tools": worker.allowed_tools,
+                    }
+                )
 
         all_worker_results: list[dict[str, Any]] = []
         executor = AgentExecutor(self.db)
@@ -503,7 +520,11 @@ class AgentOrchestrator:
             step_metrics: list[tuple[int, float]] = []
             _metrics_lock = asyncio.Lock()
 
-            async def run_worker(delegation: dict[str, Any]) -> dict[str, Any]:
+            async def run_worker(
+                delegation: dict[str, Any],
+                _lock: asyncio.Lock = _metrics_lock,
+                _metrics: list[tuple[int, float]] = step_metrics,
+            ) -> dict[str, Any]:
                 worker_id = delegation.get("agent_id", "")
                 worker_task = delegation.get("task", {})
 
@@ -521,8 +542,8 @@ class AgentOrchestrator:
                             api_key=api_key,
                             key_source=key_source,
                         )
-                        async with _metrics_lock:
-                            step_metrics.append((instance.tokens_used, instance.cost_usd))
+                        async with _lock:
+                            _metrics.append((instance.tokens_used, instance.cost_usd))
                         return {"agent_id": worker_id, "output": instance.output_data, "status": "completed"}
                     except Exception as exc:
                         return {"agent_id": worker_id, "error": str(exc)[:500], "status": "failed"}
@@ -613,7 +634,8 @@ class AgentOrchestrator:
                 if not self._SAFE_PATH_RE.match(part):
                     logger.warning(
                         "input_mapping_invalid_path_component",
-                        path=path, component=part,
+                        path=path,
+                        component=part,
                     )
                     valid = False
                     break
@@ -663,21 +685,24 @@ class AgentOrchestrator:
                 return t.get("to")
 
             # Data-dependent routing: evaluate expression against step_result
-            if condition.startswith("$."):
-                if self._evaluate_condition(condition, step_result):
-                    return t.get("to")
+            if condition.startswith("$.") and self._evaluate_condition(condition, step_result):
+                return t.get("to")
 
         return None  # No more steps — workflow complete
 
     # Supported comparison operators for condition expressions
-    _CONDITION_OPS = {
+    _CONDITION_OPS: ClassVar[dict[str, Any]] = {
         "==": lambda a, b: str(a) == str(b),
         "!=": lambda a, b: str(a) != str(b),
         ">": lambda a, b: float(a) > float(b),
         "<": lambda a, b: float(a) < float(b),
         ">=": lambda a, b: float(a) >= float(b),
         "<=": lambda a, b: float(a) <= float(b),
-        "in": lambda a, b: str(a) in [s.strip().strip("'\"") for s in str(b).strip("[]").split(",")] if str(b).startswith("[") else str(a) == str(b),
+        "in": lambda a, b: (
+            str(a) in [s.strip().strip("'\"") for s in str(b).strip("[]").split(",")]
+            if str(b).startswith("[")
+            else str(a) == str(b)
+        ),
         "contains": lambda a, b: str(b) in str(a),
     }
 
@@ -713,8 +738,9 @@ class AgentOrchestrator:
         path_expr, expected = parts[0].strip(), parts[1].strip()
 
         # Remove quotes from expected value
-        if (expected.startswith("'") and expected.endswith("'")) or \
-           (expected.startswith('"') and expected.endswith('"')):
+        if (expected.startswith("'") and expected.endswith("'")) or (
+            expected.startswith('"') and expected.endswith('"')
+        ):
             expected = expected[1:-1]
 
         value = self._resolve_jsonpath(path_expr, step_result)
@@ -747,7 +773,9 @@ class AgentOrchestrator:
         return current
 
     async def _load_workflow(
-        self, workflow_id: uuid.UUID, tenant_id: uuid.UUID | None = None,
+        self,
+        workflow_id: uuid.UUID,
+        tenant_id: uuid.UUID | None = None,
     ) -> WorkflowDefinition | None:
         conditions = [
             WorkflowDefinition.id == workflow_id,

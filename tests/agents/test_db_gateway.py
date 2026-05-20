@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.agents.db_gateway import AgentDatabaseGateway, GatewayViolationError, QueryPolicy
-
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
@@ -158,9 +157,7 @@ class TestTableNameExtraction:
         assert self._extract("SELECT x FROM users WHERE 1=1") == {"users"}
 
     def test_join_clause(self):
-        tables = self._extract(
-            "SELECT x FROM users JOIN orders ON u.id=o.uid WHERE 1=1"
-        )
+        tables = self._extract("SELECT x FROM users JOIN orders ON u.id=o.uid WHERE 1=1")
         assert tables == {"users", "orders"}
 
     def test_quoted_table(self):
@@ -256,9 +253,7 @@ class TestSQLInjectionAttacks:
         )
         gw = _make_gateway(policy)
         with pytest.raises(GatewayViolationError) as exc_info:
-            gw._validate_query(
-                "SELECT name FROM users WHERE id=1 UNION SELECT password FROM admins"
-            )
+            gw._validate_query("SELECT name FROM users WHERE id=1 UNION SELECT password FROM admins")
         assert exc_info.value.violation_type == "disallowed_table"
 
     def test_semicolon_stacked_query(self):
@@ -277,9 +272,7 @@ class TestSQLInjectionAttacks:
     def test_information_schema_probe(self):
         gw = _make_gateway()
         with pytest.raises(GatewayViolationError) as exc_info:
-            gw._validate_query(
-                "SELECT table_name FROM information_schema.columns WHERE 1=1"
-            )
+            gw._validate_query("SELECT table_name FROM information_schema.columns WHERE 1=1")
         assert exc_info.value.violation_type == "forbidden_pattern"
 
 
@@ -358,24 +351,18 @@ class TestAdvancedTableExtraction:
 
     def test_cte_table_extraction(self):
         """CTE (WITH clause) should extract the referenced source table."""
-        tables = self._extract(
-            "WITH cte AS (SELECT * FROM secret_table) SELECT * FROM cte"
-        )
+        tables = self._extract("WITH cte AS (SELECT * FROM secret_table) SELECT * FROM cte")
         assert "secret_table" in tables
 
     def test_subquery_in_where_table_extraction(self):
         """Subquery in WHERE clause should extract both outer and inner tables."""
-        tables = self._extract(
-            "SELECT * FROM public_table WHERE id IN (SELECT id FROM secret_table)"
-        )
+        tables = self._extract("SELECT * FROM public_table WHERE id IN (SELECT id FROM secret_table)")
         assert "public_table" in tables
         assert "secret_table" in tables
 
     def test_union_table_extraction(self):
         """UNION queries should extract tables from both sides."""
-        tables = self._extract(
-            "SELECT name FROM users WHERE id = 1 UNION SELECT password FROM admins"
-        )
+        tables = self._extract("SELECT name FROM users WHERE id = 1 UNION SELECT password FROM admins")
         assert "users" in tables
         assert "admins" in tables
 

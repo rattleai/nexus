@@ -19,6 +19,7 @@ from app.agents.runtime import AgentRuntime, RunResult, ToolCall
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_definition(**overrides) -> MagicMock:
     """Build a mock AgentDefinition with sensible defaults."""
     defn = MagicMock()
@@ -310,11 +311,15 @@ class TestReActLoop:
 
         # Two LLM calls: one with tool, one final
         call1 = FakeCompletionResult(
-            total_tokens=30, cost_usd=0.001,
+            total_tokens=30,
+            cost_usd=0.001,
             tool_calls=[{"id": "call_1", "name": "ai_complete", "arguments": {}}],
         )
         call2 = FakeCompletionResult(
-            content="final", total_tokens=20, cost_usd=0.0005, tool_calls=None,
+            content="final",
+            total_tokens=20,
+            cost_usd=0.0005,
+            tool_calls=None,
         )
 
         mock_ai_gw = AsyncMock()
@@ -429,7 +434,10 @@ class TestReActLoop:
             ],
         )
         final_completion = FakeCompletionResult(
-            content="All done", total_tokens=20, cost_usd=0.0005, tool_calls=None,
+            content="All done",
+            total_tokens=20,
+            cost_usd=0.0005,
+            tool_calls=None,
         )
 
         mock_ai_gw = AsyncMock()
@@ -519,7 +527,8 @@ class TestReActLoop:
         runtime = _build_runtime(max_steps_per_run=3)
 
         perpetual_tool_call = FakeCompletionResult(
-            total_tokens=10, cost_usd=0.0001,
+            total_tokens=10,
+            cost_usd=0.0001,
             tool_calls=[{"id": "call_n", "name": "ai_complete", "arguments": {}}],
         )
 
@@ -581,7 +590,10 @@ class TestReActLoop:
         runtime = _build_runtime(system_prompt="You are a test agent.")
 
         completion = FakeCompletionResult(
-            content="ok", total_tokens=10, cost_usd=0.0001, tool_calls=None,
+            content="ok",
+            total_tokens=10,
+            cost_usd=0.0001,
+            tool_calls=None,
         )
 
         mock_ai_gw = AsyncMock()
@@ -614,7 +626,10 @@ class TestReActLoop:
         runtime = _build_runtime(system_prompt="")
 
         completion = FakeCompletionResult(
-            content="ok", total_tokens=10, cost_usd=0.0001, tool_calls=None,
+            content="ok",
+            total_tokens=10,
+            cost_usd=0.0001,
+            tool_calls=None,
         )
 
         mock_ai_gw = AsyncMock()
@@ -647,11 +662,15 @@ class TestReActLoop:
         runtime = _build_runtime()
 
         tool_call_completion = FakeCompletionResult(
-            total_tokens=30, cost_usd=0.001,
+            total_tokens=30,
+            cost_usd=0.001,
             tool_calls=[{"id": "call_1", "name": "ai_complete", "arguments": {}}],
         )
         final_completion = FakeCompletionResult(
-            content="done", total_tokens=20, cost_usd=0.0005, tool_calls=None,
+            content="done",
+            total_tokens=20,
+            cost_usd=0.0005,
+            tool_calls=None,
         )
 
         mock_ai_gw = AsyncMock()
@@ -691,11 +710,15 @@ class TestReActLoop:
         runtime = _build_runtime()
 
         tool_call_completion = FakeCompletionResult(
-            total_tokens=30, cost_usd=0.001,
+            total_tokens=30,
+            cost_usd=0.001,
             tool_calls=[{"id": "call_1", "name": "ai_complete", "arguments": {}}],
         )
         final_completion = FakeCompletionResult(
-            content="done", total_tokens=20, cost_usd=0.0005, tool_calls=None,
+            content="done",
+            total_tokens=20,
+            cost_usd=0.0005,
+            tool_calls=None,
         )
 
         mock_ai_gw = AsyncMock()
@@ -733,14 +756,18 @@ class TestReActLoop:
         runtime = _build_runtime(allowed_tools=["ai_complete", "file_list"])
 
         multi_tool_completion = FakeCompletionResult(
-            total_tokens=40, cost_usd=0.002,
+            total_tokens=40,
+            cost_usd=0.002,
             tool_calls=[
                 {"id": "call_a", "name": "ai_complete", "arguments": {"messages": []}},
                 {"id": "call_b", "name": "file_list", "arguments": {}},
             ],
         )
         final_completion = FakeCompletionResult(
-            content="Both done", total_tokens=15, cost_usd=0.0003, tool_calls=None,
+            content="Both done",
+            total_tokens=15,
+            cost_usd=0.0003,
+            tool_calls=None,
         )
 
         mock_ai_gw = AsyncMock()
@@ -789,7 +816,10 @@ class TestReActLoop:
         runtime = _build_runtime()
 
         completion = FakeCompletionResult(
-            content="answer", total_tokens=20, cost_usd=0.0005, tool_calls=None,
+            content="answer",
+            total_tokens=20,
+            cost_usd=0.0005,
+            tool_calls=None,
         )
 
         mock_ai_gw = AsyncMock()

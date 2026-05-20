@@ -51,11 +51,11 @@ resource "aws_elasticache_replication_group" "main" {
   replication_group_id = "${local.name_prefix}-redis"
   description          = "NEXUS Redis cluster"
 
-  engine               = "redis"
-  engine_version       = "7.1"
-  node_type            = var.redis_node_type
-  num_cache_clusters   = 1
-  port                 = 6379
+  engine             = "redis"
+  engine_version     = "7.1"
+  node_type          = var.redis_node_type
+  num_cache_clusters = 1
+  port               = 6379
 
   subnet_group_name  = aws_elasticache_subnet_group.main.name
   security_group_ids = [aws_security_group.redis.id]
@@ -66,9 +66,9 @@ resource "aws_elasticache_replication_group" "main" {
   auth_token                 = random_password.redis_auth.result
 
   # Maintenance
-  maintenance_window       = "tue:04:00-tue:05:00"
-  snapshot_retention_limit = 3
-  snapshot_window          = "02:00-03:00"
+  maintenance_window         = "tue:04:00-tue:05:00"
+  snapshot_retention_limit   = 3
+  snapshot_window            = "02:00-03:00"
   auto_minor_version_upgrade = true
 
   # Parameters

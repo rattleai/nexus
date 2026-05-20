@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.agents.threat_detection import (
-    AnomalyScore,
+    _ATLAS_MAPPING,
     BehavioralBaseline,
     RunMetrics,
     ThreatDetectionEngine,
-    _ATLAS_MAPPING,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -35,20 +33,20 @@ def _make_engine(
 
 def _make_baseline(**overrides) -> BehavioralBaseline:
     """Create a realistic baseline with sensible defaults."""
-    defaults = dict(
-        total_runs=10,
-        avg_steps=10,
-        std_steps=2,
-        avg_tokens=1000,
-        std_tokens=200,
-        avg_cost=0.5,
-        std_cost=0.1,
-        avg_tool_calls=5,
-        std_tool_calls=1,
-        avg_duration_ms=5000,
-        std_duration_ms=1000,
-        typical_tools=["ai_complete", "file_list"],
-    )
+    defaults = {
+        "total_runs": 10,
+        "avg_steps": 10,
+        "std_steps": 2,
+        "avg_tokens": 1000,
+        "std_tokens": 200,
+        "avg_cost": 0.5,
+        "std_cost": 0.1,
+        "avg_tool_calls": 5,
+        "std_tool_calls": 1,
+        "avg_duration_ms": 5000,
+        "std_duration_ms": 1000,
+        "typical_tools": ["ai_complete", "file_list"],
+    }
     defaults.update(overrides)
     return BehavioralBaseline(**defaults)
 
@@ -150,8 +148,12 @@ class TestBaselineUpdates:
         with patch("app.agents.threat_detection.redis_pool", mock_redis):
             engine = _make_engine()
             metrics = RunMetrics(
-                steps=5, tokens=100, cost_usd=0.01,
-                tool_calls=2, tools_used=["a", "b"], duration_ms=1000,
+                steps=5,
+                tokens=100,
+                cost_usd=0.01,
+                tool_calls=2,
+                tools_used=["a", "b"],
+                duration_ms=1000,
             )
             await engine.update_baseline(metrics)
 
@@ -188,8 +190,11 @@ class TestAnomalyScoring:
             engine = _make_engine()
             # Metrics close to baseline averages
             metrics = RunMetrics(
-                steps=11, tokens=1050, cost_usd=0.52,
-                tool_calls=5, tools_used=["ai_complete"],
+                steps=11,
+                tokens=1050,
+                cost_usd=0.52,
+                tool_calls=5,
+                tools_used=["ai_complete"],
                 duration_ms=5200,
             )
             score = await engine.score_run("inst-1", metrics)
@@ -241,8 +246,11 @@ class TestAnomalyScoring:
         ):
             engine = _make_engine()
             metrics = RunMetrics(
-                steps=10, tokens=1000, cost_usd=0.5,
-                tool_calls=5, tools_used=["never_seen"],
+                steps=10,
+                tokens=1000,
+                cost_usd=0.5,
+                tool_calls=5,
+                tools_used=["never_seen"],
                 duration_ms=5000,
             )
             score = await engine.score_run("inst-1", metrics)
@@ -334,8 +342,11 @@ class TestThreatAttacks:
         ):
             engine = _make_engine(warn_sigma=2.0, suspend_sigma=3.0)
             metrics = RunMetrics(
-                steps=200, tokens=1000, cost_usd=0.5,
-                tool_calls=5, duration_ms=5000,
+                steps=200,
+                tokens=1000,
+                cost_usd=0.5,
+                tool_calls=5,
+                duration_ms=5000,
             )
             score = await engine.score_run("inst-1", metrics)
 
@@ -354,8 +365,11 @@ class TestThreatAttacks:
         ):
             engine = _make_engine(warn_sigma=2.0, suspend_sigma=3.0)
             metrics = RunMetrics(
-                steps=10, tokens=1000, cost_usd=50.0,
-                tool_calls=5, duration_ms=5000,
+                steps=10,
+                tokens=1000,
+                cost_usd=50.0,
+                tool_calls=5,
+                duration_ms=5000,
             )
             score = await engine.score_run("inst-1", metrics)
 
@@ -378,8 +392,11 @@ class TestNonFiniteMetrics:
         with patch("app.agents.threat_detection.redis_pool", mock_redis):
             engine = _make_engine()
             metrics = RunMetrics(
-                steps=10, tokens=1000, cost_usd=float("nan"),
-                tool_calls=5, duration_ms=5000,
+                steps=10,
+                tokens=1000,
+                cost_usd=float("nan"),
+                tool_calls=5,
+                duration_ms=5000,
             )
             # Should not raise — NaN is safely skipped
             score = await engine.score_run("inst-1", metrics)
@@ -396,8 +413,11 @@ class TestNonFiniteMetrics:
         with patch("app.agents.threat_detection.redis_pool", mock_redis):
             engine = _make_engine()
             metrics = RunMetrics(
-                steps=10, tokens=1000, cost_usd=float("inf"),
-                tool_calls=5, duration_ms=5000,
+                steps=10,
+                tokens=1000,
+                cost_usd=float("inf"),
+                tool_calls=5,
+                duration_ms=5000,
             )
             # Should not raise — Infinity is safely skipped
             score = await engine.score_run("inst-1", metrics)

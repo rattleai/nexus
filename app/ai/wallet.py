@@ -91,9 +91,7 @@ class InsufficientBalanceError(Exception):
         self.tenant_id = tenant_id
         self.required = required
         self.available = available
-        super().__init__(
-            f"Insufficient balance: required ${required}, available ${available}"
-        )
+        super().__init__(f"Insufficient balance: required ${required}, available ${available}")
 
 
 class WalletOverflowError(Exception):
@@ -142,11 +140,7 @@ class DollarWalletService:
             return await self.get_balance(tenant_id)
 
         # Step 1: Lock the wallet row and check balance (DB is authoritative)
-        result = await db.execute(
-            select(DollarWallet)
-            .where(DollarWallet.tenant_id == tenant_id)
-            .with_for_update()
-        )
+        result = await db.execute(select(DollarWallet).where(DollarWallet.tenant_id == tenant_id).with_for_update())
         wallet = result.scalar_one_or_none()
         if not wallet:
             wallet = DollarWallet(tenant_id=tenant_id, balance_usd=Decimal("0"))
@@ -204,11 +198,7 @@ class DollarWalletService:
             return await self.get_balance(tenant_id)
 
         # Step 1: Lock wallet and apply refund in DB
-        result = await db.execute(
-            select(DollarWallet)
-            .where(DollarWallet.tenant_id == tenant_id)
-            .with_for_update()
-        )
+        result = await db.execute(select(DollarWallet).where(DollarWallet.tenant_id == tenant_id).with_for_update())
         wallet = result.scalar_one_or_none()
         if not wallet:
             wallet = DollarWallet(tenant_id=tenant_id, balance_usd=Decimal("0"))
@@ -279,11 +269,7 @@ class DollarWalletService:
                 return wallet.balance_usd
 
         # DB first: lock wallet row for atomic update
-        result = await db.execute(
-            select(DollarWallet)
-            .where(DollarWallet.tenant_id == tenant_id)
-            .with_for_update()
-        )
+        result = await db.execute(select(DollarWallet).where(DollarWallet.tenant_id == tenant_id).with_for_update())
         wallet = result.scalar_one_or_none()
         if not wallet:
             wallet = DollarWallet(tenant_id=tenant_id, balance_usd=Decimal("0"))
@@ -292,9 +278,7 @@ class DollarWalletService:
         new_balance = wallet.balance_usd + amount_usd
 
         if new_balance > _MAX_BALANCE:
-            raise WalletOverflowError(
-                f"Topup would exceed maximum balance (${_MAX_BALANCE})"
-            )
+            raise WalletOverflowError(f"Topup would exceed maximum balance (${_MAX_BALANCE})")
 
         wallet.balance_usd = new_balance
         wallet.lifetime_deposited_usd += amount_usd
@@ -363,9 +347,7 @@ class DollarWalletService:
 
         This is fire-and-forget — failures are logged but don't affect the caller.
         """
-        result = await db.execute(
-            select(DollarWallet).where(DollarWallet.tenant_id == tenant_id)
-        )
+        result = await db.execute(select(DollarWallet).where(DollarWallet.tenant_id == tenant_id))
         wallet = result.scalar_one_or_none()
         if not wallet or not wallet.auto_refill_enabled:
             return
@@ -391,13 +373,9 @@ class DollarWalletService:
         except Exception:
             logger.error("wallet_auto_refill_trigger_failed", tenant_id=str(tenant_id), exc_info=True)
 
-    async def _get_or_create_wallet(
-        self, tenant_id: uuid.UUID, db: AsyncSession
-    ) -> DollarWallet:
+    async def _get_or_create_wallet(self, tenant_id: uuid.UUID, db: AsyncSession) -> DollarWallet:
         """Get existing wallet or create a new one with zero balance."""
-        result = await db.execute(
-            select(DollarWallet).where(DollarWallet.tenant_id == tenant_id)
-        )
+        result = await db.execute(select(DollarWallet).where(DollarWallet.tenant_id == tenant_id))
         wallet = result.scalar_one_or_none()
         if not wallet:
             wallet = DollarWallet(tenant_id=tenant_id, balance_usd=Decimal("0"))
@@ -406,9 +384,7 @@ class DollarWalletService:
                 await db.flush()
             except IntegrityError:
                 await db.rollback()
-                result = await db.execute(
-                    select(DollarWallet).where(DollarWallet.tenant_id == tenant_id)
-                )
+                result = await db.execute(select(DollarWallet).where(DollarWallet.tenant_id == tenant_id))
                 wallet = result.scalar_one_or_none()
                 if not wallet:
                     raise RuntimeError(f"Failed to create or fetch wallet for tenant {tenant_id}")
@@ -423,9 +399,7 @@ class DollarWalletService:
         consumed_delta: Decimal = Decimal("0"),
     ) -> None:
         """Update the DB wallet record using the known balance from Redis Lua."""
-        result = await db.execute(
-            select(DollarWallet).where(DollarWallet.tenant_id == tenant_id)
-        )
+        result = await db.execute(select(DollarWallet).where(DollarWallet.tenant_id == tenant_id))
         wallet = result.scalar_one_or_none()
         if wallet:
             wallet.balance_usd = balance_usd

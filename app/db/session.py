@@ -3,7 +3,6 @@ from collections.abc import AsyncGenerator
 import structlog
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import Pool
 
 from app.config import settings
 
@@ -19,6 +18,7 @@ _PG_SERVER_SETTINGS = {
 _connect_args: dict = {"server_settings": _PG_SERVER_SETTINGS}
 if settings.DATABASE_SSL_MODE:
     import ssl as _ssl
+
     if settings.DATABASE_SSL_MODE == "verify-full":
         # Full certificate verification (recommended for production)
         _ssl_ctx = _ssl.create_default_context()
@@ -44,6 +44,31 @@ async_engine = create_async_engine(
     connect_args=_connect_args,
 )
 async_session_factory = async_sessionmaker(async_engine, expire_on_commit=False)
+
+
+# ── Admin session factory (bypasses RLS) ──────────────────
+# Connects as the database superuser via ``DATABASE_MIGRATION_URL`` so
+# platform-wide sweep tasks (stale-instance cleanup, retention enforcement,
+# cross-tenant reporting) can see every row without fighting RLS.
+#
+# Use ONLY for explicit admin operations. Regular application code must
+# stick to ``async_session_factory`` + ``set_tenant_context`` so RLS
+# isolation is enforced.
+_admin_url = settings.DATABASE_MIGRATION_URL or settings.DATABASE_URL
+admin_async_engine = create_async_engine(
+    _admin_url,
+    echo=False,
+    pool_size=2,
+    max_overflow=3,
+    pool_pre_ping=True,
+    pool_recycle=300,
+    pool_timeout=30,
+    connect_args=_connect_args,
+)
+admin_async_session_factory = async_sessionmaker(
+    admin_async_engine,
+    expire_on_commit=False,
+)
 
 
 # ── Connection pool monitoring (P0-8) ──────────────────────
@@ -77,6 +102,7 @@ def setup_pool_monitoring(engine_to_monitor=None) -> None:
             return None
         try:
             from app.core.telemetry import get_meter
+
             meter = get_meter()
             return {
                 "checkedout": meter.create_up_down_counter(
@@ -138,6 +164,7 @@ def setup_pool_monitoring(engine_to_monitor=None) -> None:
         pass  # Normal pool reset — no action needed
 
     logger.info("db_pool_monitoring_enabled", pool_size=settings.DB_POOL_SIZE, max_overflow=settings.DB_MAX_OVERFLOW)
+
 
 # Read replica engine (optional — for read-write splitting)
 _read_engine = None

@@ -7,6 +7,23 @@ in their plugin packages under ``app.apps.<name>.models`` — see
 Alembic discovers plugin models via ``env.py`` through the plugin registry.
 """
 
+from app.connectors.models import (
+    AuthType,
+    BrokerType,
+    ConnectionStatus,
+    ConnectorAppCredential,
+    ConnectorAuditLog,
+    ConnectorDefinition,
+    ConnectorOAuthState,
+    ConnectorSource,
+    ConnectorTask,
+    ConnectorTaskStatus,
+    ConnectorType,
+    CredentialType,
+    TenantConnection,
+    TenantCredential,
+    TrustLevel,
+)
 from app.db.models.ai import (
     AIProvider,
     AIUsageLog,
@@ -44,8 +61,6 @@ from app.db.models.core import (
     UserRole,
 )
 from app.db.models.datasource import (
-    CloudConnection,
-    CloudProvider,
     DataSource,
     DataSourceChunk,
     DataSourceStatus,
@@ -68,8 +83,23 @@ from app.db.models.mobile import (
 from app.db.models.oauth_client import (
     OAuthClient,
 )
+from app.db.models.operations import (
+    AuditLog,
+    Consent,
+    ConsentType,
+    DataRetentionPolicy,
+    DataSubjectRequest,
+    DSARStatus,
+    DSARType,
+    Job,
+    JobStatus,
+)
 from app.db.models.rag_config import (
     TenantRAGConfig,
+)
+from app.db.models.rag_graph import (
+    RAGEntity,
+    RAGRelationship,
 )
 from app.evaluation.models import (
     RAGEvaluationDataset,
@@ -78,94 +108,93 @@ from app.evaluation.models import (
     RAGEvaluationRun,
     RAGQueryLog,
 )
-from app.db.models.rag_graph import (
-    RAGEntity,
-    RAGRelationship,
-)
-from app.db.models.operations import (
-    AuditLog,
-    Consent,
-    ConsentType,
-    DSARStatus,
-    DSARType,
-    DataRetentionPolicy,
-    DataSubjectRequest,
-    Job,
-    JobStatus,
-)
 
 __all__ = [
-    # Core
-    "Tenant",
+    # AI
+    "AIProvider",
+    "AIUsageLog",
     "ApiKey",
-    "User",
-    "TenantMembership",
-    "UserRole",
-    # Auth
-    "OAuthAccount",
-    "RefreshToken",
-    "EmailVerificationToken",
-    # Operations
-    "Job",
-    "JobStatus",
     "AuditLog",
+    "AuthType",
+    "BrokerType",
+    "ChangeLog",
+    "ConnectionStatus",
+    "ConnectorAppCredential",
+    "ConnectorAuditLog",
+    # Connectors
+    "ConnectorDefinition",
+    "ConnectorOAuthState",
+    "ConnectorSource",
+    "ConnectorTask",
+    "ConnectorTaskStatus",
+    "ConnectorType",
     # GDPR
     "Consent",
     "ConsentType",
-    "DataSubjectRequest",
-    "DSARType",
+    "CredentialType",
+    "CreditPack",
     "DSARStatus",
+    "DSARType",
     "DataRetentionPolicy",
+    # Data Sources (infrastructure — application-agnostic)
+    "DataSource",
+    "DataSourceChunk",
+    "DataSourceStatus",
+    "DataSourceType",
+    "DataSubjectRequest",
+    "DollarWallet",
+    "EmailVerificationToken",
     # Features
     "FeatureFlag",
-    "TenantFeatureOverride",
     # Collaboration
     "Invitation",
     "InvitationStatus",
+    # Operations
+    "Job",
+    "JobStatus",
     "Notification",
-    "WebhookEndpoint",
-    "WebhookDelivery",
+    # Auth
+    "OAuthAccount",
+    # OAuth
+    "OAuthClient",
     # Billing
     "Plan",
     "PlanTier",
-    "Subscription",
-    "SubscriptionStatus",
-    "UsageRecord",
-    "CreditPack",
-    # Enterprise
-    "SSOConfiguration",
-    "SSOProvider",
-    # AI
-    "AIProvider",
-    "TenantAIProviderKey",
-    "DollarWallet",
-    "WalletTransaction",
-    "WalletTransactionType",
-    "AIUsageLog",
     "PromptTemplate",
-    # OAuth
-    "OAuthClient",
     # Mobile
     "PushSubscription",
-    "WebAuthnCredential",
-    "ChangeLog",
-    "SyncMixin",
-    # Data Sources (infrastructure — application-agnostic)
-    "DataSource",
-    "DataSourceType",
-    "DataSourceStatus",
-    "DataSourceChunk",
-    "CloudConnection",
-    "CloudProvider",
-    # RAG Configuration
-    "TenantRAGConfig",
+    # RAG Graph
+    "RAGEntity",
     # RAG Evaluation
     "RAGEvaluationDataset",
     "RAGEvaluationQuery",
-    "RAGEvaluationRun",
     "RAGEvaluationResult",
+    "RAGEvaluationRun",
     "RAGQueryLog",
-    # RAG Graph
-    "RAGEntity",
     "RAGRelationship",
+    "RefreshToken",
+    # Enterprise
+    "SSOConfiguration",
+    "SSOProvider",
+    "Subscription",
+    "SubscriptionStatus",
+    "SyncMixin",
+    # Core
+    "Tenant",
+    "TenantAIProviderKey",
+    "TenantConnection",
+    "TenantCredential",
+    "TenantFeatureOverride",
+    "TenantMembership",
+    # RAG Configuration
+    "TenantRAGConfig",
+    "TrustLevel",
+    "UsageRecord",
+    "User",
+    "UserRole",
+    "WalletTransaction",
+    "WalletTransactionType",
+    "WebAuthnCredential",
+    "WebhookDelivery",
+    "WebhookEndpoint",
 ]

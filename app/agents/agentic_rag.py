@@ -24,7 +24,6 @@ from app.agents.search import (
     HybridSearchEngine,
     SearchFilters,
     SearchResult,
-    SearchSource,
     SearchType,
     hybrid_search_engine,
 )
@@ -91,10 +90,7 @@ class AgenticRAGPipeline:
             )
 
         # Adaptive iteration count: plan overrides global config
-        max_iterations = (
-            plan.agentic_iterations if plan
-            else settings.RAG_AGENTIC_MAX_ITERATIONS
-        )
+        max_iterations = plan.agentic_iterations if plan else settings.RAG_AGENTIC_MAX_ITERATIONS
         search_type = _safe_search_type(plan)
         effective_limit = int(limit * (plan.limit_multiplier if plan else 1.0))
 
@@ -116,6 +112,7 @@ class AgenticRAGPipeline:
             # CRAG: grade documents and filter out irrelevant ones
             if settings.RAG_CRAG_ENABLED:
                 from app.agents.corrective_rag import crag_evaluator
+
                 crag_outcome = await crag_evaluator.evaluate(query, results)
                 results = crag_outcome.kept_results
 
@@ -127,7 +124,8 @@ class AgenticRAGPipeline:
             # Self-critique: assess if results are sufficient
             if iteration < max_iterations - 1:
                 is_sufficient = await self._assess_sufficiency(
-                    query, [r.content for r in results[:5]],
+                    query,
+                    [r.content for r in results[:5]],
                 )
                 if is_sufficient:
                     logger.info(
@@ -154,33 +152,33 @@ class AgenticRAGPipeline:
         final = sorted(all_results.values(), key=lambda r: r.score, reverse=True)
 
         # Apply re-ranking only when the plan says to (or always when no plan)
-        should_rerank = (
-            settings.RAG_RERANKER_PROVIDER != "none"
-            and final
-            and (plan is None or plan.use_reranking)
-        )
+        should_rerank = settings.RAG_RERANKER_PROVIDER != "none" and final and (plan is None or plan.use_reranking)
         if should_rerank:
-            documents = [r.content for r in final[:effective_limit * 2]]
+            documents = [r.content for r in final[: effective_limit * 2]]
             reranked = await reranker.rerank(query=query, documents=documents, top_k=effective_limit)
             reranked_results = []
             for rr in reranked:
                 if rr.index < len(final):
                     original = final[rr.index]
-                    reranked_results.append(SearchResult(
-                        id=original.id,
-                        content=original.content,
-                        score=rr.score,
-                        source=original.source,
-                        source_id=original.source_id,
-                        metadata=original.metadata,
-                        search_type=original.search_type,
-                    ))
+                    reranked_results.append(
+                        SearchResult(
+                            id=original.id,
+                            content=original.content,
+                            score=rr.score,
+                            source=original.source,
+                            source_id=original.source_id,
+                            metadata=original.metadata,
+                            search_type=original.search_type,
+                        )
+                    )
             return reranked_results
 
         return final[:effective_limit]
 
     async def _assess_sufficiency(
-        self, query: str, top_contents: list[str],
+        self,
+        query: str,
+        top_contents: list[str],
     ) -> bool:
         """Assess whether retrieved results are sufficient to answer the query."""
         try:
@@ -189,15 +187,17 @@ class AgenticRAGPipeline:
             context = "\n---\n".join(top_contents[:3])
             response = await ai_gateway.complete(
                 model=settings.RAG_HYDE_MODEL,  # Cheap model
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        "Given these retrieved documents, can the following "
-                        "question be fully answered? Reply ONLY 'yes' or 'no'.\n\n"
-                        f"Question: {query}\n\n"
-                        f"Documents:\n{context}"
-                    ),
-                }],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            "Given these retrieved documents, can the following "
+                            "question be fully answered? Reply ONLY 'yes' or 'no'.\n\n"
+                            f"Question: {query}\n\n"
+                            f"Documents:\n{context}"
+                        ),
+                    }
+                ],
                 max_tokens=5,
                 temperature=0.0,
             )
@@ -227,17 +227,19 @@ class AgenticRAGPipeline:
             context = "\n".join(r.content[:200] for r in results[:3])
             response = await ai_gateway.complete(
                 model=settings.RAG_HYDE_MODEL,
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        "The following search did not fully answer the question. "
-                        "Reformulate the query to find the missing information. "
-                        "Reply with ONLY the new search query, nothing else.\n\n"
-                        f"Original question: {original_query}\n"
-                        f"Current search: {current_query}\n"
-                        f"Results found (partial):\n{context}"
-                    ),
-                }],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            "The following search did not fully answer the question. "
+                            "Reformulate the query to find the missing information. "
+                            "Reply with ONLY the new search query, nothing else.\n\n"
+                            f"Original question: {original_query}\n"
+                            f"Current search: {current_query}\n"
+                            f"Results found (partial):\n{context}"
+                        ),
+                    }
+                ],
                 max_tokens=100,
                 temperature=0.0,
             )

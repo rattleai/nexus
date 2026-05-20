@@ -100,13 +100,13 @@ class Reranker:
     @staticmethod
     def _noop_rerank(documents: list[str], top_k: int) -> list[RerankerResult]:
         """Return documents in original order (no re-ranking)."""
-        return [
-            RerankerResult(index=i, score=1.0 - i * 0.01, text=doc)
-            for i, doc in enumerate(documents[:top_k])
-        ]
+        return [RerankerResult(index=i, score=1.0 - i * 0.01, text=doc) for i, doc in enumerate(documents[:top_k])]
 
     async def _rerank_cohere(
-        self, query: str, documents: list[str], top_k: int,
+        self,
+        query: str,
+        documents: list[str],
+        top_k: int,
     ) -> list[RerankerResult]:
         """Re-rank via Cohere Rerank API (supports rerank-v3.5 and rerank-v4)."""
         api_key = settings.RAG_RERANKER_API_KEY
@@ -138,15 +138,20 @@ class Reranker:
             if idx is None or not isinstance(idx, int) or not (0 <= idx < len(documents)):
                 logger.warning("rerank_invalid_index", idx=idx, max=len(documents))
                 continue
-            results.append(RerankerResult(
-                index=idx,
-                score=item.get("relevance_score", 0.0),
-                text=documents[idx],
-            ))
+            results.append(
+                RerankerResult(
+                    index=idx,
+                    score=item.get("relevance_score", 0.0),
+                    text=documents[idx],
+                )
+            )
         return sorted(results, key=lambda r: r.score, reverse=True)
 
     async def _rerank_cross_encoder(
-        self, query: str, documents: list[str], top_k: int,
+        self,
+        query: str,
+        documents: list[str],
+        top_k: int,
     ) -> list[RerankerResult]:
         """Re-rank via a local cross-encoder model server."""
         base_url = settings.RAG_RERANKER_LOCAL_URL
@@ -175,11 +180,13 @@ class Reranker:
             if idx is None or not isinstance(idx, int) or not (0 <= idx < len(documents)):
                 logger.warning("rerank_invalid_index", idx=idx, max=len(documents))
                 continue
-            results.append(RerankerResult(
-                index=idx,
-                score=item.get("score", item.get("relevance_score", 0.0)),
-                text=documents[idx],
-            ))
+            results.append(
+                RerankerResult(
+                    index=idx,
+                    score=item.get("score", item.get("relevance_score", 0.0)),
+                    text=documents[idx],
+                )
+            )
         return sorted(results, key=lambda r: r.score, reverse=True)[:top_k]
 
 

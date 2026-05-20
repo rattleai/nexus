@@ -131,7 +131,9 @@ async def test_webhook_delete_success():
     mock_db.execute = AsyncMock(return_value=mock_result)
 
     result = await webhook_delete(
-        webhook_id=str(webhook_id), tenant=tenant, db=mock_db,
+        webhook_id=str(webhook_id),
+        tenant=tenant,
+        db=mock_db,
     )
 
     assert result["deleted"] is True
@@ -150,7 +152,9 @@ async def test_webhook_delete_not_found():
 
     with pytest.raises(McpError, match="not found"):
         await webhook_delete(
-            webhook_id=str(uuid.uuid4()), tenant=tenant, db=mock_db,
+            webhook_id=str(uuid.uuid4()),
+            tenant=tenant,
+            db=mock_db,
         )
 
 

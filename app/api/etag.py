@@ -33,7 +33,8 @@ class ETagMiddleware(BaseHTTPMiddleware):
         if not body:
             return response
 
-        etag = f'W/"{hashlib.md5(body).hexdigest()}"'  # noqa: S324
+        # MD5 is used only for content fingerprinting (weak ETag), never for security.
+        etag = f'W/"{hashlib.md5(body, usedforsecurity=False).hexdigest()}"'
         response.headers["ETag"] = etag
         response.headers.setdefault("Cache-Control", "private, max-age=0, must-revalidate")
 

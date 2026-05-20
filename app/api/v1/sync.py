@@ -167,21 +167,25 @@ async def push_changes(
 
             if server_version > change.client_version:
                 # Conflict: server has newer changes — return server's changed_fields
-                conflicts.append(SyncConflict(
-                    entity_id=change.entity_id,
-                    server_version=server_version,
-                    server_data=server_entry.changed_fields or {},
-                ))
+                conflicts.append(
+                    SyncConflict(
+                        entity_id=change.entity_id,
+                        server_version=server_version,
+                        server_data=server_entry.changed_fields or {},
+                    )
+                )
                 continue
 
         # Record accepted change in the ChangeLog
-        changelog_entries.append(ChangeLog(
-            tenant_id=user.tenant_id,
-            entity_type=change.entity_type,
-            entity_id=entity_uuid,
-            operation=change.operation,
-            changed_fields=change.data,
-        ))
+        changelog_entries.append(
+            ChangeLog(
+                tenant_id=user.tenant_id,
+                entity_type=change.entity_type,
+                entity_id=entity_uuid,
+                operation=change.operation,
+                changed_fields=change.data,
+            )
+        )
 
     # Persist all accepted ChangeLog entries
     if changelog_entries:
@@ -192,10 +196,12 @@ async def push_changes(
 
     # Build accepted list with actual server versions (ChangeLog.id)
     for entry in changelog_entries:
-        accepted.append(SyncAccepted(
-            entity_id=str(entry.entity_id),
-            server_version=entry.id,
-        ))
+        accepted.append(
+            SyncAccepted(
+                entity_id=str(entry.entity_id),
+                server_version=entry.id,
+            )
+        )
 
     logger.info(
         "sync_push",

@@ -40,6 +40,25 @@ provider "aws" {
   }
 }
 
+# Secondary provider for the DR region. Required because rds.tf references
+# aws.dr_region for cross-region automated-backup replication (and s3.tf
+# gates its DR bucket on var.dr_region). When dr_region is empty, the
+# provider is still declared — with the primary region as a fallback — so
+# `terraform validate` succeeds and the DR resources simply have count=0.
+provider "aws" {
+  alias  = "dr_region"
+  region = var.dr_region != "" ? var.dr_region : var.aws_region
+
+  default_tags {
+    tags = {
+      Project     = "cadprice"
+      Environment = var.environment
+      ManagedBy   = "terraform"
+      Role        = "dr"
+    }
+  }
+}
+
 # ── Data Sources ─────────────────────────────────────────────
 
 data "aws_caller_identity" "current" {}

@@ -144,7 +144,7 @@ def compute_all(
         IRMetrics dataclass with all computed values.
     """
     if relevance_grades is None:
-        relevance_grades = {doc_id: 1 for doc_id in relevant_ids}
+        relevance_grades = dict.fromkeys(relevant_ids, 1)
 
     return IRMetrics(
         precision_at_k=precision_at_k(retrieved_ids, relevant_ids, k),

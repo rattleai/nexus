@@ -126,11 +126,13 @@ async def batch_execute(
                     except (json.JSONDecodeError, ValueError):
                         body = response.text
 
-                responses.append(SubResponse(
-                    status=response.status_code,
-                    body=body,
-                    headers=dict(response.headers) if response.status_code >= 400 else None,
-                ))
+                responses.append(
+                    SubResponse(
+                        status=response.status_code,
+                        body=body,
+                        headers=dict(response.headers) if response.status_code >= 400 else None,
+                    )
+                )
 
             except Exception as exc:
                 logger.warning("batch_sub_request_error", path=sub.path, error=str(exc))

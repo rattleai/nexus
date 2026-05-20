@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import re
 import uuid
-from typing import Any, Callable, Coroutine
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 import structlog
 from sqlalchemy import select
@@ -24,19 +25,29 @@ def build_tool_executor(
     definition: Any,
     tenant_id: uuid.UUID,
     db: AsyncSession,
+    *,
+    actor_user_id: uuid.UUID | None = None,
+    agent_instance_id: uuid.UUID | None = None,
 ) -> Callable[[str, dict[str, Any]], Coroutine[Any, Any, Any]]:
     """Build a tool executor callable: ``(tool_name, arguments) -> result``.
 
     The returned closure checks the resolved capability + tool set before
-    dispatching to the tool registry, which routes to built-in, plugin, or
-    tenant-external tools.
+    dispatching to the tool registry. Per-user and per-agent identity are
+    threaded through so connector tools can enforce confused-deputy
+    prevention (P0.2) and per-agent authorization (P0.3) at invocation time.
     """
     from app.agents.capabilities import capability_resolver
 
-    allowed_tools = set(capability_resolver.resolve_agent_tools(definition))
+    # Static pre-check for non-connector tools (connector capabilities are
+    # tenant-dynamic and resolved lazily inside the bridge).
+    static_allowed = set(capability_resolver.resolve_agent_tools(definition))
+    agent_id = getattr(definition, "id", None)
 
     async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> Any:
-        if allowed_tools and tool_name not in allowed_tools:
+        # Connector tools skip the static check — the bridge does its own
+        # tenant-aware capability resolution (which also covers them).
+        is_connector_tool = tool_name.startswith("connector:")
+        if not is_connector_tool and static_allowed and tool_name not in static_allowed:
             return {"error": f"Tool '{tool_name}' is not allowed for this agent"}
 
         try:
@@ -52,6 +63,9 @@ def build_tool_executor(
                 arguments=arguments,
                 tenant_id=tenant_id,
                 db=db,
+                actor_user_id=actor_user_id,
+                agent_id=agent_id,
+                agent_instance_id=agent_instance_id,
             )
         except Exception as exc:
             logger.warning(
@@ -123,14 +137,16 @@ async def resolve_datasource_mentions(
                 ds_id = uuid.UUID(ds_id_str)
                 context_text = await _load_datasource_context(ds_id, tenant_id, db)
                 if context_text:
-                    resolved.append({
-                        "role": "system",
-                        "content": (
-                            f"=== Data Source: {ds_name} (id: {ds_id_str}) ===\n"
-                            f"{context_text}\n"
-                            f"=== End Data Source: {ds_name} ==="
-                        ),
-                    })
+                    resolved.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                f"=== Data Source: {ds_name} (id: {ds_id_str}) ===\n"
+                                f"{context_text}\n"
+                                f"=== End Data Source: {ds_name} ==="
+                            ),
+                        }
+                    )
             except Exception:
                 logger.warning(
                     "datasource_mention_resolve_failed",

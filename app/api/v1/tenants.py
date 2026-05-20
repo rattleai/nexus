@@ -48,8 +48,11 @@ async def create_tenant(body: TenantCreate, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=409, detail="Slug already taken") from None
     await db.refresh(tenant)
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="tenant",
-        resource_id=str(tenant.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="tenant",
+        resource_id=str(tenant.id),
+        tenant_id=tenant.id,
         metadata={"slug": tenant.slug, "plan": tenant.plan},
     )
     await db.commit()
@@ -98,8 +101,12 @@ async def update_tenant(tenant_id: uuid.UUID, body: TenantUpdate, db: AsyncSessi
 
     changes = body.model_dump(exclude_unset=True)
     await emit_audit_event(
-        db, action=AuditAction.UPDATE, resource_type="tenant",
-        resource_id=str(tenant.id), tenant_id=tenant.id, changes=changes,
+        db,
+        action=AuditAction.UPDATE,
+        resource_type="tenant",
+        resource_id=str(tenant.id),
+        tenant_id=tenant.id,
+        changes=changes,
     )
     await db.flush()
     await db.refresh(tenant)
@@ -135,19 +142,13 @@ async def delete_tenant(tenant_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     try:
         # Deactivate API keys
         await db.execute(
-            update(ApiKey)
-            .where(ApiKey.tenant_id == tenant_id, ApiKey.active.is_(True))
-            .values(active=False)
+            update(ApiKey).where(ApiKey.tenant_id == tenant_id, ApiKey.active.is_(True)).values(active=False)
         )
         # Deactivate users and revoke their refresh tokens
-        user_ids_result = await db.execute(
-            select(User.id).where(User.tenant_id == tenant_id)
-        )
+        user_ids_result = await db.execute(select(User.id).where(User.tenant_id == tenant_id))
         user_ids = [row[0] for row in user_ids_result.all()]
         await db.execute(
-            update(User)
-            .where(User.tenant_id == tenant_id, User.is_active.is_(True))
-            .values(is_active=False)
+            update(User).where(User.tenant_id == tenant_id, User.is_active.is_(True)).values(is_active=False)
         )
         if user_ids:
             await db.execute(
@@ -172,14 +173,15 @@ async def delete_tenant(tenant_id: uuid.UUID, db: AsyncSession = Depends(get_db)
         )
         # Remove feature flag overrides
         from sqlalchemy import delete as sa_delete
-        await db.execute(
-            sa_delete(TenantFeatureOverride)
-            .where(TenantFeatureOverride.tenant_id == tenant_id)
-        )
+
+        await db.execute(sa_delete(TenantFeatureOverride).where(TenantFeatureOverride.tenant_id == tenant_id))
 
         await emit_audit_event(
-            db, action=AuditAction.DELETE, resource_type="tenant",
-            resource_id=str(tenant.id), tenant_id=tenant.id,
+            db,
+            action=AuditAction.DELETE,
+            resource_type="tenant",
+            resource_id=str(tenant.id),
+            tenant_id=tenant.id,
             metadata={"slug": tenant.slug},
         )
         await db.commit()
@@ -211,8 +213,7 @@ async def create_api_key_for_tenant(
     # Default to read-only scopes (least privilege) if none specified.
     # Exclude infrastructure scopes from defaults — they are UI-only.
     default_read_scopes = [
-        s for s in settings.VALID_SCOPES
-        if s.endswith(":read") and s not in settings.INFRASTRUCTURE_SCOPES
+        s for s in settings.VALID_SCOPES if s.endswith(":read") and s not in settings.INFRASTRUCTURE_SCOPES
     ]
     key_name = body.name if body else "default"
     key_scopes = body.scopes if body and body.scopes else default_read_scopes
@@ -240,8 +241,11 @@ async def create_api_key_for_tenant(
     await db.commit()
 
     await emit_audit_event(
-        db, action=AuditAction.CREATE, resource_type="api_key",
-        resource_id=str(api_key.id), tenant_id=tenant.id,
+        db,
+        action=AuditAction.CREATE,
+        resource_type="api_key",
+        resource_id=str(api_key.id),
+        tenant_id=tenant.id,
     )
     await db.commit()
     logger.info("api_key_created_for_tenant", tenant_id=str(tenant.id), key_id=str(api_key.id))

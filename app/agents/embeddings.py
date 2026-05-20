@@ -33,7 +33,10 @@ class EmbeddingService:
         return await embedding_gateway.generate(text, model=model)
 
     async def generate_batch(
-        self, texts: list[str], *, model: str | None = None,
+        self,
+        texts: list[str],
+        *,
+        model: str | None = None,
     ) -> list[list[float]]:
         return await embedding_gateway.generate_batch(texts, model=model)
 
@@ -154,7 +157,9 @@ class RAGPipeline:
 
             documents = [r["text"] for r in formatted]
             rerank_results = await _reranker.rerank(
-                query=query, documents=documents, top_k=limit,
+                query=query,
+                documents=documents,
+                top_k=limit,
             )
             reranked = []
             for rr in rerank_results:

@@ -9,15 +9,15 @@ Verifies that:
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 
 from app.agents.models import AgentStatus, SessionStatus
-
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
@@ -92,7 +92,7 @@ class TestSessionCreationRateLimit:
 
         tenant_id = uuid.uuid4()
         agent_id = uuid.uuid4()
-        mock_redis, pipe = _make_redis_pipeline(incr_result=11)
+        mock_redis, _pipe = _make_redis_pipeline(incr_result=11)
 
         agent = _make_mock_agent(tenant_id)
 
@@ -142,7 +142,7 @@ class TestSessionCreationRateLimit:
 
         tenant_id = uuid.uuid4()
         agent_id = uuid.uuid4()
-        mock_redis, pipe = _make_redis_pipeline(incr_result=10)
+        mock_redis, _pipe = _make_redis_pipeline(incr_result=10)
 
         # Lock for later (conversation_reply uses lock, start_conversation doesn't)
         mock_redis.lock = MagicMock()
@@ -206,7 +206,7 @@ class TestReplyRateLimit:
 
         tenant_id = uuid.uuid4()
         session_id = uuid.uuid4()
-        mock_redis, pipe = _make_redis_pipeline(incr_result=21)
+        mock_redis, _pipe = _make_redis_pipeline(incr_result=21)
 
         session = _make_mock_session(tenant_id)
 
@@ -245,7 +245,7 @@ class TestReplyRateLimit:
 
         tenant_id = uuid.uuid4()
         session_id = uuid.uuid4()
-        mock_redis, pipe = _make_redis_pipeline(incr_result=20)
+        mock_redis, _pipe = _make_redis_pipeline(incr_result=20)
 
         # Need lock for conversation_reply
         lock = AsyncMock()
@@ -310,7 +310,7 @@ class TestRedisUnavailableRateLimit:
 
         tenant_id = uuid.uuid4()
         agent_id = uuid.uuid4()
-        mock_redis, pipe = _make_failing_redis_pipeline()
+        mock_redis, _pipe = _make_failing_redis_pipeline()
 
         agent = _make_mock_agent(tenant_id)
 
@@ -360,7 +360,7 @@ class TestRedisUnavailableRateLimit:
 
         tenant_id = uuid.uuid4()
         session_id = uuid.uuid4()
-        mock_redis, pipe = _make_failing_redis_pipeline()
+        mock_redis, _pipe = _make_failing_redis_pipeline()
 
         session = _make_mock_session(tenant_id)
 
@@ -456,7 +456,7 @@ class TestRateLimitCounterExpiry:
             expire_calls = pipe.expire.call_args_list
             assert len(expire_calls) >= 1
             # The expire call should use the rate key and 60s TTL
-            _, kwargs = expire_calls[0]
+            _, _kwargs = expire_calls[0]
             args = expire_calls[0][0] if expire_calls[0][0] else ()
             # pipe.expire(key, 60) — second positional arg is 60
             assert args[1] == 60, f"Expected 60s TTL, got {args[1]}"
@@ -500,7 +500,7 @@ class TestRateLimitCounterExpiry:
             mock_settings.AGENT_CONVERSATION_LOCK_TIMEOUT = 30
             mock_settings.AGENT_RATE_LIMIT_FAIL_OPEN = False
 
-            try:
+            with contextlib.suppress(Exception):
                 await conversation_reply(
                     session_id=session_id,
                     body=mock_body,
@@ -509,8 +509,6 @@ class TestRateLimitCounterExpiry:
                     api_key=None,
                     db=db,
                 )
-            except Exception:
-                pass
 
             # Verify expire was called with 60s TTL
             expire_calls = pipe.expire.call_args_list

@@ -1,14 +1,15 @@
 from fastapi import APIRouter
 
 from app.api.v1.admin import router as admin_router
-from app.api.v1.audit import router as audit_router
 from app.api.v1.agent_info import router as agent_info_router
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.api_keys import router as api_keys_router
+from app.api.v1.audit import router as audit_router
 from app.api.v1.batch import router as batch_router
 from app.api.v1.billing import router as billing_router
+from app.api.v1.connections import router as connections_router
+from app.api.v1.connectors import router as connectors_router
 from app.api.v1.export import router as export_router
-from app.api.v1.cloud_connections import router as cloud_connections_router
 from app.api.v1.files import router as files_router
 from app.api.v1.health import router as health_router
 from app.api.v1.jobs import router as jobs_router
@@ -28,7 +29,8 @@ v1_router.include_router(files_router, tags=["files"])
 v1_router.include_router(webhooks_router, tags=["webhooks"])
 v1_router.include_router(billing_router, tags=["billing"])
 v1_router.include_router(export_router, tags=["export"])
-v1_router.include_router(cloud_connections_router, tags=["cloud-connections"])
+v1_router.include_router(connectors_router, tags=["connectors"])
+v1_router.include_router(connections_router, tags=["connections"])
 
 # ── Application plugin routers ─────────────────────────────
 # Plugins register their routers via the plugin framework.

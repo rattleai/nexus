@@ -10,7 +10,6 @@ Flow: DataSource.PENDING → DocumentProcessor.process() → ContentIndexer.inde
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
 
 import structlog
 from sqlalchemy import create_engine, select, update
@@ -22,7 +21,11 @@ from app.workers.celery_app import celery
 logger = structlog.stdlib.get_logger()
 
 _sync_engine = create_engine(
-    settings.sync_database_url, pool_size=3, max_overflow=5, pool_pre_ping=True, pool_recycle=300,
+    settings.sync_database_url,
+    pool_size=3,
+    max_overflow=5,
+    pool_pre_ping=True,
+    pool_recycle=300,
 )
 _SyncSession = sessionmaker(_sync_engine)
 
@@ -61,11 +64,7 @@ def extract_datasource(self, datasource_id: str) -> dict:
             return {"status": "skipped", "detail": f"DataSource is {ds.status}"}
 
         # Mark as PROCESSING
-        db.execute(
-            update(DataSource)
-            .where(DataSource.id == ds_id)
-            .values(status=DataSourceStatus.PROCESSING)
-        )
+        db.execute(update(DataSource).where(DataSource.id == ds_id).values(status=DataSourceStatus.PROCESSING))
         db.commit()
 
     try:
@@ -86,7 +85,7 @@ def extract_datasource(self, datasource_id: str) -> dict:
             db.commit()
 
         if self.request.retries < self.max_retries:
-            raise self.retry(exc=exc, countdown=2 ** self.request.retries * 10) from exc
+            raise self.retry(exc=exc, countdown=2**self.request.retries * 10) from exc
 
         return {"status": "error", "detail": str(exc)[:200]}
 
@@ -108,9 +107,12 @@ async def _extract_async(datasource_id: uuid.UUID) -> dict:
         if not ds:
             return {"status": "error", "detail": "DataSource not found"}
 
-        # Step 1: Extract content from the source
+        # Step 1: Extract content from the source. process_data_source
+        # dispatches on ds.source_type (UPLOAD / URL / CLOUD_DRIVE / PASTE)
+        # and, for cloud drives, enriches ds.filename/mime_type/file_size
+        # from the actual downloaded file.
         processor = DocumentProcessor()
-        extraction = await processor.process(ds, db=db)
+        extraction = await processor.process_data_source(ds, db=db)
 
         # Store extraction metadata
         ds.extraction_result = extraction.to_dict()

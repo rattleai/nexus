@@ -50,6 +50,7 @@ def setup_telemetry(service_name: str | None = None) -> None:
     metric_readers = [metric_reader]
     try:
         from opentelemetry.exporter.prometheus import PrometheusMetricReader
+
         prometheus_reader = PrometheusMetricReader()
         metric_readers.append(prometheus_reader)
     except ImportError:

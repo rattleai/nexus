@@ -171,17 +171,19 @@ async def ai_list_models(*, tenant: Any, db: Any) -> list[dict]:
 
         available, _source = await check_key_availability(tenant.id, info.provider, db)
 
-        models.append({
-            "model_id": model_id,
-            "provider": info.provider.value,
-            "display_name": info.display_name,
-            "max_input_tokens": info.max_input_tokens,
-            "max_output_tokens": info.max_output_tokens,
-            "supports_streaming": info.supports_streaming,
-            "supports_function_calling": info.supports_function_calling,
-            "supports_vision": info.supports_vision,
-            "available": available,
-        })
+        models.append(
+            {
+                "model_id": model_id,
+                "provider": info.provider.value,
+                "display_name": info.display_name,
+                "max_input_tokens": info.max_input_tokens,
+                "max_output_tokens": info.max_output_tokens,
+                "supports_streaming": info.supports_streaming,
+                "supports_function_calling": info.supports_function_calling,
+                "supports_vision": info.supports_vision,
+                "available": available,
+            }
+        )
 
     return models
 

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.agents.runtime import AgentRuntime, RunResult, StepResult
+from app.agents.runtime import AgentRuntime
 
 
 @pytest.fixture
@@ -53,9 +53,11 @@ async def test_run_stream_yields_events(runtime):
     mock_completion.content = "Hello, I'm the agent!"
     mock_completion.tool_calls = None
 
-    with patch("app.ai.gateway.ai_gateway") as mock_gw, \
-         patch("app.agents.governance.GovernanceEngine") as mock_gov, \
-         patch("app.agents.validation.validate_agent_output", return_value=(True, [], "Hello, I'm the agent!")):
+    with (
+        patch("app.ai.gateway.ai_gateway") as mock_gw,
+        patch("app.agents.governance.GovernanceEngine"),
+        patch("app.agents.validation.validate_agent_output", return_value=(True, [], "Hello, I'm the agent!")),
+    ):
         mock_gw.completion = AsyncMock(return_value=mock_completion)
 
         events = []

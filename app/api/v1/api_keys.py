@@ -63,7 +63,11 @@ async def create_api_key(
     await db.commit()
 
     logger.info(
-        "audit.api_key_created", tenant_id=str(tenant.id), key_id=str(api_key.id), name=body.name, scopes=scopes,
+        "audit.api_key_created",
+        tenant_id=str(tenant.id),
+        key_id=str(api_key.id),
+        name=body.name,
+        scopes=scopes,
     )
     return ApiKeyCreatedResponse(
         id=api_key.id,

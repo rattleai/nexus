@@ -12,8 +12,7 @@ from __future__ import annotations
 HINT_REGISTRY: dict[tuple[int, str], str] = {
     # Authentication
     (401, "HTTP_401"): (
-        "Check that the X-API-Key header contains a valid, non-revoked API key. "
-        "Create one via POST /api/v1/api-keys."
+        "Check that the X-API-Key header contains a valid, non-revoked API key. Create one via POST /api/v1/api-keys."
     ),
     # Authorization
     (403, "HTTP_403"): (
@@ -21,13 +20,9 @@ HINT_REGISTRY: dict[tuple[int, str], str] = {
         "Check the key's scopes via GET /api/v1/api-keys and ensure it has the necessary permissions."
     ),
     # Insufficient balance
-    (402, "HTTP_402"): (
-        "Insufficient wallet balance. Top up via POST /api/v1/ai/wallet/topup before retrying."
-    ),
+    (402, "HTTP_402"): ("Insufficient wallet balance. Top up via POST /api/v1/ai/wallet/topup before retrying."),
     # Not found
-    (404, "HTTP_404"): (
-        "The requested resource was not found. Verify the ID or path is correct."
-    ),
+    (404, "HTTP_404"): ("The requested resource was not found. Verify the ID or path is correct."),
     # Validation error
     (422, "VALIDATION_ERROR"): (
         "Request validation failed. Check the 'errors' array for field-specific details. "
@@ -40,18 +35,14 @@ HINT_REGISTRY: dict[tuple[int, str], str] = {
     ),
     # Conflict
     (409, "HTTP_409"): (
-        "A resource with the same identifier already exists. "
-        "Use a unique name or check existing resources first."
+        "A resource with the same identifier already exists. Use a unique name or check existing resources first."
     ),
     # Provider error
     (502, "HTTP_502"): (
-        "The upstream AI provider is temporarily unavailable. "
-        "Retry after a brief delay or try a different model."
+        "The upstream AI provider is temporarily unavailable. Retry after a brief delay or try a different model."
     ),
     # Internal error
-    (500, "INTERNAL_ERROR"): (
-        "An unexpected error occurred. Include the request_id when reporting this issue."
-    ),
+    (500, "INTERNAL_ERROR"): ("An unexpected error occurred. Include the request_id when reporting this issue."),
 }
 
 

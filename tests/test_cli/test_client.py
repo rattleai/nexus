@@ -1,8 +1,6 @@
 """Tests for the CLI HTTP client."""
 
-
-
-from app.cli.client import NexusClient, CLIError
+from app.cli.client import CLIError, NexusClient
 
 
 def test_cli_error_properties():

@@ -38,7 +38,7 @@ class WebParser:
 
         try:
             import httpx
-        except ImportError as exc:
+        except ImportError:
             logger.error("httpx_not_installed")
             result.metadata["error"] = "httpx is not installed"
             result.extraction_duration_ms = int((time.monotonic() - start) * 1000)
@@ -46,7 +46,7 @@ class WebParser:
 
         try:
             from bs4 import BeautifulSoup
-        except ImportError as exc:
+        except ImportError:
             logger.error("beautifulsoup4_not_installed")
             result.metadata["error"] = "beautifulsoup4 is not installed. Install with: pip install beautifulsoup4"
             result.extraction_duration_ms = int((time.monotonic() - start) * 1000)
@@ -116,7 +116,9 @@ class WebParser:
                         current_section.content = "\n".join(content_lines).strip()
                         if current_section.content:
                             result.sections.append(current_section)
-                            text_parts.append(f"{'#' * current_section.level} {current_section.title}\n{current_section.content}")
+                            text_parts.append(
+                                f"{'#' * current_section.level} {current_section.title}\n{current_section.content}"
+                            )
                         content_lines = []
 
                     level = int(element.name[1])
@@ -148,9 +150,13 @@ class WebParser:
                 current_section.content = "\n".join(content_lines).strip()
                 if current_section.content:
                     result.sections.append(current_section)
-                    text_parts.append(f"{'#' * current_section.level} {current_section.title}\n{current_section.content}")
+                    text_parts.append(
+                        f"{'#' * current_section.level} {current_section.title}\n{current_section.content}"
+                    )
 
-            result.raw_text = "\n\n".join(text_parts) if text_parts else main.get_text(separator="\n", strip=True)[:50000]
+            result.raw_text = (
+                "\n\n".join(text_parts) if text_parts else main.get_text(separator="\n", strip=True)[:50000]
+            )
 
         except Exception as exc:
             logger.error("web_extraction_failed", error=str(exc), url=url)

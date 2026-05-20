@@ -26,9 +26,7 @@ def _is_app_frame(filename: str) -> bool:
     return filename.startswith(_APP_PATH_PREFIX)
 
 
-def compact_traceback(
-    logger: Any, method: str, event_dict: dict[str, Any]
-) -> dict[str, Any]:
+def compact_traceback(logger: Any, method: str, event_dict: dict[str, Any]) -> dict[str, Any]:
     """Replace verbose tracebacks with compact, app-only versions.
 
     Framework frames (uvicorn, starlette, fastapi, asyncio, sqlalchemy, …) are
@@ -88,9 +86,7 @@ def compact_traceback(
     return event_dict
 
 
-def _add_otel_context(
-    logger: Any, method: str, event_dict: dict[str, Any]
-) -> dict[str, Any]:
+def _add_otel_context(logger: Any, method: str, event_dict: dict[str, Any]) -> dict[str, Any]:
     """Inject OpenTelemetry trace_id and span_id into log entries."""
     try:
         from opentelemetry import trace

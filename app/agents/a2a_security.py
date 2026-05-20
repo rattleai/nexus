@@ -259,15 +259,19 @@ class A2ASecurityLayer:
 
     def _compute_signature(self, msg: SecureMessage, signing_key: bytes) -> str:
         """Compute HMAC-SHA256 signature over message fields."""
-        payload = json.dumps({
-            "id": msg.id,
-            "from": msg.from_instance,
-            "to": msg.to_instance,
-            "type": msg.message_type,
-            "hash": msg.message_hash,
-            "seq": msg.sequence_number,
-            "ts": msg.timestamp,
-        }, sort_keys=True, separators=(",", ":"))
+        payload = json.dumps(
+            {
+                "id": msg.id,
+                "from": msg.from_instance,
+                "to": msg.to_instance,
+                "type": msg.message_type,
+                "hash": msg.message_hash,
+                "seq": msg.sequence_number,
+                "ts": msg.timestamp,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         return hmac.new(signing_key, payload.encode(), hashlib.sha256).hexdigest()
 
     async def _next_sequence_number(self, from_id: str, to_id: str) -> int:
@@ -300,8 +304,12 @@ class A2ASecurityLayer:
         try:
             # Atomic Lua: check-and-set in a single Redis server-side operation
             # (not Python eval — this is redis_pool.eval which runs Lua on Redis)
-            result = await redis_pool.eval(  # noqa: S307
-                _REPLAY_CHECK_LUA, 1, seen_key, str(seq_num), "86400",
+            result = await redis_pool.eval(
+                _REPLAY_CHECK_LUA,
+                1,
+                seen_key,
+                str(seq_num),
+                "86400",
             )
             return int(result) == 1
         except Exception:
@@ -326,7 +334,9 @@ class A2ASecurityLayer:
             "ciphertext": base64.b64encode(ciphertext).decode(),
         }
 
-    def _decrypt_content(self, encrypted_data: dict[str, Any], key: bytes, *, msg_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _decrypt_content(
+        self, encrypted_data: dict[str, Any], key: bytes, *, msg_metadata: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Decrypt AES-256-GCM encrypted content with AAD verification.
 
         Falls back to AAD=None for backward compatibility with legacy messages.
@@ -345,9 +355,7 @@ class A2ASecurityLayer:
                 return json.loads(plaintext.decode())
             except Exception:
                 if not settings.AGENT_A2A_LEGACY_DECRYPT:
-                    raise A2ASecurityError(
-                        "AAD verification failed and legacy fallback is disabled"
-                    )
+                    raise A2ASecurityError("AAD verification failed and legacy fallback is disabled")
                 # Fall back to no-AAD for legacy messages — log for migration tracking
                 logger.warning(
                     "a2a_decrypt_aad_fallback_used",
@@ -363,7 +371,7 @@ class A2ASecurityLayer:
 
         firewall = PromptFirewall(tenant_id=self.tenant_id)
         # Scan all string values in the content dict
-        for key, value in content.items():
+        for _key, value in content.items():
             if not isinstance(value, str):
                 continue
             result = firewall.scan_output(value, target_agent=True)
@@ -389,9 +397,13 @@ class A2ASecurityLayer:
         except Exception:
             logger.error("a2a_security_event_failed", exc_info=True)
             from app.agents.security_dlq import enqueue_dead_letter
-            await enqueue_dead_letter("a2a_security", {
-                "tenant_id": self.tenant_id,
-                "from_instance": msg.from_instance,
-                "to_instance": msg.to_instance,
-                "issue": issue,
-            })
+
+            await enqueue_dead_letter(
+                "a2a_security",
+                {
+                    "tenant_id": self.tenant_id,
+                    "from_instance": msg.from_instance,
+                    "to_instance": msg.to_instance,
+                    "issue": issue,
+                },
+            )

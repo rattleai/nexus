@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from app.docprocessor.base import ExtractionResult, ExtractedSection, ExtractedTable
+from app.docprocessor.base import ExtractedSection, ExtractedTable, ExtractionResult
 from app.docprocessor.indexer import ContentIndexer
 from app.docprocessor.processor import DocumentProcessor
 
 __all__ = [
-    "DocumentProcessor",
     "ContentIndexer",
-    "ExtractionResult",
+    "DocumentProcessor",
     "ExtractedSection",
     "ExtractedTable",
+    "ExtractionResult",
 ]

@@ -17,12 +17,14 @@ import structlog
 logger = structlog.stdlib.get_logger()
 
 # Well-known cloud metadata endpoints (IP and hostname)
-_BLOCKED_HOSTS = frozenset({
-    "metadata.google.internal",
-    "metadata.goog",
-    "169.254.169.254",
-    "fd00:ec2::254",          # AWS IMDSv2 IPv6 endpoint
-})
+_BLOCKED_HOSTS = frozenset(
+    {
+        "metadata.google.internal",
+        "metadata.goog",
+        "169.254.169.254",
+        "fd00:ec2::254",  # AWS IMDSv2 IPv6 endpoint
+    }
+)
 
 
 def _is_private_ip(ip_str: str) -> bool:

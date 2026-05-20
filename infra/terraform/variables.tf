@@ -10,6 +10,27 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
+variable "dr_region" {
+  description = <<-EOT
+    Secondary AWS region for disaster-recovery cross-region replication
+    (RDS automated backups, S3 replica buckets). Leave empty ("") to
+    disable all DR resources — they are gated on `var.dr_region != ""`.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "dr_s3_bucket_arn" {
+  description = <<-EOT
+    Pre-existing S3 bucket ARN in the DR region used as the replication
+    target for the primary uploads bucket. Required when var.dr_region
+    is set; otherwise unused (the replication resources have count=0).
+    Provision the bucket in the DR account/region out of band.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "environment" {
   description = "Deployment environment (prod, staging)"
   type        = string

@@ -92,15 +92,11 @@ async def registration_begin(
     """
     from app.db.models.mobile import WebAuthnCredential
 
-    result = await db.execute(
-        select(WebAuthnCredential).where(WebAuthnCredential.user_id == user.id)
-    )
+    result = await db.execute(select(WebAuthnCredential).where(WebAuthnCredential.user_id == user.id))
     existing = result.scalars().all()
 
     exclude_credentials = [
-        PublicKeyCredentialDescriptor(id=base64url_to_bytes(c.credential_id))
-        for c in existing
-        if c.credential_id
+        PublicKeyCredentialDescriptor(id=base64url_to_bytes(c.credential_id)) for c in existing if c.credential_id
     ]
 
     options = generate_registration_options(
@@ -135,9 +131,7 @@ async def registration_begin(
             "name": options.user.name,
             "displayName": options.user.display_name,
         },
-        "pubKeyCredParams": [
-            {"type": "public-key", "alg": p.alg} for p in options.pub_key_cred_params
-        ],
+        "pubKeyCredParams": [{"type": "public-key", "alg": p.alg} for p in options.pub_key_cred_params],
         "authenticatorSelection": {
             "authenticatorAttachment": "platform",
             "userVerification": "preferred",
@@ -146,8 +140,7 @@ async def registration_begin(
         },
         "timeout": options.timeout,
         "excludeCredentials": [
-            {"type": "public-key", "id": bytes_to_base64url(c.id)}
-            for c in (options.exclude_credentials or [])
+            {"type": "public-key", "id": bytes_to_base64url(c.id)} for c in (options.exclude_credentials or [])
         ],
         "attestation": "none",
     }
@@ -212,7 +205,9 @@ async def registration_complete(
     return {"credential_id": str(credential.id)}
 
 
-@router.post("/authenticate/begin", response_model=AuthenticationBeginResponse, dependencies=[Depends(_auth_begin_rate_limit)])
+@router.post(
+    "/authenticate/begin", response_model=AuthenticationBeginResponse, dependencies=[Depends(_auth_begin_rate_limit)]
+)
 async def authentication_begin() -> AuthenticationBeginResponse:
     """Begin WebAuthn authentication.
 
@@ -263,9 +258,7 @@ async def authentication_complete(
     if not stored_challenge:
         raise HTTPException(status_code=400, detail="Authentication challenge expired or not found")
 
-    result = await db.execute(
-        select(WebAuthnCredential).where(WebAuthnCredential.credential_id == body.id)
-    )
+    result = await db.execute(select(WebAuthnCredential).where(WebAuthnCredential.credential_id == body.id))
     credential = result.scalar_one_or_none()
     if not credential:
         raise HTTPException(status_code=401, detail="Unknown credential")
@@ -295,9 +288,7 @@ async def authentication_complete(
 
     from app.db.models import User as UserModel
 
-    user_result = await db.execute(
-        select(UserModel).where(UserModel.id == credential.user_id)
-    )
+    user_result = await db.execute(select(UserModel).where(UserModel.id == credential.user_id))
     user = user_result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
@@ -306,11 +297,13 @@ async def authentication_complete(
 
     from app.core.security import create_access_token
 
-    access_token = create_access_token({
-        "sub": str(user.id),
-        "tenant_id": str(user.tenant_id),
-        "amr": ["hwk", "mfa"],
-    })
+    access_token = create_access_token(
+        {
+            "sub": str(user.id),
+            "tenant_id": str(user.tenant_id),
+            "amr": ["hwk", "mfa"],
+        }
+    )
 
     logger.info("webauthn_authenticated", user_id=str(user.id))
     return {"access_token": access_token}
@@ -321,6 +314,7 @@ async def authentication_complete(
 
 class MFAVerifyRequest(BaseModel):
     """Request body for MFA verification after password login."""
+
     mfa_token: str = Field(..., description="The MFA-pending token from password login")
     id: str
     rawId: str
@@ -341,11 +335,11 @@ async def verify_mfa(
     Accepts an MFA-pending token + WebAuthn assertion, and issues a full
     access token with amr=["pwd", "mfa"].
     """
-    from app.db.models.mobile import WebAuthnCredential
-
     # Validate the MFA-pending token
     import jwt as pyjwt
+
     from app.core.security import _get_effective_algorithm, _get_jwt_verification_key
+    from app.db.models.mobile import WebAuthnCredential
 
     try:
         algorithm = _get_effective_algorithm()
@@ -374,9 +368,7 @@ async def verify_mfa(
         raise HTTPException(status_code=400, detail="Authentication challenge expired or not found")
 
     # Find the credential
-    result = await db.execute(
-        select(WebAuthnCredential).where(WebAuthnCredential.credential_id == body.id)
-    )
+    result = await db.execute(select(WebAuthnCredential).where(WebAuthnCredential.credential_id == body.id))
     credential = result.scalar_one_or_none()
     if not credential:
         raise HTTPException(status_code=401, detail="Unknown credential")
@@ -414,13 +406,15 @@ async def verify_mfa(
 
     # Combine AMR from MFA-pending token with "mfa"
     original_amr = payload.get("amr", ["pwd"])
-    full_amr = list(set(original_amr + ["mfa"]))
+    full_amr = list({*original_amr, "mfa"})
 
-    access_token = create_access_token({
-        "sub": user_id,
-        "tenant_id": tenant_id,
-        "amr": full_amr,
-    })
+    access_token = create_access_token(
+        {
+            "sub": user_id,
+            "tenant_id": tenant_id,
+            "amr": full_amr,
+        }
+    )
 
     logger.info("mfa_verified", user_id=user_id)
     return {"access_token": access_token, "amr": full_amr}

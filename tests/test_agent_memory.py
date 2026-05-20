@@ -26,7 +26,10 @@ class TestShortTermMemory:
             mock_redis.hget = AsyncMock(return_value=json.dumps({"key": "value"}))
 
             await manager.set_short_term(
-                instance_id, session_id, "test_key", {"key": "value"},
+                instance_id,
+                session_id,
+                "test_key",
+                {"key": "value"},
             )
             mock_redis.eval.assert_called_once()
 
@@ -45,7 +48,11 @@ class TestShortTermMemory:
 
             # Should not raise, just silently skip
             await manager.set_short_term(
-                uuid.uuid4(), uuid.uuid4(), "new_key", "value", max_entries=5,
+                uuid.uuid4(),
+                uuid.uuid4(),
+                "new_key",
+                "value",
+                max_entries=5,
             )
 
     @pytest.mark.asyncio
@@ -57,7 +64,9 @@ class TestShortTermMemory:
             mock_redis.hget = AsyncMock(return_value=None)
 
             result = await manager.get_short_term(
-                uuid.uuid4(), uuid.uuid4(), "missing",
+                uuid.uuid4(),
+                uuid.uuid4(),
+                "missing",
             )
             assert result is None
 
@@ -67,10 +76,12 @@ class TestShortTermMemory:
         manager = AgentMemoryManager(mock_db)
 
         with patch("app.agents.memory.redis_pool") as mock_redis:
-            mock_redis.hgetall = AsyncMock(return_value={
-                "k1": json.dumps("v1"),
-                "k2": json.dumps(42),
-            })
+            mock_redis.hgetall = AsyncMock(
+                return_value={
+                    "k1": json.dumps("v1"),
+                    "k2": json.dumps(42),
+                }
+            )
 
             result = await manager.get_all_short_term(uuid.uuid4(), uuid.uuid4())
             assert result == {"k1": "v1", "k2": 42}

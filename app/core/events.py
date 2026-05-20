@@ -255,8 +255,9 @@ async def emit(event: DomainEvent, *, durable: bool = False) -> None:
 async def _publish_durable(event: DomainEvent) -> None:
     """Publish event to the Redis Streams event bus."""
     try:
-        from app.core.event_bus import event_bus
         from dataclasses import asdict
+
+        from app.core.event_bus import event_bus
 
         data = asdict(event)
         # Convert datetime to ISO string for JSON serialization

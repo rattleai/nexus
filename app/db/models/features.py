@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,7 +20,7 @@ class FeatureFlag(TimestampMixin, Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     rollout_percentage: Mapped[int] = mapped_column(Integer, default=0)
 
-    overrides: Mapped[list["TenantFeatureOverride"]] = relationship(back_populates="flag", cascade="all, delete-orphan")
+    overrides: Mapped[list[TenantFeatureOverride]] = relationship(back_populates="flag", cascade="all, delete-orphan")
 
 
 class TenantFeatureOverride(TimestampMixin, Base):
@@ -31,6 +31,6 @@ class TenantFeatureOverride(TimestampMixin, Base):
     flag_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("feature_flags.id"), nullable=False, index=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
-    flag: Mapped["FeatureFlag"] = relationship(back_populates="overrides")
+    flag: Mapped[FeatureFlag] = relationship(back_populates="overrides")
 
     __table_args__ = (UniqueConstraint("tenant_id", "flag_id", name="uq_tenant_flag"),)

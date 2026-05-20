@@ -11,7 +11,7 @@ from sqlalchemy import delete, func, select, text, update
 
 from app.config import settings
 from app.workers.celery_app import celery
-from app.workers.tasks import _SyncSession
+from app.workers.tasks import _AdminSyncSession
 
 logger = structlog.stdlib.get_logger()
 
@@ -22,10 +22,8 @@ def cleanup_expired_jobs() -> dict:
     from app.db.models import Job
 
     cutoff = datetime.now(UTC) - timedelta(days=30)
-    with _SyncSession() as db:
-        result = db.execute(
-            delete(Job).where(Job.deleted_at.isnot(None), Job.deleted_at < cutoff)
-        )
+    with _AdminSyncSession() as db:
+        result = db.execute(delete(Job).where(Job.deleted_at.isnot(None), Job.deleted_at < cutoff))
         count = result.rowcount
         db.commit()
 
@@ -39,7 +37,7 @@ def cleanup_stale_processing() -> dict:
     from app.db.models import Job, JobStatus
 
     cutoff = datetime.now(UTC) - timedelta(hours=1)
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         result = db.execute(
             update(Job)
             .where(
@@ -71,11 +69,9 @@ def cache_warmup() -> dict:
 
     from app.db.models import Tenant
 
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         tenants = (
-            db.execute(select(Tenant).where(Tenant.is_active.is_(True), Tenant.deleted_at.is_(None)))
-            .scalars()
-            .all()
+            db.execute(select(Tenant).where(Tenant.is_active.is_(True), Tenant.deleted_at.is_(None))).scalars().all()
         )
 
     r = sync_redis.from_url(settings.REDIS_URL)
@@ -107,7 +103,7 @@ def storage_usage_report() -> dict:
     """Log storage usage per tenant (daily)."""
     from app.db.models import Job, Tenant
 
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         results = db.execute(
             select(
                 Tenant.id,
@@ -144,7 +140,7 @@ def cleanup_expired_tokens() -> dict:
     from app.db.models import EmailVerificationToken, RefreshToken
 
     now = datetime.now(UTC)
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         # Remove expired refresh tokens (expired or revoked older than 7 days)
         revoked_cutoff = now - timedelta(days=7)
         refresh_result = db.execute(
@@ -178,7 +174,7 @@ def cleanup_expired_tokens() -> dict:
 def _get_retention_model_map() -> dict:
     """Map resource_type → (Model, date_column) for ORM-based retention."""
     from app.agents.models import AgentInstance
-    from app.db.models import AuditLog, Job
+    from app.db.models import Job
     from app.db.models.ai import WalletTransaction
 
     return {
@@ -205,12 +201,16 @@ def enforce_data_retention() -> dict:
     total_archived = 0
     model_map = _get_retention_model_map()
 
-    with _SyncSession() as db:
-        policies = db.execute(
-            select(DataRetentionPolicy).where(
-                DataRetentionPolicy.is_active.is_(True),
+    with _AdminSyncSession() as db:
+        policies = (
+            db.execute(
+                select(DataRetentionPolicy).where(
+                    DataRetentionPolicy.is_active.is_(True),
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         for policy in policies:
             resource = policy.resource_type
@@ -228,7 +228,9 @@ def enforce_data_retention() -> dict:
 
                 # Count via ORM
                 count_result = db.execute(
-                    select(func.count()).select_from(model_cls).where(
+                    select(func.count())
+                    .select_from(model_cls)
+                    .where(
                         model_cls.tenant_id == policy.tenant_id,
                         date_col < cutoff,
                     )
@@ -290,14 +292,18 @@ def hard_purge_deleted_accounts() -> dict:
     from app.db.models.core import Tenant
 
     cutoff = datetime.now(UTC) - timedelta(days=30)
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         # Find tenants soft-deleted > 30 days ago
-        tenants = db.execute(
-            select(Tenant).where(
-                Tenant.deleted_at.isnot(None),
-                Tenant.deleted_at < cutoff,
+        tenants = (
+            db.execute(
+                select(Tenant).where(
+                    Tenant.deleted_at.isnot(None),
+                    Tenant.deleted_at < cutoff,
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         purged = 0
         for tenant in tenants:
@@ -316,11 +322,21 @@ def hard_purge_deleted_accounts() -> dict:
                 # Table names are hardcoded (not user-supplied) — quote them
                 # for safety against identifier collisions.
                 for table in [
-                    "agent_memory_entries", "agent_sessions", "agent_instances",
-                    "agent_definitions", "workflow_runs", "workflow_definitions",
-                    "consents", "data_subject_requests", "data_retention_policies",
-                    "jobs", "webhook_deliveries", "webhook_endpoints",
-                    "notifications", "invitations", "api_keys",
+                    "agent_memory_entries",
+                    "agent_sessions",
+                    "agent_instances",
+                    "agent_definitions",
+                    "workflow_runs",
+                    "workflow_definitions",
+                    "consents",
+                    "data_subject_requests",
+                    "data_retention_policies",
+                    "jobs",
+                    "webhook_deliveries",
+                    "webhook_endpoints",
+                    "notifications",
+                    "invitations",
+                    "api_keys",
                     "audit_logs",  # Must be last — audit_log_immutability trigger is bypassed by SET LOCAL above
                 ]:
                     db.execute(
@@ -364,14 +380,18 @@ def hard_purge_deleted_users() -> dict:
     cutoff = datetime.now(UTC) - timedelta(days=30)
     purged = 0
 
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         # Find users soft-deleted > 30 days ago
-        users = db.execute(
-            select(User).where(
-                User.deleted_at.isnot(None),
-                User.deleted_at < cutoff,
+        users = (
+            db.execute(
+                select(User).where(
+                    User.deleted_at.isnot(None),
+                    User.deleted_at < cutoff,
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         for user in users:
             try:
@@ -379,15 +399,18 @@ def hard_purge_deleted_users() -> dict:
 
                 # Skip if user is sole member of an active tenant
                 if user.tenant_id:
-                    tenant = db.execute(
-                        select(Tenant).where(Tenant.id == user.tenant_id)
-                    ).scalar_one_or_none()
+                    tenant = db.execute(select(Tenant).where(Tenant.id == user.tenant_id)).scalar_one_or_none()
                     if tenant and tenant.is_active and tenant.deleted_at is None:
-                        member_count = db.execute(
-                            select(func.count()).select_from(TenantMembership).where(
-                                TenantMembership.tenant_id == user.tenant_id,
-                            )
-                        ).scalar() or 0
+                        member_count = (
+                            db.execute(
+                                select(func.count())
+                                .select_from(TenantMembership)
+                                .where(
+                                    TenantMembership.tenant_id == user.tenant_id,
+                                )
+                            ).scalar()
+                            or 0
+                        )
                         if member_count <= 1:
                             logger.info(
                                 "hard_purge_skipped_sole_member",
@@ -399,13 +422,14 @@ def hard_purge_deleted_users() -> dict:
 
                 # Emit audit event BEFORE deletion (compliance trail)
                 from app.db.models.operations import AuditLog
+
                 audit = AuditLog(
                     tenant_id=user.tenant_id,
                     actor_type="system",
                     action="gdpr_user_purge",
                     resource_type="user",
                     resource_id=str(user.id),
-                    changes={"email_hash": __import__('hashlib').sha256(user.email.encode()).hexdigest()[:16]},
+                    changes={"email_hash": __import__("hashlib").sha256(user.email.encode()).hexdigest()[:16]},
                 )
                 db.add(audit)
 
@@ -447,7 +471,7 @@ def cleanup_expired_invitations() -> dict:
     from app.db.models import Invitation, InvitationStatus
 
     now = datetime.now(UTC)
-    with _SyncSession() as db:
+    with _AdminSyncSession() as db:
         result = db.execute(
             update(Invitation)
             .where(

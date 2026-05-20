@@ -63,10 +63,14 @@ resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
   bucket = aws_s3_bucket.uploads.id
 
   # Move old versions to cheaper storage after 30 days,
-  # delete after 90 days.
+  # delete after 90 days. Each rule needs an explicit filter (or prefix)
+  # block under the AWS provider v5 schema; an empty filter applies the
+  # rule to every object in the bucket.
   rule {
     id     = "expire-old-versions"
     status = "Enabled"
+
+    filter {}
 
     noncurrent_version_transition {
       noncurrent_days = 30
@@ -83,6 +87,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
     id     = "abort-incomplete-uploads"
     status = "Enabled"
 
+    filter {}
+
     abort_incomplete_multipart_upload {
       days_after_initiation = 7
     }
@@ -92,6 +98,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
   rule {
     id     = "transition-infrequent"
     status = "Enabled"
+
+    filter {}
 
     transition {
       days          = 90
@@ -128,8 +136,8 @@ resource "aws_iam_role" "s3_replication" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
       Principal = { Service = "s3.amazonaws.com" }
     }]
   })

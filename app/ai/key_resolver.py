@@ -10,7 +10,7 @@ import uuid
 from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.providers import get_platform_api_key
@@ -69,11 +69,14 @@ async def _get_tenant_byok_key(
     that does NOT commit the caller's session (avoids side effects).
     """
     result = await db.execute(
-        select(TenantAIProviderKey).where(
+        select(TenantAIProviderKey)
+        .where(
             TenantAIProviderKey.tenant_id == tenant_id,
             TenantAIProviderKey.provider == provider,
             TenantAIProviderKey.is_active.is_(True),
-        ).order_by(TenantAIProviderKey.created_at.desc()).limit(1)
+        )
+        .order_by(TenantAIProviderKey.created_at.desc())
+        .limit(1)
     )
     key_record = result.scalar_one_or_none()
     if not key_record:
@@ -107,11 +110,13 @@ async def check_key_availability(
     """
     # Check BYOK
     result = await db.execute(
-        select(TenantAIProviderKey.id).where(
+        select(TenantAIProviderKey.id)
+        .where(
             TenantAIProviderKey.tenant_id == tenant_id,
             TenantAIProviderKey.provider == provider,
             TenantAIProviderKey.is_active.is_(True),
-        ).limit(1)
+        )
+        .limit(1)
     )
     if result.scalar_one_or_none():
         return True, "byok"

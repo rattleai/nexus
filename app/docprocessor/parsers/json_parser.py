@@ -41,12 +41,9 @@ class JSONParser:
                 result.extraction_duration_ms = int((time.monotonic() - start) * 1000)
                 return result
 
-            is_jsonl = filename.endswith(".jsonl") or filename.endswith(".ndjson")
+            is_jsonl = filename.endswith((".jsonl", ".ndjson"))
 
-            if is_jsonl:
-                data = self._parse_jsonl(text_content)
-            else:
-                data = json.loads(text_content)
+            data = self._parse_jsonl(text_content) if is_jsonl else json.loads(text_content)
 
             if isinstance(data, list):
                 # Array of objects -> table
