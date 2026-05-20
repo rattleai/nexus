@@ -92,7 +92,7 @@ cli = [
     "rich>=13.0,<14",
 ]
 perf = [
-    "locust>=2.20,<3",
+    "locust>=2.44.0,<3",
 ]
 scaffold = [
     "copier>=9.0,<10",
