@@ -40,7 +40,7 @@ groups:
           description: "5xx error rate is {{ $value | humanizePercentage }} (warning at 0.05%, SLO: 0.1%)."
 
       - alert: HealthCheckFailing
-        expr: up{job="saas-platform"} == 0
+        expr: up{job="nexus"} == 0
         for: 1m
         labels:
           severity: critical
@@ -51,7 +51,7 @@ groups:
 
       - alert: ReadinessCheckDegraded
         expr: |
-          probe_success{job="saas-platform-readiness"} == 0
+          probe_success{job="nexus-readiness"} == 0
         for: 3m
         labels:
           severity: warning

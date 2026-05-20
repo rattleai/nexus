@@ -19,7 +19,7 @@ data "aws_prefix_list" "secretsmanager" {
 
 resource "aws_secretsmanager_secret" "app_config" {
   name                    = "${local.name_prefix}/app/config"
-  description             = "CAD Price application secrets (referenced by ECS tasks)"
+  description             = "NEXUS application secrets (referenced by ECS tasks)"
   recovery_window_in_days = 7
 
   tags = { Name = "${local.name_prefix}-app-config" }

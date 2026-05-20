@@ -12,12 +12,15 @@ Sections:
     4.  Auth / mobile / webhooks
     5.  GDPR tables
     6.  Agent runtime
-    7.  CPQ (product configurator)
-    8.  Datasource + RAG scaffolding
-    9.  data_source_chunks (partitioned) + per-partition vector indexes
-    10. RAG evaluation / A/B / graph / materialized view
-    11. Triggers and functions
-    12. RLS policies
+    7.  Datasource + RAG scaffolding
+    8.  data_source_chunks (partitioned) + per-partition vector indexes
+    9.  RAG evaluation / A/B / graph / materialized view
+    10. Triggers and functions
+    11. RLS policies
+
+Application plugins (under ``app/apps/<name>/``) own their own DDL.
+Each plugin ships migrations in ``app/apps/<name>/migrations/versions/``
+chained via ``down_revision`` — see docs/PLUGINS.md.
 
 Revision ID: 0001_basic_schema
 Revises: (root)
@@ -51,7 +54,8 @@ HNSW_EF_CONSTRUCTION = 128
 def _create_enum(name: str, values: list[str]) -> None:
     val_list = ", ".join(f"'{v}'" for v in values)
     op.execute(
-        f"DO $$ BEGIN CREATE TYPE {name} AS ENUM ({val_list}); EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
+        f"DO $$ BEGIN CREATE TYPE {name} AS ENUM ({val_list}); "
+        f"EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
     )
 
 
@@ -84,7 +88,6 @@ def upgrade() -> None:
     _create_auth_mobile_webhook_tables()
     _create_gdpr_tables()
     _create_agent_tables()
-    _create_cpq_tables()
     _create_datasource_scaffolding()
     _create_partitioned_chunks()
     _create_rag_infrastructure()
@@ -140,30 +143,6 @@ def _create_enums() -> None:
         ["pending", "running", "waiting_approval", "completed", "failed", "cancelled"],
     )
     _create_enum("tool_source", ["builtin", "tenant", "marketplace"])
-    # CPQ enums (sa.Enum creates these on first use in 0019; create upfront here)
-    _create_enum("productstatus", ["draft", "active", "deprecated", "archived"])
-    _create_enum("characteristictype", ["enum", "numeric", "boolean", "text"])
-    _create_enum(
-        "constrainttype",
-        ["requires", "excludes", "selection_condition", "default_value", "formula", "table"],
-    )
-    _create_enum("bomitemtype", ["component", "sub_assembly", "phantom", "reference"])
-    _create_enum(
-        "configurationstatus",
-        ["in_progress", "complete", "invalid", "locked"],
-    )
-    _create_enum(
-        "pricingruletype",
-        [
-            "base_price",
-            "option_surcharge",
-            "volume_discount",
-            "conditional",
-            "formula",
-            "tiered",
-            "margin",
-        ],
-    )
     # Datasource + GDPR enums (defined on ORM models, must match them exactly)
     _create_enum("cloudprovider", ["google_drive", "dropbox", "onedrive"])
     _create_enum("datasourcetype", ["upload", "cloud_drive", "url", "paste"])
@@ -325,13 +304,8 @@ def _create_core_tables() -> None:
         sa.Column(
             "status",
             PG_ENUM(
-                "pending",
-                "processing",
-                "completed",
-                "failed",
-                "cancelled",
-                name="jobstatus",
-                create_type=False,
+                "pending", "processing", "completed", "failed", "cancelled",
+                name="jobstatus", create_type=False,
             ),
             server_default=sa.text("'pending'"),
             nullable=False,
@@ -403,13 +377,8 @@ def _create_core_tables() -> None:
         sa.Column(
             "status",
             PG_ENUM(
-                "active",
-                "past_due",
-                "canceled",
-                "trialing",
-                "incomplete",
-                name="subscriptionstatus",
-                create_type=False,
+                "active", "past_due", "canceled", "trialing", "incomplete",
+                name="subscriptionstatus", create_type=False,
             ),
             server_default=sa.text("'active'"),
             nullable=False,
@@ -430,16 +399,8 @@ def _create_core_tables() -> None:
         sa.Column(
             "provider",
             PG_ENUM(
-                "openai",
-                "anthropic",
-                "google",
-                "mistral",
-                "deepseek",
-                "qwen",
-                "aleph_alpha",
-                "xai",
-                name="aiprovider",
-                create_type=False,
+                "openai", "anthropic", "google", "mistral", "deepseek", "qwen", "aleph_alpha", "xai",
+                name="aiprovider", create_type=False,
             ),
             nullable=False,
         ),
@@ -518,13 +479,8 @@ def _create_core_tables() -> None:
         sa.Column(
             "type",
             PG_ENUM(
-                "topup",
-                "consumption",
-                "refund",
-                "adjustment",
-                "bonus",
-                name="wallettransactiontype",
-                create_type=False,
+                "topup", "consumption", "refund", "adjustment", "bonus",
+                name="wallettransactiontype", create_type=False,
             ),
             nullable=False,
         ),
@@ -708,12 +664,8 @@ def _create_auth_mobile_webhook_tables() -> None:
         sa.Column(
             "status",
             PG_ENUM(
-                "pending",
-                "accepted",
-                "expired",
-                "revoked",
-                name="invitationstatus",
-                create_type=False,
+                "pending", "accepted", "expired", "revoked",
+                name="invitationstatus", create_type=False,
             ),
             server_default=sa.text("'pending'"),
             nullable=False,
@@ -810,14 +762,9 @@ def _create_gdpr_tables() -> None:
         sa.Column(
             "consent_type",
             PG_ENUM(
-                "terms_of_service",
-                "privacy_policy",
-                "marketing",
-                "data_processing",
-                "cookies",
-                "third_party_sharing",
-                name="consent_type",
-                create_type=False,
+                "terms_of_service", "privacy_policy", "marketing", "data_processing",
+                "cookies", "third_party_sharing",
+                name="consent_type", create_type=False,
             ),
             nullable=False,
         ),
@@ -841,26 +788,16 @@ def _create_gdpr_tables() -> None:
         sa.Column(
             "request_type",
             PG_ENUM(
-                "access",
-                "rectification",
-                "erasure",
-                "portability",
-                "restriction",
-                "objection",
-                name="dsar_type",
-                create_type=False,
+                "access", "rectification", "erasure", "portability", "restriction", "objection",
+                name="dsar_type", create_type=False,
             ),
             nullable=False,
         ),
         sa.Column(
             "status",
             PG_ENUM(
-                "received",
-                "in_progress",
-                "completed",
-                "rejected",
-                name="dsar_status",
-                create_type=False,
+                "received", "in_progress", "completed", "rejected",
+                name="dsar_status", create_type=False,
             ),
             nullable=False,
             server_default="received",
@@ -966,14 +903,8 @@ def _create_agent_tables() -> None:
         sa.Column(
             "status",
             PG_ENUM(
-                "pending",
-                "running",
-                "waiting_approval",
-                "completed",
-                "failed",
-                "cancelled",
-                name="workflow_run_status",
-                create_type=False,
+                "pending", "running", "waiting_approval", "completed", "failed", "cancelled",
+                name="workflow_run_status", create_type=False,
             ),
             server_default="pending",
         ),
@@ -1054,14 +985,8 @@ def _create_agent_tables() -> None:
         sa.Column(
             "status",
             PG_ENUM(
-                "pending",
-                "running",
-                "paused",
-                "completed",
-                "failed",
-                "cancelled",
-                name="instance_status",
-                create_type=False,
+                "pending", "running", "paused", "completed", "failed", "cancelled",
+                name="instance_status", create_type=False,
             ),
             server_default="pending",
         ),
@@ -1089,9 +1014,7 @@ def _create_agent_tables() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.UniqueConstraint(
-            "tenant_id",
-            "definition_id",
-            "idempotency_key",
+            "tenant_id", "definition_id", "idempotency_key",
             name="uq_agent_instance_idempotency",
         ),
     )
@@ -1309,590 +1232,12 @@ def _create_agent_tables() -> None:
     )
     # Partial unique index for system presets (tenant_id IS NULL)
     op.execute(
-        "CREATE UNIQUE INDEX uq_capability_preset_system_slug ON capability_presets (slug) WHERE tenant_id IS NULL"
+        "CREATE UNIQUE INDEX uq_capability_preset_system_slug "
+        "ON capability_presets (slug) WHERE tenant_id IS NULL"
     )
 
 
-# ── 7. CPQ tables ───────────────────────────────────────────────────
-
-
-def _create_cpq_tables() -> None:
-    op.create_table(
-        "product_families",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("slug", sa.String(100), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column("metadata", JSONB, server_default="{}"),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_by", sa.String(255), nullable=True),
-        sa.Column("updated_by", sa.String(255), nullable=True),
-        sa.Column("version", sa.Integer, nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_unique_constraint("uq_product_family_slug", "product_families", ["tenant_id", "slug"])
-    op.create_index("ix_product_families_tenant", "product_families", ["tenant_id"])
-    op.create_index("ix_product_families_deleted_at", "product_families", ["deleted_at"])
-
-    op.create_table(
-        "products",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("family_id", UUID(as_uuid=True), sa.ForeignKey("product_families.id"), nullable=True),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("slug", sa.String(100), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column("sku_prefix", sa.String(50), nullable=True),
-        sa.Column(
-            "status",
-            PG_ENUM(
-                "draft",
-                "active",
-                "deprecated",
-                "archived",
-                name="productstatus",
-                create_type=False,
-            ),
-            nullable=False,
-            server_default="draft",
-        ),
-        sa.Column("metadata", JSONB, server_default="{}"),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_by", sa.String(255), nullable=True),
-        sa.Column("updated_by", sa.String(255), nullable=True),
-        sa.Column("version", sa.Integer, nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_unique_constraint("uq_product_slug", "products", ["tenant_id", "slug"])
-    op.create_index("ix_products_tenant_status", "products", ["tenant_id", "status"])
-    op.create_index("ix_products_family_id", "products", ["family_id"])
-    op.create_index("ix_products_deleted_at", "products", ["deleted_at"])
-
-    op.create_table(
-        "product_versions",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("product_id", UUID(as_uuid=True), sa.ForeignKey("products.id"), nullable=False),
-        sa.Column("version_number", sa.Integer, nullable=False),
-        sa.Column("label", sa.String(100), nullable=True),
-        sa.Column("snapshot", JSONB, nullable=False),
-        sa.Column("is_active", sa.Boolean, server_default="false"),
-        sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_by", sa.String(255), nullable=True),
-        sa.Column("updated_by", sa.String(255), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_unique_constraint(
-        "uq_product_version_number",
-        "product_versions",
-        ["product_id", "version_number"],
-    )
-    op.create_index("ix_product_versions_product_active", "product_versions", ["product_id", "is_active"])
-    op.create_index("ix_product_versions_tenant_id", "product_versions", ["tenant_id"])
-
-    op.create_table(
-        "characteristic_groups",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("slug", sa.String(100), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column("display_order", sa.Integer, server_default="0"),
-        sa.Column("metadata", JSONB, server_default="{}"),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_unique_constraint("uq_char_group_slug", "characteristic_groups", ["tenant_id", "slug"])
-    op.create_index("ix_characteristic_groups_tenant_id", "characteristic_groups", ["tenant_id"])
-    op.create_index("ix_characteristic_groups_deleted_at", "characteristic_groups", ["deleted_at"])
-
-    op.create_table(
-        "characteristics",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column(
-            "group_id",
-            UUID(as_uuid=True),
-            sa.ForeignKey("characteristic_groups.id"),
-            nullable=True,
-        ),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("slug", sa.String(100), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column(
-            "char_type",
-            PG_ENUM(
-                "enum",
-                "numeric",
-                "boolean",
-                "text",
-                name="characteristictype",
-                create_type=False,
-            ),
-            nullable=False,
-        ),
-        sa.Column("numeric_min", sa.Float, nullable=True),
-        sa.Column("numeric_max", sa.Float, nullable=True),
-        sa.Column("numeric_step", sa.Float, nullable=True),
-        sa.Column("unit", sa.String(50), nullable=True),
-        sa.Column("is_required", sa.Boolean, server_default="false"),
-        sa.Column("is_multi_select", sa.Boolean, server_default="false"),
-        sa.Column("default_value", sa.String(500), nullable=True),
-        sa.Column("display_order", sa.Integer, server_default="0"),
-        sa.Column("metadata", JSONB, server_default="{}"),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("version", sa.Integer, nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_unique_constraint("uq_characteristic_slug", "characteristics", ["tenant_id", "slug"])
-    op.create_index("ix_characteristics_tenant_group", "characteristics", ["tenant_id", "group_id"])
-    op.create_index("ix_characteristics_deleted_at", "characteristics", ["deleted_at"])
-
-    op.create_table(
-        "characteristic_values",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column(
-            "characteristic_id",
-            UUID(as_uuid=True),
-            sa.ForeignKey("characteristics.id"),
-            nullable=False,
-        ),
-        sa.Column("value", sa.String(500), nullable=False),
-        sa.Column("label", sa.String(500), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column("display_order", sa.Integer, server_default="0"),
-        sa.Column("is_default", sa.Boolean, server_default="false"),
-        sa.Column("price_adjustment", sa.Numeric(12, 4), nullable=True),
-        sa.Column("image_url", sa.String(2048), nullable=True),
-        sa.Column("metadata", JSONB, server_default="{}"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_unique_constraint("uq_char_value", "characteristic_values", ["characteristic_id", "value"])
-    op.create_index("ix_char_values_characteristic", "characteristic_values", ["characteristic_id"])
-    op.create_index("ix_characteristic_values_tenant_id", "characteristic_values", ["tenant_id"])
-
-    op.create_table(
-        "characteristic_assignments",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("product_id", UUID(as_uuid=True), sa.ForeignKey("products.id"), nullable=False),
-        sa.Column(
-            "characteristic_id",
-            UUID(as_uuid=True),
-            sa.ForeignKey("characteristics.id"),
-            nullable=False,
-        ),
-        sa.Column("display_order", sa.Integer, server_default="0"),
-        sa.Column("is_required", sa.Boolean, nullable=True),
-        sa.Column("default_value", sa.String(500), nullable=True),
-        sa.Column("min_select", sa.Integer, nullable=True),
-        sa.Column("max_select", sa.Integer, nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.CheckConstraint(
-            "min_select IS NULL OR min_select >= 0",
-            name="ck_char_assignments_min_select_gte_0",
-        ),
-        sa.CheckConstraint(
-            "max_select IS NULL OR max_select >= 1",
-            name="ck_char_assignments_max_select_gte_1",
-        ),
-        sa.CheckConstraint(
-            "min_select IS NULL OR max_select IS NULL OR min_select <= max_select",
-            name="ck_char_assignments_min_lte_max",
-        ),
-    )
-    op.create_unique_constraint(
-        "uq_product_characteristic",
-        "characteristic_assignments",
-        ["product_id", "characteristic_id"],
-    )
-    op.create_index(
-        "ix_char_assignments_product",
-        "characteristic_assignments",
-        ["product_id"],
-    )
-    op.create_index(
-        "ix_characteristic_assignments_tenant_id",
-        "characteristic_assignments",
-        ["tenant_id"],
-    )
-
-    op.create_table(
-        "constraint_groups",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("product_id", UUID(as_uuid=True), sa.ForeignKey("products.id"), nullable=False),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column("is_active", sa.Boolean, server_default="true"),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index("ix_constraint_groups_product", "constraint_groups", ["product_id"])
-    op.create_index("ix_constraint_groups_tenant_id", "constraint_groups", ["tenant_id"])
-    op.create_index("ix_constraint_groups_deleted_at", "constraint_groups", ["deleted_at"])
-
-    op.create_table(
-        "constraint_rules",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("product_id", UUID(as_uuid=True), sa.ForeignKey("products.id"), nullable=False),
-        sa.Column("group_id", UUID(as_uuid=True), sa.ForeignKey("constraint_groups.id"), nullable=True),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column(
-            "constraint_type",
-            PG_ENUM(
-                "requires",
-                "excludes",
-                "selection_condition",
-                "default_value",
-                "formula",
-                "table",
-                name="constrainttype",
-                create_type=False,
-            ),
-            nullable=False,
-        ),
-        sa.Column("expression", JSONB, nullable=False),
-        sa.Column("priority", sa.Integer, server_default="0"),
-        sa.Column("is_active", sa.Boolean, server_default="true"),
-        sa.Column("effective_from", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("effective_to", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("version", sa.Integer, nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index("ix_constraint_rules_product", "constraint_rules", ["product_id"])
-    op.create_index(
-        "ix_constraint_rules_product_type",
-        "constraint_rules",
-        ["product_id", "constraint_type"],
-    )
-    op.create_index("ix_constraint_rules_tenant_id", "constraint_rules", ["tenant_id"])
-    op.create_index("ix_constraint_rules_deleted_at", "constraint_rules", ["deleted_at"])
-
-    op.create_table(
-        "variant_tables",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("product_id", UUID(as_uuid=True), sa.ForeignKey("products.id"), nullable=False),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column("columns", JSONB, nullable=False),
-        sa.Column("rows", JSONB, nullable=False),
-        sa.Column("input_columns", JSONB, nullable=False),
-        sa.Column("output_columns", JSONB, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index("ix_variant_tables_product", "variant_tables", ["product_id"])
-    op.create_index("ix_variant_tables_tenant_id", "variant_tables", ["tenant_id"])
-
-    op.create_table(
-        "product_media",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("entity_type", sa.String(50), nullable=False),
-        sa.Column("entity_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("media_type", sa.String(50), nullable=False),
-        sa.Column("url", sa.String(2048), nullable=False),
-        sa.Column("filename", sa.String(255), nullable=True),
-        sa.Column("mime_type", sa.String(100), nullable=True),
-        sa.Column("file_size", sa.Integer, nullable=True),
-        sa.Column("display_order", sa.Integer, server_default="0"),
-        sa.Column("alt_text", sa.String(500), nullable=True),
-        sa.Column("metadata", JSONB, server_default="{}"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index("ix_product_media_entity", "product_media", ["entity_type", "entity_id"])
-    op.create_index("ix_product_media_tenant", "product_media", ["tenant_id"])
-
-    op.create_table(
-        "bom_headers",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("product_id", UUID(as_uuid=True), sa.ForeignKey("products.id"), nullable=False),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column("bom_type", sa.String(50), server_default="manufacturing"),
-        sa.Column("is_primary", sa.Boolean, server_default="false"),
-        sa.Column("effective_from", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("effective_to", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("metadata", JSONB, server_default="{}"),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_by", sa.String(255), nullable=True),
-        sa.Column("updated_by", sa.String(255), nullable=True),
-        sa.Column("version", sa.Integer, nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index("ix_bom_headers_product", "bom_headers", ["product_id"])
-    op.create_index("ix_bom_headers_tenant_product", "bom_headers", ["tenant_id", "product_id"])
-    op.create_index("ix_bom_headers_deleted_at", "bom_headers", ["deleted_at"])
-
-    op.create_table(
-        "bom_items",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("bom_header_id", UUID(as_uuid=True), sa.ForeignKey("bom_headers.id"), nullable=False),
-        sa.Column("parent_item_id", UUID(as_uuid=True), sa.ForeignKey("bom_items.id"), nullable=True),
-        sa.Column(
-            "item_type",
-            PG_ENUM(
-                "component",
-                "sub_assembly",
-                "phantom",
-                "reference",
-                name="bomitemtype",
-                create_type=False,
-            ),
-            server_default="component",
-        ),
-        sa.Column("part_number", sa.String(100), nullable=False),
-        sa.Column("part_name", sa.String(255), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column("quantity", sa.Numeric(12, 4), server_default="1.0000"),
-        sa.Column("quantity_expression", JSONB, nullable=True),
-        sa.Column("unit_of_measure", sa.String(20), server_default="EA"),
-        sa.Column("sub_product_id", UUID(as_uuid=True), sa.ForeignKey("products.id"), nullable=True),
-        sa.Column("selection_condition", JSONB, nullable=True),
-        sa.Column("effective_from", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("effective_to", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("sort_order", sa.Integer, server_default="0"),
-        sa.Column("is_optional", sa.Boolean, server_default="false"),
-        sa.Column("unit_cost", sa.Numeric(12, 4), nullable=True),
-        sa.Column("lead_time_days", sa.Integer, nullable=True),
-        sa.Column("metadata", JSONB, server_default="{}"),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("version", sa.Integer, nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index("ix_bom_items_header", "bom_items", ["bom_header_id"])
-    op.create_index("ix_bom_items_part_number", "bom_items", ["tenant_id", "part_number"])
-    op.create_index("ix_bom_items_parent_item_id", "bom_items", ["parent_item_id"])
-    op.create_index("ix_bom_items_sub_product_id", "bom_items", ["sub_product_id"])
-    op.create_index("ix_bom_items_deleted_at", "bom_items", ["deleted_at"])
-
-    op.create_table(
-        "configuration_templates",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("product_id", UUID(as_uuid=True), sa.ForeignKey("products.id"), nullable=False),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column("is_partial", sa.Boolean, server_default="true"),
-        sa.Column("is_public", sa.Boolean, server_default="false"),
-        sa.Column("selections", JSONB, nullable=False, server_default="[]"),
-        sa.Column("metadata", JSONB, server_default="{}"),
-        sa.Column("created_by", sa.String(255), nullable=True),
-        sa.Column("updated_by", sa.String(255), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index(
-        "ix_config_templates_tenant_product",
-        "configuration_templates",
-        ["tenant_id", "product_id"],
-    )
-
-    op.create_table(
-        "configuration_sessions",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("product_id", UUID(as_uuid=True), sa.ForeignKey("products.id"), nullable=False),
-        sa.Column(
-            "product_version_id",
-            UUID(as_uuid=True),
-            sa.ForeignKey("product_versions.id"),
-            nullable=True,
-        ),
-        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
-        sa.Column("name", sa.String(255), nullable=True),
-        sa.Column(
-            "status",
-            PG_ENUM(
-                "in_progress",
-                "complete",
-                "invalid",
-                "locked",
-                name="configurationstatus",
-                create_type=False,
-            ),
-            server_default="in_progress",
-        ),
-        sa.Column("is_valid", sa.Boolean, server_default="false"),
-        sa.Column("is_complete", sa.Boolean, server_default="false"),
-        sa.Column("validation_errors", JSONB, nullable=True),
-        sa.Column("available_domains", JSONB, nullable=True),
-        sa.Column(
-            "template_id",
-            UUID(as_uuid=True),
-            sa.ForeignKey("configuration_templates.id"),
-            nullable=True,
-        ),
-        sa.Column("external_reference", sa.String(255), nullable=True),
-        sa.Column("metadata", JSONB, server_default="{}"),
-        sa.Column("created_by", sa.String(255), nullable=True),
-        sa.Column("updated_by", sa.String(255), nullable=True),
-        sa.Column("version", sa.Integer, nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index(
-        "ix_config_sessions_tenant_product",
-        "configuration_sessions",
-        ["tenant_id", "product_id"],
-    )
-    op.create_index("ix_config_sessions_user", "configuration_sessions", ["user_id"])
-    op.create_index("ix_config_sessions_status", "configuration_sessions", ["tenant_id", "status"])
-
-    op.create_table(
-        "configuration_selections",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column(
-            "session_id",
-            UUID(as_uuid=True),
-            sa.ForeignKey("configuration_sessions.id"),
-            nullable=False,
-        ),
-        sa.Column(
-            "characteristic_id",
-            UUID(as_uuid=True),
-            sa.ForeignKey("characteristics.id"),
-            nullable=False,
-        ),
-        sa.Column("value", sa.String(500), nullable=False),
-        sa.Column("is_auto_set", sa.Boolean, server_default="false"),
-        sa.Column("set_by_rule_id", UUID(as_uuid=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index("ix_config_selections_session", "configuration_selections", ["session_id"])
-    op.create_index(
-        "ix_config_selections_session_char",
-        "configuration_selections",
-        ["session_id", "characteristic_id"],
-    )
-    op.create_index(
-        "ix_configuration_selections_tenant_id",
-        "configuration_selections",
-        ["tenant_id"],
-    )
-
-    op.create_table(
-        "configured_boms",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column(
-            "session_id",
-            UUID(as_uuid=True),
-            sa.ForeignKey("configuration_sessions.id"),
-            nullable=False,
-            unique=True,
-        ),
-        sa.Column("bom_header_id", UUID(as_uuid=True), sa.ForeignKey("bom_headers.id"), nullable=False),
-        sa.Column("resolved_items", JSONB, nullable=False),
-        sa.Column("total_components", sa.Integer, server_default="0"),
-        sa.Column("total_cost", sa.Numeric(14, 4), nullable=True),
-        sa.Column("selection_snapshot", JSONB, nullable=False),
-        sa.Column("resolved_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("resolution_duration_ms", sa.Integer, nullable=True),
-        sa.Column("created_by", sa.String(255), nullable=True),
-        sa.Column("updated_by", sa.String(255), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index("ix_configured_boms_tenant", "configured_boms", ["tenant_id"])
-    op.create_index("ix_configured_boms_session", "configured_boms", ["session_id"])
-
-    op.create_table(
-        "pricing_rules",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("product_id", UUID(as_uuid=True), sa.ForeignKey("products.id"), nullable=False),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column(
-            "rule_type",
-            PG_ENUM(
-                "base_price",
-                "option_surcharge",
-                "volume_discount",
-                "conditional",
-                "formula",
-                "tiered",
-                "margin",
-                name="pricingruletype",
-                create_type=False,
-            ),
-            nullable=False,
-        ),
-        sa.Column("expression", JSONB, nullable=False),
-        sa.Column("priority", sa.Integer, server_default="0"),
-        sa.Column("is_active", sa.Boolean, server_default="true"),
-        sa.Column("effective_from", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("effective_to", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("currency", sa.String(3), server_default="EUR"),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("version", sa.Integer, nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index("ix_pricing_rules_product", "pricing_rules", ["product_id"])
-    op.create_index(
-        "ix_pricing_rules_product_type",
-        "pricing_rules",
-        ["product_id", "rule_type"],
-    )
-    op.create_index("ix_pricing_rules_tenant_id", "pricing_rules", ["tenant_id"])
-    op.create_index("ix_pricing_rules_deleted_at", "pricing_rules", ["deleted_at"])
-
-    op.create_table(
-        "configuration_pricing",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column(
-            "session_id",
-            UUID(as_uuid=True),
-            sa.ForeignKey("configuration_sessions.id"),
-            nullable=False,
-            unique=True,
-        ),
-        sa.Column("currency", sa.String(3), server_default="EUR"),
-        sa.Column("base_price", sa.Numeric(14, 4), server_default="0"),
-        sa.Column("total_adjustments", sa.Numeric(14, 4), server_default="0"),
-        sa.Column("final_price", sa.Numeric(14, 4), server_default="0"),
-        sa.Column("total_cost", sa.Numeric(14, 4), server_default="0"),
-        sa.Column("margin_amount", sa.Numeric(14, 4), server_default="0"),
-        sa.Column("margin_percentage", sa.Numeric(8, 4), server_default="0"),
-        sa.Column("price_breakdown", JSONB, nullable=False, server_default="[]"),
-        sa.Column("is_profitable", sa.Boolean, server_default="false"),
-        sa.Column("resolved_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("created_by", sa.String(255), nullable=True),
-        sa.Column("updated_by", sa.String(255), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index("ix_config_pricing_tenant", "configuration_pricing", ["tenant_id"])
-    op.create_index("ix_config_pricing_session", "configuration_pricing", ["session_id"])
-
-
-# ── 8. Datasource scaffolding (cloud_connections, data_sources, provenance) ──
+# ── 7. Datasource scaffolding (cloud_connections, data_sources) ─────
 
 
 def _create_datasource_scaffolding() -> None:
@@ -1903,11 +1248,8 @@ def _create_datasource_scaffolding() -> None:
         sa.Column(
             "provider",
             PG_ENUM(
-                "google_drive",
-                "dropbox",
-                "onedrive",
-                name="cloudprovider",
-                create_type=False,
+                "google_drive", "dropbox", "onedrive",
+                name="cloudprovider", create_type=False,
             ),
             nullable=False,
         ),
@@ -1945,24 +1287,16 @@ def _create_datasource_scaffolding() -> None:
         sa.Column(
             "source_type",
             PG_ENUM(
-                "upload",
-                "cloud_drive",
-                "url",
-                "paste",
-                name="datasourcetype",
-                create_type=False,
+                "upload", "cloud_drive", "url", "paste",
+                name="datasourcetype", create_type=False,
             ),
             nullable=False,
         ),
         sa.Column(
             "status",
             PG_ENUM(
-                "pending",
-                "processing",
-                "ready",
-                "error",
-                name="datasourcestatus",
-                create_type=False,
+                "pending", "processing", "ready", "error",
+                name="datasourcestatus", create_type=False,
             ),
             server_default="pending",
             nullable=False,
@@ -1975,11 +1309,8 @@ def _create_datasource_scaffolding() -> None:
         sa.Column(
             "cloud_provider",
             PG_ENUM(
-                "google_drive",
-                "dropbox",
-                "onedrive",
-                name="cloudprovider",
-                create_type=False,
+                "google_drive", "dropbox", "onedrive",
+                name="cloudprovider", create_type=False,
             ),
             nullable=True,
         ),
@@ -2011,41 +1342,6 @@ def _create_datasource_scaffolding() -> None:
     op.create_index("ix_data_sources_cloud_connection_id", "data_sources", ["cloud_connection_id"])
     op.create_index("ix_data_sources_tenant", "data_sources", ["tenant_id"])
 
-    op.create_table(
-        "config_item_provenance",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column(
-            "data_source_id",
-            UUID(as_uuid=True),
-            sa.ForeignKey("data_sources.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column("entity_type", sa.String(100), nullable=False),
-        sa.Column("entity_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("agent_instance_id", UUID(as_uuid=True), nullable=True),
-        sa.Column("confidence", sa.Float, server_default="1.0", nullable=False),
-        sa.Column("extraction_context", JSONB, nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            onupdate=sa.func.now(),
-            nullable=False,
-        ),
-    )
-    op.create_index(
-        "ix_config_provenance_tenant_entity",
-        "config_item_provenance",
-        ["tenant_id", "entity_type", "entity_id"],
-    )
-    op.create_index(
-        "ix_config_provenance_tenant_source",
-        "config_item_provenance",
-        ["tenant_id", "data_source_id"],
-    )
-
 
 # ── 9. Partitioned data_source_chunks (16 hash partitions) ───────────
 
@@ -2055,7 +1351,7 @@ def _create_partitioned_chunks() -> None:
     # (from 0022+0027+0028+0032+0036). Columns kept broad/nullable where the
     # original migrations added them via ALTER TABLE.
     op.execute(
-        """
+        f"""
         CREATE TABLE data_source_chunks (
             id UUID NOT NULL,
             tenant_id UUID NOT NULL REFERENCES tenants(id),
@@ -2094,16 +1390,32 @@ def _create_partitioned_chunks() -> None:
 
     # Parent-level indexes (propagate to partitions)
     op.execute("CREATE INDEX ix_dsc_part_tenant ON data_source_chunks (tenant_id)")
-    op.execute("CREATE INDEX ix_dsc_part_tenant_source ON data_source_chunks (tenant_id, data_source_id)")
-    op.execute("CREATE INDEX ix_dsc_part_tenant_type ON data_source_chunks (tenant_id, content_type)")
-    op.execute("CREATE INDEX ix_dsc_part_tenant_indexed ON data_source_chunks (tenant_id, indexed_at)")
-    op.execute("CREATE INDEX ix_dsc_part_content_tsv ON data_source_chunks USING gin (content_tsv)")
     op.execute(
-        "CREATE INDEX ix_dsc_parent_chunk ON data_source_chunks (parent_chunk_id) WHERE parent_chunk_id IS NOT NULL"
+        "CREATE INDEX ix_dsc_part_tenant_source ON data_source_chunks (tenant_id, data_source_id)"
     )
-    op.execute("CREATE INDEX ix_dsc_chunk_level ON data_source_chunks (tenant_id, chunk_level)")
-    op.execute("CREATE INDEX ix_dsc_deleted_at ON data_source_chunks (deleted_at) WHERE deleted_at IS NOT NULL")
-    op.execute("CREATE INDEX ix_dsc_source_content_hash ON data_source_chunks (data_source_id, content_hash)")
+    op.execute(
+        "CREATE INDEX ix_dsc_part_tenant_type ON data_source_chunks (tenant_id, content_type)"
+    )
+    op.execute(
+        "CREATE INDEX ix_dsc_part_tenant_indexed ON data_source_chunks (tenant_id, indexed_at)"
+    )
+    op.execute(
+        "CREATE INDEX ix_dsc_part_content_tsv ON data_source_chunks USING gin (content_tsv)"
+    )
+    op.execute(
+        "CREATE INDEX ix_dsc_parent_chunk ON data_source_chunks (parent_chunk_id) "
+        "WHERE parent_chunk_id IS NOT NULL"
+    )
+    op.execute(
+        "CREATE INDEX ix_dsc_chunk_level ON data_source_chunks (tenant_id, chunk_level)"
+    )
+    op.execute(
+        "CREATE INDEX ix_dsc_deleted_at ON data_source_chunks (deleted_at) "
+        "WHERE deleted_at IS NOT NULL"
+    )
+    op.execute(
+        "CREATE INDEX ix_dsc_source_content_hash ON data_source_chunks (data_source_id, content_hash)"
+    )
 
     # Per-partition HNSW indexes (PostgreSQL doesn't allow HNSW on a
     # partitioned parent directly). Final 0037 tuning parameters.
@@ -2384,7 +1696,10 @@ def _create_rag_infrastructure() -> None:
         WITH DATA
         """
     )
-    op.execute("CREATE UNIQUE INDEX ix_mv_tenant_chunk_stats_tenant ON mv_tenant_chunk_stats (tenant_id)")
+    op.execute(
+        "CREATE UNIQUE INDEX ix_mv_tenant_chunk_stats_tenant "
+        "ON mv_tenant_chunk_stats (tenant_id)"
+    )
 
 
 # ── 11. Triggers and functions ──────────────────────────────────────
@@ -2479,36 +1794,11 @@ def _apply_rls() -> None:
     ]:
         _rls(table)
 
-    # CPQ tables (0019 + 0026 final form)
-    for table in [
-        "product_families",
-        "products",
-        "product_versions",
-        "characteristic_groups",
-        "characteristics",
-        "characteristic_values",
-        "characteristic_assignments",
-        "constraint_groups",
-        "constraint_rules",
-        "variant_tables",
-        "product_media",
-        "bom_headers",
-        "bom_items",
-        "configuration_templates",
-        "configuration_sessions",
-        "configuration_selections",
-        "configured_boms",
-        "pricing_rules",
-        "configuration_pricing",
-    ]:
-        _rls(table)
-
     # Datasource tables (0024)
     for table in [
         "cloud_connections",
         "data_sources",
         "data_source_chunks",
-        "config_item_provenance",
     ]:
         _rls(table)
 
@@ -2532,99 +1822,16 @@ def _apply_rls() -> None:
 
 
 SYSTEM_CAPABILITY_PRESETS: list[dict] = [
-    {
-        "id": str(uuid.uuid5(uuid.NAMESPACE_DNS, "preset:full-product-manager")),
-        "name": "Full Product Manager",
-        "slug": "full-product-manager",
-        "description": (
-            "Full read/write/delete access to all product configurator capabilities plus AI and file tools."
-        ),
-        "icon": "ShieldCheck",
-        "capabilities": [
-            "cpq:products:read",
-            "cpq:products:write",
-            "cpq:products:delete",
-            "cpq:characteristics:read",
-            "cpq:characteristics:write",
-            "cpq:constraints:read",
-            "cpq:constraints:write",
-            "cpq:constraints:delete",
-            "cpq:bom:write",
-            "cpq:pricing:read",
-            "cpq:pricing:write",
-            "cpq:pricing:delete",
-            "cpq:configurator",
-            "cpq:data",
-            "cpq:versioning",
-            "platform:ai",
-            "platform:files",
-        ],
-        "governance_overrides": {
-            "require_approval_for_capabilities": [
-                "cpq:products:delete",
-                "cpq:pricing:delete",
-            ],
-        },
-    },
-    {
-        "id": str(uuid.uuid5(uuid.NAMESPACE_DNS, "preset:read-only-analyst")),
-        "name": "Read-Only Analyst",
-        "slug": "read-only-analyst",
-        "description": ("View-only access to products, characteristics, constraints, and pricing simulations."),
-        "icon": "Eye",
-        "capabilities": [
-            "cpq:products:read",
-            "cpq:characteristics:read",
-            "cpq:constraints:read",
-            "cpq:pricing:read",
-            "cpq:configurator",
-            "platform:ai",
-        ],
-        "governance_overrides": {},
-    },
-    {
-        "id": str(uuid.uuid5(uuid.NAMESPACE_DNS, "preset:configuration-builder")),
-        "name": "Configuration Builder",
-        "slug": "configuration-builder",
-        "description": (
-            "Create and manage product configurators: products, characteristics, constraints, and versions."
-        ),
-        "icon": "Wrench",
-        "capabilities": [
-            "cpq:products:read",
-            "cpq:products:write",
-            "cpq:characteristics:read",
-            "cpq:characteristics:write",
-            "cpq:constraints:read",
-            "cpq:constraints:write",
-            "cpq:configurator",
-            "cpq:data",
-            "cpq:versioning",
-            "platform:ai",
-        ],
-        "governance_overrides": {},
-    },
-    {
-        "id": str(uuid.uuid5(uuid.NAMESPACE_DNS, "preset:pricing-specialist")),
-        "name": "Pricing Specialist",
-        "slug": "pricing-specialist",
-        "description": "Manage pricing rules and simulate pricing for product configurations.",
-        "icon": "DollarSign",
-        "capabilities": [
-            "cpq:products:read",
-            "cpq:characteristics:read",
-            "cpq:pricing:read",
-            "cpq:pricing:write",
-            "cpq:configurator",
-            "platform:ai",
-        ],
-        "governance_overrides": {},
-    },
+    # Core platform-only presets. Application plugins ship their own
+    # presets in their own migrations — see docs/PLUGINS.md.
     {
         "id": str(uuid.uuid5(uuid.NAMESPACE_DNS, "preset:code-assistant")),
         "name": "Code Assistant",
         "slug": "code-assistant",
-        "description": ("AI-powered code execution with file access for data processing and analysis."),
+        "description": (
+            "AI-powered code execution with file access for data processing "
+            "and analysis."
+        ),
         "icon": "Code",
         "capabilities": ["platform:ai", "platform:files", "platform:code"],
         "governance_overrides": {"max_spend_per_run_usd": 2.0},

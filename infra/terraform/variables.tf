@@ -51,7 +51,7 @@ variable "vpc_cidr" {
 }
 
 variable "domain_name" {
-  description = "Primary domain name (e.g. cadprice.com)"
+  description = "Primary domain name (e.g. example.com)"
   type        = string
 }
 
@@ -104,7 +104,7 @@ variable "redis_node_type" {
 # ── ECS / Container ─────────────────────────────────────────
 
 variable "container_image" {
-  description = "Container image URI (e.g. ghcr.io/org/cadprice:latest)"
+  description = "Container image URI (e.g. ghcr.io/org/nxs:latest)"
   type        = string
 }
 

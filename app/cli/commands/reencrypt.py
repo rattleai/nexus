@@ -1,8 +1,8 @@
 """CLI command to re-encrypt v1 (Fernet) ciphertexts to v2 (AES-256-GCM).
 
 Usage:
-    cadprice reencrypt --dry-run    # Show what would be updated
-    cadprice reencrypt              # Actually re-encrypt
+    nxs reencrypt --dry-run    # Show what would be updated
+    nxs reencrypt              # Actually re-encrypt
 """
 
 from __future__ import annotations

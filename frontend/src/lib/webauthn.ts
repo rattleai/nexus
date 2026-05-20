@@ -85,7 +85,7 @@ export async function registerCredential(deviceName?: string): Promise<{ credent
 
   // Store credential ID for auto-suggesting biometric login
   try {
-    localStorage.setItem("cadprice-webauthn-credential", result.credential_id)
+    localStorage.setItem("nxs-webauthn-credential", result.credential_id)
   } catch {
     // ignore
   }
@@ -140,7 +140,7 @@ export async function authenticateWithCredential(): Promise<{ access_token: stri
  */
 export function hasSavedCredential(): boolean {
   try {
-    return !!localStorage.getItem("cadprice-webauthn-credential")
+    return !!localStorage.getItem("nxs-webauthn-credential")
   } catch {
     return false
   }

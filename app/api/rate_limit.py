@@ -141,7 +141,7 @@ AGENT_UA_PREFIXES = (
     "mcp-client/",
     "claude-code/",
     "openai-agent/",
-    "cadprice-cli/",
+    "nxs-cli/",
     "github-copilot/",
     "cursor/",
 )

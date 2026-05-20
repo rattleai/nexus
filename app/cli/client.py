@@ -1,4 +1,4 @@
-"""HTTP client wrapper for the CADPrice CLI.
+"""HTTP client wrapper for the NEXUS CLI.
 
 Thin wrapper around httpx.Client that handles authentication,
 error formatting, retries with exponential backoff, and consistent output.
@@ -28,8 +28,8 @@ class CLIError(Exception):
         super().__init__(message)
 
 
-class CadpriceClient:
-    """HTTP client for interacting with the CADPrice REST API."""
+class NexusClient:
+    """HTTP client for interacting with the NEXUS REST API."""
 
     def __init__(self, base_url: str, api_key: str, timeout: float = 30.0):
         self.base_url = base_url.rstrip("/")

@@ -1,4 +1,4 @@
-"""AI subcommands for the CADPrice CLI."""
+"""AI subcommands for the NEXUS CLI."""
 
 from __future__ import annotations
 

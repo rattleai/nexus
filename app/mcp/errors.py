@@ -29,7 +29,7 @@ def tool_error(message: str, *, hint: str | None = None, code: int = INVALID_PAR
 def auth_error(detail: str = "Authentication failed") -> McpError:
     return tool_error(
         detail,
-        hint="Ensure the MCP server was started with a valid CADPRICE_API_KEY environment variable.",
+        hint="Ensure the MCP server was started with a valid NXS_API_KEY environment variable.",
     )
 
 

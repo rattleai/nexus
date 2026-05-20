@@ -2,16 +2,16 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: cadprice-api
-  namespace: cadprice
+  name: nxs-api
+  namespace: nxs
   labels:
     app.kubernetes.io/name: api
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: api
-      app.kubernetes.io/part-of: cadprice
+      app.kubernetes.io/part-of: nxs
   policyTypes:
     - Ingress
     - Egress
@@ -73,16 +73,16 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: cadprice-worker
-  namespace: cadprice
+  name: nxs-worker
+  namespace: nxs
   labels:
     app.kubernetes.io/name: worker
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: worker
-      app.kubernetes.io/part-of: cadprice
+      app.kubernetes.io/part-of: nxs
   policyTypes:
     - Ingress
     - Egress
@@ -133,16 +133,16 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: cadprice-beat
-  namespace: cadprice
+  name: nxs-beat
+  namespace: nxs
   labels:
     app.kubernetes.io/name: beat
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: beat
-      app.kubernetes.io/part-of: cadprice
+      app.kubernetes.io/part-of: nxs
   policyTypes:
     - Ingress
     - Egress
@@ -194,9 +194,9 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: default-deny-all
-  namespace: cadprice
+  namespace: nxs
   labels:
-    app.kubernetes.io/part-of: cadprice
+    app.kubernetes.io/part-of: nxs
 spec:
   podSelector: {}
   policyTypes:

@@ -82,10 +82,10 @@ new-service:  ## Scaffold a new microservice (usage: make new-service dest=servi
 
 # ── MCP Server ──────────────────────────────────────────────
 mcp:  ## Start MCP server (stdio transport)
-	MCP_ENABLED=true MCP_TRANSPORT=stdio cadprice-mcp
+	MCP_ENABLED=true MCP_TRANSPORT=stdio nxs-mcp
 
 mcp-http:  ## Start MCP server (HTTP transport on port 8001)
-	MCP_ENABLED=true MCP_TRANSPORT=http cadprice-mcp
+	MCP_ENABLED=true MCP_TRANSPORT=http nxs-mcp
 
 # ── Seed ────────────────────────────────────────────────────
 seed:  ## Seed dev database with test user (run locally)
@@ -96,7 +96,7 @@ seed-docker:  ## Seed dev database via docker compose
 
 # ── Docker ───────────────────────────────────────────────────
 build:  ## Build production Docker image
-	docker build -t saas-platform .
+	docker build -t nexus .
 
 # ── Production ───────────────────────────────────────────
 prod-up:  ## Start production services

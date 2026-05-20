@@ -117,8 +117,8 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
         "iat": datetime.now(UTC),
         "type": "access",
         "jti": jti,
-        "iss": "saas-platform",
-        "aud": "saas-platform",
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.JWT_AUDIENCE,
     }
     # Preserve caller-supplied fields (e.g., type="mfa_pending", amr=[...])
     for k, v in defaults.items():
@@ -140,8 +140,8 @@ def decode_access_token(token: str) -> dict:
         token,
         _get_jwt_verification_key(),
         algorithms=[algorithm],
-        issuer="saas-platform",
-        audience="saas-platform",
+        issuer=settings.JWT_ISSUER,
+        audience=settings.JWT_AUDIENCE,
     )
     if payload.get("type") != "access":
         raise jwt.InvalidTokenError("Not an access token")

@@ -1,7 +1,8 @@
 """Infrastructure model package.
 
 Re-exports all infrastructure models. Application-specific models live
-in their plugin packages (e.g. ``app.apps.cpq.models``).
+in their plugin packages under ``app.apps.<name>.models`` — see
+``app.apps.example.models`` for the reference layout.
 
 Alembic discovers plugin models via ``env.py`` through the plugin registry.
 """

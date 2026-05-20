@@ -112,9 +112,12 @@ class DataSource(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, default=dict)
 
     # Relationships
-    chunks: Mapped[list[DataSourceChunk]] = relationship(back_populates="data_source", cascade="all, delete-orphan")
-    # NOTE: provenance_records relationship is contributed by the CPQ plugin
-    # (see app.apps.cpq.models.datasource.ConfigItemProvenance)
+    cloud_connection: Mapped[CloudConnection | None] = relationship(back_populates="data_sources")
+    chunks: Mapped[list[DataSourceChunk]] = relationship(
+        back_populates="data_source", cascade="all, delete-orphan"
+    )
+    # Application plugins may extend this model with back-populating
+    # relationships (see docs/PLUGINS.md, "Extending core models").
 
     __table_args__ = (
         Index("ix_data_sources_tenant", "tenant_id"),

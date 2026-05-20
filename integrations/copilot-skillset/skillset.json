@@ -1,12 +1,12 @@
 {
-  "name": "cadprice",
-  "description": "CADPrice SaaS platform tools for AI completion, agent management, and job operations",
+  "name": "nxs",
+  "description": "NEXUS SaaS platform tools for AI completion, agent management, and job operations",
   "skills": [
     {
       "name": "ai-complete",
       "verb": "POST",
       "path": "/api/v1/ai/completions",
-      "description": "Run an AI completion using CADPrice's multi-provider gateway",
+      "description": "Run an AI completion using NEXUS's multi-provider gateway",
       "parameters": {
         "type": "object",
         "properties": {

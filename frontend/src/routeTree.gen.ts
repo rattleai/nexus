@@ -16,14 +16,11 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ProviderKeysRouteImport } from './routes/provider-keys'
-import { Route as ProductsRouteImport } from './routes/products'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as DevelopersRouteImport } from './routes/developers'
-import { Route as ConfiguratorRouteImport } from './routes/configurator'
-import { Route as ConfigurationsRouteImport } from './routes/configurations'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as BillingRouteImport } from './routes/billing'
 import { Route as AuditLogRouteImport } from './routes/audit-log'
@@ -32,8 +29,6 @@ import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
-import { Route as ProductsIndexRouteImport } from './routes/products.index'
-import { Route as ConfigurationsIndexRouteImport } from './routes/configurations.index'
 import { Route as AgentsIndexRouteImport } from './routes/agents.index'
 import { Route as SettingsWebhooksRouteImport } from './routes/settings.webhooks'
 import { Route as SettingsTeamRouteImport } from './routes/settings.team'
@@ -42,23 +37,13 @@ import { Route as SettingsProvidersRouteImport } from './routes/settings.provide
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDataRouteImport } from './routes/settings.data'
 import { Route as SettingsDangerRouteImport } from './routes/settings.danger'
-import { Route as SettingsConnectorsRouteImport } from './routes/settings.connectors'
-import { Route as SettingsCharacteristicsRouteImport } from './routes/settings.characteristics'
 import { Route as SettingsBillingRouteImport } from './routes/settings.billing'
 import { Route as SettingsAuditLogRouteImport } from './routes/settings.audit-log'
 import { Route as SettingsApiKeysRouteImport } from './routes/settings.api-keys'
 import { Route as SettingsAgentsRouteImport } from './routes/settings.agents'
-import { Route as ProductsFamiliesRouteImport } from './routes/products.families'
-import { Route as ProductsProductIdRouteImport } from './routes/products.$productId'
-import { Route as ConfiguratorProductIdRouteImport } from './routes/configurator.$productId'
-import { Route as ConfigurationsBomAnalysisRouteImport } from './routes/configurations.bom-analysis'
-import { Route as ConfigurationsSessionIdRouteImport } from './routes/configurations.$sessionId'
 import { Route as AgentsWorkspaceRouteImport } from './routes/agents.workspace'
 import { Route as AgentsSessionsRouteImport } from './routes/agents.sessions'
 import { Route as AgentsInstanceIdRouteImport } from './routes/agents.$instanceId'
-import { Route as SettingsCharacteristicsIndexRouteImport } from './routes/settings.characteristics.index'
-import { Route as SettingsConnectorsIdRouteImport } from './routes/settings.connectors.$id'
-import { Route as SettingsCharacteristicsCharIdRouteImport } from './routes/settings.characteristics.$charId'
 import { Route as AuthCallbackProviderRouteImport } from './routes/auth/callback/$provider'
 
 const WebhooksRoute = WebhooksRouteImport.update({
@@ -98,11 +83,6 @@ const ProviderKeysRoute = ProviderKeysRouteImport.update({
   path: '/provider-keys',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/provider-keys.lazy').then((d) => d.Route))
-const ProductsRoute = ProductsRouteImport.update({
-  id: '/products',
-  path: '/products',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/products.lazy').then((d) => d.Route))
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -130,18 +110,6 @@ const DevelopersRoute = DevelopersRouteImport.update({
   path: '/developers',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/developers.lazy').then((d) => d.Route))
-const ConfiguratorRoute = ConfiguratorRouteImport.update({
-  id: '/configurator',
-  path: '/configurator',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/configurator.lazy').then((d) => d.Route))
-const ConfigurationsRoute = ConfigurationsRouteImport.update({
-  id: '/configurations',
-  path: '/configurations',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() =>
-  import('./routes/configurations.lazy').then((d) => d.Route),
-)
 const ChatRoute = ChatRouteImport.update({
   id: '/chat',
   path: '/chat',
@@ -184,20 +152,6 @@ const SettingsIndexRoute = SettingsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => SettingsRoute,
 } as any)
-const ProductsIndexRoute = ProductsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ProductsRoute,
-} as any).lazy(() =>
-  import('./routes/products.index.lazy').then((d) => d.Route),
-)
-const ConfigurationsIndexRoute = ConfigurationsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ConfigurationsRoute,
-} as any).lazy(() =>
-  import('./routes/configurations.index.lazy').then((d) => d.Route),
-)
 const AgentsIndexRoute = AgentsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -248,20 +202,6 @@ const SettingsDangerRoute = SettingsDangerRouteImport.update({
 } as any).lazy(() =>
   import('./routes/settings.danger.lazy').then((d) => d.Route),
 )
-const SettingsConnectorsRoute = SettingsConnectorsRouteImport.update({
-  id: '/connectors',
-  path: '/connectors',
-  getParentRoute: () => SettingsRoute,
-} as any).lazy(() =>
-  import('./routes/settings.connectors.lazy').then((d) => d.Route),
-)
-const SettingsCharacteristicsRoute = SettingsCharacteristicsRouteImport.update({
-  id: '/characteristics',
-  path: '/characteristics',
-  getParentRoute: () => SettingsRoute,
-} as any).lazy(() =>
-  import('./routes/settings.characteristics.lazy').then((d) => d.Route),
-)
 const SettingsBillingRoute = SettingsBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
@@ -290,42 +230,6 @@ const SettingsAgentsRoute = SettingsAgentsRouteImport.update({
 } as any).lazy(() =>
   import('./routes/settings.agents.lazy').then((d) => d.Route),
 )
-const ProductsFamiliesRoute = ProductsFamiliesRouteImport.update({
-  id: '/families',
-  path: '/families',
-  getParentRoute: () => ProductsRoute,
-} as any).lazy(() =>
-  import('./routes/products.families.lazy').then((d) => d.Route),
-)
-const ProductsProductIdRoute = ProductsProductIdRouteImport.update({
-  id: '/$productId',
-  path: '/$productId',
-  getParentRoute: () => ProductsRoute,
-} as any).lazy(() =>
-  import('./routes/products.$productId.lazy').then((d) => d.Route),
-)
-const ConfiguratorProductIdRoute = ConfiguratorProductIdRouteImport.update({
-  id: '/$productId',
-  path: '/$productId',
-  getParentRoute: () => ConfiguratorRoute,
-} as any).lazy(() =>
-  import('./routes/configurator.$productId.lazy').then((d) => d.Route),
-)
-const ConfigurationsBomAnalysisRoute =
-  ConfigurationsBomAnalysisRouteImport.update({
-    id: '/bom-analysis',
-    path: '/bom-analysis',
-    getParentRoute: () => ConfigurationsRoute,
-  } as any).lazy(() =>
-    import('./routes/configurations.bom-analysis.lazy').then((d) => d.Route),
-  )
-const ConfigurationsSessionIdRoute = ConfigurationsSessionIdRouteImport.update({
-  id: '/$sessionId',
-  path: '/$sessionId',
-  getParentRoute: () => ConfigurationsRoute,
-} as any).lazy(() =>
-  import('./routes/configurations.$sessionId.lazy').then((d) => d.Route),
-)
 const AgentsWorkspaceRoute = AgentsWorkspaceRouteImport.update({
   id: '/workspace',
   path: '/workspace',
@@ -347,31 +251,6 @@ const AgentsInstanceIdRoute = AgentsInstanceIdRouteImport.update({
 } as any).lazy(() =>
   import('./routes/agents.$instanceId.lazy').then((d) => d.Route),
 )
-const SettingsCharacteristicsIndexRoute =
-  SettingsCharacteristicsIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => SettingsCharacteristicsRoute,
-  } as any).lazy(() =>
-    import('./routes/settings.characteristics.index.lazy').then((d) => d.Route),
-  )
-const SettingsConnectorsIdRoute = SettingsConnectorsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => SettingsConnectorsRoute,
-} as any).lazy(() =>
-  import('./routes/settings.connectors.$id.lazy').then((d) => d.Route),
-)
-const SettingsCharacteristicsCharIdRoute =
-  SettingsCharacteristicsCharIdRouteImport.update({
-    id: '/$charId',
-    path: '/$charId',
-    getParentRoute: () => SettingsCharacteristicsRoute,
-  } as any).lazy(() =>
-    import('./routes/settings.characteristics.$charId.lazy').then(
-      (d) => d.Route,
-    ),
-  )
 const AuthCallbackProviderRoute = AuthCallbackProviderRouteImport.update({
   id: '/auth/callback/$provider',
   path: '/auth/callback/$provider',
@@ -388,14 +267,11 @@ export interface FileRoutesByFullPath {
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
   '/chat': typeof ChatRoute
-  '/configurations': typeof ConfigurationsRouteWithChildren
-  '/configurator': typeof ConfiguratorRouteWithChildren
   '/developers': typeof DevelopersRoute
   '/files': typeof FilesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/jobs': typeof JobsRoute
   '/login': typeof LoginRoute
-  '/products': typeof ProductsRouteWithChildren
   '/provider-keys': typeof ProviderKeysRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -406,17 +282,10 @@ export interface FileRoutesByFullPath {
   '/agents/$instanceId': typeof AgentsInstanceIdRoute
   '/agents/sessions': typeof AgentsSessionsRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
-  '/configurations/$sessionId': typeof ConfigurationsSessionIdRoute
-  '/configurations/bom-analysis': typeof ConfigurationsBomAnalysisRoute
-  '/configurator/$productId': typeof ConfiguratorProductIdRoute
-  '/products/$productId': typeof ProductsProductIdRoute
-  '/products/families': typeof ProductsFamiliesRoute
   '/settings/agents': typeof SettingsAgentsRoute
   '/settings/api-keys': typeof SettingsApiKeysRoute
   '/settings/audit-log': typeof SettingsAuditLogRoute
   '/settings/billing': typeof SettingsBillingRoute
-  '/settings/characteristics': typeof SettingsCharacteristicsRouteWithChildren
-  '/settings/connectors': typeof SettingsConnectorsRouteWithChildren
   '/settings/danger': typeof SettingsDangerRoute
   '/settings/data': typeof SettingsDataRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -425,13 +294,8 @@ export interface FileRoutesByFullPath {
   '/settings/team': typeof SettingsTeamRoute
   '/settings/webhooks': typeof SettingsWebhooksRoute
   '/agents/': typeof AgentsIndexRoute
-  '/configurations/': typeof ConfigurationsIndexRoute
-  '/products/': typeof ProductsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
-  '/settings/characteristics/$charId': typeof SettingsCharacteristicsCharIdRoute
-  '/settings/connectors/$id': typeof SettingsConnectorsIdRoute
-  '/settings/characteristics/': typeof SettingsCharacteristicsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -440,7 +304,6 @@ export interface FileRoutesByTo {
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
   '/chat': typeof ChatRoute
-  '/configurator': typeof ConfiguratorRouteWithChildren
   '/developers': typeof DevelopersRoute
   '/files': typeof FilesRoute
   '/forgot-password': typeof ForgotPasswordRoute
@@ -455,16 +318,10 @@ export interface FileRoutesByTo {
   '/agents/$instanceId': typeof AgentsInstanceIdRoute
   '/agents/sessions': typeof AgentsSessionsRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
-  '/configurations/$sessionId': typeof ConfigurationsSessionIdRoute
-  '/configurations/bom-analysis': typeof ConfigurationsBomAnalysisRoute
-  '/configurator/$productId': typeof ConfiguratorProductIdRoute
-  '/products/$productId': typeof ProductsProductIdRoute
-  '/products/families': typeof ProductsFamiliesRoute
   '/settings/agents': typeof SettingsAgentsRoute
   '/settings/api-keys': typeof SettingsApiKeysRoute
   '/settings/audit-log': typeof SettingsAuditLogRoute
   '/settings/billing': typeof SettingsBillingRoute
-  '/settings/connectors': typeof SettingsConnectorsRouteWithChildren
   '/settings/danger': typeof SettingsDangerRoute
   '/settings/data': typeof SettingsDataRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -473,13 +330,8 @@ export interface FileRoutesByTo {
   '/settings/team': typeof SettingsTeamRoute
   '/settings/webhooks': typeof SettingsWebhooksRoute
   '/agents': typeof AgentsIndexRoute
-  '/configurations': typeof ConfigurationsIndexRoute
-  '/products': typeof ProductsIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
-  '/settings/characteristics/$charId': typeof SettingsCharacteristicsCharIdRoute
-  '/settings/connectors/$id': typeof SettingsConnectorsIdRoute
-  '/settings/characteristics': typeof SettingsCharacteristicsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -490,14 +342,11 @@ export interface FileRoutesById {
   '/audit-log': typeof AuditLogRoute
   '/billing': typeof BillingRoute
   '/chat': typeof ChatRoute
-  '/configurations': typeof ConfigurationsRouteWithChildren
-  '/configurator': typeof ConfiguratorRouteWithChildren
   '/developers': typeof DevelopersRoute
   '/files': typeof FilesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/jobs': typeof JobsRoute
   '/login': typeof LoginRoute
-  '/products': typeof ProductsRouteWithChildren
   '/provider-keys': typeof ProviderKeysRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -508,17 +357,10 @@ export interface FileRoutesById {
   '/agents/$instanceId': typeof AgentsInstanceIdRoute
   '/agents/sessions': typeof AgentsSessionsRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
-  '/configurations/$sessionId': typeof ConfigurationsSessionIdRoute
-  '/configurations/bom-analysis': typeof ConfigurationsBomAnalysisRoute
-  '/configurator/$productId': typeof ConfiguratorProductIdRoute
-  '/products/$productId': typeof ProductsProductIdRoute
-  '/products/families': typeof ProductsFamiliesRoute
   '/settings/agents': typeof SettingsAgentsRoute
   '/settings/api-keys': typeof SettingsApiKeysRoute
   '/settings/audit-log': typeof SettingsAuditLogRoute
   '/settings/billing': typeof SettingsBillingRoute
-  '/settings/characteristics': typeof SettingsCharacteristicsRouteWithChildren
-  '/settings/connectors': typeof SettingsConnectorsRouteWithChildren
   '/settings/danger': typeof SettingsDangerRoute
   '/settings/data': typeof SettingsDataRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -527,13 +369,8 @@ export interface FileRoutesById {
   '/settings/team': typeof SettingsTeamRoute
   '/settings/webhooks': typeof SettingsWebhooksRoute
   '/agents/': typeof AgentsIndexRoute
-  '/configurations/': typeof ConfigurationsIndexRoute
-  '/products/': typeof ProductsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
-  '/settings/characteristics/$charId': typeof SettingsCharacteristicsCharIdRoute
-  '/settings/connectors/$id': typeof SettingsConnectorsIdRoute
-  '/settings/characteristics/': typeof SettingsCharacteristicsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -545,14 +382,11 @@ export interface FileRouteTypes {
     | '/audit-log'
     | '/billing'
     | '/chat'
-    | '/configurations'
-    | '/configurator'
     | '/developers'
     | '/files'
     | '/forgot-password'
     | '/jobs'
     | '/login'
-    | '/products'
     | '/provider-keys'
     | '/register'
     | '/reset-password'
@@ -563,17 +397,10 @@ export interface FileRouteTypes {
     | '/agents/$instanceId'
     | '/agents/sessions'
     | '/agents/workspace'
-    | '/configurations/$sessionId'
-    | '/configurations/bom-analysis'
-    | '/configurator/$productId'
-    | '/products/$productId'
-    | '/products/families'
     | '/settings/agents'
     | '/settings/api-keys'
     | '/settings/audit-log'
     | '/settings/billing'
-    | '/settings/characteristics'
-    | '/settings/connectors'
     | '/settings/danger'
     | '/settings/data'
     | '/settings/general'
@@ -582,13 +409,8 @@ export interface FileRouteTypes {
     | '/settings/team'
     | '/settings/webhooks'
     | '/agents/'
-    | '/configurations/'
-    | '/products/'
     | '/settings/'
     | '/auth/callback/$provider'
-    | '/settings/characteristics/$charId'
-    | '/settings/connectors/$id'
-    | '/settings/characteristics/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -597,7 +419,6 @@ export interface FileRouteTypes {
     | '/audit-log'
     | '/billing'
     | '/chat'
-    | '/configurator'
     | '/developers'
     | '/files'
     | '/forgot-password'
@@ -612,16 +433,10 @@ export interface FileRouteTypes {
     | '/agents/$instanceId'
     | '/agents/sessions'
     | '/agents/workspace'
-    | '/configurations/$sessionId'
-    | '/configurations/bom-analysis'
-    | '/configurator/$productId'
-    | '/products/$productId'
-    | '/products/families'
     | '/settings/agents'
     | '/settings/api-keys'
     | '/settings/audit-log'
     | '/settings/billing'
-    | '/settings/connectors'
     | '/settings/danger'
     | '/settings/data'
     | '/settings/general'
@@ -630,13 +445,8 @@ export interface FileRouteTypes {
     | '/settings/team'
     | '/settings/webhooks'
     | '/agents'
-    | '/configurations'
-    | '/products'
     | '/settings'
     | '/auth/callback/$provider'
-    | '/settings/characteristics/$charId'
-    | '/settings/connectors/$id'
-    | '/settings/characteristics'
   id:
     | '__root__'
     | '/'
@@ -646,14 +456,11 @@ export interface FileRouteTypes {
     | '/audit-log'
     | '/billing'
     | '/chat'
-    | '/configurations'
-    | '/configurator'
     | '/developers'
     | '/files'
     | '/forgot-password'
     | '/jobs'
     | '/login'
-    | '/products'
     | '/provider-keys'
     | '/register'
     | '/reset-password'
@@ -664,17 +471,10 @@ export interface FileRouteTypes {
     | '/agents/$instanceId'
     | '/agents/sessions'
     | '/agents/workspace'
-    | '/configurations/$sessionId'
-    | '/configurations/bom-analysis'
-    | '/configurator/$productId'
-    | '/products/$productId'
-    | '/products/families'
     | '/settings/agents'
     | '/settings/api-keys'
     | '/settings/audit-log'
     | '/settings/billing'
-    | '/settings/characteristics'
-    | '/settings/connectors'
     | '/settings/danger'
     | '/settings/data'
     | '/settings/general'
@@ -683,13 +483,8 @@ export interface FileRouteTypes {
     | '/settings/team'
     | '/settings/webhooks'
     | '/agents/'
-    | '/configurations/'
-    | '/products/'
     | '/settings/'
     | '/auth/callback/$provider'
-    | '/settings/characteristics/$charId'
-    | '/settings/connectors/$id'
-    | '/settings/characteristics/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -700,14 +495,11 @@ export interface RootRouteChildren {
   AuditLogRoute: typeof AuditLogRoute
   BillingRoute: typeof BillingRoute
   ChatRoute: typeof ChatRoute
-  ConfigurationsRoute: typeof ConfigurationsRouteWithChildren
-  ConfiguratorRoute: typeof ConfiguratorRouteWithChildren
   DevelopersRoute: typeof DevelopersRoute
   FilesRoute: typeof FilesRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   JobsRoute: typeof JobsRoute
   LoginRoute: typeof LoginRoute
-  ProductsRoute: typeof ProductsRouteWithChildren
   ProviderKeysRoute: typeof ProviderKeysRoute
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
@@ -769,13 +561,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProviderKeysRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/products': {
-      id: '/products'
-      path: '/products'
-      fullPath: '/products'
-      preLoaderRoute: typeof ProductsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -809,20 +594,6 @@ declare module '@tanstack/react-router' {
       path: '/developers'
       fullPath: '/developers'
       preLoaderRoute: typeof DevelopersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/configurator': {
-      id: '/configurator'
-      path: '/configurator'
-      fullPath: '/configurator'
-      preLoaderRoute: typeof ConfiguratorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/configurations': {
-      id: '/configurations'
-      path: '/configurations'
-      fullPath: '/configurations'
-      preLoaderRoute: typeof ConfigurationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chat': {
@@ -881,20 +652,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsIndexRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/products/': {
-      id: '/products/'
-      path: '/'
-      fullPath: '/products/'
-      preLoaderRoute: typeof ProductsIndexRouteImport
-      parentRoute: typeof ProductsRoute
-    }
-    '/configurations/': {
-      id: '/configurations/'
-      path: '/'
-      fullPath: '/configurations/'
-      preLoaderRoute: typeof ConfigurationsIndexRouteImport
-      parentRoute: typeof ConfigurationsRoute
-    }
     '/agents/': {
       id: '/agents/'
       path: '/'
@@ -951,20 +708,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsDangerRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/settings/connectors': {
-      id: '/settings/connectors'
-      path: '/connectors'
-      fullPath: '/settings/connectors'
-      preLoaderRoute: typeof SettingsConnectorsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/characteristics': {
-      id: '/settings/characteristics'
-      path: '/characteristics'
-      fullPath: '/settings/characteristics'
-      preLoaderRoute: typeof SettingsCharacteristicsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
     '/settings/billing': {
       id: '/settings/billing'
       path: '/billing'
@@ -993,41 +736,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAgentsRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/products/families': {
-      id: '/products/families'
-      path: '/families'
-      fullPath: '/products/families'
-      preLoaderRoute: typeof ProductsFamiliesRouteImport
-      parentRoute: typeof ProductsRoute
-    }
-    '/products/$productId': {
-      id: '/products/$productId'
-      path: '/$productId'
-      fullPath: '/products/$productId'
-      preLoaderRoute: typeof ProductsProductIdRouteImport
-      parentRoute: typeof ProductsRoute
-    }
-    '/configurator/$productId': {
-      id: '/configurator/$productId'
-      path: '/$productId'
-      fullPath: '/configurator/$productId'
-      preLoaderRoute: typeof ConfiguratorProductIdRouteImport
-      parentRoute: typeof ConfiguratorRoute
-    }
-    '/configurations/bom-analysis': {
-      id: '/configurations/bom-analysis'
-      path: '/bom-analysis'
-      fullPath: '/configurations/bom-analysis'
-      preLoaderRoute: typeof ConfigurationsBomAnalysisRouteImport
-      parentRoute: typeof ConfigurationsRoute
-    }
-    '/configurations/$sessionId': {
-      id: '/configurations/$sessionId'
-      path: '/$sessionId'
-      fullPath: '/configurations/$sessionId'
-      preLoaderRoute: typeof ConfigurationsSessionIdRouteImport
-      parentRoute: typeof ConfigurationsRoute
-    }
     '/agents/workspace': {
       id: '/agents/workspace'
       path: '/workspace'
@@ -1048,27 +756,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/agents/$instanceId'
       preLoaderRoute: typeof AgentsInstanceIdRouteImport
       parentRoute: typeof AgentsRoute
-    }
-    '/settings/characteristics/': {
-      id: '/settings/characteristics/'
-      path: '/'
-      fullPath: '/settings/characteristics/'
-      preLoaderRoute: typeof SettingsCharacteristicsIndexRouteImport
-      parentRoute: typeof SettingsCharacteristicsRoute
-    }
-    '/settings/connectors/$id': {
-      id: '/settings/connectors/$id'
-      path: '/$id'
-      fullPath: '/settings/connectors/$id'
-      preLoaderRoute: typeof SettingsConnectorsIdRouteImport
-      parentRoute: typeof SettingsConnectorsRoute
-    }
-    '/settings/characteristics/$charId': {
-      id: '/settings/characteristics/$charId'
-      path: '/$charId'
-      fullPath: '/settings/characteristics/$charId'
-      preLoaderRoute: typeof SettingsCharacteristicsCharIdRouteImport
-      parentRoute: typeof SettingsCharacteristicsRoute
     }
     '/auth/callback/$provider': {
       id: '/auth/callback/$provider'
@@ -1097,84 +784,11 @@ const AgentsRouteChildren: AgentsRouteChildren = {
 const AgentsRouteWithChildren =
   AgentsRoute._addFileChildren(AgentsRouteChildren)
 
-interface ConfigurationsRouteChildren {
-  ConfigurationsSessionIdRoute: typeof ConfigurationsSessionIdRoute
-  ConfigurationsBomAnalysisRoute: typeof ConfigurationsBomAnalysisRoute
-  ConfigurationsIndexRoute: typeof ConfigurationsIndexRoute
-}
-
-const ConfigurationsRouteChildren: ConfigurationsRouteChildren = {
-  ConfigurationsSessionIdRoute: ConfigurationsSessionIdRoute,
-  ConfigurationsBomAnalysisRoute: ConfigurationsBomAnalysisRoute,
-  ConfigurationsIndexRoute: ConfigurationsIndexRoute,
-}
-
-const ConfigurationsRouteWithChildren = ConfigurationsRoute._addFileChildren(
-  ConfigurationsRouteChildren,
-)
-
-interface ConfiguratorRouteChildren {
-  ConfiguratorProductIdRoute: typeof ConfiguratorProductIdRoute
-}
-
-const ConfiguratorRouteChildren: ConfiguratorRouteChildren = {
-  ConfiguratorProductIdRoute: ConfiguratorProductIdRoute,
-}
-
-const ConfiguratorRouteWithChildren = ConfiguratorRoute._addFileChildren(
-  ConfiguratorRouteChildren,
-)
-
-interface ProductsRouteChildren {
-  ProductsProductIdRoute: typeof ProductsProductIdRoute
-  ProductsFamiliesRoute: typeof ProductsFamiliesRoute
-  ProductsIndexRoute: typeof ProductsIndexRoute
-}
-
-const ProductsRouteChildren: ProductsRouteChildren = {
-  ProductsProductIdRoute: ProductsProductIdRoute,
-  ProductsFamiliesRoute: ProductsFamiliesRoute,
-  ProductsIndexRoute: ProductsIndexRoute,
-}
-
-const ProductsRouteWithChildren = ProductsRoute._addFileChildren(
-  ProductsRouteChildren,
-)
-
-interface SettingsCharacteristicsRouteChildren {
-  SettingsCharacteristicsCharIdRoute: typeof SettingsCharacteristicsCharIdRoute
-  SettingsCharacteristicsIndexRoute: typeof SettingsCharacteristicsIndexRoute
-}
-
-const SettingsCharacteristicsRouteChildren: SettingsCharacteristicsRouteChildren =
-  {
-    SettingsCharacteristicsCharIdRoute: SettingsCharacteristicsCharIdRoute,
-    SettingsCharacteristicsIndexRoute: SettingsCharacteristicsIndexRoute,
-  }
-
-const SettingsCharacteristicsRouteWithChildren =
-  SettingsCharacteristicsRoute._addFileChildren(
-    SettingsCharacteristicsRouteChildren,
-  )
-
-interface SettingsConnectorsRouteChildren {
-  SettingsConnectorsIdRoute: typeof SettingsConnectorsIdRoute
-}
-
-const SettingsConnectorsRouteChildren: SettingsConnectorsRouteChildren = {
-  SettingsConnectorsIdRoute: SettingsConnectorsIdRoute,
-}
-
-const SettingsConnectorsRouteWithChildren =
-  SettingsConnectorsRoute._addFileChildren(SettingsConnectorsRouteChildren)
-
 interface SettingsRouteChildren {
   SettingsAgentsRoute: typeof SettingsAgentsRoute
   SettingsApiKeysRoute: typeof SettingsApiKeysRoute
   SettingsAuditLogRoute: typeof SettingsAuditLogRoute
   SettingsBillingRoute: typeof SettingsBillingRoute
-  SettingsCharacteristicsRoute: typeof SettingsCharacteristicsRouteWithChildren
-  SettingsConnectorsRoute: typeof SettingsConnectorsRouteWithChildren
   SettingsDangerRoute: typeof SettingsDangerRoute
   SettingsDataRoute: typeof SettingsDataRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
@@ -1190,8 +804,6 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsApiKeysRoute: SettingsApiKeysRoute,
   SettingsAuditLogRoute: SettingsAuditLogRoute,
   SettingsBillingRoute: SettingsBillingRoute,
-  SettingsCharacteristicsRoute: SettingsCharacteristicsRouteWithChildren,
-  SettingsConnectorsRoute: SettingsConnectorsRouteWithChildren,
   SettingsDangerRoute: SettingsDangerRoute,
   SettingsDataRoute: SettingsDataRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
@@ -1214,14 +826,11 @@ const rootRouteChildren: RootRouteChildren = {
   AuditLogRoute: AuditLogRoute,
   BillingRoute: BillingRoute,
   ChatRoute: ChatRoute,
-  ConfigurationsRoute: ConfigurationsRouteWithChildren,
-  ConfiguratorRoute: ConfiguratorRouteWithChildren,
   DevelopersRoute: DevelopersRoute,
   FilesRoute: FilesRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   JobsRoute: JobsRoute,
   LoginRoute: LoginRoute,
-  ProductsRoute: ProductsRouteWithChildren,
   ProviderKeysRoute: ProviderKeysRoute,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,

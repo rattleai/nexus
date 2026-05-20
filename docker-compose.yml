@@ -235,7 +235,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: cadprice-mcp
+    command: nxs-mcp
     stop_grace_period: 10s
     restart: unless-stopped
     profiles: ["mcp"]

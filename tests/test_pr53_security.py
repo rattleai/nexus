@@ -84,82 +84,6 @@ class TestWebParserSSRF:
 # ── UUID Validation ──────────────────────────────────────────────────
 
 
-class TestConfiguratorValidation:
-    def test_parse_uuid_valid(self):
-        from app.apps.cpq.mcp_tools import _parse_uuid
-
-        uid = uuid.uuid4()
-        result = _parse_uuid(str(uid), "test_field")
-        assert result == uid
-
-    def test_parse_uuid_invalid(self):
-        from app.apps.cpq.mcp_tools import _parse_uuid
-
-        result = _parse_uuid("not-a-uuid", "test_field")
-        assert isinstance(result, dict)
-        assert "error" in result
-
-    def test_parse_uuid_empty(self):
-        from app.apps.cpq.mcp_tools import _parse_uuid
-
-        result = _parse_uuid("", "test_field")
-        assert isinstance(result, dict)
-        assert "error" in result
-
-    @pytest.mark.asyncio
-    async def test_config_get_product_invalid_uuid(self):
-        from app.apps.cpq.mcp_tools import config_get_product
-
-        tenant = _make_tenant()
-        db = AsyncMock()
-        result = await config_get_product("not-a-uuid", tenant=tenant, db=db)
-        assert "error" in result
-        assert "Invalid product_id" in result["error"]
-
-    @pytest.mark.asyncio
-    async def test_config_create_product_invalid_family_id(self):
-        from app.apps.cpq.mcp_tools import config_create_product
-
-        tenant = _make_tenant()
-        db = AsyncMock()
-        result = await config_create_product(
-            name="Test",
-            slug="test",
-            family_id="bad-uuid",
-            tenant=tenant,
-            db=db,
-        )
-        assert "error" in result
-        assert "Invalid family_id" in result["error"]
-
-
-# ── Enum Validation ──────────────────────────────────────────────────
-
-
-class TestEnumValidation:
-    @pytest.mark.asyncio
-    async def test_config_list_products_invalid_status(self):
-        from app.apps.cpq.mcp_tools import config_list_products
-
-        tenant = _make_tenant()
-        db = AsyncMock()
-        result = await config_list_products(status="nonexistent_status", tenant=tenant, db=db)
-        assert "error" in result
-        assert "Invalid status" in result["error"]
-
-
-# ── CharacteristicType Bug Fix ───────────────────────────────────────
-
-
-class TestCharacteristicTypeFix:
-    def test_import_characteristic_type(self):
-        """Verify the CharType -> CharacteristicType fix by importing the module."""
-        # This would have crashed pre-fix due to importing non-existent CharType
-        from app.apps.cpq import mcp_tools
-
-        assert hasattr(mcp_tools, "config_create_characteristic")
-
-
 # ── Error Sanitization ───────────────────────────────────────────────
 
 
@@ -376,7 +300,7 @@ class TestChunkDeletionTenantFilter:
         """Static check that the reprocess endpoint filters chunks by tenant."""
         import inspect
 
-        from app.apps.cpq.api import datasources
+        from app.api.v1 import datasources
 
         source = inspect.getsource(datasources)
         # The delete(DataSourceChunk) call must include tenant_id
@@ -390,7 +314,7 @@ class TestORMIndexNaming:
     """Verify ORM index names match migration index names."""
 
     def test_provenance_index_names_match_migration(self):
-        from app.apps.cpq.models.datasource import ConfigItemProvenance
+        from app.db.models.datasource import ConfigItemProvenance
 
         index_names = {idx.name for idx in ConfigItemProvenance.__table__.indexes}
         # These names must match what migration 0019 created

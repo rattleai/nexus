@@ -52,33 +52,3 @@ CIRCUIT_BREAKER_STATE = Gauge(
     ["breaker", "key"],
 )
 
-# ── Configurator metrics ────────────────────────────────
-
-CONFIGURATOR_PROPAGATION_DURATION = Histogram(
-    "configurator_propagation_seconds",
-    "Constraint propagation duration in seconds",
-    buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
-)
-
-CONFIGURATOR_PROPAGATION_ITERATIONS = Histogram(
-    "configurator_propagation_iterations",
-    "Number of iterations in the constraint propagation loop",
-    buckets=[1, 5, 10, 25, 50, 100, 250, 500, 1000],
-)
-
-CONFIGURATOR_BOM_RESOLUTION_DURATION = Histogram(
-    "configurator_bom_resolution_seconds",
-    "BOM resolution duration in seconds",
-    buckets=[0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
-)
-
-CONFIGURATOR_CONSTRAINT_EVALUATIONS = Counter(
-    "configurator_constraint_evaluations_total",
-    "Total constraint evaluations during propagation",
-    ["constraint_type"],
-)
-
-CONFIGURATOR_CONTRADICTIONS = Counter(
-    "configurator_contradictions_total",
-    "Total contradictions detected during propagation",
-)

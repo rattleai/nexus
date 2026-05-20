@@ -4,7 +4,7 @@ set -euo pipefail
 # Production deployment script
 # Usage: ./infra/scripts/deploy.sh [--build] [--migrate] [--skip-backup]
 
-APP_NAME="saas-platform"
+APP_NAME="nexus"
 COMPOSE_FILE="docker-compose.prod.yml"
 BACKUP_DIR="./backups"
 HEALTH_CHECK_TIMEOUT=60  # seconds

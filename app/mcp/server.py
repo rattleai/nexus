@@ -31,7 +31,7 @@ def create_mcp_server() -> FastMCP:
     mcp = FastMCP(
         settings.MCP_SERVER_NAME,
         instructions=(
-            "CADPrice MCP Server — a multi-tenant SaaS platform with AI gateway, "
+            "NEXUS MCP Server — a multi-tenant SaaS platform with AI gateway, "
             "job management, billing, file storage, and team management. "
             "Use the available tools to interact with the platform programmatically. "
             "All operations are scoped to the authenticated tenant."
@@ -48,9 +48,9 @@ def create_mcp_server() -> FastMCP:
         """
         from app.db.session import async_session_factory
 
-        raw_key = os.environ.get("CADPRICE_API_KEY", "")
+        raw_key = os.environ.get("NXS_API_KEY", "")
         if not raw_key:
-            raise auth_error("CADPRICE_API_KEY environment variable not set")
+            raise auth_error("NXS_API_KEY environment variable not set")
 
         db = async_session_factory()
         try:
@@ -419,7 +419,7 @@ def create_mcp_server() -> FastMCP:
 
     # ── Resources ────────────────────────────────────────────
 
-    @mcp.resource("cadprice://models")
+    @mcp.resource("nxs://models")
     async def resource_models() -> str:
         """Available AI models and their capabilities."""
         from app.mcp.tools.ai import ai_list_models as _ai_list_models
@@ -432,7 +432,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.resource("cadprice://wallet/balance")
+    @mcp.resource("nxs://wallet/balance")
     async def resource_wallet_balance() -> str:
         """Current token wallet balance."""
         from app.mcp.tools.billing import billing_get_wallet_balance as _get_balance
@@ -445,7 +445,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.resource("cadprice://team/members")
+    @mcp.resource("nxs://team/members")
     async def resource_team_members() -> str:
         """Current team members with roles."""
         from app.mcp.tools.team import team_list_members as _list_members
@@ -458,7 +458,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.resource("cadprice://jobs/recent")
+    @mcp.resource("nxs://jobs/recent")
     async def resource_recent_jobs() -> str:
         """Most recent jobs (last 20)."""
         from app.mcp.tools.jobs import job_list as _job_list
@@ -471,7 +471,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.resource("cadprice://billing/usage")
+    @mcp.resource("nxs://billing/usage")
     async def resource_billing_usage() -> str:
         """AI usage statistics for the last 30 days."""
         from app.mcp.tools.ai import ai_get_usage as _ai_get_usage
@@ -484,7 +484,7 @@ def create_mcp_server() -> FastMCP:
         finally:
             await db.close()
 
-    @mcp.resource("cadprice://webhooks/events")
+    @mcp.resource("nxs://webhooks/events")
     async def resource_webhook_events() -> str:
         """Available webhook event types that can be subscribed to."""
         from app.api.v1.webhooks import VALID_WEBHOOK_EVENTS

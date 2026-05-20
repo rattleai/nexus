@@ -27,15 +27,15 @@ def test_create_mfa_pending_token():
 
     # Decode with type override since it's not "access"
     import jwt
-
+    from app.config import settings
     from app.core.security import _get_effective_algorithm, _get_jwt_verification_key
 
     payload = jwt.decode(
         token,
         _get_jwt_verification_key(),
         algorithms=[_get_effective_algorithm()],
-        issuer="saas-platform",
-        audience="saas-platform",
+        issuer=settings.JWT_ISSUER,
+        audience=settings.JWT_AUDIENCE,
     )
     assert payload["type"] == "mfa_pending"
     assert payload["amr"] == ["pwd"]

@@ -47,8 +47,8 @@ def test_not_agent_empty():
     assert _is_agent_request(request) is False
 
 
-def test_detect_agent_cadprice_cli():
-    request = _make_request(user_agent="cadprice-cli/0.1.0")
+def test_detect_agent_nxs_cli():
+    request = _make_request(user_agent="nxs-cli/0.1.0")
     assert _is_agent_request(request) is True
 
 

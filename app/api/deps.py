@@ -382,8 +382,8 @@ async def get_tenant_from_client_credentials(
             token,
             _get_jwt_verification_key(),
             algorithms=[algorithm],
-            audience="cadprice-api",
-            issuer="cadprice",
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired") from None

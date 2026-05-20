@@ -1,7 +1,7 @@
 """Agent capabilities — slug resolution and token-based privilege system.
 
 Part 1: Capability Resolver
-    Maps capability slugs (``cpq:products:write``) to tool name sets.
+    Maps capability slugs (``myapp:items:write``) to tool name sets.
     Built from platform built-in + plugin-declared capabilities.
     Cached per-process, no database dependency.
 
@@ -48,8 +48,8 @@ class CapabilityResolver:
 
         from app.agents.capabilities import capability_resolver
 
-        tools = capability_resolver.resolve(["cpq:products:read", "platform:ai"])
-        # → {"config_list_products", "config_get_product", ..., "ai_complete", "ai_list_models"}
+        tools = capability_resolver.resolve(["example:echo", "platform:ai"])
+        # → {"example_echo", "ai_complete", "ai_list_models", ...}
     """
 
     def __init__(self) -> None:
@@ -416,8 +416,10 @@ class CapabilityManager:
         # Try version-specific key first, fall back to primary
         source = getattr(settings, f"ENCRYPTION_KEY_V{version}", "") or settings.ENCRYPTION_KEY or settings.SECRET_KEY
         # Deterministic salt provides better key separation than salt=None
-        # (RFC 5869 recommends a non-secret random value or application-specific constant)
-        salt = hashlib.sha256(b"cadprice-capability-salt-v1").digest()
+        # (RFC 5869 recommends a non-secret random value or application-specific constant).
+        # The literal below is part of the KDF input — changing it invalidates
+        # all previously signed capability tokens.
+        salt = hashlib.sha256(b"nxs-capability-salt-v1").digest()
         hkdf = HKDF(
             algorithm=SHA256(),
             length=32,

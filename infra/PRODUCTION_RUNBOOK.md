@@ -18,8 +18,8 @@
 echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
 
 # Build production image
-docker build -t ghcr.io/your-org/cadprice:v1.0.0 .
-docker push ghcr.io/your-org/cadprice:v1.0.0
+docker build -t ghcr.io/your-org/nxs:v1.0.0 .
+docker push ghcr.io/your-org/nxs:v1.0.0
 ```
 
 #### 2. Configure Terraform Variables
@@ -33,8 +33,8 @@ Edit `terraform.tfvars`:
 ```hcl
 environment      = "prod"
 aws_region       = "us-east-1"
-container_image  = "ghcr.io/your-org/cadprice:v1.0.0"
-domain_name      = "cadprice.com"
+container_image  = "ghcr.io/your-org/nxs:v1.0.0"
+domain_name      = "example.com"
 db_instance_class = "db.t4g.medium"
 ```
 
@@ -61,7 +61,7 @@ Point your domain to the ALB:
 terraform output alb_dns_name
 
 # Create CNAME record:
-# cadprice.com → <alb-dns-name>
+# example.com → <alb-dns-name>
 ```
 
 #### 5. Run Database Migrations
@@ -69,8 +69,8 @@ terraform output alb_dns_name
 ```bash
 # Run as one-off ECS task
 aws ecs run-task \
-  --cluster cadprice-prod \
-  --task-definition cadprice-api \
+  --cluster nxs-prod \
+  --task-definition nxs-api \
   --launch-type FARGATE \
   --overrides '{
     "containerOverrides": [{
@@ -90,15 +90,15 @@ aws ecs run-task \
 
 ```bash
 # Check ECS services
-aws ecs describe-services --cluster cadprice-prod \
-  --services cadprice-api cadprice-worker cadprice-beat
+aws ecs describe-services --cluster nxs-prod \
+  --services nxs-api nxs-worker nxs-beat
 
 # Check health endpoint
-curl https://cadprice.com/api/v1/health/live
-curl https://cadprice.com/api/v1/health/ready
+curl https://example.com/api/v1/health/live
+curl https://example.com/api/v1/health/ready
 
 # Check CloudWatch alarms
-aws cloudwatch describe-alarms --alarm-name-prefix cadprice
+aws cloudwatch describe-alarms --alarm-name-prefix nxs
 ```
 
 ### Path B: Kubernetes
@@ -106,13 +106,13 @@ aws cloudwatch describe-alarms --alarm-name-prefix cadprice
 #### 1. Create Namespace & Secrets
 
 ```bash
-kubectl create namespace cadprice
+kubectl create namespace nxs
 
 # Create secrets (use external-secrets-operator in production)
-kubectl -n cadprice create secret generic cadprice-secrets \
+kubectl -n nxs create secret generic nxs-secrets \
   --from-literal=SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))") \
   --from-literal=ENCRYPTION_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))") \
-  --from-literal=DATABASE_URL=postgresql+asyncpg://app_user:PASSWORD@db-host:5432/cadprice?ssl=require \
+  --from-literal=DATABASE_URL=postgresql+asyncpg://app_user:PASSWORD@db-host:5432/nxs?ssl=require \
   --from-literal=REDIS_URL=rediss://:PASSWORD@redis-host:6379/0
 ```
 
@@ -123,16 +123,16 @@ cd infra/k8s
 kubectl apply -k .
 
 # Verify pods
-kubectl -n cadprice get pods -w
+kubectl -n nxs get pods -w
 
 # Check logs
-kubectl -n cadprice logs -l app=cadprice-api --tail=50
+kubectl -n nxs logs -l app=nxs-api --tail=50
 ```
 
 #### 3. Run Migrations
 
 ```bash
-kubectl -n cadprice exec deploy/cadprice-api -- alembic upgrade head
+kubectl -n nxs exec deploy/nxs-api -- alembic upgrade head
 ```
 
 ### Path C: Docker Compose on VPS
@@ -145,8 +145,8 @@ Minimum: 4GB RAM, 2 vCPUs, 40GB SSD (Ubuntu 22.04+).
 
 ```bash
 # On the server
-git clone <repo> /opt/cadprice
-cd /opt/cadprice
+git clone <repo> /opt/nxs
+cd /opt/nxs
 
 cp .env.example .env
 # Edit .env with production values
@@ -179,15 +179,15 @@ openssl rsa -in jwt_private.pem -pubout -out jwt_public.pem
 terraform apply
 
 # Or force new deployment with same image:
-aws ecs update-service --cluster cadprice-prod \
-  --service cadprice-api --force-new-deployment
+aws ecs update-service --cluster nxs-prod \
+  --service nxs-api --force-new-deployment
 ```
 
 ### Kubernetes
 ```bash
-kubectl -n cadprice set image deploy/cadprice-api \
-  api=ghcr.io/your-org/cadprice:v1.1.0
-kubectl -n cadprice rollout status deploy/cadprice-api
+kubectl -n nxs set image deploy/nxs-api \
+  api=ghcr.io/your-org/nxs:v1.1.0
+kubectl -n nxs rollout status deploy/nxs-api
 ```
 
 ### Docker Compose
@@ -203,14 +203,14 @@ kubectl -n cadprice rollout status deploy/cadprice-api
 terraform apply
 
 # Or rollback ECS service to previous task definition
-aws ecs update-service --cluster cadprice-prod \
-  --service cadprice-api \
-  --task-definition cadprice-api:<previous-revision>
+aws ecs update-service --cluster nxs-prod \
+  --service nxs-api \
+  --task-definition nxs-api:<previous-revision>
 ```
 
 ### Kubernetes
 ```bash
-kubectl -n cadprice rollout undo deploy/cadprice-api
+kubectl -n nxs rollout undo deploy/nxs-api
 ```
 
 ### Docker Compose
@@ -225,7 +225,7 @@ docker compose -f docker-compose.prod.yml up -d
 ### Backup (manual)
 ```bash
 # ECS/K8s: Connect to RDS
-pg_dump -h <rds-endpoint> -U cadprice_master -d cadprice | gzip > backup.sql.gz
+pg_dump -h <rds-endpoint> -U nxs_master -d nxs | gzip > backup.sql.gz
 
 # Docker Compose: Uses automated backup container (daily 2 AM UTC)
 docker compose -f docker-compose.prod.yml exec db-backup /backup.sh

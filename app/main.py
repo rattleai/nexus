@@ -192,9 +192,9 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="SaaS Platform",
+        title="NEXUS",
         version=__version__,
-        description="Multi-tenant SaaS platform",
+        description="AI-first multi-agent platform — multi-tenant, plugin-based.",
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
@@ -268,10 +268,10 @@ def create_app() -> FastAPI:
         """OpenAI GPT Actions / Microsoft Copilot plugin manifest."""
         return {
             "schema_version": "v1",
-            "name_for_human": "CADPrice",
-            "name_for_model": "cadprice",
+            "name_for_human": "NEXUS",
+            "name_for_model": "nxs",
             "description_for_human": "Multi-tenant SaaS platform with AI gateway, agent orchestration, billing, and file management.",
-            "description_for_model": "Use CADPrice to run AI completions via a multi-provider gateway, manage and execute AI agents, create background jobs, upload/download files, track billing and usage, and manage team members and webhooks. All operations are scoped to the authenticated tenant.",
+            "description_for_model": "Use NEXUS to run AI completions via a multi-provider gateway, manage and execute AI agents, create background jobs, upload/download files, track billing and usage, and manage team members and webhooks. All operations are scoped to the authenticated tenant.",
             "auth": {
                 "type": "service_http",
                 "authorization_type": "bearer",
@@ -282,7 +282,7 @@ def create_app() -> FastAPI:
                 "url": f"{settings.APP_BASE_URL}/api/v1/openapi.json",
             },
             "logo_url": f"{settings.APP_BASE_URL}/logo.png",
-            "contact_email": "support@cadprice.com",
+            "contact_email": "support@example.com",
             "legal_info_url": f"{settings.APP_BASE_URL}/legal/privacy",
         }
 
@@ -292,13 +292,13 @@ def create_app() -> FastAPI:
         from starlette.responses import HTMLResponse
 
         return HTMLResponse(
-            "<html><head><title>CADPrice Privacy Policy</title></head><body>"
+            "<html><head><title>NEXUS Privacy Policy</title></head><body>"
             "<h1>Privacy Policy</h1>"
-            "<p>CADPrice processes data on behalf of authenticated tenants. "
+            "<p>NEXUS processes data on behalf of authenticated tenants. "
             "All data is tenant-scoped via row-level security. "
             "We implement GDPR Article 25 (privacy by design) with consent tracking, "
             "data subject access request handling, and configurable retention policies.</p>"
-            "<p>For data requests, contact: privacy@cadprice.com</p>"
+            "<p>For data requests, contact: privacy@example.com</p>"
             "</body></html>"
         )
 

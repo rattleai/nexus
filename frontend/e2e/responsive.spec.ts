@@ -17,7 +17,7 @@ test.describe("Responsive Design", () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto("/")
     // Wait for auth check to complete (loading spinner should disappear)
-    await expect(page.getByText("Welcome to CAD Price")).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText("Welcome to NEXUS")).toBeVisible({ timeout: 15_000 })
 
     const bottomNav = page.locator("nav[aria-label='Primary']")
     await expect(bottomNav).not.toBeVisible()

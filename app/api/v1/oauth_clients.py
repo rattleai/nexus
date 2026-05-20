@@ -288,8 +288,8 @@ async def exchange_token(
         "scopes": client.scopes or [],
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=expires_in)).timestamp()),
-        "iss": "cadprice",
-        "aud": "cadprice-api",
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.JWT_AUDIENCE,
         "jti": uuid.uuid4().hex,
         "type": "client_credentials",
     }

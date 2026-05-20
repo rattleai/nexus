@@ -126,7 +126,7 @@ class AgentDefinition(Base, TimestampMixin, SoftDeleteMixin, AuditMixin, Version
     # Tool access — JSON array of tool names this agent may invoke (legacy)
     allowed_tools: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
 
-    # Capability-based tool access — list of capability slugs (e.g. "cpq:products:write").
+    # Capability-based tool access — list of capability slugs (e.g. "myapp:items:write").
     # When non-empty, resolved to tool names at runtime and unioned with allowed_tools.
     capabilities: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
 

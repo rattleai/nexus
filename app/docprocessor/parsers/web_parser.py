@@ -57,7 +57,7 @@ class WebParser:
                 timeout=30.0,
                 follow_redirects=True,
                 max_redirects=5,
-                headers={"User-Agent": "CadPrice-DocProcessor/1.0"},
+                headers={"User-Agent": "Nexus-DocProcessor/1.0"},
             ) as client:
                 response = await client.get(url)
                 response.raise_for_status()

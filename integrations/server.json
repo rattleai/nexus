@@ -1,18 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "com.cadprice/mcp-server",
-  "title": "CADPrice MCP Server",
+  "name": "com.nxs/mcp-server",
+  "title": "NEXUS MCP Server",
   "version": "1.0.0",
   "description": "Multi-tenant SaaS platform with AI gateway, agent orchestration, billing, and file management. Provides tools for AI completion, agent execution, job management, file storage, billing, and team management.",
-  "websiteUrl": "https://cadprice.com",
+  "websiteUrl": "https://example.com",
   "repository": {
-    "url": "https://github.com/mngapps/cadprice",
+    "url": "https://github.com/rattleai/nxs",
     "source": "github"
   },
   "packages": [
     {
       "registryType": "docker",
-      "identifier": "ghcr.io/mngapps/cadprice-mcp:latest",
+      "identifier": "ghcr.io/${{ github.repository_owner }}/nxs-mcp:latest",
       "version": "1.0.0",
       "transport": [
         {
@@ -21,13 +21,13 @@
       ],
       "environmentVariables": [
         {
-          "name": "CADPRICE_API_KEY",
-          "description": "Your CADPrice API key for authentication",
+          "name": "NXS_API_KEY",
+          "description": "Your NEXUS API key for authentication",
           "required": true
         },
         {
-          "name": "CADPRICE_API_URL",
-          "description": "API base URL (default: https://api.cadprice.com)",
+          "name": "NXS_API_URL",
+          "description": "API base URL (default: https://api.example.com)",
           "required": false
         }
       ]
@@ -36,9 +36,9 @@
   "remotes": [
     {
       "transportType": "streamable-http",
-      "url": "https://mcp.cadprice.com/mcp",
-      "authorizationUrl": "https://api.cadprice.com/oauth/authorize",
-      "tokenUrl": "https://api.cadprice.com/oauth/token"
+      "url": "https://mcp.example.com/mcp",
+      "authorizationUrl": "https://api.example.com/oauth/authorize",
+      "tokenUrl": "https://api.example.com/oauth/token"
     }
   ],
   "_meta": {

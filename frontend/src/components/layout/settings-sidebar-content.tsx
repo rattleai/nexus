@@ -14,7 +14,6 @@ import {
   Lock,
   Download,
   AlertTriangle,
-  SlidersHorizontal,
 } from "lucide-react"
 import {
   SidebarContent,
@@ -53,12 +52,6 @@ const SETTINGS_NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/settings/agents", labelKey: "settings_nav.agent_definitions", icon: Bot },
       { href: "/settings/providers", labelKey: "settings_nav.provider_keys", icon: KeyRound },
-    ],
-  },
-  {
-    labelKey: "settings_nav.product_configuration",
-    items: [
-      { href: "/settings/characteristics", labelKey: "settings_nav.characteristics", icon: SlidersHorizontal },
     ],
   },
   {

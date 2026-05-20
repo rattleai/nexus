@@ -16,13 +16,11 @@
     "webhooks": "Webhooks",
     "audit_log": "Audit Log",
     "developers": "Developers",
-    "products": "Products",
-    "configurations": "Configurations",
-    "configurator": "Configurator",
     "account": "Account",
     "settings": "Settings",
     "more": "More",
-    "home": "Home"
+    "home": "Home",
+    "example": "Example"
   },
   "settings_nav": {
     "back_to_console": "Back to Console",
@@ -42,9 +40,7 @@
     "account_section": "Account",
     "security": "Security",
     "data_export": "Data Export",
-    "danger_zone": "Danger Zone",
-    "product_configuration": "Product Configuration",
-    "characteristics": "Characteristics"
+    "danger_zone": "Danger Zone"
   },
   "buttons": {
     "cancel": "Cancel",

@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     # OpenTelemetry
     OTEL_ENABLED: bool = False
-    OTEL_SERVICE_NAME: str = "saas-platform"
+    OTEL_SERVICE_NAME: str = "nexus"
     OTEL_EXPORTER_ENDPOINT: str = "http://localhost:4317"
 
     # User authentication (opt-in)
@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     JWT_PRIVATE_KEY: str = ""  # PEM-encoded RSA private key for RS256 JWT signing
     JWT_PUBLIC_KEY: str = ""  # PEM-encoded RSA public key for RS256 JWT verification
     JWT_PUBLIC_KEY_PREVIOUS: str = ""  # Previous public key for seamless key rotation (multi-key JWKS)
+    # JWT_ISSUER / JWT_AUDIENCE are baked into every signed token; changing them after
+    # tokens have been issued in production will cause those tokens to fail validation.
+    # Override via env when standing up a new tenant or rebranding pre-production.
+    JWT_ISSUER: str = "nxs"
+    JWT_AUDIENCE: str = "nxs-api"
     OAUTH_GOOGLE_CLIENT_ID: str = ""
     OAUTH_GOOGLE_CLIENT_SECRET: str = ""
     OAUTH_GITHUB_CLIENT_ID: str = ""
@@ -68,7 +73,7 @@ class Settings(BaseSettings):
     # Email (Brevo / Sendinblue)
     BREVO_API_KEY: str = ""
     BREVO_SENDER_EMAIL: str = "noreply@example.com"
-    BREVO_SENDER_NAME: str = "SaaS Platform"
+    BREVO_SENDER_NAME: str = "NEXUS"
     EMAIL_VERIFICATION_EXPIRE_HOURS: int = 24
     PASSWORD_RESET_EXPIRE_HOURS: int = 1
     APP_BASE_URL: str = "http://localhost:3000"
@@ -146,14 +151,14 @@ class Settings(BaseSettings):
     # Web Push (VAPID) — required for push notifications
     VAPID_PRIVATE_KEY: str = ""
     VAPID_PUBLIC_KEY: str = ""
-    VAPID_MAILTO: str = "admin@cadprice.com"
+    VAPID_MAILTO: str = "admin@example.com"
 
     # Firebase Cloud Messaging (for native mobile push)
     FIREBASE_SERVICE_ACCOUNT_JSON: str = ""
 
     # WebAuthn / FIDO2 (biometric authentication)
     WEBAUTHN_RP_ID: str = "localhost"
-    WEBAUTHN_RP_NAME: str = "CAD Price"
+    WEBAUTHN_RP_NAME: str = "NEXUS"
     WEBAUTHN_ORIGIN: str = "http://localhost:3000"
 
     # CDN
@@ -198,7 +203,7 @@ class Settings(BaseSettings):
 
     # ── MCP Server ───────────────────────────────────────────
     MCP_ENABLED: bool = False
-    MCP_SERVER_NAME: str = "cadprice"
+    MCP_SERVER_NAME: str = "nxs"
     MCP_TRANSPORT: str = "http"  # "stdio" or "http"
     MCP_HTTP_PORT: int = 8001
     MCP_LOG_TOOL_CALLS: bool = True
@@ -380,7 +385,7 @@ class Settings(BaseSettings):
     # ── Application plugin feature flags ──
     # Each app plugin checks its flag via the plugin registry.
     # Listed here for documentation; actual gating is in app.plugins.registry.
-    APP_CPQ_ENABLED: bool = True
+    APP_EXAMPLE_ENABLED: bool = True
 
     # (Connector OAuth credentials are stored per-connector in connector_definitions.)
 

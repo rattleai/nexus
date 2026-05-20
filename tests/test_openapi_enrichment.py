@@ -7,7 +7,7 @@ def test_enrich_adds_agent_compatible_flag():
     schema = {"info": {"title": "Test"}, "paths": {}}
     result = enrich_openapi_schema(schema)
     assert result["info"]["x-agent-compatible"] is True
-    assert result["info"]["x-mcp-server"] == "cadprice-mcp"
+    assert result["info"]["x-mcp-server"] == "nxs-mcp"
 
 
 def test_enrich_adds_auth_methods():

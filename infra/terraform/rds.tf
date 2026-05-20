@@ -46,7 +46,7 @@ resource "aws_security_group" "rds" {
 resource "aws_db_parameter_group" "main" {
   name_prefix = "${local.name_prefix}-pg16-"
   family      = "postgres16"
-  description = "PostgreSQL 16 parameters for CAD Price (RLS-enabled)"
+  description = "PostgreSQL 16 parameters for NEXUS (RLS-enabled)"
 
   # Row-Level Security requires non-superuser connections.
   # These parameters ensure RLS policies are enforced and

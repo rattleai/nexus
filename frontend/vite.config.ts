@@ -16,9 +16,9 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "icons/*.png"],
       manifest: {
-        name: "CAD Price",
-        short_name: "CADPrice",
-        description: "CAD pricing and job management platform",
+        name: "NEXUS",
+        short_name: "NEXUS",
+        description: "AI-first multi-agent platform foundation",
         theme_color: "#4f46e5",
         background_color: "#ffffff",
         display: "standalone",

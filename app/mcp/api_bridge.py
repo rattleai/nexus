@@ -242,7 +242,7 @@ def mount_api_mcp(app: FastAPI) -> None:
         app,
         name=f"{settings.MCP_SERVER_NAME}-api",
         description=(
-            "Auto-generated MCP tools from CADPrice REST API endpoints. "
+            "Auto-generated MCP tools from NEXUS REST API endpoints. "
             "These complement the hand-written MCP tools with richer descriptions."
         ),
         describe_all_responses=True,

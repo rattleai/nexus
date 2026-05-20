@@ -12,6 +12,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.config import settings
 from app.core.security import _get_effective_algorithm, _get_jwt_verification_key
 
 
@@ -42,8 +43,8 @@ class RequireMFA:
                 token,
                 _get_jwt_verification_key(),
                 algorithms=[algorithm],
-                issuer="saas-platform",
-                audience="saas-platform",
+                issuer=settings.JWT_ISSUER,
+                audience=settings.JWT_AUDIENCE,
             )
         except jwt.InvalidTokenError:
             raise HTTPException(status_code=401, detail="Invalid token") from None

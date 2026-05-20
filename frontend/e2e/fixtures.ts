@@ -10,8 +10,9 @@ export const TEST_USER = {
 /** Clear auth rate limits and lockouts from Redis. */
 function clearRateLimits() {
   try {
+    const project = process.env.COMPOSE_PROJECT_NAME ?? "nexus"
     execFileSync("docker", [
-      "exec", "cadprice_cp-redis-1",
+      "exec", `${project}-redis-1`,
       "redis-cli", "-a", "changeme", "--no-auth-warning",
       "EVAL",
       "for _,p in ipairs({'rl:auth*','lockout:*'}) do for _,k in ipairs(redis.call('KEYS',p)) do redis.call('DEL',k) end end return 0",

@@ -1,6 +1,6 @@
-"""Entry point for the CADPrice MCP server.
+"""Entry point for the NEXUS MCP server.
 
-Run via: cadprice-mcp
+Run via: nxs-mcp
 Or: python -m app.mcp.run
 
 Supports two transports:
@@ -10,7 +10,7 @@ Supports two transports:
 Configure via environment variables:
 - MCP_TRANSPORT: "stdio" or "http" (default: from settings)
 - MCP_HTTP_PORT: Port for HTTP transport (default: 8001)
-- CADPRICE_API_KEY: API key for authenticating the MCP session
+- NXS_API_KEY: API key for authenticating the MCP session
 """
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ def main() -> None:
         print("MCP server is disabled. Set MCP_ENABLED=true to enable.", file=sys.stderr)
         sys.exit(1)
 
-    if not os.environ.get("CADPRICE_API_KEY"):
-        print("CADPRICE_API_KEY environment variable is required.", file=sys.stderr)
+    if not os.environ.get("NXS_API_KEY"):
+        print("NXS_API_KEY environment variable is required.", file=sys.stderr)
         sys.exit(1)
 
     mcp = create_mcp_server()
