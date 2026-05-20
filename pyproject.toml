@@ -83,7 +83,7 @@ dev = [
     "pytest-asyncio>=0.25,<1",
     "pytest-cov>=5.0,<6",
     "httpx>=0.28,<1",
-    "ruff>=0.9,<1",
+    "ruff>=0.15.13,<1",
     "mypy>=1.8,<2",
     "pact-python>=2.2,<3",
 ]
