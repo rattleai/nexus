@@ -54,8 +54,21 @@ repos:
 
   - repo: local
     hooks:
-      - id: no-cadprice-leak
-        name: Prevent CADPrice/cadprice/mngapps from re-entering the codebase
-        entry: bash -c 'if git diff --cached -G "cadprice|CADPrice|Cadprice|CadPrice|CAD Price|mngapps" --name-only | grep -v "^CHANGELOG.md$" | grep -q .; then echo "Forbidden brand reference detected. See CONTRIBUTING.md."; exit 1; fi'
+      # Fast diff-mode guard run on every commit. Matches only lines being
+      # added/removed in this commit, so it does not flag content that pre-dates
+      # the public-release rebrand. Use the --all-files variant below for a
+      # full-repo scan.
+      - id: no-brand-leak-diff
+        name: Block forbidden brand strings in this commit's diff
+        entry: bash -c 'if git diff --cached -G "cadprice|CADPrice|Cadprice|CadPrice|CAD Price|CAD pricing|arcanum|mngapps" --name-only | grep -v "^CHANGELOG.md$" | grep -q .; then echo "Forbidden brand reference detected. See CONTRIBUTING.md."; exit 1; fi'
         language: system
         pass_filenames: false
+      # Full-repo scan. Skipped on plain `pre-commit run` (manual stage only).
+      # Run with: pre-commit run --all-files --hook-stage manual no-brand-leak-all-files
+      # Allowlist: CHANGELOG.md (rebrand history) and this config (regex literals).
+      - id: no-brand-leak-all-files
+        name: Block forbidden brand strings anywhere in the working tree
+        entry: bash -c 'matches=$(git ls-files -z | xargs -0 grep -lIE "cadprice|CADPrice|Cadprice|CadPrice|CAD Price|CAD pricing|arcanum|mngapps" 2>/dev/null | grep -vE "^(CHANGELOG\.md|\.pre-commit-config\.yaml)$" || true); if [ -n "$matches" ]; then echo "Forbidden brand reference detected in:"; echo "$matches"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        stages: [manual]
