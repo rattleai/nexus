@@ -112,7 +112,6 @@ class DataSource(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, default=dict)
 
     # Relationships
-    cloud_connection: Mapped[CloudConnection | None] = relationship(back_populates="data_sources")
     chunks: Mapped[list[DataSourceChunk]] = relationship(
         back_populates="data_source", cascade="all, delete-orphan"
     )

@@ -37,6 +37,7 @@ import { Route as SettingsProvidersRouteImport } from './routes/settings.provide
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDataRouteImport } from './routes/settings.data'
 import { Route as SettingsDangerRouteImport } from './routes/settings.danger'
+import { Route as SettingsConnectorsRouteImport } from './routes/settings.connectors'
 import { Route as SettingsBillingRouteImport } from './routes/settings.billing'
 import { Route as SettingsAuditLogRouteImport } from './routes/settings.audit-log'
 import { Route as SettingsApiKeysRouteImport } from './routes/settings.api-keys'
@@ -44,6 +45,7 @@ import { Route as SettingsAgentsRouteImport } from './routes/settings.agents'
 import { Route as AgentsWorkspaceRouteImport } from './routes/agents.workspace'
 import { Route as AgentsSessionsRouteImport } from './routes/agents.sessions'
 import { Route as AgentsInstanceIdRouteImport } from './routes/agents.$instanceId'
+import { Route as SettingsConnectorsIdRouteImport } from './routes/settings.connectors.$id'
 import { Route as AuthCallbackProviderRouteImport } from './routes/auth/callback/$provider'
 
 const WebhooksRoute = WebhooksRouteImport.update({
@@ -202,6 +204,13 @@ const SettingsDangerRoute = SettingsDangerRouteImport.update({
 } as any).lazy(() =>
   import('./routes/settings.danger.lazy').then((d) => d.Route),
 )
+const SettingsConnectorsRoute = SettingsConnectorsRouteImport.update({
+  id: '/connectors',
+  path: '/connectors',
+  getParentRoute: () => SettingsRoute,
+} as any).lazy(() =>
+  import('./routes/settings.connectors.lazy').then((d) => d.Route),
+)
 const SettingsBillingRoute = SettingsBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
@@ -251,6 +260,13 @@ const AgentsInstanceIdRoute = AgentsInstanceIdRouteImport.update({
 } as any).lazy(() =>
   import('./routes/agents.$instanceId.lazy').then((d) => d.Route),
 )
+const SettingsConnectorsIdRoute = SettingsConnectorsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => SettingsConnectorsRoute,
+} as any).lazy(() =>
+  import('./routes/settings.connectors.$id.lazy').then((d) => d.Route),
+)
 const AuthCallbackProviderRoute = AuthCallbackProviderRouteImport.update({
   id: '/auth/callback/$provider',
   path: '/auth/callback/$provider',
@@ -286,6 +302,7 @@ export interface FileRoutesByFullPath {
   '/settings/api-keys': typeof SettingsApiKeysRoute
   '/settings/audit-log': typeof SettingsAuditLogRoute
   '/settings/billing': typeof SettingsBillingRoute
+  '/settings/connectors': typeof SettingsConnectorsRouteWithChildren
   '/settings/danger': typeof SettingsDangerRoute
   '/settings/data': typeof SettingsDataRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -296,6 +313,7 @@ export interface FileRoutesByFullPath {
   '/agents/': typeof AgentsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
+  '/settings/connectors/$id': typeof SettingsConnectorsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -322,6 +340,7 @@ export interface FileRoutesByTo {
   '/settings/api-keys': typeof SettingsApiKeysRoute
   '/settings/audit-log': typeof SettingsAuditLogRoute
   '/settings/billing': typeof SettingsBillingRoute
+  '/settings/connectors': typeof SettingsConnectorsRouteWithChildren
   '/settings/danger': typeof SettingsDangerRoute
   '/settings/data': typeof SettingsDataRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -332,6 +351,7 @@ export interface FileRoutesByTo {
   '/agents': typeof AgentsIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
+  '/settings/connectors/$id': typeof SettingsConnectorsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -361,6 +381,7 @@ export interface FileRoutesById {
   '/settings/api-keys': typeof SettingsApiKeysRoute
   '/settings/audit-log': typeof SettingsAuditLogRoute
   '/settings/billing': typeof SettingsBillingRoute
+  '/settings/connectors': typeof SettingsConnectorsRouteWithChildren
   '/settings/danger': typeof SettingsDangerRoute
   '/settings/data': typeof SettingsDataRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -371,6 +392,7 @@ export interface FileRoutesById {
   '/agents/': typeof AgentsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/auth/callback/$provider': typeof AuthCallbackProviderRoute
+  '/settings/connectors/$id': typeof SettingsConnectorsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -401,6 +423,7 @@ export interface FileRouteTypes {
     | '/settings/api-keys'
     | '/settings/audit-log'
     | '/settings/billing'
+    | '/settings/connectors'
     | '/settings/danger'
     | '/settings/data'
     | '/settings/general'
@@ -411,6 +434,7 @@ export interface FileRouteTypes {
     | '/agents/'
     | '/settings/'
     | '/auth/callback/$provider'
+    | '/settings/connectors/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -437,6 +461,7 @@ export interface FileRouteTypes {
     | '/settings/api-keys'
     | '/settings/audit-log'
     | '/settings/billing'
+    | '/settings/connectors'
     | '/settings/danger'
     | '/settings/data'
     | '/settings/general'
@@ -447,6 +472,7 @@ export interface FileRouteTypes {
     | '/agents'
     | '/settings'
     | '/auth/callback/$provider'
+    | '/settings/connectors/$id'
   id:
     | '__root__'
     | '/'
@@ -475,6 +501,7 @@ export interface FileRouteTypes {
     | '/settings/api-keys'
     | '/settings/audit-log'
     | '/settings/billing'
+    | '/settings/connectors'
     | '/settings/danger'
     | '/settings/data'
     | '/settings/general'
@@ -485,6 +512,7 @@ export interface FileRouteTypes {
     | '/agents/'
     | '/settings/'
     | '/auth/callback/$provider'
+    | '/settings/connectors/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -708,6 +736,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsDangerRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/connectors': {
+      id: '/settings/connectors'
+      path: '/connectors'
+      fullPath: '/settings/connectors'
+      preLoaderRoute: typeof SettingsConnectorsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/billing': {
       id: '/settings/billing'
       path: '/billing'
@@ -757,6 +792,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AgentsInstanceIdRouteImport
       parentRoute: typeof AgentsRoute
     }
+    '/settings/connectors/$id': {
+      id: '/settings/connectors/$id'
+      path: '/$id'
+      fullPath: '/settings/connectors/$id'
+      preLoaderRoute: typeof SettingsConnectorsIdRouteImport
+      parentRoute: typeof SettingsConnectorsRoute
+    }
     '/auth/callback/$provider': {
       id: '/auth/callback/$provider'
       path: '/auth/callback/$provider'
@@ -784,11 +826,23 @@ const AgentsRouteChildren: AgentsRouteChildren = {
 const AgentsRouteWithChildren =
   AgentsRoute._addFileChildren(AgentsRouteChildren)
 
+interface SettingsConnectorsRouteChildren {
+  SettingsConnectorsIdRoute: typeof SettingsConnectorsIdRoute
+}
+
+const SettingsConnectorsRouteChildren: SettingsConnectorsRouteChildren = {
+  SettingsConnectorsIdRoute: SettingsConnectorsIdRoute,
+}
+
+const SettingsConnectorsRouteWithChildren =
+  SettingsConnectorsRoute._addFileChildren(SettingsConnectorsRouteChildren)
+
 interface SettingsRouteChildren {
   SettingsAgentsRoute: typeof SettingsAgentsRoute
   SettingsApiKeysRoute: typeof SettingsApiKeysRoute
   SettingsAuditLogRoute: typeof SettingsAuditLogRoute
   SettingsBillingRoute: typeof SettingsBillingRoute
+  SettingsConnectorsRoute: typeof SettingsConnectorsRouteWithChildren
   SettingsDangerRoute: typeof SettingsDangerRoute
   SettingsDataRoute: typeof SettingsDataRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
@@ -804,6 +858,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsApiKeysRoute: SettingsApiKeysRoute,
   SettingsAuditLogRoute: SettingsAuditLogRoute,
   SettingsBillingRoute: SettingsBillingRoute,
+  SettingsConnectorsRoute: SettingsConnectorsRouteWithChildren,
   SettingsDangerRoute: SettingsDangerRoute,
   SettingsDataRoute: SettingsDataRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
