@@ -18,7 +18,7 @@ export default defineConfig({
       manifest: {
         name: "NEXUS",
         short_name: "NEXUS",
-        description: "CAD pricing and job management platform",
+        description: "AI-first multi-agent platform foundation",
         theme_color: "#4f46e5",
         background_color: "#ffffff",
         display: "standalone",

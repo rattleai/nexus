@@ -48,8 +48,8 @@ lsof -nP -iTCP -sTCP:LISTEN | grep -E ':(80|443|5173|5432|8000|8080|8090|1080|10
 ### 4. Network check
 
 ```bash
-docker network ls | grep arcanum
-docker network inspect arcanum_default --format '{{range .Containers}}{{.Name}} {{end}}'
+docker network ls | grep nexus
+docker network inspect nexus_default --format '{{range .Containers}}{{.Name}} {{end}}'
 ```
 
 - Expected containers missing from a network → service definition doesn't include that network, or container was created before the network was attached (happens with failed partial `up`).
