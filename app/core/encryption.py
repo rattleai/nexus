@@ -47,7 +47,9 @@ def _derive_key_from_source(source_key: str, version: int = 1) -> bytes:
         algorithm=SHA256(),
         length=32,
         salt=None,  # acceptable when source key has high entropy
-        info=f"saas-platform-encryption-v{version}".encode(),
+        # HKDF info parameter is a KDF input; changing this literal after data is
+        # encrypted in production will make existing ciphertext unrecoverable.
+        info=f"nexus-encryption-v{version}".encode(),
     )
     derived = hkdf.derive(source_key.encode())
     return base64.urlsafe_b64encode(derived)
@@ -100,7 +102,8 @@ def _get_aes_gcm_key(version: int) -> bytes:
         algorithm=SHA256(),
         length=32,
         salt=None,
-        info=f"saas-platform-aes256gcm-v{version}".encode(),
+        # HKDF info parameter is a KDF input; see the v1 derivation above.
+        info=f"nexus-aes256gcm-v{version}".encode(),
     )
     return hkdf.derive(source_key.encode())
 

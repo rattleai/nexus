@@ -353,8 +353,8 @@ async def verify_mfa(
             body.mfa_token,
             _get_jwt_verification_key(),
             algorithms=[algorithm],
-            issuer="saas-platform",
-            audience="saas-platform",
+            issuer=settings.JWT_ISSUER,
+            audience=settings.JWT_AUDIENCE,
         )
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="MFA token has expired") from None

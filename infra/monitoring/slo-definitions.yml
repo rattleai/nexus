@@ -1,7 +1,7 @@
-# Service Level Objectives (SLOs) for SaaS Platform
+# Service Level Objectives (SLOs) for NEXUS
 # These define the target reliability and performance commitments.
 
-service: saas-platform
+service: nexus
 
 slos:
   # ── Availability ────────────────────────────────────────

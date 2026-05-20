@@ -433,11 +433,11 @@ jobs:
         with:
           context: .
           load: true
-          tags: saas-platform:scan
+          tags: nexus:scan
           cache-from: type=gha
       - uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
         with:
-          image-ref: saas-platform:scan
+          image-ref: nexus:scan
           format: table
           exit-code: 1
           severity: CRITICAL,HIGH
@@ -468,8 +468,8 @@ jobs:
         if: vars.DEPLOY_METHOD == 'ecs'
         env:
           AWS_REGION: us-east-1
-          ECS_CLUSTER: ${{ vars.ECS_CLUSTER || format('nxs-{0}', github.event.inputs.environment) }}
-          ECS_SERVICE: ${{ vars.ECS_SERVICE || 'nxs-api' }}
+          ECS_CLUSTER: ${{ vars.ECS_CLUSTER || format('nexus-{0}', github.event.inputs.environment) }}
+          ECS_SERVICE: ${{ vars.ECS_SERVICE || 'nexus-api' }}
           IMAGE_TAG: sha-${{ github.sha }}
         run: |
           aws ecs update-service \
@@ -493,7 +493,7 @@ jobs:
           envs: GITHUB_TOKEN,GITHUB_ACTOR,GITHUB_REPOSITORY,GITHUB_SHA
           script: |
             set -euo pipefail
-            cd /opt/saas-platform
+            cd /opt/nexus
 
             # Pull the SHA-tagged image (immutable)
             echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin

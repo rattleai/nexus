@@ -57,8 +57,15 @@ class TestJWT:
 
         from app.core.security import _get_effective_algorithm, _get_jwt_signing_key
 
+        from app.config import settings
+
         token = pyjwt.encode(
-            {"sub": "user-123", "type": "refresh", "iss": "saas-platform", "aud": "saas-platform"},
+            {
+                "sub": "user-123",
+                "type": "refresh",
+                "iss": settings.JWT_ISSUER,
+                "aud": settings.JWT_AUDIENCE,
+            },
             _get_jwt_signing_key(),
             algorithm=_get_effective_algorithm(),
         )

@@ -87,7 +87,7 @@ seed-docker:  ## Seed dev database via docker compose
 
 # ── Docker ───────────────────────────────────────────────────
 build:  ## Build production Docker image
-	docker build -t saas-platform .
+	docker build -t nexus .
 
 # ── Production ───────────────────────────────────────────
 prod-up:  ## Start production services

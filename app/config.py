@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     # OpenTelemetry
     OTEL_ENABLED: bool = False
-    OTEL_SERVICE_NAME: str = "saas-platform"
+    OTEL_SERVICE_NAME: str = "nexus"
     OTEL_EXPORTER_ENDPOINT: str = "http://localhost:4317"
 
     # User authentication (opt-in)
@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     # Email (Brevo / Sendinblue)
     BREVO_API_KEY: str = ""
     BREVO_SENDER_EMAIL: str = "noreply@example.com"
-    BREVO_SENDER_NAME: str = "SaaS Platform"
+    BREVO_SENDER_NAME: str = "NEXUS"
     EMAIL_VERIFICATION_EXPIRE_HOURS: int = 24
     PASSWORD_RESET_EXPIRE_HOURS: int = 1
     APP_BASE_URL: str = "http://localhost:3000"
