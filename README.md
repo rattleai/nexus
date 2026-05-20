@@ -79,7 +79,7 @@ Local development without Docker — see [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ## Build your first plugin
 
-A plugin is a single Python package under `app/apps/<name>/` plus an optional matching frontend tree under `frontend/src/apps/<name>/`. The smallest working plugin is in `app/apps/example/` (≈ 100 lines total).
+A plugin is a single Python package under `app/apps/<name>/` plus an optional matching frontend tree under `frontend/src/apps/<name>/`. The reference plugin at `app/apps/example/` (≈ 150 lines + a no-op Alembic migration + a frontend mirror) demonstrates the full contract surface.
 
 ```python
 # app/apps/myapp/plugin.py
