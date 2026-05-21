@@ -1,0 +1,30 @@
+# PriorityClasses ensure API pods survive resource pressure over batch jobs.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: nxs-critical
+  labels:
+    app.kubernetes.io/part-of: nxs
+value: 1000000
+globalDefault: false
+description: "Critical priority for NEXUS API servers — evicted last."
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: nxs-standard
+  labels:
+    app.kubernetes.io/part-of: nxs
+value: 500000
+globalDefault: false
+description: "Standard priority for NEXUS workers and beat scheduler."
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: nxs-batch
+  labels:
+    app.kubernetes.io/part-of: nxs
+value: 100000
+globalDefault: false
+description: "Low priority for NEXUS batch/one-off jobs — evicted first."

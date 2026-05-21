@@ -1,0 +1,20 @@
+{
+  "title": "Facturación",
+  "description": "Administre su suscripción y uso.",
+  "current_plan": "Plan actual",
+  "usage": "Uso",
+  "usage_desc": "Uso actual de recursos de su espacio de trabajo.",
+  "available_plans": "Planes disponibles",
+  "manage_billing": "Administrar facturación",
+  "cancel_subscription": "Cancelar suscripción",
+  "cancel_confirm": "¿Está seguro de que desea cancelar su suscripción? Conservará el acceso hasta el final de su período de facturación actual.",
+  "cancel_success": "Suscripción cancelada",
+  "cancels_at_period_end": "Se cancela al final del período de facturación",
+  "jobs_label": "Trabajos",
+  "api_keys_label": "Claves API",
+  "team_members_label": "Miembros del equipo",
+  "storage_label": "Almacenamiento",
+  "load_failed": "No se pudieron cargar los datos de facturación.",
+  "most_popular": "Más popular",
+  "select_plan": "Seleccionar plan"
+}

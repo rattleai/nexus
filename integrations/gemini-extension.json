@@ -1,0 +1,28 @@
+{
+  "name": "nxs",
+  "version": "1.0.0",
+  "description": "NEXUS SaaS platform — AI gateway, agent orchestration, billing, and file management",
+  "mcpServers": {
+    "nxs": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-e", "NXS_API_KEY", "ghcr.io/${{ github.repository_owner }}/nxs-mcp:latest"],
+      "cwd": "${extensionPath}"
+    }
+  },
+  "settings": [
+    {
+      "name": "API Key",
+      "description": "Your NEXUS API key (get one at https://example.com/settings/api-keys)",
+      "envVariable": "NXS_API_KEY",
+      "sensitive": true
+    },
+    {
+      "name": "API URL",
+      "description": "API base URL (default: https://api.example.com)",
+      "envVariable": "NXS_API_URL",
+      "sensitive": false
+    }
+  ],
+  "contextFileName": "NXS.md",
+  "excludeTools": []
+}

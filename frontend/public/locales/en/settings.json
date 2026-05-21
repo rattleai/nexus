@@ -1,0 +1,69 @@
+{
+  "title": "Settings",
+  "description": "Manage your account and preferences.",
+  "tabs": {
+    "profile": "Profile",
+    "security": "Security",
+    "data": "Data",
+    "danger": "Danger Zone",
+    "language": "Language"
+  },
+  "profile": {
+    "title": "Profile",
+    "display_name": "Display Name",
+    "email": "Email",
+    "resend_verification": "Resend verification email",
+    "save_success": "Profile updated",
+    "verification_sent": "Verification email sent"
+  },
+  "platform_info": {
+    "title": "Platform Info",
+    "version": "Version",
+    "status": "Status"
+  },
+  "api_key_auth": {
+    "title": "API Key Authentication",
+    "current_key": "Current API Key",
+    "disconnect": "Disconnect"
+  },
+  "security": {
+    "title": "Change Password",
+    "description": "Update your password to keep your account secure.",
+    "current_password": "Current Password",
+    "new_password": "New Password",
+    "confirm_password": "Confirm New Password",
+    "submit": "Change Password",
+    "submitting": "Changing...",
+    "success": "Password changed"
+  },
+  "data": {
+    "title": "Data Export",
+    "description": "Export your data in JSON or CSV format.",
+    "format_label": "Export Format",
+    "export_workspace": "Export Workspace Data",
+    "export_personal": "Export Personal Data",
+    "export_success": "Export started. You'll receive a notification when it's ready."
+  },
+  "danger": {
+    "title": "Danger Zone",
+    "description": "Irreversible actions. Please be certain before proceeding.",
+    "delete_info": "Deleting your account will remove all your data after a 30-day grace period. During this time you can contact support to recover your account.",
+    "delete_title": "Delete Account",
+    "delete_description": "This will permanently delete your account and all associated data after a 30-day grace period. This action cannot be undone.",
+    "delete_confirm": "Delete Account",
+    "delete_success": "Account deletion scheduled"
+  },
+  "language": {
+    "title": "Language & Region",
+    "description": "Choose your preferred language for the interface.",
+    "select_label": "Display Language",
+    "save_success": "Language preference saved"
+  },
+  "connected_accounts": {
+    "title": "Connected Accounts",
+    "description": "Link your social accounts for easier sign-in.",
+    "link": "Link",
+    "unlink": "Unlink",
+    "unlink_success": "Account unlinked"
+  }
+}

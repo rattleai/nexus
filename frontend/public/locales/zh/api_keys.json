@@ -1,0 +1,27 @@
+{
+  "title": "API 密钥",
+  "description": "管理用于编程访问的 API 密钥。",
+  "search_placeholder": "搜索密钥...",
+  "no_keys": "暂无 API 密钥",
+  "no_keys_desc": "创建一个 API 密钥以开始编程访问。",
+  "create_key": "创建密钥",
+  "create_dialog_title": "创建 API 密钥",
+  "create_dialog_desc": "为您的密钥取一个描述性名称。",
+  "key_name_label": "密钥名称",
+  "key_name_placeholder": "例如 production、staging",
+  "key_created_title": "密钥已创建",
+  "key_created_desc": "请立即复制此密钥。之后将无法再次查看。",
+  "table": {
+    "name": "名称",
+    "status": "状态",
+    "scopes": "权限范围",
+    "rate_limit": "速率限制",
+    "created": "创建时间"
+  },
+  "revoke_title": "撤销 API 密钥",
+  "revoke_desc": "确定要撤销「{{keyName}}」吗？此操作不可撤销。",
+  "revoke_success": "API 密钥已撤销",
+  "create_success": "API 密钥已创建",
+  "all_scopes": "全部",
+  "rate_limit_per_min": "{{limit}}/分钟"
+}

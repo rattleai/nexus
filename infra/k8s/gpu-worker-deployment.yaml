@@ -1,0 +1,90 @@
+# P2-1: GPU worker deployment for AI inference workloads
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nxs-gpu-worker
+  namespace: nxs
+  labels:
+    app.kubernetes.io/name: gpu-worker
+    app.kubernetes.io/part-of: nxs
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 0  # Scale up manually or via KEDA when needed
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gpu-worker
+      app.kubernetes.io/part-of: nxs
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gpu-worker
+        app.kubernetes.io/part-of: nxs
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: nxs
+      automountServiceAccountToken: false
+      priorityClassName: nxs-standard
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      # Schedule only on GPU nodes
+      nodeSelector:
+        accelerator: nvidia-gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: gpu-worker
+          image: ghcr.io/OWNER/nxs:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - celery
+            - -A
+            - app.workers.celery_app
+            - worker
+            - --loglevel=info
+            - --concurrency=2
+            - -Q
+            - gpu
+          envFrom:
+            - configMapRef:
+                name: nxs-config
+            - secretRef:
+                name: nxs-secrets
+          env:
+            - name: PYTHONPATH
+              value: /app
+          resources:
+            requests:
+              memory: 2Gi
+              cpu: "1"
+              nvidia.com/gpu: "1"
+            limits:
+              memory: 4Gi
+              cpu: "2"
+              nvidia.com/gpu: "1"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 500Mi

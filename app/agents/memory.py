@@ -1,0 +1,716 @@
+"""Agent memory system — short-term (Redis) and long-term (PostgreSQL) memory.
+
+Provides three tiers of memory:
+    1. Short-term: Redis-backed session state (conversation history, scratchpad)
+    2. Long-term: PostgreSQL key-value store with optional vector embeddings
+    3. Shared: Redis-based shared state for multi-agent workflows
+
+All memory is tenant-scoped and instance-scoped for isolation.
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+from datetime import UTC, datetime
+from typing import Any
+
+import structlog
+from sqlalchemy import delete, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.agents.events import AgentMemoryUpdated
+from app.agents.models import AgentMemoryEntry
+from app.core.events import emit
+from app.core.redis import redis_pool
+
+logger = structlog.stdlib.get_logger()
+
+# Redis key patterns
+_SHORT_TERM_KEY = "agent:memory:short:{instance_id}:{session_id}"
+_SESSION_SHORT_TERM_KEY = "agent:memory:short:session:{session_id}"
+_SHARED_KEY = "agent:memory:shared:{tenant_id}:{workflow_id}"
+
+# Cap for fallback Python-based similarity computation.
+# For production workloads with larger memory stores, use the pgvector extension.
+_MAX_EMBEDDING_CANDIDATES = 1000
+
+
+class AgentMemoryManager:
+    """Unified memory manager for agent instances.
+
+    Handles short-term (Redis), long-term (PostgreSQL), and shared (Redis)
+    memory with consistent interface and tenant isolation.
+    """
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    # ── Short-Term Memory (Redis) ──────────────────────────────────────
+
+    async def get_short_term(
+        self,
+        instance_id: uuid.UUID,
+        session_id: uuid.UUID,
+        key: str,
+    ) -> Any | None:
+        """Read a value from short-term (session) memory."""
+        redis_key = _SHORT_TERM_KEY.format(
+            instance_id=instance_id,
+            session_id=session_id,
+        )
+        raw = await redis_pool.hget(redis_key, key)
+        if raw is None:
+            return None
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return raw
+
+    # Redis Lua script for atomic check-and-set with cap enforcement.
+    # Returns 1 if the value was set, 0 if the cap was reached and key is new.
+    _SET_SHORT_TERM_LUA = """
+local size = redis.call('HLEN', KEYS[1])
+if size >= tonumber(ARGV[3]) and redis.call('HEXISTS', KEYS[1], ARGV[1]) == 0 then
+    return 0
+end
+redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[4]))
+return 1
+"""
+
+    async def set_short_term(
+        self,
+        instance_id: uuid.UUID,
+        session_id: uuid.UUID,
+        key: str,
+        value: Any,
+        *,
+        ttl_seconds: int = 3600,
+        max_entries: int = 100,
+    ) -> None:
+        """Write a value to short-term (session) memory.
+
+        Uses a Redis Lua script for atomic cap enforcement to prevent
+        concurrent writes from exceeding the cap.
+        """
+        from app.config import settings
+
+        redis_key = _SHORT_TERM_KEY.format(
+            instance_id=instance_id,
+            session_id=session_id,
+        )
+
+        cap = max_entries or settings.AGENT_MEMORY_SHORT_MAX_ENTRIES
+        serialized = json.dumps(value, default=str)
+
+        # NOTE: redis_pool.eval() runs a server-side Lua script atomically
+        # on the Redis server — this is NOT Python eval().
+        result = await redis_pool.eval(
+            self._SET_SHORT_TERM_LUA,
+            1,  # number of keys
+            redis_key,  # KEYS[1]
+            key,  # ARGV[1] - hash field name
+            serialized,  # ARGV[2] - value
+            str(cap),  # ARGV[3] - max entries
+            str(ttl_seconds),  # ARGV[4] - TTL
+        )
+
+        if result == 0:
+            logger.warning(
+                "short_term_memory_full",
+                instance_id=str(instance_id),
+                session_id=str(session_id),
+                cap=cap,
+            )
+
+    async def get_all_short_term(
+        self,
+        instance_id: uuid.UUID,
+        session_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        """Read all short-term memory for a session."""
+        redis_key = _SHORT_TERM_KEY.format(
+            instance_id=instance_id,
+            session_id=session_id,
+        )
+        raw = await redis_pool.hgetall(redis_key)
+        result = {}
+        for k, v in raw.items():
+            try:
+                result[k] = json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                result[k] = v
+        return result
+
+    async def clear_short_term(
+        self,
+        instance_id: uuid.UUID,
+        session_id: uuid.UUID,
+    ) -> None:
+        """Clear all short-term memory for a session."""
+        redis_key = _SHORT_TERM_KEY.format(
+            instance_id=instance_id,
+            session_id=session_id,
+        )
+        await redis_pool.delete(redis_key)
+
+    # ── Session-Scoped Short-Term Memory (Redis) ──────────────────────
+    # These methods use session_id only (not instance_id) so memory
+    # persists across turns in a multi-turn conversation.
+
+    async def get_session_short_term(
+        self,
+        session_id: uuid.UUID,
+        key: str,
+    ) -> Any | None:
+        """Read a value from session-scoped short-term memory."""
+        redis_key = _SESSION_SHORT_TERM_KEY.format(session_id=session_id)
+        raw = await redis_pool.hget(redis_key, key)
+        if raw is None:
+            return None
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return raw
+
+    async def set_session_short_term(
+        self,
+        session_id: uuid.UUID,
+        key: str,
+        value: Any,
+        *,
+        ttl_seconds: int = 3600,
+        max_entries: int = 100,
+    ) -> None:
+        """Write a value to session-scoped short-term memory.
+
+        Uses the same atomic Lua script for cap enforcement.
+        Memory persists across turns within the same conversation.
+        """
+        from app.config import settings
+
+        redis_key = _SESSION_SHORT_TERM_KEY.format(session_id=session_id)
+        cap = max_entries or settings.AGENT_MEMORY_SHORT_MAX_ENTRIES
+        serialized = json.dumps(value, default=str)
+
+        # NOTE: redis_pool.eval() runs a server-side Lua script atomically
+        # on the Redis server — this is NOT Python eval().
+        result = await redis_pool.eval(
+            self._SET_SHORT_TERM_LUA,
+            1,
+            redis_key,
+            key,
+            serialized,
+            str(cap),
+            str(ttl_seconds),
+        )
+
+        if result == 0:
+            logger.warning(
+                "session_short_term_memory_full",
+                session_id=str(session_id),
+                cap=cap,
+            )
+
+    async def get_all_session_short_term(
+        self,
+        session_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        """Read all session-scoped short-term memory."""
+        redis_key = _SESSION_SHORT_TERM_KEY.format(session_id=session_id)
+        raw = await redis_pool.hgetall(redis_key)
+        result = {}
+        for k, v in raw.items():
+            try:
+                result[k] = json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                result[k] = v
+        return result
+
+    # ── Long-Term Memory (PostgreSQL) ──────────────────────────────────
+
+    async def get_long_term(
+        self,
+        instance_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        key: str,
+        namespace: str = "default",
+    ) -> dict[str, Any] | None:
+        """Read a value from long-term (persistent) memory."""
+        stmt = select(AgentMemoryEntry).where(
+            AgentMemoryEntry.instance_id == instance_id,
+            AgentMemoryEntry.tenant_id == tenant_id,
+            AgentMemoryEntry.namespace == namespace,
+            AgentMemoryEntry.key == key,
+            or_(AgentMemoryEntry.expires_at.is_(None), AgentMemoryEntry.expires_at > datetime.now(UTC)),
+        )
+        result = await self.db.execute(stmt)
+        entry = result.scalar_one_or_none()
+        return entry.value if entry else None
+
+    async def set_long_term(
+        self,
+        instance_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        key: str,
+        value: dict[str, Any],
+        *,
+        namespace: str = "default",
+        embedding: list[float] | None = None,
+        embedding_model: str | None = None,
+    ) -> AgentMemoryEntry:
+        """Write a value to long-term (persistent) memory.
+
+        Uses INSERT ... ON CONFLICT DO UPDATE for atomic upsert,
+        avoiding TOCTOU race between SELECT and INSERT.
+        """
+        # Validate embedding dimensions and types
+        if embedding is not None:
+            from app.config import settings
+
+            expected_dims = settings.AGENT_MEMORY_VECTOR_DIMENSIONS
+            if not isinstance(embedding, list):
+                raise ValueError("Embedding must be a list of floats")
+            if len(embedding) != expected_dims:
+                raise ValueError(f"Embedding dimension mismatch: got {len(embedding)}, expected {expected_dims}")
+            if not all(isinstance(v, (int, float)) for v in embedding):
+                raise ValueError("All embedding values must be numeric (int or float)")
+            # Ensure all values are finite
+            import math
+
+            if any(math.isnan(v) or math.isinf(v) for v in embedding):
+                raise ValueError("Embedding contains NaN or Inf values")
+
+        insert_values = {
+            "tenant_id": tenant_id,
+            "instance_id": instance_id,
+            "namespace": namespace,
+            "key": key,
+            "value": value,
+        }
+        if embedding is not None:
+            insert_values["embedding"] = embedding
+            insert_values["embedding_model"] = embedding_model
+
+        stmt = pg_insert(AgentMemoryEntry).values(**insert_values)
+
+        # ON CONFLICT on the unique constraint (instance_id, namespace, key)
+        update_set = {"value": value, "updated_at": datetime.now(UTC)}
+        if embedding is not None:
+            update_set["embedding"] = embedding
+            update_set["embedding_model"] = embedding_model
+
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_agent_memory_instance_ns_key",
+            set_=update_set,
+        ).returning(AgentMemoryEntry)
+
+        result = await self.db.execute(stmt)
+        entry = result.scalar_one()
+
+        await self.db.flush()
+
+        await emit(
+            AgentMemoryUpdated(
+                tenant_id=str(tenant_id),
+                instance_id=str(instance_id),
+                namespace=namespace,
+                key=key,
+                action="set",
+            ),
+            durable=True,
+        )
+
+        return entry
+
+    async def list_long_term(
+        self,
+        instance_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        namespace: str = "default",
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[AgentMemoryEntry]:
+        """List long-term memory entries for an instance."""
+        limit = min(limit, 50)
+        stmt = (
+            select(AgentMemoryEntry)
+            .where(
+                AgentMemoryEntry.instance_id == instance_id,
+                AgentMemoryEntry.tenant_id == tenant_id,
+                AgentMemoryEntry.namespace == namespace,
+                or_(AgentMemoryEntry.expires_at.is_(None), AgentMemoryEntry.expires_at > datetime.now(UTC)),
+            )
+            .order_by(AgentMemoryEntry.updated_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def delete_long_term(
+        self,
+        instance_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        key: str,
+        namespace: str = "default",
+    ) -> bool:
+        """Delete a specific long-term memory entry."""
+        stmt = delete(AgentMemoryEntry).where(
+            AgentMemoryEntry.instance_id == instance_id,
+            AgentMemoryEntry.tenant_id == tenant_id,
+            AgentMemoryEntry.namespace == namespace,
+            AgentMemoryEntry.key == key,
+        )
+        result = await self.db.execute(stmt)
+        deleted = result.rowcount > 0
+
+        if deleted:
+            await emit(
+                AgentMemoryUpdated(
+                    tenant_id=str(tenant_id),
+                    instance_id=str(instance_id),
+                    namespace=namespace,
+                    key=key,
+                    action="delete",
+                ),
+                durable=True,
+            )
+
+        return deleted
+
+    async def clear_long_term(
+        self,
+        instance_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        namespace: str | None = None,
+    ) -> int:
+        """Clear all long-term memory for an instance (optionally within a namespace)."""
+        conditions = [
+            AgentMemoryEntry.instance_id == instance_id,
+            AgentMemoryEntry.tenant_id == tenant_id,
+        ]
+        if namespace:
+            conditions.append(AgentMemoryEntry.namespace == namespace)
+
+        stmt = delete(AgentMemoryEntry).where(*conditions)
+        result = await self.db.execute(stmt)
+
+        await emit(
+            AgentMemoryUpdated(
+                tenant_id=str(tenant_id),
+                instance_id=str(instance_id),
+                namespace=namespace or "*",
+                key="*",
+                action="clear",
+            ),
+            durable=True,
+        )
+
+        return result.rowcount
+
+    async def search_by_embedding(
+        self,
+        instance_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        query_embedding: list[float],
+        *,
+        namespace: str = "default",
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Search long-term memory by vector similarity.
+
+        Uses pgvector's native cosine distance operator when available
+        (embedding_vec column with HNSW index). Falls back to Python-side
+        cosine similarity on JSONB embeddings for non-pgvector setups.
+        """
+        limit = min(limit, 50)
+        import math
+
+        from app.config import settings
+
+        # Validate query_embedding before use (same checks as set_long_term)
+        expected_dims = settings.AGENT_MEMORY_VECTOR_DIMENSIONS
+        if not isinstance(query_embedding, list) or len(query_embedding) != expected_dims:
+            raise ValueError(f"query_embedding must be a list of {expected_dims} floats")
+        if not all(isinstance(v, (int, float)) for v in query_embedding):
+            raise ValueError("All embedding values must be numeric")
+        if any(math.isnan(v) or math.isinf(v) for v in query_embedding):
+            raise ValueError("Embedding contains NaN or Inf values")
+
+        if settings.AGENT_MEMORY_VECTOR_ENABLED:
+            return await self._search_pgvector(
+                instance_id,
+                tenant_id,
+                query_embedding,
+                namespace,
+                limit,
+            )
+
+        return await self._search_python_fallback(
+            instance_id,
+            tenant_id,
+            query_embedding,
+            namespace,
+            limit,
+        )
+
+    async def _search_pgvector(
+        self,
+        instance_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        query_embedding: list[float],
+        namespace: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Search using pgvector's native cosine distance (fast, indexed)."""
+        from sqlalchemy import text
+
+        # pgvector cosine distance: 1 - (a <=> b) gives cosine similarity
+        vector_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+        stmt = text("""
+            SELECT key, value, namespace,
+                   1 - (embedding_vec <=> :query_vec::vector) AS score
+            FROM agent_memory_entries
+            WHERE instance_id = :instance_id
+              AND tenant_id = :tenant_id
+              AND namespace = :namespace
+              AND embedding_vec IS NOT NULL
+              AND (expires_at IS NULL OR expires_at > now())
+            ORDER BY embedding_vec <=> :query_vec::vector
+            LIMIT :limit
+        """)
+
+        result = await self.db.execute(
+            stmt,
+            {
+                "instance_id": instance_id,
+                "tenant_id": tenant_id,
+                "namespace": namespace,
+                "query_vec": vector_str,
+                "limit": limit,
+            },
+        )
+
+        return [
+            {
+                "key": row[0],
+                "value": row[1],
+                "namespace": row[2],
+                "score": float(row[3]),
+            }
+            for row in result.fetchall()
+        ]
+
+    async def _search_python_fallback(
+        self,
+        instance_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        query_embedding: list[float],
+        namespace: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Fallback: compute cosine similarity in Python over JSONB embeddings."""
+        stmt = (
+            select(AgentMemoryEntry)
+            .where(
+                AgentMemoryEntry.instance_id == instance_id,
+                AgentMemoryEntry.tenant_id == tenant_id,
+                AgentMemoryEntry.namespace == namespace,
+                AgentMemoryEntry.embedding.isnot(None),
+                or_(AgentMemoryEntry.expires_at.is_(None), AgentMemoryEntry.expires_at > datetime.now(UTC)),
+            )
+            .limit(_MAX_EMBEDDING_CANDIDATES)
+        )
+        result = await self.db.execute(stmt)
+        entries = list(result.scalars().all())
+
+        scored = []
+        for entry in entries:
+            emb = entry.embedding
+            if isinstance(emb, list) and len(emb) == len(query_embedding):
+                score = _cosine_similarity(query_embedding, emb)
+                scored.append({"entry": entry, "score": score})
+
+        scored.sort(key=lambda x: x["score"], reverse=True)
+
+        return [
+            {
+                "key": item["entry"].key,
+                "value": item["entry"].value,
+                "score": item["score"],
+                "namespace": item["entry"].namespace,
+            }
+            for item in scored[:limit]
+        ]
+
+    # ── Definition-Scoped Memory (PostgreSQL) ────────────────────────
+    #
+    # Shared across all instances of the same agent definition.
+    # Useful for periodic + on-demand agents that need cross-instance context.
+
+    async def get_definition_memory(
+        self,
+        definition_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        key: str,
+        namespace: str = "shared",
+    ) -> dict[str, Any] | None:
+        """Read a value from definition-scoped shared memory."""
+        from app.agents.models import AgentDefinitionMemoryEntry
+
+        stmt = select(AgentDefinitionMemoryEntry).where(
+            AgentDefinitionMemoryEntry.definition_id == definition_id,
+            AgentDefinitionMemoryEntry.tenant_id == tenant_id,
+            AgentDefinitionMemoryEntry.namespace == namespace,
+            AgentDefinitionMemoryEntry.key == key,
+            or_(
+                AgentDefinitionMemoryEntry.expires_at.is_(None),
+                AgentDefinitionMemoryEntry.expires_at > datetime.now(UTC),
+            ),
+        )
+        result = await self.db.execute(stmt)
+        entry = result.scalar_one_or_none()
+        return entry.value if entry else None
+
+    async def set_definition_memory(
+        self,
+        definition_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        key: str,
+        value: dict[str, Any],
+        *,
+        namespace: str = "shared",
+    ) -> Any:
+        """Write a value to definition-scoped shared memory (upsert)."""
+        from app.agents.models import AgentDefinitionMemoryEntry
+
+        insert_values = {
+            "tenant_id": tenant_id,
+            "definition_id": definition_id,
+            "namespace": namespace,
+            "key": key,
+            "value": value,
+        }
+
+        stmt = pg_insert(AgentDefinitionMemoryEntry).values(**insert_values)
+        update_set = {"value": value, "updated_at": datetime.now(UTC)}
+
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_agent_def_memory_def_ns_key",
+            set_=update_set,
+        ).returning(AgentDefinitionMemoryEntry)
+
+        result = await self.db.execute(stmt)
+        entry = result.scalar_one()
+        await self.db.flush()
+        return entry
+
+    async def list_definition_memory(
+        self,
+        definition_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        namespace: str = "shared",
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Any]:
+        """List definition-scoped shared memory entries."""
+        from app.agents.models import AgentDefinitionMemoryEntry
+
+        limit = min(limit, 50)
+        stmt = (
+            select(AgentDefinitionMemoryEntry)
+            .where(
+                AgentDefinitionMemoryEntry.definition_id == definition_id,
+                AgentDefinitionMemoryEntry.tenant_id == tenant_id,
+                AgentDefinitionMemoryEntry.namespace == namespace,
+                or_(
+                    AgentDefinitionMemoryEntry.expires_at.is_(None),
+                    AgentDefinitionMemoryEntry.expires_at > datetime.now(UTC),
+                ),
+            )
+            .order_by(AgentDefinitionMemoryEntry.updated_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def delete_definition_memory(
+        self,
+        definition_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        key: str,
+        namespace: str = "shared",
+    ) -> bool:
+        """Delete a specific definition-scoped memory entry."""
+        from app.agents.models import AgentDefinitionMemoryEntry
+
+        stmt = delete(AgentDefinitionMemoryEntry).where(
+            AgentDefinitionMemoryEntry.definition_id == definition_id,
+            AgentDefinitionMemoryEntry.tenant_id == tenant_id,
+            AgentDefinitionMemoryEntry.namespace == namespace,
+            AgentDefinitionMemoryEntry.key == key,
+        )
+        result = await self.db.execute(stmt)
+        return result.rowcount > 0
+
+    # ── Shared Memory (Redis) ─────────────────────────────────────────
+
+    async def get_shared(
+        self,
+        tenant_id: uuid.UUID,
+        workflow_id: uuid.UUID,
+        key: str,
+    ) -> Any | None:
+        """Read a value from shared (workflow-level) memory."""
+        redis_key = _SHARED_KEY.format(tenant_id=tenant_id, workflow_id=workflow_id)
+        raw = await redis_pool.hget(redis_key, key)
+        if raw is None:
+            return None
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return raw
+
+    async def set_shared(
+        self,
+        tenant_id: uuid.UUID,
+        workflow_id: uuid.UUID,
+        key: str,
+        value: Any,
+        *,
+        ttl_seconds: int = 86400,
+    ) -> None:
+        """Write a value to shared (workflow-level) memory."""
+        redis_key = _SHARED_KEY.format(tenant_id=tenant_id, workflow_id=workflow_id)
+        serialized = json.dumps(value, default=str)
+        # Use pipeline to make HSET + EXPIRE atomic (prevents orphaned
+        # keys without TTL if the process crashes between the two calls).
+        pipe = redis_pool.pipeline()
+        pipe.hset(redis_key, key, serialized)
+        pipe.expire(redis_key, ttl_seconds)
+        await pipe.execute()
+
+    async def clear_shared(
+        self,
+        tenant_id: uuid.UUID,
+        workflow_id: uuid.UUID,
+    ) -> None:
+        """Clear all shared memory for a workflow."""
+        redis_key = _SHARED_KEY.format(tenant_id=tenant_id, workflow_id=workflow_id)
+        await redis_pool.delete(redis_key)
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Compute cosine similarity between two vectors."""
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(x * x for x in b) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)

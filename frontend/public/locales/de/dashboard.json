@@ -1,0 +1,33 @@
+{
+  "landing": {
+    "hero_title": "Willkommen bei NEXUS",
+    "hero_subtitle": "Verwalten Sie Ihre Aufträge, API-Schlüssel und Ihr Team — alles an einem Ort.",
+    "cta_sign_in": "Anmelden",
+    "cta_register": "Konto erstellen"
+  },
+  "guest": {
+    "title": "Willkommen auf Ihrer Plattform",
+    "subtitle": "Melden Sie sich an oder geben Sie Ihren API-Schlüssel ein, um zu beginnen.",
+    "async_jobs_title": "Asynchrone Aufträge",
+    "async_jobs_desc": "Erstellen und verwalten Sie Hintergrundverarbeitungsaufträge.",
+    "api_keys_title": "API-Schlüssel",
+    "api_keys_desc": "Sicherer programmatischer Zugriff auf die Plattform.",
+    "team_mgmt_title": "Teamverwaltung",
+    "team_mgmt_desc": "Laden Sie Teammitglieder ein und verwalten Sie diese mit Rollen."
+  },
+  "authenticated": {
+    "title": "Dashboard",
+    "subtitle": "Übersicht über Ihren Arbeitsbereich.",
+    "total_jobs": "Aufträge gesamt",
+    "api_keys": "API-Schlüssel",
+    "team_members": "Teammitglieder",
+    "storage": "Speicher",
+    "recent_activity": "Letzte Aktivitäten",
+    "no_recent_activity": "Keine aktuellen Aktivitäten",
+    "service_health": "Dienststatus",
+    "quick_actions": "Schnellaktionen",
+    "create_job": "Auftrag erstellen",
+    "upload_file": "Datei hochladen",
+    "manage_team": "Team verwalten"
+  }
+}

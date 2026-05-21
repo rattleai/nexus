@@ -1,0 +1,204 @@
+## API pods: allow ingress from ingress controller, egress to DB/Redis/DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nxs-api
+  namespace: nxs
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: nxs
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/part-of: nxs
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic from the ingress controller namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # PostgreSQL
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 6379
+    # HTTPS outbound (Stripe webhooks, OAuth, email API, AI providers, S3)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+    # OpenTelemetry collector
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317
+---
+## Worker pods: deny all ingress, allow egress to DB/Redis/S3/HTTPS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nxs-worker
+  namespace: nxs
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/part-of: nxs
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: worker
+      app.kubernetes.io/part-of: nxs
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # PostgreSQL
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 6379
+    # HTTPS outbound (S3/R2, AI providers, Stripe, email)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+    # OpenTelemetry collector
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317
+---
+## Beat pods: deny all ingress, allow egress to DB/Redis/HTTPS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nxs-beat
+  namespace: nxs
+  labels:
+    app.kubernetes.io/name: beat
+    app.kubernetes.io/part-of: nxs
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: beat
+      app.kubernetes.io/part-of: nxs
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # PostgreSQL
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 6379
+    # HTTPS outbound (S3/R2, Stripe, email)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+    # OpenTelemetry collector
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317
+---
+## Default deny all traffic in namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: nxs
+  labels:
+    app.kubernetes.io/part-of: nxs
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

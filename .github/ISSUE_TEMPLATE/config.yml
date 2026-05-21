@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/rattleai/nexus/security/advisories/new
+    about: Report a security vulnerability privately. Do not open a public issue.
+  - name: Question or discussion
+    url: https://github.com/rattleai/nexus/discussions
+    about: Ask a question, share a plugin, or discuss an idea.
+  - name: Plugin development guide
+    url: https://github.com/rattleai/nexus/blob/main/docs/PLUGINS.md
+    about: Read this before opening a question about building a plugin.

@@ -1,0 +1,42 @@
+{
+  "playground": {
+    "title": "AI 实验场",
+    "prompt_placeholder": "输入提示词...",
+    "response_placeholder": "响应将显示在此处",
+    "comparing": "对比中"
+  },
+  "cost_dashboard": {
+    "total_spend": "总支出",
+    "total_requests": "总请求数",
+    "avg_cost_per_request": "平均成本 / 请求",
+    "models_used": "使用的模型",
+    "budget_usage": "预算使用",
+    "spend_by_model": "按模型支出"
+  },
+  "model_selector": {
+    "placeholder": "选择模型...",
+    "search_placeholder": "搜索模型...",
+    "no_models": "未找到模型。"
+  },
+  "editor": {
+    "link": {
+      "edit": "编辑链接",
+      "insert": "插入链接",
+      "remove": "移除链接"
+    },
+    "insert_image": "插入图片",
+    "placeholder": "开始写作...",
+    "format": {
+      "bold": "粗体",
+      "italic": "斜体",
+      "strikethrough": "删除线",
+      "inline_code": "行内代码",
+      "heading_1": "标题 1",
+      "heading_2": "标题 2",
+      "heading_3": "标题 3",
+      "bullet_list": "无序列表",
+      "ordered_list": "有序列表",
+      "blockquote": "引用"
+    }
+  }
+}

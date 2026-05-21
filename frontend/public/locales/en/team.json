@@ -1,0 +1,48 @@
+{
+  "title": "Team",
+  "description": "Manage your team members and invitations.",
+  "search_placeholder": "Search members...",
+  "no_members": "No team members",
+  "no_members_desc": "Invite someone to join your team.",
+  "invite_member": "Invite Member",
+  "invite_dialog_title": "Invite Team Member",
+  "invite_dialog_desc": "Send an email invitation to join your team.",
+  "invite_email_label": "Email address",
+  "invite_email_placeholder": "colleague@example.com",
+  "invite_role_label": "Role",
+  "send_invitation": "Send Invitation",
+  "pending_invitations": "Pending Invitations",
+  "pending_invitations_desc": "Invitations that haven't been accepted yet.",
+  "no_pending_invitations": "No pending invitations.",
+  "invite_success": "Invitation sent",
+  "table": {
+    "name": "Name",
+    "email": "Email",
+    "role": "Role",
+    "joined": "Joined"
+  },
+  "roles": {
+    "admin": "Admin",
+    "member": "Member",
+    "viewer": "Viewer"
+  },
+  "remove_title": "Remove Member",
+  "remove_desc": "Remove {{name}} from the team? They will lose access immediately.",
+  "remove_success": "Member removed",
+  "role_updated": "Role updated",
+  "revoke_invitation_title": "Revoke Invitation",
+  "revoke_invitation_desc": "Revoke the invitation sent to {{email}}?",
+  "revoke_success": "Invitation revoked",
+  "expires": "Expires",
+  "accept_invitation": {
+    "title": "Accept Invitation",
+    "description": "You have been invited to join an organization. Click the button below to accept.",
+    "accept": "Accept Invitation",
+    "accepting": "Accepting...",
+    "success": "Invitation accepted!",
+    "error": "Failed to accept invitation",
+    "invalid_token": "Invalid or missing invitation token.",
+    "go_to_sign_in": "Go to Sign In",
+    "back_to_sign_in": "Back to Sign In"
+  }
+}

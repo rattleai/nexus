@@ -1,0 +1,33 @@
+{
+  "landing": {
+    "hero_title": "Welcome to NEXUS",
+    "hero_subtitle": "Manage your jobs, API keys, and team — all in one place.",
+    "cta_sign_in": "Sign In",
+    "cta_register": "Create Account"
+  },
+  "guest": {
+    "title": "Welcome to your platform",
+    "subtitle": "Sign in or enter your API key to get started.",
+    "async_jobs_title": "Async Jobs",
+    "async_jobs_desc": "Create and manage background processing jobs.",
+    "api_keys_title": "API Keys",
+    "api_keys_desc": "Secure programmatic access to the platform.",
+    "team_mgmt_title": "Team Management",
+    "team_mgmt_desc": "Invite and manage team members with roles."
+  },
+  "authenticated": {
+    "title": "Dashboard",
+    "subtitle": "Overview of your workspace.",
+    "total_jobs": "Total Jobs",
+    "api_keys": "API Keys",
+    "team_members": "Team Members",
+    "storage": "Storage",
+    "recent_activity": "Recent Activity",
+    "no_recent_activity": "No recent activity",
+    "service_health": "Service Health",
+    "quick_actions": "Quick Actions",
+    "create_job": "Create Job",
+    "upload_file": "Upload File",
+    "manage_team": "Manage Team"
+  }
+}

@@ -1,0 +1,63 @@
+# Copier template for NEXUS microservices.
+#
+# Usage:
+#   pip install copier
+#   copier copy template/ services/my-new-service
+#
+# Or from a remote repo:
+#   copier copy gh:yourorg/nxs-template services/my-new-service
+
+_min_copier_version: "9.0.0"
+_subdirectory: "{{project_slug}}"
+
+# ── Prompts ──────────────────────────────────────────────────
+
+project_name:
+  type: str
+  help: "Human-readable service name (e.g. 'Notification Service')"
+
+project_slug:
+  type: str
+  default: "{{ project_name | lower | replace(' ', '-') }}"
+  help: "Directory and package name (e.g. 'notification-service')"
+  validator: "{% if not project_slug | regex_search('^[a-z][a-z0-9-]*$') %}Must start with a lowercase letter and contain only lowercase letters, digits, and hyphens{% endif %}"
+
+python_package:
+  type: str
+  default: "{{ project_slug | replace('-', '_') }}"
+  help: "Python package name (e.g. 'notification_service')"
+  validator: "{% if not python_package | regex_search('^[a-z][a-z0-9_]*$') %}Must be a valid Python identifier (lowercase letters, digits, underscores; must start with a letter){% endif %}"
+
+description:
+  type: str
+  default: "A NEXUS microservice"
+  help: "Short description for pyproject.toml and Docker labels"
+
+port:
+  type: int
+  default: 8010
+  help: "HTTP port the service listens on"
+  validator: "{% if port < 1024 or port > 65535 %}Port must be between 1024 and 65535{% endif %}"
+
+include_celery:
+  type: bool
+  default: false
+  help: "Include Celery worker and beat scheduler?"
+
+include_db:
+  type: bool
+  default: true
+  help: "Include PostgreSQL + Alembic migrations?"
+
+include_redis:
+  type: bool
+  default: true
+  help: "Include Redis for caching / task queue?"
+
+author_name:
+  type: str
+  default: "NEXUS Team"
+
+author_email:
+  type: str
+  default: "team@example.com"

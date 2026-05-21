@@ -1,0 +1,174 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nexus-platform"
+version = "0.1.0"
+description = "NEXUS — AI-first multi-agent platform foundation. FastAPI backend, React frontend, plugin architecture for building multi-tenant AI applications."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+license-files = ["LICENSE"]
+authors = [
+    { name = "RattleAI" },
+]
+keywords = ["ai", "agents", "multi-agent", "mcp", "a2a", "rag", "fastapi", "saas", "plugin-architecture", "multi-tenant"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.34,<1",
+    "sqlalchemy[asyncio]>=2.0.49,<3",
+    "asyncpg>=0.30,<1",
+    "psycopg2-binary>=2.9,<3",
+    "alembic>=1.14,<2",
+    "pydantic[email]>=2.7,<3",
+    "pydantic-settings>=2.7,<3",
+    "celery[redis]>=5.6.3,<6",
+    "celery-redbeat>=2.2,<3",
+    "redis>=5.2,<6",
+    "boto3>=1.36,<2",
+    "httpx>=0.28,<1",
+    "python-multipart>=0.0.29,<1",
+    "passlib[argon2]>=1.7,<2",
+    "argon2-cffi>=23.1,<24",
+    "bcrypt>=4.0,<5",
+    "PyJWT>=2.8,<3",
+    "structlog>=24.4,<26",
+    "opentelemetry-api>=1.24,<2",
+    "opentelemetry-sdk>=1.24,<2",
+    "opentelemetry-exporter-otlp>=1.24,<2",
+    "opentelemetry-instrumentation-fastapi>=0.45b,<1",
+    "opentelemetry-instrumentation-sqlalchemy>=0.45b,<1",
+    "opentelemetry-instrumentation-redis>=0.45b,<1",
+    "opentelemetry-instrumentation-celery>=0.45b,<1",
+    "prometheus-client>=0.20,<1",
+    "opentelemetry-exporter-prometheus>=0.45b,<1",
+    "stripe>=8.0,<12",
+    "cryptography>=42.0,<45",
+    "litellm>=1.55,<2",
+    "tiktoken>=0.8,<1",
+    "sse-starlette>=2.0,<3",
+    # Mobile-first: push notifications & biometric auth
+    "pywebpush>=2.3.0,<3",
+    "py-vapid>=1.9,<2",
+    "webauthn>=2.0,<3",
+    "websockets>=15.0,<16",
+    "fastmcp>=3.1,<4",
+    "pyyaml>=6.0.3,<7",
+    "fastapi-mcp>=0.3,<1",
+    "sqlparse>=0.5,<1",
+    # Document processing pipeline
+    "pdfplumber>=0.11,<1",
+    "pymupdf>=1.27.2.3,<2",
+    "python-docx>=1.1,<2",
+    "openpyxl>=3.1.5,<4",
+    "beautifulsoup4>=4.12,<5",
+    "markdownify>=0.13,<1",
+    "python-magic>=0.4,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "pytest-asyncio>=0.25,<1",
+    "pytest-cov>=5.0,<6",
+    "httpx>=0.28,<1",
+    "ruff>=0.15.13,<1",
+    "mypy>=1.8,<2",
+    "pact-python>=2.2,<3",
+]
+cli = [
+    "typer>=0.25.1,<1",
+    "rich>=13.0,<14",
+]
+perf = [
+    "locust>=2.44.0,<3",
+]
+scaffold = [
+    "copier>=9.0,<10",
+]
+# Composio managed connector broker: gives tenants 500+ pre-integrated
+# SaaS tools with managed OAuth, refresh, and rate limiting. Optional —
+# the platform falls back to the in-house broker when this is missing.
+composio = [
+    "composio-core>=0.7,<2",
+]
+
+[project.urls]
+Homepage = "https://github.com/rattleai/nexus"
+Repository = "https://github.com/rattleai/nexus"
+Issues = "https://github.com/rattleai/nexus/issues"
+"Bug Tracker" = "https://github.com/rattleai/nexus/issues"
+Changelog = "https://github.com/rattleai/nexus/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/rattleai/nexus/blob/main/docs/PLUGINS.md"
+"Source Code" = "https://github.com/rattleai/nexus"
+"Discussions" = "https://github.com/rattleai/nexus/discussions"
+
+[project.scripts]
+nxs-mcp = "app.mcp.run:main"
+nxs = "app.cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "PIE", "C4", "DTZ", "T20"]
+# RUF and N are intentionally excluded — they are style-only rules
+# (ambiguous-unicode, naming conventions) that generate noise in a
+# large multi-domain codebase. F (pyflakes) and B (bugbear) remain the
+# primary bug catchers.
+extend-select = [
+    "F401",  # unused-import
+    "F841",  # unused-variable
+    "RUF006",  # asyncio-dangling-task (real bug)
+    "RUF012",  # mutable-class-default (real bug)
+    "RUF100",  # unused-noqa
+]
+ignore = [
+    "E501",  # line-too-long: ruff format handles this; strings/URLs are allowed to overflow
+    "B008",  # function-call-in-default: FastAPI Depends()/Query() and typer Option() are idiomatic
+    "B904",  # raise-without-from: pre-existing; wrapping is not required for all re-raises
+    "B017",  # assert-raises-exception: intentional in RLS / DB-error negative tests
+    "E402",  # module-import-not-at-top: needed for sys.path manipulation in scripts/migrations
+    "SIM102",  # collapsible-if: sometimes clearer as nested
+    "SIM105",  # suppressible-exception: try/except pass is explicit
+    "SIM108",  # if-else-block-instead-of-if-exp: readability preference
+    "SIM117",  # multiple-with-statements: async with chains are clearer as-is
+    "B027",  # empty-method-without-abstract-decorator: used for extension hooks
+]
+
+[tool.ruff.lint.per-file-ignores]
+"app/cli/**/*.py" = ["T20"]  # CLI needs print
+"app/mcp/run.py" = ["T20"]  # CLI entry point needs print for error messages
+"app/db/migrations/**" = ["I001"]  # Auto-generated migrations
+"tests/**" = ["F401", "F841"]  # Fixtures/imports sometimes intentionally unused
+"scripts/**" = ["T20"]  # CLI scripts (openapi dump, secret-leak scan, seeders) print intentionally
+
+[tool.mypy]
+python_version = "3.11"
+# warn_return_any is off: the ORM + JSONB code paths legitimately return
+# Any (SQLAlchemy's Result[...] generics don't narrow to the concrete
+# column type, JSONB columns are typed as Any). Turning it on generated
+# hundreds of false positives against the existing code.
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+plugins = ["pydantic.mypy"]

@@ -1,0 +1,38 @@
+{
+  "title": "Developers",
+  "description": "Everything you need to integrate with our API.",
+  "cards": {
+    "api_reference": {
+      "title": "API Reference",
+      "description": "Explore the full REST API with interactive documentation powered by Swagger.",
+      "action": "View API docs"
+    },
+    "api_keys": {
+      "title": "API Keys",
+      "description": "Create and manage API keys to authenticate your requests.",
+      "action": "Manage keys"
+    },
+    "webhooks": {
+      "title": "Webhooks",
+      "description": "Configure endpoints to receive real-time event notifications.",
+      "action": "Manage webhooks"
+    },
+    "provider_keys": {
+      "title": "Provider Keys",
+      "description": "Bring your own API keys for OpenAI, Anthropic, Google, and other LLM providers.",
+      "action": "Manage provider keys"
+    }
+  },
+  "getting_started": {
+    "title": "Getting Started",
+    "quickstart": {
+      "title": "Quick Start",
+      "comment": "Test your API key"
+    },
+    "openapi": {
+      "title": "OpenAPI Specification",
+      "description": "Download the OpenAPI spec to generate client libraries in any language.",
+      "action": "Download spec"
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "title": "Equipo",
+  "description": "Administre los miembros de su equipo e invitaciones.",
+  "search_placeholder": "Buscar miembros...",
+  "no_members": "Sin miembros de equipo",
+  "no_members_desc": "Invite a alguien a unirse a su equipo.",
+  "invite_member": "Invitar miembro",
+  "invite_dialog_title": "Invitar miembro del equipo",
+  "invite_dialog_desc": "Envíe una invitación por correo electrónico para unirse a su equipo.",
+  "invite_email_label": "Dirección de correo electrónico",
+  "invite_email_placeholder": "colega@ejemplo.com",
+  "invite_role_label": "Rol",
+  "send_invitation": "Enviar invitación",
+  "pending_invitations": "Invitaciones pendientes",
+  "pending_invitations_desc": "Invitaciones que aún no han sido aceptadas.",
+  "no_pending_invitations": "No hay invitaciones pendientes.",
+  "invite_success": "Invitación enviada",
+  "table": {
+    "name": "Nombre",
+    "email": "Correo electrónico",
+    "role": "Rol",
+    "joined": "Se unió"
+  },
+  "roles": {
+    "admin": "Administrador",
+    "member": "Miembro",
+    "viewer": "Visualizador"
+  },
+  "remove_title": "Eliminar miembro",
+  "remove_desc": "¿Eliminar a {{name}} del equipo? Perderá el acceso de inmediato.",
+  "remove_success": "Miembro eliminado",
+  "role_updated": "Rol actualizado",
+  "revoke_invitation_title": "Revocar invitación",
+  "revoke_invitation_desc": "¿Revocar la invitación enviada a {{email}}?",
+  "revoke_success": "Invitación revocada",
+  "expires": "Expira",
+  "accept_invitation": {
+    "title": "Aceptar invitación",
+    "description": "Ha sido invitado a unirse a una organización. Haga clic en el botón de abajo para aceptar.",
+    "accept": "Aceptar invitación",
+    "accepting": "Aceptando...",
+    "success": "¡Invitación aceptada!",
+    "error": "No se pudo aceptar la invitación",
+    "invalid_token": "Token de invitación inválido o faltante.",
+    "go_to_sign_in": "Ir a iniciar sesión",
+    "back_to_sign_in": "Volver a iniciar sesión"
+  }
+}

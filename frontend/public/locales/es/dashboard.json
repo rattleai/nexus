@@ -1,0 +1,33 @@
+{
+  "landing": {
+    "hero_title": "Bienvenido a NEXUS",
+    "hero_subtitle": "Administre sus trabajos, claves API y equipo — todo en un solo lugar.",
+    "cta_sign_in": "Iniciar sesión",
+    "cta_register": "Crear cuenta"
+  },
+  "guest": {
+    "title": "Bienvenido a su plataforma",
+    "subtitle": "Inicie sesión o ingrese su clave API para comenzar.",
+    "async_jobs_title": "Trabajos asíncronos",
+    "async_jobs_desc": "Cree y administre trabajos de procesamiento en segundo plano.",
+    "api_keys_title": "Claves API",
+    "api_keys_desc": "Acceso programático seguro a la plataforma.",
+    "team_mgmt_title": "Gestión de equipo",
+    "team_mgmt_desc": "Invite y administre miembros del equipo con roles."
+  },
+  "authenticated": {
+    "title": "Panel",
+    "subtitle": "Resumen de su espacio de trabajo.",
+    "total_jobs": "Total de trabajos",
+    "api_keys": "Claves API",
+    "team_members": "Miembros del equipo",
+    "storage": "Almacenamiento",
+    "recent_activity": "Actividad reciente",
+    "no_recent_activity": "Sin actividad reciente",
+    "service_health": "Estado del servicio",
+    "quick_actions": "Acciones rápidas",
+    "create_job": "Crear trabajo",
+    "upload_file": "Subir archivo",
+    "manage_team": "Administrar equipo"
+  }
+}

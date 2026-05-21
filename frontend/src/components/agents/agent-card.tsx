@@ -1,0 +1,143 @@
+import {
+  Bot,
+  MoreHorizontal,
+  Settings,
+  Trash2,
+  MessageSquare,
+  Clock,
+  Cpu,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { cn } from "@/lib/utils"
+import { StatusDot, statusToVariant } from "@/components/status-dot"
+import type { AgentDefinition } from "@/types/agents"
+
+interface AgentCardProps {
+  agent: AgentDefinition
+  isSelected: boolean
+  onSelect: () => void
+  onChat: () => void
+  onConfigure: () => void
+  onDelete: () => void
+}
+
+export function AgentCard({
+  agent,
+  isSelected,
+  onSelect,
+  onChat,
+  onConfigure,
+  onDelete,
+}: AgentCardProps) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          onSelect()
+        }
+      }}
+      className={cn(
+        "w-full text-left rounded-lg border p-3 transition-all duration-150 cursor-pointer",
+        "hover:bg-accent/50 hover:border-accent-foreground/20",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        isSelected &&
+          "bg-accent border-primary/30 shadow-sm ring-1 ring-primary/20",
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+            agent.status === "active"
+              ? "bg-primary/10 text-primary"
+              : agent.status === "draft"
+                ? "bg-muted text-muted-foreground"
+                : "bg-destructive/10 text-destructive",
+          )}
+        >
+          <Bot className="h-4.5 w-4.5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-sm truncate">{agent.name}</span>
+            <StatusDot variant={statusToVariant(agent.status)} />
+          </div>
+          {agent.description && (
+            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+              {agent.description}
+            </p>
+          )}
+          <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1 truncate max-w-[120px]">
+              <Cpu className="h-3 w-3 shrink-0" />
+              {agent.model}
+            </span>
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              v{agent.version}
+            </span>
+            {agent.allowed_tools.length > 0 && (
+              <span className="flex items-center gap-1">
+                {agent.allowed_tools.length} tools
+              </span>
+            )}
+          </div>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 shrink-0 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation()
+                onChat()
+              }}
+            >
+              <MessageSquare className="mr-2 h-3.5 w-3.5" />
+              Chat
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation()
+                onConfigure()
+              }}
+            >
+              <Settings className="mr-2 h-3.5 w-3.5" />
+              Configure
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete()
+              }}
+            >
+              <Trash2 className="mr-2 h-3.5 w-3.5" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  )
+}

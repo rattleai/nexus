@@ -1,0 +1,33 @@
+# Project-level gitleaks config — extends the default ruleset and adds
+# narrow allowlists for known-non-secrets that the broad default rules
+# false-positive on. Anything not allowlisted here is still scanned.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Project-wide false-positive allowlist"
+
+# Files that contain only auto-generated or fixture data which the
+# default ruleset matches against but never holds real secrets.
+paths = [
+  '''(^|/)openapi\.lock\.json$''',
+  '''(^|/)uv\.lock$''',
+  '''(^|/)package-lock\.json$''',
+  '''(^|/)frontend/dist/''',
+  '''(^|/)tests/''',
+]
+
+# CI fallback values — explicitly fake placeholders used when no real
+# secret is configured (e.g. `${{ secrets.CI_SECRET_KEY ||
+# 'ci-test-...' }}`). These are public, not-secret defaults that exist
+# so PRs from forks can still build.
+regexes = [
+  '''ci-test-secret-key-min-[0-9]+-chars-long''',
+  '''ci-test-admin-key-min-[0-9]+-chars-long''',
+  '''change-me-in-production''',
+  # Pact / test fixture fake credentials.
+  '''fake[_-]token''',
+  '''ENCRYPTED_TOKEN_BLOB''',
+  '''REFRESH_TOKEN_BLOB''',
+]

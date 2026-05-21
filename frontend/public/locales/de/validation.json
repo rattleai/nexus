@@ -1,0 +1,20 @@
+{
+  "required": "Dieses Feld ist erforderlich",
+  "email_required": "E-Mail ist erforderlich",
+  "invalid_email": "Ungültige E-Mail-Adresse",
+  "password_required": "Passwort ist erforderlich",
+  "display_name_required": "Anzeigename ist erforderlich",
+  "org_slug_required": "Organisations-Kennung ist erforderlich",
+  "org_slug_format": "Nur Kleinbuchstaben, Zahlen und Bindestriche erlaubt (darf nicht mit einem Bindestrich beginnen oder enden)",
+  "password_min_length": "Passwort muss mindestens {{count}} Zeichen lang sein",
+  "password_lowercase": "Muss einen Kleinbuchstaben enthalten",
+  "password_uppercase": "Muss einen Großbuchstaben enthalten",
+  "password_digit": "Muss eine Ziffer enthalten",
+  "confirm_password_required": "Bitte bestätigen Sie Ihr Passwort",
+  "passwords_not_match": "Passwörter stimmen nicht überein",
+  "current_password_required": "Aktuelles Passwort ist erforderlich",
+  "url_and_events_required": "URL und mindestens ein Ereignis sind erforderlich",
+  "key_name_required": "Schlüsselname ist erforderlich",
+  "job_type_required": "Auftragstyp ist erforderlich",
+  "invite_email_required": "E-Mail-Adresse ist erforderlich"
+}

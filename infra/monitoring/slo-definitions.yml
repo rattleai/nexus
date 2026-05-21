@@ -1,0 +1,91 @@
+# Service Level Objectives (SLOs) for NEXUS
+# These define the target reliability and performance commitments.
+
+service: nexus
+
+slos:
+  # ── Availability ────────────────────────────────────────
+  - name: api_availability
+    description: "API endpoints return non-5xx responses"
+    target: 99.9%          # 43.8 min/month error budget
+    window: 30d
+    indicator:
+      type: availability
+      good_events: "http_status_code !~ '5..'"
+      total_events: "all requests excluding health checks"
+    alerts:
+      burn_rate_1h: 14.4    # Alert if burning 14.4x budget (exhausts in ~2h)
+      burn_rate_6h: 6.0     # Alert if burning 6x budget (exhausts in ~5h)
+
+  # ── Latency ─────────────────────────────────────────────
+  - name: api_latency_p99
+    description: "99th percentile API response time"
+    target: "< 500ms"
+    window: 30d
+    indicator:
+      type: latency
+      threshold: 500ms
+      percentile: 99
+      exclude: "/api/v1/health/*, /api/v1/ai/completions*"
+    alerts:
+      sustained_breach: 5m   # Alert after 5 min sustained breach
+
+  - name: api_latency_p95
+    description: "95th percentile API response time"
+    target: "< 200ms"
+    window: 30d
+    indicator:
+      type: latency
+      threshold: 200ms
+      percentile: 95
+      exclude: "/api/v1/health/*, /api/v1/ai/completions*"
+
+  # ── Error Rate ──────────────────────────────────────────
+  - name: error_rate
+    description: "Server-side error rate across all API endpoints"
+    target: "< 0.1%"
+    window: 30d
+    indicator:
+      type: ratio
+      good: "http_status_code < 500"
+      total: "all requests"
+
+  # ── Database ────────────────────────────────────────────
+  - name: db_connection_pool
+    description: "Database connection pool utilization"
+    target: "< 80%"
+    window: continuous
+    indicator:
+      type: saturation
+      metric: "db_pool_connections_checkedout / db_pool_size"
+
+  # ── AI Gateway ──────────────────────────────────────────
+  - name: ai_completion_success_rate
+    description: "AI completion requests that succeed"
+    target: 99.0%
+    window: 7d
+    indicator:
+      type: availability
+      good_events: "ai_completions_total{status='success'}"
+      total_events: "ai_completions_total"
+
+  - name: ai_completion_latency
+    description: "AI completion p95 latency (excluding streaming)"
+    target: "< 30s"
+    window: 7d
+    indicator:
+      type: latency
+      threshold: 30s
+      percentile: 95
+
+# ── Escalation Policy ──────────────────────────────────────
+escalation:
+  critical:
+    notify:
+      - pagerduty  # Primary on-call
+      - slack_channel: "#incidents"
+    response_time: 15m
+  warning:
+    notify:
+      - slack_channel: "#platform-alerts"
+    response_time: 1h

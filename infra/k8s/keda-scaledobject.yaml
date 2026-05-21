@@ -1,0 +1,35 @@
+# P2-2: KEDA ScaledObject — auto-scale workers based on Redis/Celery queue depth
+#
+# Prerequisites:
+#   helm repo add kedacore https://kedacore.github.io/charts
+#   helm install keda kedacore/keda --namespace keda --create-namespace
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: nxs-worker-scaler
+  namespace: nxs
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/part-of: nxs
+spec:
+  scaleTargetRef:
+    name: nxs-worker
+  pollingInterval: 15
+  cooldownPeriod: 60
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  triggers:
+    # Scale on default queue depth
+    - type: redis
+      metadata:
+        address: redis-host:6379  # Replace with actual Redis address
+        listName: default
+        listLength: "25"
+        activationListLength: "5"
+    # Scale on agents queue depth
+    - type: redis
+      metadata:
+        address: redis-host:6379
+        listName: agents
+        listLength: "10"
+        activationListLength: "2"

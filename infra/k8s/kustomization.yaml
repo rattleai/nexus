@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: nxs
+
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  # secrets.yaml is created locally from secrets.yaml.template — never committed.
+  # For production, use sealed-secrets.yaml instead.
+  - secrets.yaml
+  - rbac.yaml
+  - priority-classes.yaml
+  - api-deployment.yaml
+  - api-service.yaml
+  - api-hpa.yaml
+  - worker-deployment.yaml
+  - worker-hpa.yaml
+  - beat-deployment.yaml
+  - ingress.yaml
+  - networkpolicy.yaml
+
+images:
+  - name: ghcr.io/OWNER/nxs
+    # Set by CI: kustomize edit set image ghcr.io/OWNER/nxs=ghcr.io/OWNER/nxs:sha-<commit>
+    # NEVER use "latest" in production — use immutable SHA-based tags.
+    newTag: latest

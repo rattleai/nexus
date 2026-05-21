@@ -1,0 +1,311 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - "8000"
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/v1/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    # API lifespan closes Redis (5s timeout) + DB engines (10s timeout) on shutdown
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    restart: always
+    networks:
+      - proxy
+      - data
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping --timeout 5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: always
+    networks:
+      - data
+
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app beat --loglevel=info --pidfile=/tmp/celerybeat.pid
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/celerybeat.pid && kill -0 $(cat /tmp/celerybeat.pid)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    # tmpfs prevents stale PID file across container restarts
+    tmpfs:
+      - /tmp
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    restart: always
+    networks:
+      - data
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infra/nginx/common.conf:/etc/nginx/conf.d/common.conf:ro
+      - certbot-webroot:/var/www/certbot:ro
+      - tls:/etc/nginx/ssl
+    # Generate self-signed cert if none exists (allows nginx to start before certbot
+    # provisions real certs). Background loop reloads config every 6h to pick up renewals.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ ! -f /etc/nginx/ssl/fullchain.pem ]; then
+          mkdir -p /etc/nginx/ssl
+          openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout /etc/nginx/ssl/privkey.pem \
+            -out /etc/nginx/ssl/fullchain.pem \
+            -subj "/CN=$${DOMAIN:-localhost}"
+          echo "[nginx] Generated self-signed TLS certificate for initial startup"
+        fi
+        (while true; do sleep 6h; nginx -s reload; echo "[nginx] Config reloaded"; done) &
+        exec nginx -g 'daemon off;'
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    depends_on:
+      api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: always
+    networks:
+      - proxy
+
+  # Let's Encrypt certificate management.
+  # Initial provisioning: docker compose -f docker-compose.prod.yml run --rm certbot \
+  #   certonly --webroot -w /var/www/certbot -d yourdomain.com
+  # After initial cert, the renewal loop handles ongoing renewals and deploys certs
+  # to the shared TLS volume where nginx reads them.
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+      - tls:/tls
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        trap exit TERM
+        while :; do
+          certbot renew --webroot -w /var/www/certbot --quiet \
+            --deploy-hook "cp -L /etc/letsencrypt/live/$$DOMAIN/fullchain.pem /tls/fullchain.pem && \
+                           cp -L /etc/letsencrypt/live/$$DOMAIN/privkey.pem /tls/privkey.pem && \
+                           echo '[certbot] Certificates renewed and deployed'"
+          sleep 12h & wait $${!}
+        done
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+    restart: always
+
+  # Automated database backups with integrity verification
+  db-backup:
+    image: postgres:16-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - db-backups:/backups
+    environment:
+      PGUSER: ${DB_USER:-app}
+      PGPASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      PGHOST: db
+      PGDATABASE: ${DB_NAME:-app}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          TIMESTAMP=$$(date +%Y%m%d_%H%M%S)
+          BACKUP_FILE="/backups/db_backup_$${TIMESTAMP}.sql.gz"
+          echo "[$(date)] Starting database backup..."
+          if pg_dump --no-owner --clean | gzip > "$$BACKUP_FILE"; then
+            if [ -s "$$BACKUP_FILE" ]; then
+              SIZE=$$(du -h "$$BACKUP_FILE" | cut -f1)
+              sha256sum "$$BACKUP_FILE" > "$${BACKUP_FILE}.sha256"
+              echo "[$(date)] Backup complete: $$BACKUP_FILE ($$SIZE)"
+              # Prune old backups beyond retention period
+              find /backups -name "db_backup_*.sql.gz" -mtime +$${BACKUP_RETENTION_DAYS} -delete 2>/dev/null
+              find /backups -name "db_backup_*.sha256" -mtime +$${BACKUP_RETENTION_DAYS} -delete 2>/dev/null
+            else
+              echo "[$(date)] ERROR: Backup file is empty"
+              rm -f "$$BACKUP_FILE"
+            fi
+          else
+            echo "[$(date)] ERROR: pg_dump failed"
+            rm -f "$$BACKUP_FILE"
+          fi
+          sleep 86400
+        done
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    restart: always
+    networks:
+      - data
+
+  db:
+    image: postgres:16-alpine
+    expose:
+      - "5432"
+    environment:
+      POSTGRES_USER: ${DB_USER:-app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-app}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Init script creates a non-superuser app_user role.
+      # CRITICAL: The application MUST connect as app_user (not the superuser)
+      # so that Row-Level Security policies are enforced. Superusers bypass RLS.
+      - ./infra/docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-app}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    restart: always
+    networks:
+      - data
+
+  redis:
+    image: redis:7-alpine
+    expose:
+      - "6379"
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a $$REDIS_PASSWORD ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    restart: always
+    networks:
+      - data
+
+# Network isolation: nginx can only reach API (proxy), not DB/Redis directly.
+# API/worker/beat access data services on the data network.
+networks:
+  proxy:
+    driver: bridge
+  data:
+    driver: bridge
+
+volumes:
+  pgdata:
+  certbot-webroot:
+  letsencrypt:
+  tls:
+  db-backups:

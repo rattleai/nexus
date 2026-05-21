@@ -1,0 +1,65 @@
+# ──────────────────────────────────────────────────────────────
+# NEXUS — Terraform Variable Values
+# ──────────────────────────────────────────────────────────────
+# Copy this file to terraform.tfvars and fill in real values.
+# NEVER commit terraform.tfvars to version control.
+# ──────────────────────────────────────────────────────────────
+
+# ── General ──────────────────────────────────────────────────
+
+aws_region  = "us-east-1"
+environment = "prod"
+
+# ── Networking ───────────────────────────────────────────────
+
+vpc_cidr        = "10.0.0.0/16"
+domain_name     = "example.com"
+route53_zone_id = ""  # Leave empty if managing DNS externally
+
+# ── Database ─────────────────────────────────────────────────
+
+db_instance_class        = "db.t4g.medium"
+db_allocated_storage     = 50
+db_max_allocated_storage = 200
+db_name                  = "app"
+db_master_username       = "app_admin"
+
+# ── Redis ────────────────────────────────────────────────────
+
+redis_node_type = "cache.t4g.small"
+
+# ── ECS / Containers ────────────────────────────────────────
+
+container_image   = "ghcr.io/your-org/nxs:latest"
+api_cpu           = 1024    # 1 vCPU
+api_memory        = 2048    # 2 GB
+api_desired_count = 2
+api_max_count     = 4
+worker_cpu        = 1024
+worker_memory     = 2048
+beat_cpu          = 256
+beat_memory       = 512
+
+# ── Application Secrets ─────────────────────────────────────
+# Generate with: python -c "import secrets; print(secrets.token_urlsafe(64))"
+# Prefer passing these via environment variables:
+#   export TF_VAR_app_secret_key="..."
+
+app_secret_key          = "CHANGE_ME"
+app_encryption_key      = "CHANGE_ME"
+app_webhook_signing_key = "CHANGE_ME"
+app_admin_key           = "CHANGE_ME"
+
+# ── Third-Party Keys (optional) ─────────────────────────────
+
+stripe_secret_key     = ""
+stripe_webhook_secret = ""
+brevo_api_key         = ""
+
+# ── CORS ─────────────────────────────────────────────────────
+
+cors_origins = "https://example.com"
+
+# ── S3 ───────────────────────────────────────────────────────
+
+uploads_bucket_name = ""  # Leave empty for auto-generated name

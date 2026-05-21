@@ -1,0 +1,48 @@
+{
+  "title": "Team",
+  "description": "Verwalten Sie Ihre Teammitglieder und Einladungen.",
+  "search_placeholder": "Mitglieder suchen...",
+  "no_members": "Keine Teammitglieder",
+  "no_members_desc": "Laden Sie jemanden ein, Ihrem Team beizutreten.",
+  "invite_member": "Mitglied einladen",
+  "invite_dialog_title": "Teammitglied einladen",
+  "invite_dialog_desc": "Senden Sie eine E-Mail-Einladung, um Ihrem Team beizutreten.",
+  "invite_email_label": "E-Mail-Adresse",
+  "invite_email_placeholder": "kollege@beispiel.de",
+  "invite_role_label": "Rolle",
+  "send_invitation": "Einladung senden",
+  "pending_invitations": "Ausstehende Einladungen",
+  "pending_invitations_desc": "Einladungen, die noch nicht angenommen wurden.",
+  "no_pending_invitations": "Keine ausstehenden Einladungen.",
+  "invite_success": "Einladung gesendet",
+  "table": {
+    "name": "Name",
+    "email": "E-Mail",
+    "role": "Rolle",
+    "joined": "Beigetreten"
+  },
+  "roles": {
+    "admin": "Administrator",
+    "member": "Mitglied",
+    "viewer": "Betrachter"
+  },
+  "remove_title": "Mitglied entfernen",
+  "remove_desc": "{{name}} aus dem Team entfernen? Der Zugriff wird sofort entzogen.",
+  "remove_success": "Mitglied entfernt",
+  "role_updated": "Rolle aktualisiert",
+  "revoke_invitation_title": "Einladung widerrufen",
+  "revoke_invitation_desc": "Die an {{email}} gesendete Einladung widerrufen?",
+  "revoke_success": "Einladung widerrufen",
+  "expires": "Läuft ab",
+  "accept_invitation": {
+    "title": "Einladung annehmen",
+    "description": "Sie wurden eingeladen, einer Organisation beizutreten. Klicken Sie auf die Schaltfläche unten, um die Einladung anzunehmen.",
+    "accept": "Einladung annehmen",
+    "accepting": "Wird angenommen...",
+    "success": "Einladung angenommen!",
+    "error": "Einladung konnte nicht angenommen werden",
+    "invalid_token": "Ungültiger oder fehlender Einladungstoken.",
+    "go_to_sign_in": "Zur Anmeldung",
+    "back_to_sign_in": "Zurück zur Anmeldung"
+  }
+}

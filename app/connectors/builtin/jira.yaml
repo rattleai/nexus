@@ -1,0 +1,45 @@
+slug: jira
+name: Jira
+description: >-
+  Connect to Atlassian Jira for issue tracking, project management, and agile
+  workflows. Access projects, issues, sprints, and boards across your
+  Atlassian Cloud instance via the official Atlassian MCP server.
+icon: Bug
+category: project_management
+connector_type: mcp_server
+auth_type: oauth2
+broker: composio
+trust_level: verified
+requires_app_credentials: true
+version: "1.0.0"
+documentation_url: https://developer.atlassian.com/cloud/jira/platform/rest/v3/
+
+tags:
+  - jira
+  - atlassian
+  - issues
+  - project-management
+  - agile
+  - sprints
+
+auth_config:
+  authorize_url: https://auth.atlassian.com/authorize
+  token_url: https://auth.atlassian.com/oauth/token
+  userinfo_url: https://api.atlassian.com/me
+  revoke_url: ""
+  pkce_required: true
+  scopes:
+    - read:jira-work
+    - read:jira-user
+    - write:jira-work
+  extra_authorize_params:
+    audience: api.atlassian.com
+    prompt: consent
+
+mcp_config:
+  transport: streamable_http
+  server_url: https://mcp.atlassian.com/v1/sse
+
+tool_definitions: []
+
+capability_template: {}

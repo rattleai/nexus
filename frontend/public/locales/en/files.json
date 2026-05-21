@@ -1,0 +1,18 @@
+{
+  "title": "Files",
+  "description": "Upload and manage your files.",
+  "search_placeholder": "Search files...",
+  "no_files": "No files yet",
+  "no_files_desc": "Upload a file to get started.",
+  "upload_title": "Upload Files",
+  "table": {
+    "filename": "Filename",
+    "type": "Type",
+    "size": "Size",
+    "uploaded": "Uploaded"
+  },
+  "delete_title": "Delete File",
+  "delete_desc": "Are you sure you want to delete \"{{filename}}\"? This cannot be undone.",
+  "delete_success": "File deleted",
+  "upload_success": "{{count}} file(s) uploaded"
+}

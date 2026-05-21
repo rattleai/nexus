@@ -1,0 +1,55 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.nxs/mcp-server",
+  "title": "NEXUS MCP Server",
+  "version": "1.0.0",
+  "description": "Multi-tenant SaaS platform with AI gateway, agent orchestration, billing, and file management. Provides tools for AI completion, agent execution, job management, file storage, billing, and team management.",
+  "websiteUrl": "https://example.com",
+  "repository": {
+    "url": "https://github.com/rattleai/nxs",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "docker",
+      "identifier": "ghcr.io/${{ github.repository_owner }}/nxs-mcp:latest",
+      "version": "1.0.0",
+      "transport": [
+        {
+          "type": "stdio"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "NXS_API_KEY",
+          "description": "Your NEXUS API key for authentication",
+          "required": true
+        },
+        {
+          "name": "NXS_API_URL",
+          "description": "API base URL (default: https://api.example.com)",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "transportType": "streamable-http",
+      "url": "https://mcp.example.com/mcp",
+      "authorizationUrl": "https://api.example.com/oauth/authorize",
+      "tokenUrl": "https://api.example.com/oauth/token"
+    }
+  ],
+  "_meta": {
+    "categories": ["saas", "ai-gateway", "agents", "billing", "developer-tools"],
+    "features": [
+      "AI completion via multi-provider gateway",
+      "Agent orchestration (create, run, monitor agents)",
+      "File upload/download/management",
+      "Background job management",
+      "Billing and usage tracking",
+      "Team and webhook management"
+    ]
+  }
+}

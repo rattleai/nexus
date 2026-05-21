@@ -1,0 +1,13 @@
+{
+  "title": "AI Chat",
+  "description": "Chat with the AI assistant.",
+  "error_message": "Sorry, I encountered an error processing your message. Please try again.",
+  "no_messages": "No messages yet. Start a conversation.",
+  "prompt_placeholder": "Type a message...",
+  "typing": "Assistant is typing",
+  "conversations": {
+    "search_placeholder": "Search conversations...",
+    "no_conversations": "No conversations yet.",
+    "no_conversations_found": "No conversations found."
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "title": "Archivos",
+  "description": "Suba y administre sus archivos.",
+  "search_placeholder": "Buscar archivos...",
+  "no_files": "Aún no hay archivos",
+  "no_files_desc": "Suba un archivo para comenzar.",
+  "upload_title": "Subir archivos",
+  "table": {
+    "filename": "Nombre de archivo",
+    "type": "Tipo",
+    "size": "Tamaño",
+    "uploaded": "Subido"
+  },
+  "delete_title": "Eliminar archivo",
+  "delete_desc": "¿Está seguro de que desea eliminar \"{{filename}}\"? Esta acción no se puede deshacer.",
+  "delete_success": "Archivo eliminado",
+  "upload_success": "{{count}} archivo(s) subido(s)"
+}
