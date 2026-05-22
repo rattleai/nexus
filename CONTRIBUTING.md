@@ -93,7 +93,7 @@ Use the GitHub issue templates. For security vulnerabilities, follow [SECURITY.m
 ## Code of conduct
 
 Be excellent to each other. We follow the [Contributor Covenant 2.1](CODE_OF_CONDUCT.md).
-Report concerns to `conduct@example.com`.
+Report concerns to `opensource@rattleai.de`.
 
 ## Licensing of contributions
 

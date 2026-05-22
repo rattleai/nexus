@@ -5,7 +5,7 @@ https://www.contributor-covenant.org/version/2/1/code_of_conduct/
 
 ## Reporting
 
-Report unacceptable behavior to `conduct@example.com`. All reports are reviewed
+Report unacceptable behavior to `opensource@rattleai.de`. All reports are reviewed
 confidentially. Project maintainers who do not follow or enforce the Code of Conduct
 in good faith may face temporary or permanent repercussions as determined by other
 members of the project's leadership.

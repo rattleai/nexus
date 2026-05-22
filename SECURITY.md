@@ -15,7 +15,7 @@ NEXUS is pre-1.0. Only the latest minor release line on `main` receives security
 
 1. Preferred: open a private advisory via GitHub Security Advisories
    (https://github.com/rattleai/nexus/security/advisories/new).
-2. Alternative: email `security@example.com` with a description, reproduction steps,
+2. Alternative: email `opensource@rattleai.de` with a description, reproduction steps,
    and any patches you propose.
 
 We aim to:
