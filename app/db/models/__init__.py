@@ -7,6 +7,24 @@ in their plugin packages under ``app.apps.<name>.models`` — see
 Alembic discovers plugin models via ``env.py`` through the plugin registry.
 """
 
+from app.agents.models import (
+    AgentDefinition,
+    AgentDefinitionMemoryEntry,
+    AgentInstance,
+    AgentMemoryEntry,
+    AgentPolicy,
+    AgentSession,
+    AgentStatus,
+    CapabilityPreset,
+    InstanceStatus,
+    SessionStatus,
+    TenantTool,
+    ToolSource,
+    WorkflowDefinition,
+    WorkflowRun,
+    WorkflowRunStatus,
+    WorkflowStatus,
+)
 from app.connectors.models import (
     AuthType,
     BrokerType,
@@ -113,10 +131,20 @@ __all__ = [
     # AI
     "AIProvider",
     "AIUsageLog",
+    # Agent runtime (app.agents.models — registered here so alembic
+    # autogenerate can see them on Base.metadata)
+    "AgentDefinition",
+    "AgentDefinitionMemoryEntry",
+    "AgentInstance",
+    "AgentMemoryEntry",
+    "AgentPolicy",
+    "AgentSession",
+    "AgentStatus",
     "ApiKey",
     "AuditLog",
     "AuthType",
     "BrokerType",
+    "CapabilityPreset",
     "ChangeLog",
     "ConnectionStatus",
     "ConnectorAppCredential",
@@ -146,6 +174,7 @@ __all__ = [
     "EmailVerificationToken",
     # Features
     "FeatureFlag",
+    "InstanceStatus",
     # Collaboration
     "Invitation",
     "InvitationStatus",
@@ -178,6 +207,7 @@ __all__ = [
     "SSOProvider",
     "Subscription",
     "SubscriptionStatus",
+    "SessionStatus",
     "SyncMixin",
     # Core
     "Tenant",
@@ -188,6 +218,8 @@ __all__ = [
     "TenantMembership",
     # RAG Configuration
     "TenantRAGConfig",
+    "TenantTool",
+    "ToolSource",
     "TrustLevel",
     "UsageRecord",
     "User",
@@ -197,4 +229,8 @@ __all__ = [
     "WebAuthnCredential",
     "WebhookDelivery",
     "WebhookEndpoint",
+    "WorkflowDefinition",
+    "WorkflowRun",
+    "WorkflowRunStatus",
+    "WorkflowStatus",
 ]

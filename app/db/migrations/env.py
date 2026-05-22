@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from logging.config import fileConfig
 from pathlib import Path
 
@@ -40,9 +41,43 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+# ── Autogenerate filter ──────────────────────────────────────────────
+# Hash-partition children of `data_source_chunks` are created dynamically
+# via raw DDL in 0001_basic_schema (CREATE TABLE ... PARTITION OF ...).
+# PostgreSQL auto-propagates parent indexes to the partitions, and each
+# partition gets its own HNSW indexes — none of which are declarable in
+# the ORM (you cannot model "this table only exists because the parent
+# partitions hash-distribute over N children" with SQLAlchemy classes).
+#
+# Without this filter, `alembic check` flags every partition table and
+# every propagated/HNSW index as drift on every run, drowning out the
+# genuine ORM-vs-migration diffs we actually want to see. Skipping them
+# at the autogenerate boundary is the canonical fix — the migrations
+# themselves still create and manage the partitions; we just exclude
+# them from the *comparison* against ORM metadata.
+_PARTITION_TABLE_RE = re.compile(r"^data_source_chunks_p\d+$")
+
+
+def _include_object(object_, name, type_, reflected, compare_to):
+    if type_ == "table" and name and _PARTITION_TABLE_RE.match(name):
+        return False
+    # Indexes attached to a partition table are reported with the
+    # partition as their parent; filter them out too.
+    if type_ == "index":
+        table_name = getattr(getattr(object_, "table", None), "name", None) or ""
+        if _PARTITION_TABLE_RE.match(table_name):
+            return False
+    return True
+
+
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
-    context.configure(url=url, target_metadata=target_metadata, literal_binds=True)
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        include_object=_include_object,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
@@ -52,6 +87,7 @@ def do_run_migrations(connection):
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
+        include_object=_include_object,
         # Wider column for alembic_version on new deployments so revision
         # identifiers longer than 32 chars never get truncated.
         version_table_column_length=128,
