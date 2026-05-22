@@ -601,19 +601,6 @@ def _create_core_tables() -> None:
     )
     op.create_index("ix_changelog_entity", "change_log", ["entity_type", "entity_id"])
 
-    # processed_events (consumer idempotency)
-    op.create_table(
-        "processed_events",
-        sa.Column("event_id", sa.String(128), primary_key=True),
-        sa.Column(
-            "processed_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-    )
-    op.create_index("ix_processed_events_processed_at", "processed_events", ["processed_at"])
-
 
 # ── 4. Auth / mobile / webhook deliveries ───────────────────────────
 
@@ -1635,58 +1622,6 @@ def _create_rag_infrastructure() -> None:
         ["tenant_id", "empty_result"],
     )
 
-    # rag_ab_experiments
-    op.create_table(
-        "rag_ab_experiments",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column("status", sa.String(50), nullable=False, server_default="draft"),
-        sa.Column("control_config", JSONB, nullable=False),
-        sa.Column("variant_config", JSONB, nullable=False),
-        sa.Column("traffic_split", sa.Float, server_default="0.5"),
-        sa.Column("sample_size_target", sa.Integer, nullable=True),
-        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("results", JSONB, nullable=True),
-        sa.Column("metadata", JSONB, server_default="{}"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index(
-        "ix_rag_ab_experiments_tenant_name",
-        "rag_ab_experiments",
-        ["tenant_id", "name"],
-        unique=True,
-    )
-    op.create_index(
-        "ix_rag_ab_experiments_status",
-        "rag_ab_experiments",
-        ["tenant_id", "status"],
-    )
-
-    # rag_ab_assignments
-    op.create_table(
-        "rag_ab_assignments",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("experiment_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("query_log_id", UUID(as_uuid=True), nullable=True),
-        sa.Column("arm", sa.String(20), nullable=False),
-        sa.Column("config_used", JSONB, nullable=False),
-        sa.Column("result_count", sa.Integer, nullable=True),
-        sa.Column("top_score", sa.Float, nullable=True),
-        sa.Column("latency_ms", sa.Integer, nullable=True),
-        sa.Column("user_feedback", sa.Integer, nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index(
-        "ix_rag_ab_assignments_experiment",
-        "rag_ab_assignments",
-        ["tenant_id", "experiment_id", "arm", "created_at"],
-    )
-
     # rag_entities + embedding column
     op.create_table(
         "rag_entities",
@@ -1859,8 +1794,6 @@ def _apply_rls() -> None:
         "rag_evaluation_runs",
         "rag_evaluation_results",
         "rag_query_logs",
-        "rag_ab_experiments",
-        "rag_ab_assignments",
         "rag_entities",
         "rag_relationships",
     ]:

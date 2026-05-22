@@ -3,7 +3,7 @@
 > AI-first multi-agent platform foundation. Plug your application in.
 
 [![CI](https://github.com/rattleai/nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/rattleai/nexus/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/rattleai/nexus/actions/workflows/codeql.yml/badge.svg)](https://github.com/rattleai/nexus/actions/workflows/codeql.yml)
+[![CodeQL](https://github.com/rattleai/nexus/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/rattleai/nexus/security/code-scanning)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](pyproject.toml)
 [![Node 22+](https://img.shields.io/badge/node-22%2B-339933.svg)](frontend/package.json)

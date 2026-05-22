@@ -183,6 +183,22 @@ class AgentInstance(Base, TimestampMixin):
         Index("ix_agent_inst_definition", "definition_id"),
         Index("ix_agent_inst_status_heartbeat", "status", "last_heartbeat_at"),
         Index("ix_agent_inst_session", "session_id"),
+        # Declared to match DDL in 0001_basic_schema so alembic check is clean.
+        Index("ix_agent_inst_workflow_run", "workflow_run_id"),
+        Index("ix_agent_inst_status_created", "status", "created_at"),
+        Index("ix_agent_inst_tenant_def", "tenant_id", "definition_id"),
+        Index(
+            "ix_agent_instances_idempotency",
+            "tenant_id",
+            "idempotency_key",
+            postgresql_where="idempotency_key IS NOT NULL",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "definition_id",
+            "idempotency_key",
+            name="uq_agent_instance_idempotency",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
