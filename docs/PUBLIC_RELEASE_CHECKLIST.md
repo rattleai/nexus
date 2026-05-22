@@ -43,6 +43,7 @@ Tick each box in order; if you skip ahead, CI on the first public PR will tell y
 ## 5. Known follow-ups (not blockers, but track them)
 
 - [ ] `migration-drift` CI job is currently `continue-on-error: true`. Burn down the pre-existing baseline drift, then flip it to a hard merge gate.
+- [ ] `e2e-test` CI job is currently `continue-on-error: true`. The Playwright suite needs a maintenance pass after the NEXUS rebrand — most specs still assert pre-rebrand strings/selectors. Refresh the suite, then flip it back to a hard merge gate.
 - [ ] `backend-typecheck` (`mypy`) only checks `app/connectors`, `app/a2a`, `app/authz`. The remaining ~321 pre-existing baseline errors should be cleared so the full `app/` tree type-checks.
 - [ ] `frontend-lint` (`eslint`) has `--max-warnings 100`. Drive this to 0 as warnings are addressed.
 - [ ] Backend test coverage gate is at `--cov-fail-under=25`. Raise as real test suites land.

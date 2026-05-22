@@ -3,7 +3,7 @@ import { test, expect } from "./fixtures"
 test.describe("Smoke Tests", () => {
   test("app loads and shows login or dashboard", async ({ page }) => {
     await page.goto("/")
-    await expect(page).toHaveTitle(/CAD/)
+    await expect(page).toHaveTitle(/NEXUS/)
   })
 
   test("settings/agents page loads when authenticated", async ({ authenticatedPage: page }) => {
