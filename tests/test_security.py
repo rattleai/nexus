@@ -53,9 +53,8 @@ class TestJWT:
         """A token without type=access should be rejected."""
         import jwt as pyjwt
 
-        from app.core.security import _get_effective_algorithm, _get_jwt_signing_key
-
         from app.config import settings
+        from app.core.security import _get_effective_algorithm, _get_jwt_signing_key
 
         token = pyjwt.encode(
             {

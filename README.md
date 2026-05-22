@@ -75,7 +75,7 @@ docker compose --profile mcp up -d             # MCP server
 docker compose --profile observability up -d   # Jaeger UI on :16686
 ```
 
-Local development without Docker — see [`docs/DEPLOY.md`](docs/DEPLOY.md).
+Local development without Docker — see [`docs/DEPLOY.md`](docs/DEPLOY.md). For the system-level view of how the platform fits together, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Build your first plugin
 

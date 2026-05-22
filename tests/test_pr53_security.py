@@ -290,33 +290,11 @@ class TestMIMEMagicValidation:
         assert result == "text/csv"
 
 
-# ── Tenant Chunk Deletion Filter ───────────────────────────────────
-
-
-class TestChunkDeletionTenantFilter:
-    """Verify that chunk bulk deletion includes tenant filter."""
-
-    def test_datasources_reprocess_includes_tenant_filter(self):
-        """Static check that the reprocess endpoint filters chunks by tenant."""
-        import inspect
-
-        from app.api.v1 import datasources
-
-        source = inspect.getsource(datasources)
-        # The delete(DataSourceChunk) call must include tenant_id
-        assert "DataSourceChunk.tenant_id == tenant.id" in source
-
-
-# ── ORM Index Naming ────────────────────────────────────────────────
-
-
-class TestORMIndexNaming:
-    """Verify ORM index names match migration index names."""
-
-    def test_provenance_index_names_match_migration(self):
-        from app.db.models.datasource import ConfigItemProvenance
-
-        index_names = {idx.name for idx in ConfigItemProvenance.__table__.indexes}
-        # These names must match what migration 0019 created
-        assert "ix_config_provenance_tenant_entity" in index_names
-        assert "ix_config_provenance_tenant_source" in index_names
+# Note: this file used to also assert two CPQ-specific invariants —
+# `TestChunkDeletionTenantFilter` (against app.api.v1.datasources) and
+# `TestORMIndexNaming` (against app.db.models.datasource.ConfigItemProvenance).
+# Both targets were extracted out of the public platform when the CPQ
+# application was split into its own plugin (see the comment in
+# app/db/models/datasource.py). Their equivalents now live in the CPQ
+# plugin's own test suite; this file keeps only the platform-level
+# security regressions.

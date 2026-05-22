@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import settings
 from app.db.base import Base
-from app.plugins.registry import discover_plugins, registry as plugin_registry  # noqa: E402
+from app.plugins.registry import discover_plugins, registry as plugin_registry
 
 # Discover plugins so their models register on Base.metadata
 discover_plugins()

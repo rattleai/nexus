@@ -24,9 +24,10 @@ venv/
 env/
 ENV/
 
-# uv lock file — resolved by `uv run` / `uv sync` on demand. Not committed
-# on this branch; remove this line if you later decide to pin deps via lock.
-uv.lock
+# uv.lock is intentionally committed: CI's "Dependency Lock Drift" job
+# runs `uv lock --check`, requiring the lock file to be tracked so dev,
+# CI, and prod all resolve to the same versions. Refresh with `uv lock`
+# and commit when pyproject.toml changes.
 
 # Type checking / linting
 .mypy_cache/

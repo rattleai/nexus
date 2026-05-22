@@ -2730,6 +2730,150 @@ wheels = [
 ]
 
 [[package]]
+name = "nexus-platform"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "alembic" },
+    { name = "argon2-cffi" },
+    { name = "asyncpg" },
+    { name = "bcrypt" },
+    { name = "beautifulsoup4" },
+    { name = "boto3" },
+    { name = "celery", extra = ["redis"] },
+    { name = "celery-redbeat" },
+    { name = "cryptography" },
+    { name = "fastapi" },
+    { name = "fastapi-mcp" },
+    { name = "fastmcp" },
+    { name = "httpx" },
+    { name = "litellm" },
+    { name = "markdownify" },
+    { name = "openpyxl" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp" },
+    { name = "opentelemetry-exporter-prometheus" },
+    { name = "opentelemetry-instrumentation-celery" },
+    { name = "opentelemetry-instrumentation-fastapi" },
+    { name = "opentelemetry-instrumentation-redis" },
+    { name = "opentelemetry-instrumentation-sqlalchemy" },
+    { name = "opentelemetry-sdk" },
+    { name = "passlib", extra = ["argon2"] },
+    { name = "pdfplumber" },
+    { name = "prometheus-client" },
+    { name = "psycopg2-binary" },
+    { name = "py-vapid" },
+    { name = "pydantic", extra = ["email"] },
+    { name = "pydantic-settings" },
+    { name = "pyjwt" },
+    { name = "pymupdf" },
+    { name = "python-docx" },
+    { name = "python-magic" },
+    { name = "python-multipart" },
+    { name = "pywebpush" },
+    { name = "pyyaml" },
+    { name = "redis" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "sqlparse" },
+    { name = "sse-starlette" },
+    { name = "stripe" },
+    { name = "structlog" },
+    { name = "tiktoken" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "webauthn" },
+    { name = "websockets" },
+]
+
+[package.optional-dependencies]
+cli = [
+    { name = "rich" },
+    { name = "typer" },
+]
+composio = [
+    { name = "composio-core" },
+]
+dev = [
+    { name = "httpx" },
+    { name = "mypy" },
+    { name = "pact-python" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+perf = [
+    { name = "locust" },
+]
+scaffold = [
+    { name = "copier" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "alembic", specifier = ">=1.14,<2" },
+    { name = "argon2-cffi", specifier = ">=23.1,<24" },
+    { name = "asyncpg", specifier = ">=0.30,<1" },
+    { name = "bcrypt", specifier = ">=4.0,<5" },
+    { name = "beautifulsoup4", specifier = ">=4.12,<5" },
+    { name = "boto3", specifier = ">=1.36,<2" },
+    { name = "celery", extras = ["redis"], specifier = ">=5.4,<6" },
+    { name = "celery-redbeat", specifier = ">=2.2,<3" },
+    { name = "composio-core", marker = "extra == 'composio'", specifier = ">=0.7,<2" },
+    { name = "copier", marker = "extra == 'scaffold'", specifier = ">=9.0,<10" },
+    { name = "cryptography", specifier = ">=42.0,<45" },
+    { name = "fastapi", specifier = ">=0.115,<1" },
+    { name = "fastapi-mcp", specifier = ">=0.3,<1" },
+    { name = "fastmcp", specifier = ">=3.1,<4" },
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28,<1" },
+    { name = "litellm", specifier = ">=1.55,<2" },
+    { name = "locust", marker = "extra == 'perf'", specifier = ">=2.20,<3" },
+    { name = "markdownify", specifier = ">=0.13,<1" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8,<2" },
+    { name = "openpyxl", specifier = ">=3.1,<4" },
+    { name = "opentelemetry-api", specifier = ">=1.24,<2" },
+    { name = "opentelemetry-exporter-otlp", specifier = ">=1.24,<2" },
+    { name = "opentelemetry-exporter-prometheus", specifier = ">=0.45b0,<1" },
+    { name = "opentelemetry-instrumentation-celery", specifier = ">=0.45b0,<1" },
+    { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.45b0,<1" },
+    { name = "opentelemetry-instrumentation-redis", specifier = ">=0.45b0,<1" },
+    { name = "opentelemetry-instrumentation-sqlalchemy", specifier = ">=0.45b0,<1" },
+    { name = "opentelemetry-sdk", specifier = ">=1.24,<2" },
+    { name = "pact-python", marker = "extra == 'dev'", specifier = ">=2.2,<3" },
+    { name = "passlib", extras = ["argon2"], specifier = ">=1.7,<2" },
+    { name = "pdfplumber", specifier = ">=0.11,<1" },
+    { name = "prometheus-client", specifier = ">=0.20,<1" },
+    { name = "psycopg2-binary", specifier = ">=2.9,<3" },
+    { name = "py-vapid", specifier = ">=1.9,<2" },
+    { name = "pydantic", extras = ["email"], specifier = ">=2.7,<3" },
+    { name = "pydantic-settings", specifier = ">=2.7,<3" },
+    { name = "pyjwt", specifier = ">=2.8,<3" },
+    { name = "pymupdf", specifier = ">=1.24,<2" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25,<1" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0,<6" },
+    { name = "python-docx", specifier = ">=1.1,<2" },
+    { name = "python-magic", specifier = ">=0.4,<1" },
+    { name = "python-multipart", specifier = ">=0.0.18,<1" },
+    { name = "pywebpush", specifier = ">=2.0,<3" },
+    { name = "pyyaml", specifier = ">=6.0,<7" },
+    { name = "redis", specifier = ">=5.2,<6" },
+    { name = "rich", marker = "extra == 'cli'", specifier = ">=13.0,<14" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9,<1" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0,<3" },
+    { name = "sqlparse", specifier = ">=0.5,<1" },
+    { name = "sse-starlette", specifier = ">=2.0,<3" },
+    { name = "stripe", specifier = ">=8.0,<12" },
+    { name = "structlog", specifier = ">=24.4,<26" },
+    { name = "tiktoken", specifier = ">=0.8,<1" },
+    { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12,<1" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<1" },
+    { name = "webauthn", specifier = ">=2.0,<3" },
+    { name = "websockets", specifier = ">=15.0,<16" },
+]
+provides-extras = ["dev", "cli", "perf", "scaffold", "composio"]
+
+[[package]]
 name = "openai"
 version = "2.31.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4328,150 +4472,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/05/04/74127fc843314818e
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fc/51/727abb13f44c1fcf6d145979e1535a35794db0f6e450a0cb46aa24732fe2/s3transfer-0.16.0-py3-none-any.whl", hash = "sha256:18e25d66fed509e3868dc1572b3f427ff947dd2c56f844a5bf09481ad3f3b2fe", size = 86830, upload-time = "2025-12-01T02:30:57.729Z" },
 ]
-
-[[package]]
-name = "saas-platform"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "alembic" },
-    { name = "argon2-cffi" },
-    { name = "asyncpg" },
-    { name = "bcrypt" },
-    { name = "beautifulsoup4" },
-    { name = "boto3" },
-    { name = "celery", extra = ["redis"] },
-    { name = "celery-redbeat" },
-    { name = "cryptography" },
-    { name = "fastapi" },
-    { name = "fastapi-mcp" },
-    { name = "fastmcp" },
-    { name = "httpx" },
-    { name = "litellm" },
-    { name = "markdownify" },
-    { name = "openpyxl" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp" },
-    { name = "opentelemetry-exporter-prometheus" },
-    { name = "opentelemetry-instrumentation-celery" },
-    { name = "opentelemetry-instrumentation-fastapi" },
-    { name = "opentelemetry-instrumentation-redis" },
-    { name = "opentelemetry-instrumentation-sqlalchemy" },
-    { name = "opentelemetry-sdk" },
-    { name = "passlib", extra = ["argon2"] },
-    { name = "pdfplumber" },
-    { name = "prometheus-client" },
-    { name = "psycopg2-binary" },
-    { name = "py-vapid" },
-    { name = "pydantic", extra = ["email"] },
-    { name = "pydantic-settings" },
-    { name = "pyjwt" },
-    { name = "pymupdf" },
-    { name = "python-docx" },
-    { name = "python-magic" },
-    { name = "python-multipart" },
-    { name = "pywebpush" },
-    { name = "pyyaml" },
-    { name = "redis" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
-    { name = "sqlparse" },
-    { name = "sse-starlette" },
-    { name = "stripe" },
-    { name = "structlog" },
-    { name = "tiktoken" },
-    { name = "uvicorn", extra = ["standard"] },
-    { name = "webauthn" },
-    { name = "websockets" },
-]
-
-[package.optional-dependencies]
-cli = [
-    { name = "rich" },
-    { name = "typer" },
-]
-composio = [
-    { name = "composio-core" },
-]
-dev = [
-    { name = "httpx" },
-    { name = "mypy" },
-    { name = "pact-python" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-perf = [
-    { name = "locust" },
-]
-scaffold = [
-    { name = "copier" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "alembic", specifier = ">=1.14,<2" },
-    { name = "argon2-cffi", specifier = ">=23.1,<24" },
-    { name = "asyncpg", specifier = ">=0.30,<1" },
-    { name = "bcrypt", specifier = ">=4.0,<5" },
-    { name = "beautifulsoup4", specifier = ">=4.12,<5" },
-    { name = "boto3", specifier = ">=1.36,<2" },
-    { name = "celery", extras = ["redis"], specifier = ">=5.4,<6" },
-    { name = "celery-redbeat", specifier = ">=2.2,<3" },
-    { name = "composio-core", marker = "extra == 'composio'", specifier = ">=0.7,<2" },
-    { name = "copier", marker = "extra == 'scaffold'", specifier = ">=9.0,<10" },
-    { name = "cryptography", specifier = ">=42.0,<45" },
-    { name = "fastapi", specifier = ">=0.115,<1" },
-    { name = "fastapi-mcp", specifier = ">=0.3,<1" },
-    { name = "fastmcp", specifier = ">=3.1,<4" },
-    { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28,<1" },
-    { name = "litellm", specifier = ">=1.55,<2" },
-    { name = "locust", marker = "extra == 'perf'", specifier = ">=2.20,<3" },
-    { name = "markdownify", specifier = ">=0.13,<1" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8,<2" },
-    { name = "openpyxl", specifier = ">=3.1,<4" },
-    { name = "opentelemetry-api", specifier = ">=1.24,<2" },
-    { name = "opentelemetry-exporter-otlp", specifier = ">=1.24,<2" },
-    { name = "opentelemetry-exporter-prometheus", specifier = ">=0.45b0,<1" },
-    { name = "opentelemetry-instrumentation-celery", specifier = ">=0.45b0,<1" },
-    { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.45b0,<1" },
-    { name = "opentelemetry-instrumentation-redis", specifier = ">=0.45b0,<1" },
-    { name = "opentelemetry-instrumentation-sqlalchemy", specifier = ">=0.45b0,<1" },
-    { name = "opentelemetry-sdk", specifier = ">=1.24,<2" },
-    { name = "pact-python", marker = "extra == 'dev'", specifier = ">=2.2,<3" },
-    { name = "passlib", extras = ["argon2"], specifier = ">=1.7,<2" },
-    { name = "pdfplumber", specifier = ">=0.11,<1" },
-    { name = "prometheus-client", specifier = ">=0.20,<1" },
-    { name = "psycopg2-binary", specifier = ">=2.9,<3" },
-    { name = "py-vapid", specifier = ">=1.9,<2" },
-    { name = "pydantic", extras = ["email"], specifier = ">=2.7,<3" },
-    { name = "pydantic-settings", specifier = ">=2.7,<3" },
-    { name = "pyjwt", specifier = ">=2.8,<3" },
-    { name = "pymupdf", specifier = ">=1.24,<2" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25,<1" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0,<6" },
-    { name = "python-docx", specifier = ">=1.1,<2" },
-    { name = "python-magic", specifier = ">=0.4,<1" },
-    { name = "python-multipart", specifier = ">=0.0.18,<1" },
-    { name = "pywebpush", specifier = ">=2.0,<3" },
-    { name = "pyyaml", specifier = ">=6.0,<7" },
-    { name = "redis", specifier = ">=5.2,<6" },
-    { name = "rich", marker = "extra == 'cli'", specifier = ">=13.0,<14" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9,<1" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0,<3" },
-    { name = "sqlparse", specifier = ">=0.5,<1" },
-    { name = "sse-starlette", specifier = ">=2.0,<3" },
-    { name = "stripe", specifier = ">=8.0,<12" },
-    { name = "structlog", specifier = ">=24.4,<26" },
-    { name = "tiktoken", specifier = ">=0.8,<1" },
-    { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12,<1" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<1" },
-    { name = "webauthn", specifier = ">=2.0,<3" },
-    { name = "websockets", specifier = ">=15.0,<16" },
-]
-provides-extras = ["dev", "cli", "perf", "scaffold", "composio"]
 
 [[package]]
 name = "secretstorage"

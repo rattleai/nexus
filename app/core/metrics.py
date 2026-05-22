@@ -51,4 +51,3 @@ CIRCUIT_BREAKER_STATE = Gauge(
     "Whether a circuit breaker is currently open (1=open, 0=closed)",
     ["breaker", "key"],
 )
-

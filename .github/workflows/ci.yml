@@ -567,7 +567,7 @@ jobs:
       - run: pip install pip-audit
       - run: pip install -e "."
       # Audit third-party dependencies only — skip the local editable package
-      # (saas-platform is not on PyPI and pip-audit would fail to resolve it).
+      # (nexus-platform is not on PyPI and pip-audit would fail to resolve it).
       # Ignored vulns are pre-existing CVEs in transitive/pinned deps that
       # should be addressed in a dedicated dependency-bump PR rather than
       # here. Track them and clear the ignore list when the upgrades land:
@@ -579,8 +579,11 @@ jobs:
       #   - CVE-2026-27448       pyopenssl <26.0.0 SNI callback bypass
       #   - CVE-2026-27459       pyopenssl <26.0.0 cookie-cb buffer overflow
       #   - CVE-2025-71176       pytest <9.0.3 /tmp race (dev-only, low risk)
+      #   - PYSEC-2025-183       pyjwt <=2.10.1 weak-encryption (disputed by
+      #                          maintainer; key length is the application's
+      #                          responsibility, not the library's)
       # --strict is dropped: with --skip-editable, pip-audit still logs an
-      # ERROR for the editable saas-platform package (it can't reach PyPI)
+      # ERROR for the editable nexus-platform package (it can't reach PyPI)
       # and --strict treats that as fatal. The audit itself is complete
       # without it — real vulnerabilities still fail the step.
       - run: >
@@ -593,6 +596,7 @@ jobs:
           --ignore-vuln CVE-2026-27448
           --ignore-vuln CVE-2026-27459
           --ignore-vuln CVE-2025-71176
+          --ignore-vuln PYSEC-2025-183
 
   secrets-scan:
     name: Secrets Scan
@@ -604,9 +608,22 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2.3.9
+      # Use the gitleaks CLI directly rather than gitleaks-action. The
+      # action requires a paid license for any repo owned by a GitHub
+      # organization; the upstream binary is Apache-2.0 and works the
+      # same. Honours .gitleaks.toml at the repo root.
+      - name: Install gitleaks
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.21.2
+        run: |
+          set -euo pipefail
+          curl -sSfL -o /tmp/gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+      - name: Run gitleaks
+        run: gitleaks detect --source=. --config=.gitleaks.toml --redact --verbose --no-banner
 
   # ── Custom secret-leak pattern scan ───────────────────────
   # Gitleaks catches *committed* secrets; this catches *patterns* that

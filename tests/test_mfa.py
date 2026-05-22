@@ -27,6 +27,7 @@ def test_create_mfa_pending_token():
 
     # Decode with type override since it's not "access"
     import jwt
+
     from app.config import settings
     from app.core.security import _get_effective_algorithm, _get_jwt_verification_key
 

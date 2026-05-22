@@ -13,7 +13,7 @@ so db.commit() wipes app.tenant_id. These tests verify that:
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from sqlalchemy.exc import PendingRollbackError
@@ -55,12 +55,18 @@ class TestToolExecutorRLSContext:
         # set_tenant_context must have been called with the correct tenant_id
         mock_set_ctx.assert_called_once_with(db, str(TENANT_ID))
 
-        # The tool registry must have been invoked after the context was set
+        # The tool registry must have been invoked after the context was set.
+        # build_tool_executor also threads actor_user_id / agent_id /
+        # agent_instance_id through for confused-deputy prevention; the
+        # defaults are None when not supplied to the factory.
         mock_registry.invoke.assert_called_once_with(
             tool_name="example_do_thing",
             arguments={"name": "Batmobile", "slug": "batmobile"},
             tenant_id=TENANT_ID,
             db=db,
+            actor_user_id=None,
+            agent_id=getattr(definition, "id", None),
+            agent_instance_id=None,
         )
         assert result == {"id": "prod-1", "name": "Test"}
 
@@ -77,7 +83,10 @@ class TestToolExecutorRLSContext:
         mock_set_ctx = AsyncMock()
 
         with (
-            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["example_do_thing", "example_list_things"]),
+            patch(
+                "app.agents.capabilities.capability_resolver.resolve_agent_tools",
+                return_value=["example_do_thing", "example_list_things"],
+            ),
             patch("app.agents.tool_registry.tool_registry", mock_registry),
             patch("app.db.session.set_tenant_context", mock_set_ctx),
         ):
@@ -235,9 +244,7 @@ class TestPluginToolErrorRecovery:
         mock_plugin = MagicMock()
         mock_plugin.name = "example"
         mock_plugin.get_agent_tool_definitions.return_value = {"example_do_thing": {}}
-        mock_plugin.invoke_tool = AsyncMock(
-            side_effect=RuntimeError("RLS violation")
-        )
+        mock_plugin.invoke_tool = AsyncMock(side_effect=RuntimeError("RLS violation"))
 
         with patch("app.plugins.registry.registry", [mock_plugin]):
             result = await registry._invoke_plugin_tool(
@@ -264,9 +271,7 @@ class TestPluginToolErrorRecovery:
         mock_plugin = MagicMock()
         mock_plugin.name = "example"
         mock_plugin.get_agent_tool_definitions.return_value = {"example_do_thing": {}}
-        mock_plugin.invoke_tool = AsyncMock(
-            side_effect=ValueError("bad input")
-        )
+        mock_plugin.invoke_tool = AsyncMock(side_effect=ValueError("bad input"))
 
         with patch("app.plugins.registry.registry", [mock_plugin]):
             result = await registry._invoke_plugin_tool(
@@ -293,9 +298,7 @@ class TestPluginToolErrorRecovery:
         mock_plugin = MagicMock()
         mock_plugin.name = "example"
         mock_plugin.get_agent_tool_definitions.return_value = {"example_do_thing": {}}
-        mock_plugin.invoke_tool = AsyncMock(
-            side_effect=RuntimeError("RLS violation")
-        )
+        mock_plugin.invoke_tool = AsyncMock(side_effect=RuntimeError("RLS violation"))
 
         with patch("app.plugins.registry.registry", [mock_plugin]):
             # Must not raise even though rollback failed
@@ -342,6 +345,7 @@ class TestStreamingCleanupRecovery:
 
         # Simulate the cleanup logic directly
         from sqlalchemy.exc import PendingRollbackError as PRE
+
         from app.agents.models import AgentInstance
 
         async def _cleanup_instance():
@@ -414,17 +418,20 @@ class TestRunStreamRLSContext:
 
         # First completion triggers a tool call, second gives final answer
         step = 0
+
         async def mock_completion(**kwargs):
             nonlocal step
             step += 1
             if step == 1:
                 return FakeCompletion(
                     content="Let me create a product.",
-                    tool_calls=[{
-                        "id": "call_1",
-                        "name": "example_do_thing",
-                        "arguments": '{"name": "Batmobile", "slug": "batmobile"}',
-                    }],
+                    tool_calls=[
+                        {
+                            "id": "call_1",
+                            "name": "example_do_thing",
+                            "arguments": '{"name": "Batmobile", "slug": "batmobile"}',
+                        }
+                    ],
                 )
             return FakeCompletion(
                 content="Product created successfully.",
@@ -487,14 +494,15 @@ class TestToolFailureIsolation:
         """If tool A fails, tool B should still succeed thanks to rollback."""
         from app.agents.setup import build_tool_executor
 
-        definition = make_agent_definition(
-            allowed_tools=["example_do_thing", "example_list_things"]
-        )
+        definition = make_agent_definition(allowed_tools=["example_do_thing", "example_list_things"])
         db = make_mock_db()
 
         call_count = 0
 
-        async def mock_invoke(tool_name, arguments, tenant_id, db):
+        async def mock_invoke(tool_name, arguments, tenant_id, db, **_kwargs):
+            # build_tool_executor passes actor_user_id / agent_id /
+            # agent_instance_id through; swallow them so a signature change
+            # in setup.py doesn't break this isolation test.
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -506,7 +514,10 @@ class TestToolFailureIsolation:
         mock_set_ctx = AsyncMock()
 
         with (
-            patch("app.agents.capabilities.capability_resolver.resolve_agent_tools", return_value=["example_do_thing", "example_list_things"]),
+            patch(
+                "app.agents.capabilities.capability_resolver.resolve_agent_tools",
+                return_value=["example_do_thing", "example_list_things"],
+            ),
             patch("app.agents.tool_registry.tool_registry", mock_registry),
             patch("app.db.session.set_tenant_context", mock_set_ctx),
         ):

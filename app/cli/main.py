@@ -12,7 +12,7 @@ import typer
 
 from app import __version__
 from app.cli.branding import API_KEY_ENV, BASE_URL_ENV, CLI_DISPLAY_NAME, CLI_NAME
-from app.cli.client import NexusClient, CLIError
+from app.cli.client import CLIError, NexusClient
 from app.cli.commands.ai import ai_app
 from app.cli.commands.api_key import api_key_app
 from app.cli.commands.billing import billing_app
