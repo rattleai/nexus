@@ -3,6 +3,10 @@
 *                                   @rattleai/maintainers
 
 # Areas with dedicated owners
+/app/core/       @rattleai/maintainers
+/app/db/         @rattleai/maintainers
+/infra/          @rattleai/maintainers
+/docs/           @rattleai/maintainers
 /app/plugins/                       @rattleai/maintainers @rattleai/platform
 /app/agents/                        @rattleai/maintainers @rattleai/platform
 /app/ai/                            @rattleai/maintainers @rattleai/platform
