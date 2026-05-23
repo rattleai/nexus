@@ -1,10 +1,15 @@
 import { test, expect } from "./fixtures"
 
+// #main-content is rendered inside AppShell, which only mounts when isAuthenticated=true.
+// Waiting for it after page.goto() is the most reliable signal that the auth token-refresh
+// cycle completed — it has zero i18n dependency and appears before any translated text.
+const waitForAppShell = (page: Parameters<typeof test>[1]["page"]) =>
+  page.locator("#main-content").waitFor({ state: "attached", timeout: 20_000 })
+
 test.describe("Error States & Edge Cases", () => {
   test("404 page for unknown routes", async ({ authenticatedPage: page }) => {
     await page.goto("/this-route-does-not-exist")
-    // Wait for auth restoration + i18n preload before asserting translated text
-    await page.waitForLoadState("networkidle")
+    await waitForAppShell(page)
 
     await expect(page.getByText("404")).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText("Page not found")).toBeVisible()
@@ -13,7 +18,7 @@ test.describe("Error States & Edge Cases", () => {
 
   test("go home from 404 navigates to root", async ({ authenticatedPage: page }) => {
     await page.goto("/nonexistent-page")
-    await page.waitForLoadState("networkidle")
+    await waitForAppShell(page)
     await expect(page.getByText("404")).toBeVisible({ timeout: 15_000 })
 
     await page.getByRole("link", { name: "Go home" }).click()
@@ -29,11 +34,10 @@ test.describe("Error States & Edge Cases", () => {
     })
 
     await page.goto("/")
-    // Wait for auth restoration and i18n to settle before asserting
-    await page.waitForLoadState("networkidle")
+    await waitForAppShell(page)
 
-    // The Dashboard heading renders immediately (outside the usageLoading branch),
-    // so it should appear even while usage cards are still skeleton-loading
+    // Heading renders outside the usageLoading branch so it appears even while
+    // usage cards are still skeleton-loading
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({ timeout: 30_000 })
   })
 
