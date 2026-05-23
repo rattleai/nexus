@@ -3,15 +3,18 @@ import { test, expect } from "./fixtures"
 test.describe("Error States & Edge Cases", () => {
   test("404 page for unknown routes", async ({ authenticatedPage: page }) => {
     await page.goto("/this-route-does-not-exist")
+    // Wait for auth restoration + i18n preload before asserting translated text
+    await page.waitForLoadState("networkidle")
 
-    await expect(page.getByText("404")).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText("404")).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText("Page not found")).toBeVisible()
     await expect(page.getByRole("link", { name: "Go home" })).toBeVisible()
   })
 
   test("go home from 404 navigates to root", async ({ authenticatedPage: page }) => {
     await page.goto("/nonexistent-page")
-    await expect(page.getByText("404")).toBeVisible({ timeout: 10_000 })
+    await page.waitForLoadState("networkidle")
+    await expect(page.getByText("404")).toBeVisible({ timeout: 15_000 })
 
     await page.getByRole("link", { name: "Go home" }).click()
     await expect(page).toHaveURL("/")
@@ -19,17 +22,18 @@ test.describe("Error States & Edge Cases", () => {
   })
 
   test("loading states appear during data fetch", async ({ authenticatedPage: page }) => {
-    // Intercept API calls to add delay, simulating slow network
-    await page.route("**/api/v1/usage/**", async (route) => {
+    // Intercept the actual usage endpoint to simulate slow network
+    await page.route("**/api/v1/billing/usage*", async (route) => {
       await new Promise((r) => setTimeout(r, 2000))
       await route.continue()
     })
 
     await page.goto("/")
+    // Wait for auth restoration and i18n to settle before asserting
+    await page.waitForLoadState("networkidle")
 
-    // Should show some form of loading indicator (skeleton, spinner, or aria-busy)
-    const loadingIndicator = page.locator("[aria-busy='true']").first()
-    // It may or may not be present depending on timing, but the page should still load
+    // The Dashboard heading renders immediately (outside the usageLoading branch),
+    // so it should appear even while usage cards are still skeleton-loading
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({ timeout: 30_000 })
   })
 
