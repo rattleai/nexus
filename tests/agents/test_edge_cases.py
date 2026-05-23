@@ -352,7 +352,10 @@ async def test_event_consumer_does_not_ack_failed_handler():
     mock_event.event_type = "AgentInstanceCompleted"
     mock_event.data = {"instance_id": "test"}
     mock_event.stream = "events:AgentInstanceCompleted"
-    mock_event.id = "event-1"
+    # Unique event id so a residual dedup key from another test in the
+    # session can't make consume_loop treat this event as a duplicate
+    # (which would take the already-processed branch that ACKs).
+    mock_event.id = f"test-no-ack-{uuid.uuid4()}"
 
     # Return one batch then raise CancelledError to stop the loop
     mock_event_bus.consume = AsyncMock(
@@ -365,6 +368,10 @@ async def test_event_consumer_does_not_ack_failed_handler():
 
     with (
         patch("app.workers.event_consumer.event_bus", mock_event_bus),
+        # Force the dedup check to report the event as new; otherwise a
+        # shared Redis pool across tests could short-circuit consume_loop
+        # before it ever reaches the handler.
+        patch("app.workers.event_consumer._is_duplicate", AsyncMock(return_value=False)),
         patch.dict(_EVENT_HANDLERS, {"AgentInstanceCompleted": [failing_handler]}, clear=False),
     ):
         await consume_loop()

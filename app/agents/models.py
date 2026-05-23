@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.db.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin, VersionMixin
+from app.db.models.datasource import VectorType
 
 # ── Enums ──────────────────────────────────────────────────────────────
 
@@ -205,7 +206,11 @@ class AgentInstance(Base, TimestampMixin):
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     definition_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("agent_definitions.id"),
+        ForeignKey(
+            "agent_definitions.id",
+            ondelete="CASCADE",
+            name="fk_agent_instances_definition_id",
+        ),
         nullable=False,
     )
 
@@ -243,14 +248,14 @@ class AgentInstance(Base, TimestampMixin):
     # Parent conversation session (for multi-turn interactive runs)
     session_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("agent_sessions.id"),
+        ForeignKey("agent_sessions.id", ondelete="SET NULL", name="agent_instances_session_id_fkey"),
         nullable=True,
     )
 
     # Parent workflow run (if spawned by orchestrator)
     workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("workflow_runs.id"),
+        ForeignKey("workflow_runs.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -291,13 +296,18 @@ class AgentSession(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_agent_session_instance", "instance_id"),
         Index("ix_agent_session_definition", "tenant_id", "definition_id", "status"),
+        Index(
+            "ix_agent_session_expires_at",
+            "expires_at",
+            postgresql_where="expires_at IS NOT NULL",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     instance_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("agent_instances.id"),
+        ForeignKey("agent_instances.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -343,13 +353,35 @@ class AgentMemoryEntry(Base, TimestampMixin):
         UniqueConstraint("instance_id", "namespace", "key", name="uq_agent_memory_instance_ns_key"),
         Index("ix_agent_memory_tenant", "tenant_id"),
         Index("ix_agent_memory_instance_ns", "instance_id", "namespace"),
+        # Partial — matches 0001 baseline DDL.
+        Index(
+            "ix_agent_memory_expires_at",
+            "expires_at",
+            postgresql_where="expires_at IS NOT NULL",
+        ),
+        # HNSW indexes on the pgvector columns. Operator class + WITH
+        # parameters mirror what _hnsw_index() creates in 0001.
+        Index(
+            "ix_agent_memory_embedding_vec",
+            "embedding_vec",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding_vec": "vector_cosine_ops"},
+            postgresql_with={"m": 24, "ef_construction": 128},
+        ),
+        Index(
+            "ix_agent_memory_embedding_halfvec",
+            "embedding_halfvec",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding_halfvec": "halfvec_cosine_ops"},
+            postgresql_with={"m": 24, "ef_construction": 128},
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     instance_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("agent_instances.id"),
+        ForeignKey("agent_instances.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -357,10 +389,22 @@ class AgentMemoryEntry(Base, TimestampMixin):
     key: Mapped[str] = mapped_column(String(500), nullable=False)
     value: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
-    # Optional vector embedding for semantic search (pgvector)
-    # Stored as JSONB array; use pgvector extension for actual vector ops
+    # Legacy JSONB embedding column — kept for backward compatibility.
+    # New code should use embedding_vec / embedding_halfvec for native
+    # pgvector storage and HNSW similarity search.
     embedding: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # Native pgvector columns — added by raw DDL in 0001 baseline.
+    # Full-precision float32 (6 KB / vector at 1536 dims) for accuracy-
+    # sensitive ops; halfvec is the half-precision float16 column (3 KB
+    # / vector) used as the primary search column when memory pressure
+    # matters.
+    embedding_vec: Mapped[list | None] = mapped_column(VectorType(1536), nullable=True)
+    embedding_halfvec: Mapped[list | None] = mapped_column(
+        VectorType(1536, precision="half"),
+        nullable=True,
+    )
 
     # TTL support
     expires_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -447,7 +491,11 @@ class WorkflowRun(Base, TimestampMixin):
     """
 
     __tablename__ = "workflow_runs"
-    __table_args__ = (Index("ix_workflow_run_tenant_status", "tenant_id", "status"),)
+    __table_args__ = (
+        Index("ix_workflow_run_tenant_status", "tenant_id", "status"),
+        Index("ix_workflow_run_workflow", "workflow_id"),
+        Index("ix_workflow_run_workflow_status", "workflow_id", "status"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
@@ -577,7 +625,17 @@ class CapabilityPreset(Base, TimestampMixin, SoftDeleteMixin):
     """
 
     __tablename__ = "capability_presets"
-    __table_args__ = (UniqueConstraint("tenant_id", "slug", name="uq_capability_preset_slug"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "slug", name="uq_capability_preset_slug"),
+        # Partial unique — global system presets where tenant_id IS NULL
+        # must have unique slugs. Created via raw DDL in 0001 baseline.
+        Index(
+            "uq_capability_preset_system_slug",
+            "slug",
+            unique=True,
+            postgresql_where="tenant_id IS NULL",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)

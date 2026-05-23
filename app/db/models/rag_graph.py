@@ -23,7 +23,8 @@ class RAGEntity(TimestampMixin, Base):
     __tablename__ = "rag_entities"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    # tenant_id covered by ix_rag_entities_tenant_name_type composite.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -39,9 +40,11 @@ class RAGRelationship(TimestampMixin, Base):
     __tablename__ = "rag_relationships"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    source_entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    target_entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    # tenant_id / source_entity_id / target_entity_id covered by the
+    # composite indexes in __table_args__ below.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    source_entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    target_entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     relationship_type: Mapped[str] = mapped_column(String(100), nullable=False)
     weight: Mapped[float] = mapped_column(Float, default=1.0)
     chunk_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
@@ -50,4 +53,6 @@ class RAGRelationship(TimestampMixin, Base):
     __table_args__ = (
         Index("ix_rag_relationships_source", "tenant_id", "source_entity_id"),
         Index("ix_rag_relationships_target", "tenant_id", "target_entity_id"),
+        # Created by 0001 baseline as a single-column index on chunk_id.
+        Index("ix_rag_relationships_chunk", "chunk_id"),
     )

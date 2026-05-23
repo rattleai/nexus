@@ -261,7 +261,6 @@ class TenantConnection(SoftDeleteMixin, TimestampMixin, Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("tenants.id"),
         nullable=False,
-        index=True,
     )
     connector_definition_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("connector_definitions.id"),
@@ -360,7 +359,6 @@ class TenantCredential(TimestampMixin, Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("tenants.id"),
         nullable=False,
-        index=True,
     )
     connection_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("tenant_connections.id", ondelete="CASCADE"),
@@ -483,7 +481,6 @@ class ConnectorAppCredential(TimestampMixin, Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("tenants.id"),
         nullable=False,
-        index=True,
     )
     connector_slug: Mapped[str] = mapped_column(String(100), nullable=False)
 
