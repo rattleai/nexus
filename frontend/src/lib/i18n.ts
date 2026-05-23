@@ -41,6 +41,11 @@ i18n
   .init({
     fallbackLng: "en",
     supportedLngs,
+    // Preload English at startup so every namespace is available before
+    // the first render. Without this, namespaces lazy-load on first use
+    // (e.g. "errors" only when a 404 page is shown), causing a visible
+    // flicker or a failed test assertion on slow CI runners.
+    preload: ["en"],
     defaultNS,
     ns: [...ns],
 

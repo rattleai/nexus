@@ -30,7 +30,7 @@ test.describe("Error States & Edge Cases", () => {
     // Should show some form of loading indicator (skeleton, spinner, or aria-busy)
     const loadingIndicator = page.locator("[aria-busy='true']").first()
     // It may or may not be present depending on timing, but the page should still load
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({ timeout: 30_000 })
   })
 
   test("API error shows degraded state gracefully", async ({ authenticatedPage: page }) => {
@@ -44,7 +44,7 @@ test.describe("Error States & Edge Cases", () => {
     )
 
     await page.goto("/")
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({ timeout: 30_000 })
 
     // The service health section should still render (may show loading/error state)
     await expect(page.getByText("Service Health")).toBeVisible()
