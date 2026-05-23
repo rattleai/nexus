@@ -23,7 +23,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import UserDefinedType
 
@@ -64,7 +64,10 @@ class DataSource(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
     __tablename__ = "data_sources"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    # tenant_id index is declared explicitly in __table_args__ below as
+    # ix_data_sources_tenant; column-level `index=True` would add a
+    # duplicate auto-named index.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     source_type: Mapped[DataSourceType] = mapped_column(
         Enum(DataSourceType, values_callable=lambda e: [m.value for m in e]),
@@ -101,7 +104,6 @@ class DataSource(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
-        index=True,
     )
 
     # Extraction results
@@ -120,6 +122,9 @@ class DataSource(SoftDeleteMixin, AuditMixin, TimestampMixin, Base):
         Index("ix_data_sources_tenant", "tenant_id"),
         Index("ix_data_sources_tenant_status", "tenant_id", "status"),
         Index("ix_data_sources_tenant_type", "tenant_id", "source_type"),
+        # Added by 0030_datasource_actor_user — kept here so alembic
+        # check sees the same name as the migration creates.
+        Index("ix_data_sources_created_by_user", "created_by_user_id"),
     )
 
 
@@ -189,9 +194,14 @@ class DataSourceChunk(TimestampMixin, Base):
     __tablename__ = "data_source_chunks"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    # Indexes on tenant_id / data_source_id / parent_chunk_id are
+    # declared in __table_args__ below with the names used by the
+    # 0001 baseline migration (ix_dsc_part_tenant, ...); avoid
+    # column-level `index=True` which would create duplicate index
+    # declarations under SQLAlchemy's auto-generated names.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     data_source_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -212,10 +222,10 @@ class DataSourceChunk(TimestampMixin, Base):
         VectorType(1536, precision="half"),
         nullable=True,
     )
-    # Auto-maintained tsvector for full-text search (GIN indexed, trigger-updated).
-    # Column type is tsvector in PostgreSQL; mapped as Text here since SQLAlchemy
-    # doesn't have a native tsvector type. Reads return raw tsvector strings.
-    content_tsv: Mapped[str | None] = mapped_column("content_tsv", Text, nullable=True)
+    # Auto-maintained tsvector for full-text search (GIN indexed via
+    # ix_dsc_part_content_tsv, trigger-updated). Uses postgresql.TSVECTOR
+    # so alembic autogenerate matches the actual DB column type.
+    content_tsv: Mapped[str | None] = mapped_column("content_tsv", TSVECTOR, nullable=True)
     # Metadata for filtering
     tags: Mapped[list | None] = mapped_column(JSONB, nullable=False, server_default="[]")
     content_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -225,11 +235,12 @@ class DataSourceChunk(TimestampMixin, Base):
     context_preamble: Mapped[str | None] = mapped_column(Text, nullable=True)
     content_with_context: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Parent-child retrieval — small child chunks for matching, parent chunks for context
+    # Parent-child retrieval — small child chunks for matching, parent
+    # chunks for context. Index lives in __table_args__ as a partial
+    # (ix_dsc_parent_chunk WHERE parent_chunk_id IS NOT NULL).
     parent_chunk_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,
-        index=True,
     )
     chunk_level: Mapped[str | None] = mapped_column(
         String(20),
@@ -247,4 +258,27 @@ class DataSourceChunk(TimestampMixin, Base):
     # Relationships
     data_source: Mapped[DataSource] = relationship(back_populates="chunks")
 
-    __table_args__ = (Index("ix_data_source_chunks_tenant_source", "tenant_id", "data_source_id"),)
+    # Index declarations mirror the DDL in 0001_basic_schema's
+    # _create_partitioned_chunks(). PostgreSQL propagates parent-table
+    # indexes to all hash partitions automatically; the per-partition
+    # HNSW indexes on the vector columns are excluded from autogenerate
+    # via the env.py include_object filter.
+    __table_args__ = (
+        Index("ix_dsc_part_tenant", "tenant_id"),
+        Index("ix_dsc_part_tenant_source", "tenant_id", "data_source_id"),
+        Index("ix_dsc_part_tenant_type", "tenant_id", "content_type"),
+        Index("ix_dsc_part_tenant_indexed", "tenant_id", "indexed_at"),
+        Index("ix_dsc_part_content_tsv", "content_tsv", postgresql_using="gin"),
+        Index(
+            "ix_dsc_parent_chunk",
+            "parent_chunk_id",
+            postgresql_where="parent_chunk_id IS NOT NULL",
+        ),
+        Index("ix_dsc_chunk_level", "tenant_id", "chunk_level"),
+        Index(
+            "ix_dsc_deleted_at",
+            "deleted_at",
+            postgresql_where="deleted_at IS NOT NULL",
+        ),
+        Index("ix_dsc_source_content_hash", "data_source_id", "content_hash"),
+    )

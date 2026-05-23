@@ -131,7 +131,8 @@ class WalletTransaction(Base):
     __tablename__ = "wallet_transactions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    # tenant_id index lives in __table_args__ as part of ix_wallet_tx_tenant_created.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     type: Mapped[WalletTransactionType] = mapped_column(
         Enum(WalletTransactionType, values_callable=lambda e: [m.value for m in e]), nullable=False
     )
@@ -152,6 +153,14 @@ class WalletTransaction(Base):
             "reference_id",
             unique=True,
             postgresql_where=text("reference_id IS NOT NULL"),
+        ),
+        # Composite uniqueness across (tenant_id, reference_id, type) to
+        # match the explicit unique constraint in 0001 baseline.
+        UniqueConstraint(
+            "tenant_id",
+            "reference_id",
+            "type",
+            name="uq_wallet_transactions_idempotency",
         ),
     )
 

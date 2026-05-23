@@ -24,6 +24,7 @@ import contextlib
 import json
 import os
 import shutil
+import sys
 import tempfile
 import uuid
 from dataclasses import dataclass, field
@@ -213,8 +214,13 @@ class ExecutionSandbox:
 
             start = time.monotonic()
 
+            # Use sys.executable so the sandbox always finds the same
+            # interpreter that's running the parent, regardless of PATH.
+            # The sandbox env restricts PATH to /usr/bin:/bin, but the
+            # python:3.12-slim base image installs Python under
+            # /usr/local/bin/, so a bare "python3" lookup would fail.
             process = await asyncio.create_subprocess_exec(
-                "python3",
+                sys.executable,
                 wrapper_file,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

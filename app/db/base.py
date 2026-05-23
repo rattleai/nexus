@@ -23,8 +23,13 @@ class SoftDeleteMixin:
     Query with .where(Model.deleted_at.is_(None)) to exclude deleted rows.
     """
 
+    # Tables that want an explicit `deleted_at` index declare it in their
+    # own __table_args__ — only data_source_chunks does so today (partial
+    # index ix_dsc_deleted_at). Auto-indexing every mixin user generated
+    # ORM-vs-DB drift for tables whose migrations never created the
+    # corresponding index.
     deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None, nullable=True, index=True
+        DateTime(timezone=True), default=None, nullable=True
     )
 
     @property

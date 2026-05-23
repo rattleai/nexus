@@ -57,7 +57,6 @@ target_metadata = Base.metadata
 # them from the *comparison* against ORM metadata.
 _PARTITION_TABLE_RE = re.compile(r"^data_source_chunks_p\d+$")
 
-
 def _include_object(object_, name, type_, reflected, compare_to):
     if type_ == "table" and name and _PARTITION_TABLE_RE.match(name):
         return False
@@ -67,7 +66,34 @@ def _include_object(object_, name, type_, reflected, compare_to):
         table_name = getattr(getattr(object_, "table", None), "name", None) or ""
         if _PARTITION_TABLE_RE.match(table_name):
             return False
+    # Foreign-key constraints: autogenerate often fails to round-trip the
+    # `ondelete` option through PostgreSQL's reflected catalogs, producing
+    # drop+recreate cycles that silently strip CASCADE / SET NULL clauses.
+    # FK changes belong in hand-written migrations, not autogenerate.
+    if type_ == "foreign_key_constraint":
+        return False
     return True
+
+
+def _compare_type(context, inspected_column, metadata_column, inspected_type, metadata_type):
+    """Treat custom Postgres-native column types as equal to their reflected forms.
+
+    Alembic's default type comparator cannot reconcile the ORM-side wrappers
+    (VectorType, HalfvecType, TSVECTOR with `Mapped[str]`) against the
+    `vector(N)` / `halfvec(N)` / `tsvector` types Postgres reflects out of
+    its catalogs. Without this hook, autogenerate proposes a destructive
+    drop+add of those columns on every run. Returning ``False`` here signals
+    "no difference" so autogenerate leaves the column alone.
+    """
+    inspected_str = str(inspected_type).lower()
+    metadata_str = str(metadata_type).lower()
+    if "vector" in inspected_str or "vector" in metadata_str:
+        return False
+    if "halfvec" in inspected_str or "halfvec" in metadata_str:
+        return False
+    if "tsvector" in inspected_str or "tsvector" in metadata_str:
+        return False
+    return None  # defer to alembic's default comparator
 
 
 def run_migrations_offline() -> None:
@@ -86,7 +112,7 @@ def do_run_migrations(connection):
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
-        compare_type=True,
+        compare_type=_compare_type,
         include_object=_include_object,
         # Wider column for alembic_version on new deployments so revision
         # identifiers longer than 32 chars never get truncated.
