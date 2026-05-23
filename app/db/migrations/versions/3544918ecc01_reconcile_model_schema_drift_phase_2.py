@@ -1,21 +1,21 @@
 """reconcile model schema drift phase 2
 
-Revision ID: 5c630d059759
+Revision ID: 3544918ecc01
 Revises: 0030_datasource_actor_user
-Create Date: 2026-05-23 00:30:36.816632
+Create Date: 2026-05-23 09:29:04.601698
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '5c630d059759'
-down_revision: Union[str, None] = '0030_datasource_actor_user'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = '3544918ecc01'
+down_revision: str | None = '0030_datasource_actor_user'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -259,7 +259,7 @@ def upgrade() -> None:
     op.drop_index(op.f('ix_tenant_tools_deleted_at'), table_name='tenant_tools')
     op.drop_index(op.f('ix_tenants_deleted_at'), table_name='tenants')
     op.drop_index(op.f('ix_users_deleted_at'), table_name='users')
-    op.drop_constraint(op.f('uq_wallet_transactions_idempotency'), 'wallet_transactions', type_='unique')
+    op.drop_index(op.f('ix_wallet_transactions_tenant_id'), table_name='wallet_transactions')
     op.alter_column('workflow_definitions', 'description',
                existing_type=sa.TEXT(),
                nullable=False,
@@ -395,7 +395,7 @@ def downgrade() -> None:
                existing_type=sa.TEXT(),
                nullable=True,
                existing_server_default=sa.text("''::text"))
-    op.create_unique_constraint(op.f('uq_wallet_transactions_idempotency'), 'wallet_transactions', ['tenant_id', 'reference_id', 'type'], postgresql_nulls_not_distinct=False)
+    op.create_index(op.f('ix_wallet_transactions_tenant_id'), 'wallet_transactions', ['tenant_id'], unique=False)
     op.create_index(op.f('ix_users_deleted_at'), 'users', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_tenants_deleted_at'), 'tenants', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_tenant_tools_deleted_at'), 'tenant_tools', ['deleted_at'], unique=False)

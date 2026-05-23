@@ -70,9 +70,7 @@ def _include_object(object_, name, type_, reflected, compare_to):
     # `ondelete` option through PostgreSQL's reflected catalogs, producing
     # drop+recreate cycles that silently strip CASCADE / SET NULL clauses.
     # FK changes belong in hand-written migrations, not autogenerate.
-    if type_ == "foreign_key_constraint":
-        return False
-    return True
+    return type_ != "foreign_key_constraint"
 
 
 def _compare_type(context, inspected_column, metadata_column, inspected_type, metadata_type):
