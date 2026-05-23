@@ -28,9 +28,7 @@ class SoftDeleteMixin:
     # index ix_dsc_deleted_at). Auto-indexing every mixin user generated
     # ORM-vs-DB drift for tables whose migrations never created the
     # corresponding index.
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None, nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None, nullable=True)
 
     @property
     def is_deleted(self) -> bool:

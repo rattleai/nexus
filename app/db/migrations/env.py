@@ -57,6 +57,7 @@ target_metadata = Base.metadata
 # them from the *comparison* against ORM metadata.
 _PARTITION_TABLE_RE = re.compile(r"^data_source_chunks_p\d+$")
 
+
 def _include_object(object_, name, type_, reflected, compare_to):
     if type_ == "table" and name and _PARTITION_TABLE_RE.match(name):
         return False

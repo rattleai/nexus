@@ -200,9 +200,7 @@ class DataSourceChunk(TimestampMixin, Base):
     # column-level `index=True` which would create duplicate index
     # declarations under SQLAlchemy's auto-generated names.
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    data_source_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False
-    )
+    data_source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     # Legacy JSONB embedding column — kept for backward compatibility during transition.
