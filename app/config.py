@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     RATE_LIMIT_WINDOW_SECONDS: int = 60
     RATE_LIMIT_AUTH_ENDPOINTS: int = 10
 
+    # Account lockout: after this many failed login attempts within the
+    # window, the account is temporarily locked. Set very high in CI so
+    # negative-path E2E tests don't lock out the shared test user.
+    LOGIN_MAX_FAILED_ATTEMPTS: int = 5
+    LOGIN_LOCKOUT_SECONDS: int = 900
+
     # Request size limits
     MAX_REQUEST_BODY_BYTES: int = 1_048_576  # 1 MB for JSON payloads
     MAX_UPLOAD_SIZE_BYTES: int = 52_428_800  # 50 MB for file uploads

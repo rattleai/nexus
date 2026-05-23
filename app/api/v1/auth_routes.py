@@ -58,8 +58,8 @@ _refresh_rate_limit = RateLimiter(max_requests=30, window=60, key_prefix="rl:aut
 router = APIRouter(prefix="/auth")
 logger = structlog.stdlib.get_logger()
 
-_MAX_LOGIN_ATTEMPTS = 5
-_LOGIN_LOCKOUT_SECONDS = 900  # 15 minutes
+_MAX_LOGIN_ATTEMPTS = settings.LOGIN_MAX_FAILED_ATTEMPTS
+_LOGIN_LOCKOUT_SECONDS = settings.LOGIN_LOCKOUT_SECONDS
 
 
 async def _check_account_lockout(email: str) -> None:
